@@ -1,0 +1,510 @@
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { Search, Calendar } from 'lucide-react';
+
+type Service = {
+  id: number;
+  name: string;
+  base_price: number;
+  category_id: number;
+  category_name: string;
+  is_base_service: boolean;
+};
+
+type Category = {
+  id: number;
+  name: string;
+  description: string;
+};
+
+type Client = {
+  id: number;
+  name: string;
+  cpf: string;
+};
+
+type Dependent = {
+  id: number;
+  name: string;
+  cpf: string;
+  birth_date: string;
+};
+
+const RegisterConsultationPage: React.FC = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  
+  // Form state
+  const [cpf, setCpf] = useState('');
+  const [clientId, setClientId] = useState<number | null>(null);
+  const [clientName, setClientName] = useState('');
+  const [dependents, setDependents] = useState<Dependent[]>([]);
+  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(null);
+  const [categoryId, setCategoryId] = useState<string>('');
+  const [serviceId, setServiceId] = useState<number | null>(null);
+  const [value, setValue] = useState('');
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+  
+  // UI state
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [filteredServices, setFilteredServices] = useState<Service[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  // Get API URL with fallback
+  const getApiUrl = () => {
+    if (
+      window.location.hostname === "cartaoquiroferreira.com.br" ||
+      window.location.hostname === "www.cartaoquiroferreira.com.br"
+    ) {
+      return "https://www.cartaoquiroferreira.com.br";
+    }
+
+    return "http://localhost:3001";
+  };
+  
+  // Load categories and services on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const apiUrl = getApiUrl();
+        
+        console.log('Fetching consultation data from:', apiUrl);
+        
+        // Fetch categories
+        const categoriesResponse = await fetch(`${apiUrl}/api/service-categories`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+        
+        if (!categoriesResponse.ok) {
+          throw new Error('Falha ao carregar categorias');
+        }
+        
+        const categoriesData = await categoriesResponse.json();
+        setCategories(categoriesData);
+        
+        // Fetch services
+        const servicesResponse = await fetch(`${apiUrl}/api/services`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+        
+        if (!servicesResponse.ok) {
+          throw new Error('Falha ao carregar serviços');
+        }
+        
+        const servicesData = await servicesResponse.json();
+        setServices(servicesData);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        setError('Não foi possível carregar os dados necessários');
+      }
+    };
+    
+    fetchData();
+  }, []);
+  
+  // Filter services when category changes
+  useEffect(() => {
+    if (categoryId) {
+      const filtered = services.filter(service => service.category_id === parseInt(categoryId));
+      setFilteredServices(filtered);
+      setServiceId(null);
+      setValue('');
+    } else {
+      setFilteredServices([]);
+      setServiceId(null);
+      setValue('');
+    }
+  }, [categoryId, services]);
+  
+  // Search client by CPF
+  const searchClient = async () => {
+    setError('');
+    setSuccess('');
+    
+    // Validate CPF format
+    if (!/^\d{11}$/.test(cpf.replace(/\D/g, ''))) {
+      setError('CPF deve conter 11 dígitos numéricos');
+      return;
+    }
+    
+    try {
+      setIsSearching(true);
+      
+      const token = localStorage.getItem('token');
+      const apiUrl = getApiUrl();
+      
+      const response = await fetch(`${apiUrl}/api/clients/lookup?cpf=${cpf.replace(/\D/g, '')}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Cliente não encontrado. Verifique o CPF ou entre em contato com o administrador.');
+        } else {
+          throw new Error('Falha ao buscar cliente');
+        }
+      }
+      
+      const data = await response.json();
+      setClientId(data.id);
+      setClientName(data.name);
+      
+      // Fetch dependents
+      const dependentsResponse = await fetch(`${apiUrl}/api/dependents/${data.id}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      
+      if (dependentsResponse.ok) {
+        const dependentsData = await dependentsResponse.json();
+        setDependents(dependentsData);
+      }
+      
+      setSuccess('Cliente encontrado com sucesso!');
+    } catch (error) {
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError('Ocorreu um erro ao buscar o cliente');
+      }
+      setClientId(null);
+      setClientName('');
+      setDependents([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+  
+  // Update value when service changes
+  const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const selectedId = Number(e.target.value);
+    setServiceId(selectedId);
+    
+    const selectedService = services.find(service => service.id === selectedId);
+    if (selectedService) {
+      setValue(selectedService.base_price.toString());
+    }
+  };
+  
+  // Format CPF as user types (###.###.###-##)
+  const formatCpf = (value: string) => {
+    // Remove non-numeric characters
+    const numericValue = value.replace(/\D/g, '');
+    
+    // Limit to 11 digits
+    const limitedValue = numericValue.slice(0, 11);
+    
+    setCpf(limitedValue);
+  };
+  
+  const formattedCpf = cpf
+    ? cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
+    : '';
+  
+  // Handle form submission
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    
+    // Validate form
+    if (!clientId && !selectedDependentId) {
+      setError('É necessário selecionar um cliente ou dependente');
+      return;
+    }
+    
+    if (!serviceId) {
+      setError('É necessário selecionar um serviço');
+      return;
+    }
+    
+    
+    
+    if (!value || Number(value) <= 0) {
+      setError('O valor deve ser maior que zero');
+      return;
+    }
+    
+    if (!date || !time) {
+      setError('Data e hora são obrigatórios');
+      return;
+    }
+    
+    // Combine date and time
+    const dateTime = new Date(`${date}T${time}`);
+    
+    try {
+      setIsLoading(true);
+      
+      const token = localStorage.getItem('token');
+      const apiUrl = getApiUrl();
+      
+      const response = await fetch(`${apiUrl}/api/consultations`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          client_id: selectedDependentId ? null : clientId,
+          dependent_id: selectedDependentId,
+          professional_id: user?.id,
+          service_id: serviceId,
+          value: Number(value),
+          date: dateTime.toISOString(),
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Falha ao registrar consulta');
+      }
+      
+      // Reset form
+      setCpf('');
+      setClientId(null);
+      setClientName('');
+      setSelectedDependentId(null);
+      setDependents([]);
+      setCategoryId('');
+      setServiceId(null);
+      setValue('');
+      setDate('');
+      setTime('');
+      
+      setSuccess('Consulta registrada com sucesso!');
+      
+      // Redirect after a delay
+      setTimeout(() => {
+        navigate('/professional');
+      }, 2000);
+    } catch (error) {
+      console.error('Error registering consultation:', error);
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError('Ocorreu um erro ao registrar a consulta');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  return (
+    <div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Registrar Nova Consulta</h1>
+        <p className="text-gray-600">Preencha os dados para registrar uma nova consulta</p>
+      </div>
+      
+      <div className="card">
+        {error && (
+          <div className="bg-red-50 text-red-600 p-3 rounded-md mb-4">
+            {error}
+          </div>
+        )}
+        
+        {success && (
+          <div className="bg-green-50 text-green-600 p-3 rounded-md mb-4">
+            {success}
+          </div>
+        )}
+        
+        <form onSubmit={handleSubmit}>
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold mb-3 flex items-center">
+              <Search className="h-5 w-5 mr-2 text-red-600" />
+              Buscar Cliente por CPF
+            </h2>
+            
+            <div className="flex items-center space-x-2">
+              <div className="flex-1">
+                <input
+                  type="text"
+                  value={formattedCpf}
+                  onChange={(e) => formatCpf(e.target.value)}
+                  placeholder="000.000.000-00"
+                  className="input"
+                  disabled={isSearching || isLoading}
+                />
+              </div>
+              
+              <button
+                type="button"
+                onClick={searchClient}
+                className={`btn btn-primary ${isSearching ? 'opacity-70 cursor-not-allowed' : ''}`}
+                disabled={isSearching || isLoading || !cpf}
+              >
+                {isSearching ? 'Buscando...' : 'Buscar'}
+              </button>
+            </div>
+            
+            {clientId && (
+              <div className="mt-3">
+                <div className="p-3 bg-green-50 text-green-700 rounded-md mb-3">
+                  <p><span className="font-medium">Cliente:</span> {clientName}</p>
+                </div>
+                
+                {dependents.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Selecionar Dependente (opcional)
+                    </label>
+                    <select
+                      value={selectedDependentId || ''}
+                      onChange={(e) => setSelectedDependentId(e.target.value ? Number(e.target.value) : null)}
+                      className="input"
+                    >
+                      <option value="">Consulta para o titular</option>
+                      {dependents.map((dependent) => (
+                        <option key={dependent.id} value={dependent.id}>
+                          {dependent.name} (CPF: {dependent.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold mb-3 flex items-center">
+              <Calendar className="h-5 w-5 mr-2 text-red-600" />
+              Detalhes da Consulta
+            </h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
+                  Categoria do Serviço
+                </label>
+                <select
+                  id="category"
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
+                  className="input"
+                  disabled={isLoading}
+                  required
+                >
+                  <option value="">Selecione uma categoria</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label htmlFor="service" className="block text-sm font-medium text-gray-700 mb-1">
+                  Serviço
+                </label>
+                <select
+                  id="service"
+                  value={serviceId || ''}
+                  onChange={handleServiceChange}
+                  className="input"
+                  disabled={isLoading || !categoryId}
+                  required
+                >
+                  <option value="">Selecione um serviço</option>
+                  {filteredServices.map((service) => (
+                    <option key={service.id} value={service.id}>
+                      {service.name} - {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(service.base_price)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label htmlFor="value" className="block text-sm font-medium text-gray-700 mb-1">
+                  Valor (R$)
+                </label>
+                <input
+                  id="value"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  className="input"
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+              
+              <div>
+                <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">
+                  Data
+                </label>
+                <input
+                  id="date"
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="input"
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+              
+              <div>
+                <label htmlFor="time" className="block text-sm font-medium text-gray-700 mb-1">
+                  Hora
+                </label>
+                <input
+                  id="time"
+                  type="time"
+                  value={time}
+                  onChange={(e) => setTime(e.target.value)}
+                  className="input"
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => navigate('/professional')}
+              className="btn btn-secondary mr-2"
+              disabled={isLoading}
+            >
+              Cancelar
+            </button>
+            
+            <button
+              type="submit"
+              className={`btn btn-primary ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
+              disabled={isLoading || (!clientId && !selectedDependentId) || !serviceId || !value || !date || !time}
+            >
+              {isLoading ? 'Registrando...' : 'Registrar Consulta'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default RegisterConsultationPage;
