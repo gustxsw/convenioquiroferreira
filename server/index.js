@@ -46,74 +46,16 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 
-// 🔥🔥🔥 ROOT REDIRECT MIDDLEWARE - DEVE VIR PRIMEIRO 🔥🔥🔥
+// 🔥 REDIRECIONAMENTO SIMPLES NO SERVIDOR
 app.get('/', (req, res) => {
-  console.log('🔥🔥🔥 ROOT ACCESS DETECTED - REDIRECTING TO /login 🔥🔥🔥');
-  console.log('🔥 User-Agent:', req.headers['user-agent']);
-  console.log('🔥 Origin:', req.headers.origin);
-  
-  // REDIRECT 302 PARA /login
-  res.redirect(302, '/login');
+  console.log('🔥 Root access - redirecting to /login');
+  res.redirect('/login');
 });
 
-// 🔥🔥🔥 STATIC FILES MIDDLEWARE 🔥🔥🔥
-console.log('🔥 Setting up static files from:', path.join(__dirname, '../dist'));
-app.use(express.static(path.join(__dirname, '../dist'), {
-  maxAge: '1d', // Cache for 1 day
-  etag: true,
-  lastModified: true,
-  setHeaders: (res, path) => {
-    // Set proper headers for different file types
-    if (path.endsWith('.js')) {
-      res.setHeader('Content-Type', 'application/javascript');
-    } else if (path.endsWith('.css')) {
-      res.setHeader('Content-Type', 'text/css');
-    } else if (path.endsWith('.html')) {
-      res.setHeader('Content-Type', 'text/html');
-    }
-  }
-}));
+// Serve static files from dist directory
+app.use(express.static(path.join(__dirname, '../dist')));
 
-// 🔥 PWA ROUTES - SERVIR ARQUIVOS PWA
-app.get('/manifest.json', (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.sendFile(path.join(__dirname, '../public/manifest.json'));
-});
-
-app.get('/sw.js', (req, res) => {
-  res.setHeader('Content-Type', 'application/javascript');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.sendFile(path.join(__dirname, '../public/sw.js'));
-});
-
-app.get('/browserconfig.xml', (req, res) => {
-  res.setHeader('Content-Type', 'application/xml');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.sendFile(path.join(__dirname, '../public/browserconfig.xml'));
-});
-
-// 🔥 FAVICON ROUTE - CORRIGIDO PARA BUSCAR NA PASTA CORRETA
-app.get('/favicon.ico', (req, res) => {
-  const faviconPath = path.join(__dirname, '../public/favicon.ico');
-  res.sendFile(faviconPath, (err) => {
-    if (err) {
-      console.log('Favicon not found, sending 204');
-      res.status(204).end();
-    }
-  });
-});
-
-// 🔥 PWA ICONS ROUTES
-app.get('/icon-192.png', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/icon-192.png'));
-});
-
-app.get('/icon-512.png', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/icon-512.png'));
-});
-
-// 🔥 HEALTH CHECK ROUTE
+// 🔥 HEALTH CHECK ROUTE - GARANTINDO QUE ESTÁ PRESENTE
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'OK', 
@@ -1327,23 +1269,8 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
   }
 });
 
-// 🔥🔥🔥 CATCH-ALL HANDLER - DEVE VIR POR ÚLTIMO 🔥🔥🔥
 // Catch-all handler: send back React's index.html file for client-side routing
 app.get('*', (req, res) => {
-  // Se for uma rota de API que não existe, retornar 404
-  if (req.url.startsWith('/api/')) {
-    console.log('🔥 API route not found:', req.url);
-    return res.status(404).json({ message: 'API endpoint not found' });
-  }
-  
-  // Se for um arquivo estático que não foi encontrado, não logar
-  if (req.url.includes('.')) {
-    console.log('🔥 Static file not found:', req.url);
-    return res.status(404).end();
-  }
-  
-  // Para todas as outras rotas (SPA routes), servir o React app
-  console.log('🔥 Serving React app for route:', req.url);
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
@@ -1360,12 +1287,7 @@ const startServer = async () => {
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log('🔥 MercadoPago SDK v2 configured with webhook: /api/webhooks/payment-success');
-      console.log('🔥 Payment tables: client_payments & professional_payments created!');
-      console.log('🔥 PWA configured with manifest.json and service worker!');
-      console.log('🔥🔥🔥 STATIC FILES SERVING FIXED! 🔥🔥🔥');
-      console.log('🔥🔥🔥 ROOT REDIRECT TO /login IMPLEMENTED! 🔥🔥🔥');
-      console.log('🔥🔥🔥 DEFINITIVE REDIRECT SOLUTION ACTIVE! 🔥🔥🔥');
+      console.log('🔥 Simple redirect solution implemented!');
     });
   } catch (error) {
     console.error('Failed to start server:', error);

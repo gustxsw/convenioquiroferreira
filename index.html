@@ -1,119 +1,21 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    
-    <!-- Favicon -->
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-    
-    <!-- Viewport -->
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    
-    <!-- PWA Meta Tags -->
-    <meta name="theme-color" content="#c11c22" />
-    <meta name="description" content="Sistema completo para gestão de consultas e serviços do Convênio Quiro Ferreira" />
-    
-    <!-- Apple Touch Icons -->
-    <link rel="apple-touch-icon" href="/icon-192.png" />
-    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
-    <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png" />
-    
-    <!-- Apple PWA Meta Tags -->
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Quiro Ferreira" />
-    
-    <!-- Android PWA Meta Tags -->
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="application-name" content="Quiro Ferreira" />
-    
-    <!-- Microsoft Tiles -->
-    <meta name="msapplication-TileImage" content="/icon-192.png" />
-    <meta name="msapplication-TileColor" content="#c11c22" />
-    <meta name="msapplication-config" content="/browserconfig.xml" />
-    
-    <!-- PWA Manifest -->
-    <link rel="manifest" href="/manifest.json" />
-    
-    <!-- Title -->
     <title>Convênio Quiro Ferreira</title>
     
-    <!-- 🔥🔥🔥 REDIRECIONAMENTO IMEDIATO PARA /login - JAVASCRIPT PURO 🔥🔥🔥 -->
+    <!-- 🔥 REDIRECIONAMENTO SIMPLES E DIRETO -->
     <script>
-      // 🔥 FORÇA REDIRECIONAMENTO IMEDIATO ANTES DO REACT CARREGAR
-      (function() {
-        console.log('🔥 IMMEDIATE REDIRECT SCRIPT - Current path:', window.location.pathname);
-        
-        // Se está na raiz (/), redirecionar IMEDIATAMENTE para /login
-        if (window.location.pathname === '/' || window.location.pathname === '') {
-          console.log('🔥 ROOT PATH DETECTED - REDIRECTING TO /login');
-          window.location.replace('/login');
-          return;
-        }
-        
-        console.log('🔥 Not root path, continuing normal load');
-      })();
+      // Se está na raiz, redirecionar IMEDIATAMENTE
+      if (window.location.pathname === '/') {
+        window.location.href = '/login';
+      }
     </script>
   </head>
   <body>
-    <div id="root">
-      <!-- 🔥 LOADING FALLBACK ENQUANTO O REACT CARREGA -->
-      <div style="
-        min-height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background-color: #f9fafb;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      ">
-        <div style="text-align: center;">
-          <div style="
-            width: 48px;
-            height: 48px;
-            border: 3px solid #e5e7eb;
-            border-top: 3px solid #c11c22;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 16px;
-          "></div>
-          <p style="color: #6b7280; margin: 0;">Carregando Convênio Quiro Ferreira...</p>
-        </div>
-      </div>
-      
-      <style>
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      </style>
-    </div>
-    
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    
-    <!-- 🔥 BACKUP REDIRECT - CASO O REACT NÃO CARREGUE -->
-    <script>
-      setTimeout(function() {
-        console.log('🔥 BACKUP REDIRECT CHECK');
-        if (window.location.pathname === '/' && document.getElementById('root').innerHTML.includes('Carregando')) {
-          console.log('🔥 REACT NOT LOADED - FORCING REDIRECT');
-          window.location.replace('/login');
-        }
-      }, 3000);
-    </script>
-    
-    <!-- PWA Service Worker Registration -->
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then((registration) => {
-              console.log('SW registered: ', registration);
-            })
-            .catch((registrationError) => {
-              console.log('SW registration failed: ', registrationError);
-            });
-        });
-      }
-    </script>
   </body>
 </html>

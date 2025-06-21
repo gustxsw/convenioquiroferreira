@@ -1,5 +1,5 @@
 import React from "react";
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
 
 // Layouts
@@ -52,57 +52,8 @@ const ProtectedRoute = ({
   return <>{children}</>;
 };
 
-// 🔥🔥🔥 COMPONENTE PARA FORÇAR REDIRECIONAMENTO - SIMPLIFICADO 🔥🔥🔥
-const RootRedirect: React.FC = () => {
-  const location = useLocation();
-  const { user, isAuthenticated, isLoading } = useAuth();
-
-  console.log('🔥 RootRedirect - pathname:', location.pathname);
-  console.log('🔥 RootRedirect - isAuthenticated:', isAuthenticated);
-  console.log('🔥 RootRedirect - isLoading:', isLoading);
-
-  // 🔥 SEMPRE REDIRECIONAR PARA /login SE ESTIVER NA RAIZ
-  if (location.pathname === '/') {
-    console.log('🔥 ROOT PATH - IMMEDIATE REDIRECT TO /login');
-    return <Navigate to="/login" replace />;
-  }
-
-  // Se está carregando, mostrar loading
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Se não está autenticado, redirecionar para login
-  if (!isAuthenticated) {
-    console.log('🔥 Not authenticated - redirecting to login');
-    return <Navigate to="/login" replace />;
-  }
-
-  // Se está autenticado, redirecionar baseado na role
-  if (user?.currentRole === "client") {
-    console.log('🔥 Client role - redirecting to /client');
-    return <Navigate to="/client" replace />;
-  } else if (user?.currentRole === "professional") {
-    console.log('🔥 Professional role - redirecting to /professional');
-    return <Navigate to="/professional" replace />;
-  } else if (user?.currentRole === "admin") {
-    console.log('🔥 Admin role - redirecting to /admin');
-    return <Navigate to="/admin" replace />;
-  }
-
-  console.log('🔥 No valid role - redirecting to login');
-  return <Navigate to="/login" replace />;
-};
-
 function App() {
-  const { isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
 
   // Show loading while checking authentication
   if (isLoading) {
@@ -116,10 +67,27 @@ function App() {
     );
   }
 
+  // Function to redirect to appropriate home page based on role
+  const getHomePage = () => {
+    if (!isAuthenticated) {
+      return <Navigate to="/login" replace />;
+    }
+
+    if (user?.currentRole === "client") {
+      return <Navigate to="/client" replace />;
+    } else if (user?.currentRole === "professional") {
+      return <Navigate to="/professional" replace />;
+    } else if (user?.currentRole === "admin") {
+      return <Navigate to="/admin" replace />;
+    }
+
+    return <Navigate to="/login" replace />;
+  };
+
   return (
     <Routes>
-      {/* 🔥🔥🔥 ROOT ROUTE - SEMPRE REDIRECIONA PARA /login 🔥🔥🔥 */}
-      <Route path="/" element={<RootRedirect />} />
+      {/* 🔥 ROOT ROUTE - SIMPLES E DIRETO */}
+      <Route path="/" element={<Navigate to="/login" replace />} />
 
       {/* Auth routes */}
       <Route element={<AuthLayout />}>
