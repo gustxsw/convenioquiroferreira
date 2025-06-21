@@ -1,5 +1,5 @@
-import React, { useEffect } from "react";
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import React from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
 
 // Layouts
@@ -54,20 +54,6 @@ const ProtectedRoute = ({
 
 function App() {
   const { user, isAuthenticated, isLoading } = useAuth();
-  const location = useLocation();
-
-  // 🔥🔥🔥 REDIRECIONAMENTO SIMPLES E EFICAZ - SEM LOOPS 🔥🔥🔥
-  useEffect(() => {
-    console.log('🔥 App useEffect - Location:', location.pathname);
-    console.log('🔥 Is authenticated:', isAuthenticated);
-    console.log('🔥 User:', user);
-
-    // APENAS redirecionar se estiver na raiz E não autenticado
-    if (location.pathname === '/' && !isAuthenticated && !isLoading) {
-      console.log('🔥🔥🔥 ROOT ACCESS BY UNAUTHENTICATED USER - REDIRECTING TO LOGIN');
-      window.location.replace('/login');
-    }
-  }, [location.pathname, isAuthenticated, isLoading]);
 
   // Show loading while checking authentication
   if (isLoading) {
