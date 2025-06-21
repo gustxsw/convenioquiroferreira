@@ -81,6 +81,20 @@ app.get('/icon-512.png', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/icon-512.png'));
 });
 
+// 🔥🔥🔥 ROTA RAIZ - SEMPRE REDIRECIONA PARA LOGIN 🔥🔥🔥
+app.get('/', (req, res) => {
+  console.log('🔥 Root route accessed - ALWAYS redirecting to /login');
+  console.log('🔥 Request URL:', req.url);
+  console.log('🔥 Request hostname:', req.hostname);
+  res.redirect(301, '/login');
+});
+
+// 🔥🔥🔥 ROTA ESPECÍFICA PARA DOMÍNIOS - GARANTINDO REDIRECIONAMENTO 🔥🔥🔥
+app.get('/index.html', (req, res) => {
+  console.log('🔥 Index.html accessed - redirecting to /login');
+  res.redirect(301, '/login');
+});
+
 // Serve static files from dist directory
 app.use(express.static(path.join(__dirname, '../dist')));
 
@@ -1298,14 +1312,17 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
   }
 });
 
-// 🔥🔥🔥 ROTA RAIZ - SEMPRE REDIRECIONA PARA LOGIN 🔥🔥🔥
-app.get('/', (req, res) => {
-  console.log('🔥 Root route accessed - redirecting to login');
-  res.redirect('/login');
-});
-
+// 🔥🔥🔥 CATCH-ALL HANDLER - DEVE VIR POR ÚLTIMO 🔥🔥🔥
 // Catch-all handler: send back React's index.html file for client-side routing
 app.get('*', (req, res) => {
+  console.log('🔥 Catch-all route accessed for:', req.url);
+  
+  // Se for uma rota de API que não existe, retornar 404
+  if (req.url.startsWith('/api/')) {
+    return res.status(404).json({ message: 'API endpoint not found' });
+  }
+  
+  // Para todas as outras rotas, servir o React app
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
@@ -1325,7 +1342,7 @@ const startServer = async () => {
       console.log('🔥 MercadoPago SDK v2 configured with webhook: /api/webhooks/payment-success');
       console.log('🔥 Payment tables: client_payments & professional_payments created!');
       console.log('🔥 PWA configured with manifest.json and service worker!');
-      console.log('🔥 Root route ALWAYS redirects to /login - Perfect for mobile PWA!');
+      console.log('🔥🔥🔥 ROOT ROUTE ALWAYS REDIRECTS TO /login - PERFECT FOR MOBILE PWA! 🔥🔥🔥');
     });
   } catch (error) {
     console.error('Failed to start server:', error);
