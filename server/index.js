@@ -1298,6 +1298,39 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
   }
 });
 
+// 🔥🔥🔥 MIDDLEWARE PARA VERIFICAR AUTENTICAÇÃO E REDIRECIONAR 🔥🔥🔥
+const checkAuthAndRedirect = (req, res, next) => {
+  const token = req.cookies.token;
+  
+  if (!token) {
+    // Se não tem token, redirecionar para login
+    return res.redirect('/login');
+  }
+  
+  try {
+    // Verificar se o token é válido
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    
+    // Se tem token válido, redirecionar baseado na role
+    if (decoded.currentRole === 'client') {
+      return res.redirect('/client');
+    } else if (decoded.currentRole === 'professional') {
+      return res.redirect('/professional');
+    } else if (decoded.currentRole === 'admin') {
+      return res.redirect('/admin');
+    }
+    
+    // Se não tem role definida, redirecionar para login
+    return res.redirect('/login');
+  } catch (error) {
+    // Token inválido, redirecionar para login
+    return res.redirect('/login');
+  }
+};
+
+// 🔥🔥🔥 ROTA RAIZ COM REDIRECIONAMENTO INTELIGENTE 🔥🔥🔥
+app.get('/', checkAuthAndRedirect);
+
 // Catch-all handler: send back React's index.html file for client-side routing
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));
@@ -1319,6 +1352,7 @@ const startServer = async () => {
       console.log('🔥 MercadoPago SDK v2 configured with webhook: /api/webhooks/payment-success');
       console.log('🔥 Payment tables: client_payments & professional_payments created!');
       console.log('🔥 PWA configured with manifest.json and service worker!');
+      console.log('🔥 Root route redirection configured for mobile PWA!');
     });
   } catch (error) {
     console.error('Failed to start server:', error);
