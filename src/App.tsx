@@ -52,14 +52,20 @@ const ProtectedRoute = ({
   return <>{children}</>;
 };
 
-// 🔥 COMPONENTE PARA FORÇAR REDIRECIONAMENTO PARA /login
+// 🔥🔥🔥 COMPONENTE PARA FORÇAR REDIRECIONAMENTO - SIMPLIFICADO 🔥🔥🔥
 const RootRedirect: React.FC = () => {
   const location = useLocation();
   const { user, isAuthenticated, isLoading } = useAuth();
 
   console.log('🔥 RootRedirect - pathname:', location.pathname);
   console.log('🔥 RootRedirect - isAuthenticated:', isAuthenticated);
-  console.log('🔥 RootRedirect - user:', user);
+  console.log('🔥 RootRedirect - isLoading:', isLoading);
+
+  // 🔥 SEMPRE REDIRECIONAR PARA /login SE ESTIVER NA RAIZ
+  if (location.pathname === '/') {
+    console.log('🔥 ROOT PATH - IMMEDIATE REDIRECT TO /login');
+    return <Navigate to="/login" replace />;
+  }
 
   // Se está carregando, mostrar loading
   if (isLoading) {
@@ -71,12 +77,6 @@ const RootRedirect: React.FC = () => {
         </div>
       </div>
     );
-  }
-
-  // 🔥 SE ESTÁ NA RAIZ (/), SEMPRE REDIRECIONAR PARA /login
-  if (location.pathname === '/') {
-    console.log('🔥 Root path detected - redirecting to /login');
-    return <Navigate to="/login" replace />;
   }
 
   // Se não está autenticado, redirecionar para login
@@ -102,7 +102,7 @@ const RootRedirect: React.FC = () => {
 };
 
 function App() {
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { isLoading } = useAuth();
 
   // Show loading while checking authentication
   if (isLoading) {
@@ -118,7 +118,7 @@ function App() {
 
   return (
     <Routes>
-      {/* 🔥 ROOT ROUTE - SEMPRE REDIRECIONA PARA /login */}
+      {/* 🔥🔥🔥 ROOT ROUTE - SEMPRE REDIRECIONA PARA /login 🔥🔥🔥 */}
       <Route path="/" element={<RootRedirect />} />
 
       {/* Auth routes */}

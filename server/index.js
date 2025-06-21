@@ -46,7 +46,17 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 
-// 🔥🔥🔥 STATIC FILES MIDDLEWARE - DEVE VIR PRIMEIRO 🔥🔥🔥
+// 🔥🔥🔥 ROOT REDIRECT MIDDLEWARE - DEVE VIR PRIMEIRO 🔥🔥🔥
+app.get('/', (req, res) => {
+  console.log('🔥🔥🔥 ROOT ACCESS DETECTED - REDIRECTING TO /login 🔥🔥🔥');
+  console.log('🔥 User-Agent:', req.headers['user-agent']);
+  console.log('🔥 Origin:', req.headers.origin);
+  
+  // REDIRECT 302 PARA /login
+  res.redirect(302, '/login');
+});
+
+// 🔥🔥🔥 STATIC FILES MIDDLEWARE 🔥🔥🔥
 console.log('🔥 Setting up static files from:', path.join(__dirname, '../dist'));
 app.use(express.static(path.join(__dirname, '../dist'), {
   maxAge: '1d', // Cache for 1 day
@@ -1355,6 +1365,7 @@ const startServer = async () => {
       console.log('🔥 PWA configured with manifest.json and service worker!');
       console.log('🔥🔥🔥 STATIC FILES SERVING FIXED! 🔥🔥🔥');
       console.log('🔥🔥🔥 ROOT REDIRECT TO /login IMPLEMENTED! 🔥🔥🔥');
+      console.log('🔥🔥🔥 DEFINITIVE REDIRECT SOLUTION ACTIVE! 🔥🔥🔥');
     });
   } catch (error) {
     console.error('Failed to start server:', error);
