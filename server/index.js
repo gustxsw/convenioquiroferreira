@@ -46,15 +46,45 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 
+// 🔥 PWA ROUTES - SERVIR ARQUIVOS PWA
+app.get('/manifest.json', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/manifest.json'));
+});
+
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.sendFile(path.join(__dirname, '../public/sw.js'));
+});
+
+app.get('/browserconfig.xml', (req, res) => {
+  res.setHeader('Content-Type', 'application/xml');
+  res.sendFile(path.join(__dirname, '../public/browserconfig.xml'));
+});
+
+// 🔥 FAVICON ROUTE - CORRIGIDO PARA BUSCAR NA PASTA CORRETA
+app.get('/favicon.ico', (req, res) => {
+  const faviconPath = path.join(__dirname, '../public/favicon.ico');
+  res.sendFile(faviconPath, (err) => {
+    if (err) {
+      console.log('Favicon not found, sending 204');
+      res.status(204).end();
+    }
+  });
+});
+
+// 🔥 PWA ICONS ROUTES
+app.get('/icon-192.png', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/icon-192.png'));
+});
+
+app.get('/icon-512.png', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/icon-512.png'));
+});
+
 // Serve static files from dist directory
 app.use(express.static(path.join(__dirname, '../dist')));
 
-// Serve favicon
-app.get('/favicon.ico', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/favicon.ico'));
-});
-
-// 🔥 HEALTH CHECK ROUTE - GARANTINDO QUE ESTÁ PRESENTE
+// 🔥 HEALTH CHECK ROUTE
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'OK', 
@@ -261,7 +291,7 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
       throw new Error('MercadoPago access token not configured');
     }
 
-    // 🔥 NOVOS PREÇOS: R$ 250 titular + R$ 50 por dependente
+    // Calculate amount (R$250 titular + R$50 per dependent)
     const titularPrice = 250;
     const dependentPrice = 50;
     const totalPeople = 1 + dependent_ids.length; // titular + dependents
@@ -276,9 +306,6 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
     console.log('🔥 Payment details:', {
       totalPeople,
       amount,
-      titularPrice,
-      dependentPrice,
-      dependentCount: dependent_ids.length,
       externalReference,
       baseUrl,
       accessToken: accessToken ? 'CONFIGURED' : 'MISSING'
@@ -352,7 +379,7 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
       externalReference,
       preference.id,
       amount,
-      `Assinatura mensal - Titular (R$ ${titularPrice}) + ${dependent_ids.length} dependente(s) (R$ ${dependentPrice} cada)`,
+      `Assinatura mensal - ${totalPeople} pessoa(s)`,
       'pending'
     ]);
 
@@ -879,179 +906,6 @@ app.get('/api/users', authenticate, authorize(['admin']), async (req, res) => {
   }
 });
 
-// Create user route (admin only)
-app.post('/api/users', authenticate, authorize(['admin']), async (req, res) => {
-  try {
-    const {
-      name, cpf, email, phone, birth_date,
-      address, address_number, address_complement,
-      neighborhood, city, state, password, roles,
-      percentage, category_id
-    } = req.body;
-
-    // Validate required fields
-    if (!name || !cpf || !password || !roles || roles.length === 0) {
-      return res.status(400).json({ message: 'Nome, CPF, senha e pelo menos uma role são obrigatórios' });
-    }
-
-    // Clean CPF
-    const cleanCpf = cpf.replace(/\D/g, '');
-
-    if (cleanCpf.length !== 11) {
-      return res.status(400).json({ message: 'CPF deve conter 11 dígitos' });
-    }
-
-    // Check if user already exists
-    const existingUser = await pool.query('SELECT id FROM users WHERE cpf = $1', [cleanCpf]);
-    if (existingUser.rows.length > 0) {
-      return res.status(409).json({ message: 'CPF já cadastrado' });
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Insert new user
-    const result = await pool.query(`
-      INSERT INTO users (
-        name, cpf, email, phone, birth_date,
-        address, address_number, address_complement,
-        neighborhood, city, state, password, roles,
-        percentage, category_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-      RETURNING id, name, cpf, roles
-    `, [
-      name.trim(),
-      cleanCpf,
-      email?.trim() || null,
-      phone?.replace(/\D/g, '') || null,
-      birth_date || null,
-      address?.trim() || null,
-      address_number?.trim() || null,
-      address_complement?.trim() || null,
-      neighborhood?.trim() || null,
-      city?.trim() || null,
-      state || null,
-      hashedPassword,
-      roles,
-      percentage || null,
-      category_id || null
-    ]);
-
-    const newUser = result.rows[0];
-
-    console.log('User created by admin:', { id: newUser.id, name: newUser.name });
-
-    res.status(201).json({
-      message: 'Usuário criado com sucesso',
-      user: {
-        id: newUser.id,
-        name: newUser.name,
-        cpf: newUser.cpf,
-        roles: newUser.roles
-      }
-    });
-
-  } catch (error) {
-    console.error('User creation error:', error);
-    if (error.code === '23505') { // Unique constraint violation
-      res.status(409).json({ message: 'CPF já cadastrado' });
-    } else {
-      res.status(500).json({ message: 'Erro interno do servidor' });
-    }
-  }
-});
-
-// Update user route (admin only)
-app.put('/api/users/:id', authenticate, authorize(['admin']), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const {
-      name, email, phone, birth_date,
-      address, address_number, address_complement,
-      neighborhood, city, state, roles,
-      percentage, category_id
-    } = req.body;
-
-    // Validate required fields
-    if (!name || !roles || roles.length === 0) {
-      return res.status(400).json({ message: 'Nome e pelo menos uma role são obrigatórios' });
-    }
-
-    // Update user
-    const result = await pool.query(`
-      UPDATE users SET
-        name = $1, email = $2, phone = $3, birth_date = $4,
-        address = $5, address_number = $6, address_complement = $7,
-        neighborhood = $8, city = $9, state = $10, roles = $11,
-        percentage = $12, category_id = $13, updated_at = NOW()
-      WHERE id = $14
-      RETURNING id, name, cpf, roles
-    `, [
-      name.trim(),
-      email?.trim() || null,
-      phone?.replace(/\D/g, '') || null,
-      birth_date || null,
-      address?.trim() || null,
-      address_number?.trim() || null,
-      address_complement?.trim() || null,
-      neighborhood?.trim() || null,
-      city?.trim() || null,
-      state || null,
-      roles,
-      percentage || null,
-      category_id || null,
-      id
-    ]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Usuário não encontrado' });
-    }
-
-    const updatedUser = result.rows[0];
-
-    console.log('User updated by admin:', { id: updatedUser.id, name: updatedUser.name });
-
-    res.json({
-      message: 'Usuário atualizado com sucesso',
-      user: {
-        id: updatedUser.id,
-        name: updatedUser.name,
-        cpf: updatedUser.cpf,
-        roles: updatedUser.roles
-      }
-    });
-
-  } catch (error) {
-    console.error('User update error:', error);
-    res.status(500).json({ message: 'Erro interno do servidor' });
-  }
-});
-
-// Delete user route (admin only)
-app.delete('/api/users/:id', authenticate, authorize(['admin']), async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING id, name', [id]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Usuário não encontrado' });
-    }
-
-    const deletedUser = result.rows[0];
-
-    console.log('User deleted by admin:', { id: deletedUser.id, name: deletedUser.name });
-
-    res.json({
-      message: 'Usuário excluído com sucesso'
-    });
-
-  } catch (error) {
-    console.error('User deletion error:', error);
-    res.status(500).json({ message: 'Erro interno do servidor' });
-  }
-});
-
 // 🔥 PROFESSIONALS ROUTE - CORRIGIDO
 app.get('/api/professionals', authenticate, async (req, res) => {
   try {
@@ -1104,36 +958,6 @@ app.get('/api/service-categories', authenticate, async (req, res) => {
   }
 });
 
-// Create service category route (admin only)
-app.post('/api/service-categories', authenticate, authorize(['admin']), async (req, res) => {
-  try {
-    const { name, description } = req.body;
-
-    if (!name) {
-      return res.status(400).json({ message: 'Nome da categoria é obrigatório' });
-    }
-
-    const result = await pool.query(`
-      INSERT INTO service_categories (name, description)
-      VALUES ($1, $2)
-      RETURNING id, name, description
-    `, [name.trim(), description?.trim() || null]);
-
-    const newCategory = result.rows[0];
-
-    console.log('Service category created:', newCategory);
-
-    res.status(201).json({
-      message: 'Categoria criada com sucesso',
-      category: newCategory
-    });
-
-  } catch (error) {
-    console.error('Service category creation error:', error);
-    res.status(500).json({ message: 'Erro interno do servidor' });
-  }
-});
-
 // Services routes
 app.get('/api/services', authenticate, async (req, res) => {
   try {
@@ -1147,111 +971,6 @@ app.get('/api/services', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Error fetching services:', error);
     res.status(500).json({ message: 'Erro ao buscar serviços' });
-  }
-});
-
-// Create service route (admin only)
-app.post('/api/services', authenticate, authorize(['admin']), async (req, res) => {
-  try {
-    const { name, description, base_price, category_id, is_base_service } = req.body;
-
-    if (!name || !base_price) {
-      return res.status(400).json({ message: 'Nome e preço base são obrigatórios' });
-    }
-
-    const result = await pool.query(`
-      INSERT INTO services (name, description, base_price, category_id, is_base_service)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING id, name, description, base_price, category_id, is_base_service
-    `, [
-      name.trim(),
-      description?.trim() || null,
-      parseFloat(base_price),
-      category_id || null,
-      is_base_service || false
-    ]);
-
-    const newService = result.rows[0];
-
-    console.log('Service created:', newService);
-
-    res.status(201).json({
-      message: 'Serviço criado com sucesso',
-      service: newService
-    });
-
-  } catch (error) {
-    console.error('Service creation error:', error);
-    res.status(500).json({ message: 'Erro interno do servidor' });
-  }
-});
-
-// Update service route (admin only)
-app.put('/api/services/:id', authenticate, authorize(['admin']), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, description, base_price, category_id, is_base_service } = req.body;
-
-    if (!name || !base_price) {
-      return res.status(400).json({ message: 'Nome e preço base são obrigatórios' });
-    }
-
-    const result = await pool.query(`
-      UPDATE services SET
-        name = $1, description = $2, base_price = $3, 
-        category_id = $4, is_base_service = $5
-      WHERE id = $6
-      RETURNING id, name, description, base_price, category_id, is_base_service
-    `, [
-      name.trim(),
-      description?.trim() || null,
-      parseFloat(base_price),
-      category_id || null,
-      is_base_service || false,
-      id
-    ]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Serviço não encontrado' });
-    }
-
-    const updatedService = result.rows[0];
-
-    console.log('Service updated:', updatedService);
-
-    res.json({
-      message: 'Serviço atualizado com sucesso',
-      service: updatedService
-    });
-
-  } catch (error) {
-    console.error('Service update error:', error);
-    res.status(500).json({ message: 'Erro interno do servidor' });
-  }
-});
-
-// Delete service route (admin only)
-app.delete('/api/services/:id', authenticate, authorize(['admin']), async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const result = await pool.query('DELETE FROM services WHERE id = $1 RETURNING id, name', [id]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Serviço não encontrado' });
-    }
-
-    const deletedService = result.rows[0];
-
-    console.log('Service deleted:', deletedService);
-
-    res.json({
-      message: 'Serviço excluído com sucesso'
-    });
-
-  } catch (error) {
-    console.error('Service deletion error:', error);
-    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
@@ -1297,111 +1016,93 @@ app.get('/api/dependents/:clientId', authenticate, async (req, res) => {
   }
 });
 
-// Create dependent route
+// 🔥 DEPENDENTS CRUD ROUTES - IMPLEMENTAÇÃO COMPLETA
 app.post('/api/dependents', authenticate, async (req, res) => {
   try {
     const { client_id, name, cpf, birth_date } = req.body;
-
+    
     if (!client_id || !name || !cpf) {
-      return res.status(400).json({ message: 'ID do cliente, nome e CPF são obrigatórios' });
+      return res.status(400).json({ message: 'client_id, name e cpf são obrigatórios' });
     }
-
-    // Clean CPF
+    
     const cleanCpf = cpf.replace(/\D/g, '');
-
-    if (cleanCpf.length !== 11) {
-      return res.status(400).json({ message: 'CPF deve conter 11 dígitos' });
-    }
-
-    // Check if CPF already exists
-    const existingDependent = await pool.query('SELECT id FROM dependents WHERE cpf = $1', [cleanCpf]);
-    if (existingDependent.rows.length > 0) {
-      return res.status(409).json({ message: 'CPF já cadastrado' });
-    }
-
+    
     const result = await pool.query(`
       INSERT INTO dependents (client_id, name, cpf, birth_date)
       VALUES ($1, $2, $3, $4)
-      RETURNING id, client_id, name, cpf, birth_date, created_at
-    `, [client_id, name.trim(), cleanCpf, birth_date || null]);
-
-    const newDependent = result.rows[0];
-
-    console.log('Dependent created:', newDependent);
-
-    res.status(201).json({
-      message: 'Dependente criado com sucesso',
-      dependent: newDependent
-    });
-
+      RETURNING *
+    `, [client_id, name, cleanCpf, birth_date]);
+    
+    res.status(201).json(result.rows[0]);
   } catch (error) {
-    console.error('Dependent creation error:', error);
-    if (error.code === '23505') { // Unique constraint violation
+    console.error('Error creating dependent:', error);
+    if (error.code === '23505') {
       res.status(409).json({ message: 'CPF já cadastrado' });
     } else {
-      res.status(500).json({ message: 'Erro interno do servidor' });
+      res.status(500).json({ message: 'Erro ao criar dependente' });
     }
   }
 });
 
-// Update dependent route
 app.put('/api/dependents/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, birth_date } = req.body;
-
-    if (!name) {
-      return res.status(400).json({ message: 'Nome é obrigatório' });
-    }
-
+    
     const result = await pool.query(`
-      UPDATE dependents SET
-        name = $1, birth_date = $2
+      UPDATE dependents 
+      SET name = $1, birth_date = $2
       WHERE id = $3
-      RETURNING id, client_id, name, cpf, birth_date, created_at
-    `, [name.trim(), birth_date || null, id]);
-
+      RETURNING *
+    `, [name, birth_date, id]);
+    
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Dependente não encontrado' });
     }
-
-    const updatedDependent = result.rows[0];
-
-    console.log('Dependent updated:', updatedDependent);
-
-    res.json({
-      message: 'Dependente atualizado com sucesso',
-      dependent: updatedDependent
-    });
-
+    
+    res.json(result.rows[0]);
   } catch (error) {
-    console.error('Dependent update error:', error);
-    res.status(500).json({ message: 'Erro interno do servidor' });
+    console.error('Error updating dependent:', error);
+    res.status(500).json({ message: 'Erro ao atualizar dependente' });
   }
 });
 
-// Delete dependent route
 app.delete('/api/dependents/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-
-    const result = await pool.query('DELETE FROM dependents WHERE id = $1 RETURNING id, name', [id]);
-
+    
+    const result = await pool.query('DELETE FROM dependents WHERE id = $1 RETURNING *', [id]);
+    
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Dependente não encontrado' });
     }
-
-    const deletedDependent = result.rows[0];
-
-    console.log('Dependent deleted:', deletedDependent);
-
-    res.json({
-      message: 'Dependente excluído com sucesso'
-    });
-
+    
+    res.json({ message: 'Dependente excluído com sucesso' });
   } catch (error) {
-    console.error('Dependent deletion error:', error);
-    res.status(500).json({ message: 'Erro interno do servidor' });
+    console.error('Error deleting dependent:', error);
+    res.status(500).json({ message: 'Erro ao excluir dependente' });
+  }
+});
+
+// 🔥 CONSULTATIONS CRUD ROUTES - IMPLEMENTAÇÃO COMPLETA
+app.post('/api/consultations', authenticate, async (req, res) => {
+  try {
+    const { client_id, dependent_id, professional_id, service_id, value, date } = req.body;
+    
+    if (!professional_id || !service_id || !value || !date) {
+      return res.status(400).json({ message: 'professional_id, service_id, value e date são obrigatórios' });
+    }
+    
+    const result = await pool.query(`
+      INSERT INTO consultations (client_id, dependent_id, professional_id, service_id, value, date)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `, [client_id, dependent_id, professional_id, service_id, value, date]);
+    
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating consultation:', error);
+    res.status(500).json({ message: 'Erro ao criar consulta' });
   }
 });
 
@@ -1439,48 +1140,6 @@ app.get('/api/consultations', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Error fetching consultations:', error);
     res.status(500).json({ message: 'Erro ao buscar consultas' });
-  }
-});
-
-// Create consultation route
-app.post('/api/consultations', authenticate, authorize(['professional']), async (req, res) => {
-  try {
-    const { client_id, dependent_id, service_id, value, date } = req.body;
-    const professional_id = req.user.id;
-
-    if (!service_id || !value || !date) {
-      return res.status(400).json({ message: 'Serviço, valor e data são obrigatórios' });
-    }
-
-    if (!client_id && !dependent_id) {
-      return res.status(400).json({ message: 'Cliente ou dependente deve ser especificado' });
-    }
-
-    const result = await pool.query(`
-      INSERT INTO consultations (client_id, dependent_id, professional_id, service_id, value, date)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id, client_id, dependent_id, professional_id, service_id, value, date, created_at
-    `, [
-      client_id || null,
-      dependent_id || null,
-      professional_id,
-      service_id,
-      parseFloat(value),
-      new Date(date)
-    ]);
-
-    const newConsultation = result.rows[0];
-
-    console.log('Consultation created:', newConsultation);
-
-    res.status(201).json({
-      message: 'Consulta registrada com sucesso',
-      consultation: newConsultation
-    });
-
-  } catch (error) {
-    console.error('Consultation creation error:', error);
-    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
@@ -1659,7 +1318,7 @@ const startServer = async () => {
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log('🔥 MercadoPago SDK v2 configured with webhook: /api/webhooks/payment-success');
       console.log('🔥 Payment tables: client_payments & professional_payments created!');
-      console.log('🔥 All CRUD routes implemented for users, dependents, services, consultations');
+      console.log('🔥 PWA configured with manifest.json and service worker!');
     });
   } catch (error) {
     console.error('Failed to start server:', error);

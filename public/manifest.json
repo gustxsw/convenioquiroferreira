@@ -1,0 +1,59 @@
+{
+  "name": "Convênio Quiro Ferreira",
+  "short_name": "Quiro Ferreira",
+  "description": "Sistema completo para gestão de consultas e serviços do Convênio Quiro Ferreira",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#c11c22",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "pt-BR",
+  "categories": ["health", "medical", "productivity"],
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "16x16 32x32 48x48",
+      "type": "image/x-icon",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Área do Cliente",
+      "short_name": "Cliente",
+      "description": "Acesso rápido à área do cliente",
+      "url": "/client",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Área do Profissional",
+      "short_name": "Profissional",
+      "description": "Acesso rápido à área do profissional",
+      "url": "/professional",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}
