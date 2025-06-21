@@ -1354,6 +1354,7 @@ const startServer = async () => {
       console.log('🔥 Payment tables: client_payments & professional_payments created!');
       console.log('🔥 PWA configured with manifest.json and service worker!');
       console.log('🔥🔥🔥 STATIC FILES SERVING FIXED! 🔥🔥🔥');
+      console.log('🔥🔥🔥 ROOT REDIRECT TO /login IMPLEMENTED! 🔥🔥🔥');
     });
   } catch (error) {
     console.error('Failed to start server:', error);
