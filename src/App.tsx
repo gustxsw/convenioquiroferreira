@@ -67,26 +67,9 @@ function App() {
     );
   }
 
-  // Function to redirect to appropriate home page based on role
-  const getHomePage = () => {
-    if (!isAuthenticated) {
-      return <Navigate to="/login" replace />;
-    }
-
-    if (user?.currentRole === "client") {
-      return <Navigate to="/client" replace />;
-    } else if (user?.currentRole === "professional") {
-      return <Navigate to="/professional" replace />;
-    } else if (user?.currentRole === "admin") {
-      return <Navigate to="/admin" replace />;
-    }
-
-    return <Navigate to="/login" replace />;
-  };
-
   return (
     <Routes>
-      {/* 🔥 ROOT ROUTE - SIMPLES E DIRETO */}
+      {/* 🔥 ROOT ROUTE - SEMPRE REDIRECIONA PARA LOGIN */}
       <Route path="/" element={<Navigate to="/login" replace />} />
 
       {/* Auth routes */}

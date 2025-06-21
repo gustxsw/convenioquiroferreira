@@ -46,16 +46,7 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 
-// 🔥 REDIRECIONAMENTO SIMPLES NO SERVIDOR
-app.get('/', (req, res) => {
-  console.log('🔥 Root access - redirecting to /login');
-  res.redirect('/login');
-});
-
-// Serve static files from dist directory
-app.use(express.static(path.join(__dirname, '../dist')));
-
-// 🔥 HEALTH CHECK ROUTE - GARANTINDO QUE ESTÁ PRESENTE
+// 🔥 HEALTH CHECK ROUTE
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'OK', 
@@ -65,10 +56,13 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Serve static files from dist directory
+app.use(express.static(path.join(__dirname, '../dist')));
+
 // Initialize database tables
 const initDatabase = async () => {
   try {
-    console.log('🔥 Initializing database with payment tables...');
+    console.log('🔥 Initializing database...');
     
     // Create users table with roles array
     await pool.query(`
@@ -145,8 +139,7 @@ const initDatabase = async () => {
       )
     `);
 
-    // 🔥🔥🔥 CREATE PAYMENT TABLES - SEPARADAS PARA CLIENTES E PROFISSIONAIS 🔥🔥🔥
-    console.log('🔥 Creating CLIENT PAYMENTS table...');
+    // Create payment tables
     await pool.query(`
       CREATE TABLE IF NOT EXISTS client_payments (
         id SERIAL PRIMARY KEY,
@@ -164,7 +157,6 @@ const initDatabase = async () => {
       )
     `);
 
-    console.log('🔥 Creating PROFESSIONAL PAYMENTS table...');
     await pool.query(`
       CREATE TABLE IF NOT EXISTS professional_payments (
         id SERIAL PRIMARY KEY,
@@ -181,8 +173,6 @@ const initDatabase = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-
-    console.log('✅ Payment tables created successfully!');
 
     // Insert default admin user if not exists
     const adminExists = await pool.query('SELECT id FROM users WHERE cpf = $1', ['00000000000']);
@@ -234,55 +224,38 @@ const initDatabase = async () => {
       console.log('Default service created');
     }
 
-    console.log('✅ Database initialized successfully with payment tables!');
+    console.log('✅ Database initialized successfully!');
   } catch (error) {
     console.error('❌ Error initializing database:', error);
   }
 };
 
-// 🔥🔥🔥 HELPER FUNCTION TO GET BASE URL 🔥🔥🔥
+// Helper function to get base URL
 const getBaseUrl = (req) => {
   const protocol = req.headers['x-forwarded-proto'] || req.protocol;
   const host = req.headers['x-forwarded-host'] || req.get('host');
   return `${protocol}://${host}`;
 };
 
-// 🔥🔥🔥 MERCADOPAGO SDK v2 ROUTES - IMPLEMENTAÇÃO CORRETA 🔥🔥🔥
+// MercadoPago routes
 app.post('/api/create-subscription', authenticate, async (req, res) => {
   try {
-    console.log('🔥 Creating subscription payment with SDK v2');
-    console.log('🔥 Request body:', req.body);
-    console.log('🔥 User:', req.user);
-    
     const { user_id, dependent_ids = [] } = req.body;
     const accessToken = process.env.MP_ACCESS_TOKEN;
     
     if (!accessToken) {
-      console.error('❌ MercadoPago access token not configured');
       throw new Error('MercadoPago access token not configured');
     }
 
     // Calculate amount (R$250 titular + R$50 per dependent)
     const titularPrice = 250;
     const dependentPrice = 50;
-    const totalPeople = 1 + dependent_ids.length; // titular + dependents
+    const totalPeople = 1 + dependent_ids.length;
     const amount = titularPrice + (dependent_ids.length * dependentPrice);
     
-    // Generate unique external reference
     const externalReference = `subscription_${user_id}_${Date.now()}`;
-    
-    // 🔥 GET CORRECT BASE URL
     const baseUrl = getBaseUrl(req);
     
-    console.log('🔥 Payment details:', {
-      totalPeople,
-      amount,
-      externalReference,
-      baseUrl,
-      accessToken: accessToken ? 'CONFIGURED' : 'MISSING'
-    });
-    
-    // 🔥 SDK v2 PREFERENCE STRUCTURE - FORMATO CORRETO COM URLs FIXAS
     const preferenceData = {
       items: [
         {
@@ -303,7 +276,6 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
         excluded_payment_methods: [],
         installments: 12
       },
-      // 🔥 URLS DE RETORNO CORRIGIDAS - FORMATO CORRETO
       back_urls: {
         success: `${baseUrl}/client?payment=success`,
         failure: `${baseUrl}/client?payment=failure`, 
@@ -316,11 +288,6 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
       expires: false
     };
 
-    console.log('🔥 Creating preference with data:', JSON.stringify(preferenceData, null, 2));
-    console.log('🔥 Webhook URL:', preferenceData.notification_url);
-    console.log('🔥 Success URL:', preferenceData.back_urls.success);
-
-    // Create preference using MercadoPago API
     const response = await fetch('https://api.mercadopago.com/checkout/preferences', {
       method: 'POST',
       headers: {
@@ -330,18 +297,13 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
       body: JSON.stringify(preferenceData)
     });
 
-    console.log('📡 MercadoPago API response status:', response.status);
-
     if (!response.ok) {
       const errorData = await response.text();
-      console.error('❌ MercadoPago API Error:', response.status, errorData);
       throw new Error(`MercadoPago API Error: ${response.status} - ${errorData}`);
     }
 
     const preference = await response.json();
-    console.log('✅ Preference created successfully:', preference.id);
 
-    // 🔥 SAVE PAYMENT RECORD IN CLIENT_PAYMENTS TABLE
     await pool.query(`
       INSERT INTO client_payments (user_id, external_reference, preference_id, amount, description, status)
       VALUES ($1, $2, $3, $4, $5, $6)
@@ -354,8 +316,6 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
       'pending'
     ]);
 
-    console.log('✅ Payment record saved in client_payments table');
-
     res.json({
       preference_id: preference.id,
       init_point: preference.init_point,
@@ -364,7 +324,7 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Error creating subscription:', error);
+    console.error('Error creating subscription:', error);
     res.status(500).json({ 
       message: 'Erro ao criar pagamento',
       error: error.message 
@@ -374,15 +334,10 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
 
 app.post('/api/professional/create-payment', authenticate, authorize(['professional']), async (req, res) => {
   try {
-    console.log('🔥 Creating professional payment with SDK v2');
-    console.log('🔥 Request body:', req.body);
-    console.log('🔥 User:', req.user);
-    
     const { amount } = req.body;
     const accessToken = process.env.MP_ACCESS_TOKEN;
     
     if (!accessToken) {
-      console.error('❌ MercadoPago access token not configured');
       throw new Error('MercadoPago access token not configured');
     }
 
@@ -390,20 +345,9 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
       return res.status(400).json({ message: 'Valor inválido' });
     }
 
-    // Generate unique external reference
     const externalReference = `professional_${req.user.id}_${Date.now()}`;
-    
-    // 🔥 GET CORRECT BASE URL
     const baseUrl = getBaseUrl(req);
     
-    console.log('🔥 Payment details:', {
-      amount,
-      externalReference,
-      baseUrl,
-      accessToken: accessToken ? 'CONFIGURED' : 'MISSING'
-    });
-    
-    // 🔥 SDK v2 PREFERENCE STRUCTURE - FORMATO CORRETO COM URLs FIXAS
     const preferenceData = {
       items: [
         {
@@ -424,7 +368,6 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
         excluded_payment_methods: [],
         installments: 12
       },
-      // 🔥 URLS DE RETORNO CORRIGIDAS - FORMATO CORRETO
       back_urls: {
         success: `${baseUrl}/professional?payment=success`,
         failure: `${baseUrl}/professional?payment=failure`,
@@ -437,11 +380,6 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
       expires: false
     };
 
-    console.log('🔥 Creating professional preference with data:', JSON.stringify(preferenceData, null, 2));
-    console.log('🔥 Webhook URL:', preferenceData.notification_url);
-    console.log('🔥 Success URL:', preferenceData.back_urls.success);
-
-    // Create preference using MercadoPago API
     const response = await fetch('https://api.mercadopago.com/checkout/preferences', {
       method: 'POST',
       headers: {
@@ -451,18 +389,13 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
       body: JSON.stringify(preferenceData)
     });
 
-    console.log('📡 MercadoPago API response status:', response.status);
-
     if (!response.ok) {
       const errorData = await response.text();
-      console.error('❌ MercadoPago API Error:', response.status, errorData);
       throw new Error(`MercadoPago API Error: ${response.status} - ${errorData}`);
     }
 
     const preference = await response.json();
-    console.log('✅ Professional preference created successfully:', preference.id);
 
-    // 🔥 SAVE PAYMENT RECORD IN PROFESSIONAL_PAYMENTS TABLE
     await pool.query(`
       INSERT INTO professional_payments (professional_id, external_reference, preference_id, amount, description, status)
       VALUES ($1, $2, $3, $4, $5, $6)
@@ -475,8 +408,6 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
       'pending'
     ]);
 
-    console.log('✅ Payment record saved in professional_payments table');
-
     res.json({
       preference_id: preference.id,
       init_point: preference.init_point,
@@ -485,7 +416,7 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
     });
 
   } catch (error) {
-    console.error('❌ Error creating professional payment:', error);
+    console.error('Error creating professional payment:', error);
     res.status(500).json({ 
       message: 'Erro ao criar pagamento',
       error: error.message 
@@ -493,19 +424,14 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
   }
 });
 
-// 🔥🔥🔥 WEBHOOK ROUTES - SDK v2 COMPATIBLE 🔥🔥🔥
+// Webhook routes
 app.post('/api/webhooks/payment-success', async (req, res) => {
   try {
-    console.log('🔥 Webhook received - SDK v2:', JSON.stringify(req.body, null, 2));
-    console.log('🔥 Headers:', JSON.stringify(req.headers, null, 2));
-    
     const { type, data } = req.body;
     
     if (type === 'payment') {
       const paymentId = data.id;
-      console.log('🔥 Processing payment webhook for ID:', paymentId);
       
-      // Get payment details from MercadoPago
       const accessToken = process.env.MP_ACCESS_TOKEN;
       const paymentResponse = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
         headers: {
@@ -515,25 +441,20 @@ app.post('/api/webhooks/payment-success', async (req, res) => {
       
       if (paymentResponse.ok) {
         const paymentData = await paymentResponse.json();
-        console.log('✅ Payment data received:', JSON.stringify(paymentData, null, 2));
-        
         const externalReference = paymentData.external_reference;
         const status = paymentData.status;
         
         if (status === 'approved') {
-          // Update payment status in database
           if (externalReference.startsWith('subscription_')) {
-            console.log('🔥 Updating CLIENT payment status...');
             await pool.query(`
               UPDATE client_payments 
               SET status = $1, payment_id = $2, payment_method = $3, payment_date = NOW(), updated_at = NOW()
               WHERE external_reference = $4
             `, ['approved', paymentId, paymentData.payment_method_id, externalReference]);
             
-            // Update user subscription status
             const userId = externalReference.split('_')[1];
             const expiryDate = new Date();
-            expiryDate.setMonth(expiryDate.getMonth() + 1); // 1 month from now
+            expiryDate.setMonth(expiryDate.getMonth() + 1);
             
             await pool.query(`
               UPDATE users 
@@ -541,16 +462,12 @@ app.post('/api/webhooks/payment-success', async (req, res) => {
               WHERE id = $2
             `, [expiryDate, userId]);
             
-            console.log('✅ Client subscription activated for user:', userId);
           } else if (externalReference.startsWith('professional_')) {
-            console.log('🔥 Updating PROFESSIONAL payment status...');
             await pool.query(`
               UPDATE professional_payments 
               SET status = $1, payment_id = $2, payment_method = $3, payment_date = NOW(), updated_at = NOW()
               WHERE external_reference = $4
             `, ['approved', paymentId, paymentData.payment_method_id, externalReference]);
-            
-            console.log('✅ Professional payment processed for reference:', externalReference);
           }
         }
       }
@@ -558,69 +475,45 @@ app.post('/api/webhooks/payment-success', async (req, res) => {
     
     res.status(200).json({ received: true });
   } catch (error) {
-    console.error('❌ Webhook error:', error);
+    console.error('Webhook error:', error);
     res.status(500).json({ error: error.message });
   }
-});
-
-// Alternative webhook endpoint for compatibility
-app.post('/api/webhooks/mercadopago', async (req, res) => {
-  console.log('🔥 Alternative webhook called:', req.body);
-  // Redirect to main webhook
-  req.url = '/api/webhooks/payment-success';
-  return app._router.handle(req, res);
 });
 
 // Auth routes
 app.post('/api/auth/login', async (req, res) => {
   try {
-    console.log('Login attempt:', { cpf: req.body.cpf, hasPassword: !!req.body.password });
-    
     const { cpf, password } = req.body;
 
     if (!cpf || !password) {
-      console.log('Missing credentials');
       return res.status(400).json({ message: 'CPF e senha são obrigatórios' });
     }
 
-    // Clean CPF (remove formatting)
     const cleanCpf = cpf.replace(/\D/g, '');
-    console.log('Cleaned CPF:', cleanCpf);
 
-    // Find user by CPF
     const result = await pool.query(
       'SELECT id, name, cpf, password, roles FROM users WHERE cpf = $1',
       [cleanCpf]
     );
 
-    console.log('User query result:', { found: result.rows.length > 0 });
-
     if (result.rows.length === 0) {
-      console.log('User not found');
       return res.status(401).json({ message: 'CPF ou senha inválidos' });
     }
 
     const user = result.rows[0];
-    console.log('User found:', { id: user.id, name: user.name, roles: user.roles });
 
-    // Verify password
     const isValidPassword = await bcrypt.compare(password, user.password);
-    console.log('Password valid:', isValidPassword);
 
     if (!isValidPassword) {
-      console.log('Invalid password');
       return res.status(401).json({ message: 'CPF ou senha inválidos' });
     }
 
-    // Return user data for role selection (don't create JWT yet)
     const userData = {
       id: user.id,
       name: user.name,
       cpf: user.cpf,
       roles: user.roles || []
     };
-
-    console.log('Login successful, returning user data:', userData);
 
     res.json({
       message: 'Login realizado com sucesso',
@@ -635,15 +528,12 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/select-role', async (req, res) => {
   try {
-    console.log('Role selection:', req.body);
-    
     const { userId, role } = req.body;
 
     if (!userId || !role) {
       return res.status(400).json({ message: 'ID do usuário e role são obrigatórios' });
     }
 
-    // Get user data
     const result = await pool.query(
       'SELECT id, name, cpf, roles FROM users WHERE id = $1',
       [userId]
@@ -655,12 +545,10 @@ app.post('/api/auth/select-role', async (req, res) => {
 
     const user = result.rows[0];
 
-    // Verify user has the selected role
     if (!user.roles || !user.roles.includes(role)) {
       return res.status(403).json({ message: 'Role não autorizada para este usuário' });
     }
 
-    // Create JWT token with current role
     const token = jwt.sign(
       { 
         id: user.id, 
@@ -672,12 +560,11 @@ app.post('/api/auth/select-role', async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    // Set cookie
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      maxAge: 24 * 60 * 60 * 1000
     });
 
     const userData = {
@@ -687,8 +574,6 @@ app.post('/api/auth/select-role', async (req, res) => {
       roles: user.roles,
       currentRole: role
     };
-
-    console.log('Role selected successfully:', userData);
 
     res.json({
       message: 'Role selecionada com sucesso',
@@ -704,8 +589,6 @@ app.post('/api/auth/select-role', async (req, res) => {
 
 app.post('/api/auth/switch-role', authenticate, async (req, res) => {
   try {
-    console.log('Role switch request:', req.body);
-    
     const { role } = req.body;
     const userId = req.user.id;
 
@@ -713,7 +596,6 @@ app.post('/api/auth/switch-role', authenticate, async (req, res) => {
       return res.status(400).json({ message: 'Role é obrigatória' });
     }
 
-    // Get user data
     const result = await pool.query(
       'SELECT id, name, cpf, roles FROM users WHERE id = $1',
       [userId]
@@ -725,12 +607,10 @@ app.post('/api/auth/switch-role', authenticate, async (req, res) => {
 
     const user = result.rows[0];
 
-    // Verify user has the selected role
     if (!user.roles || !user.roles.includes(role)) {
       return res.status(403).json({ message: 'Role não autorizada para este usuário' });
     }
 
-    // Create new JWT token with new current role
     const token = jwt.sign(
       { 
         id: user.id, 
@@ -742,12 +622,11 @@ app.post('/api/auth/switch-role', authenticate, async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    // Set cookie
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      maxAge: 24 * 60 * 60 * 1000
     });
 
     const userData = {
@@ -757,8 +636,6 @@ app.post('/api/auth/switch-role', authenticate, async (req, res) => {
       roles: user.roles,
       currentRole: role
     };
-
-    console.log('Role switched successfully:', userData);
 
     res.json({
       message: 'Role alterada com sucesso',
@@ -774,36 +651,29 @@ app.post('/api/auth/switch-role', authenticate, async (req, res) => {
 
 app.post('/api/auth/register', async (req, res) => {
   try {
-    console.log('Registration attempt:', { ...req.body, password: '***' });
-    
     const {
       name, cpf, email, phone, birth_date,
       address, address_number, address_complement,
       neighborhood, city, state, password
     } = req.body;
 
-    // Validate required fields
     if (!name || !cpf || !password) {
       return res.status(400).json({ message: 'Nome, CPF e senha são obrigatórios' });
     }
 
-    // Clean CPF
     const cleanCpf = cpf.replace(/\D/g, '');
 
     if (cleanCpf.length !== 11) {
       return res.status(400).json({ message: 'CPF deve conter 11 dígitos' });
     }
 
-    // Check if user already exists
     const existingUser = await pool.query('SELECT id FROM users WHERE cpf = $1', [cleanCpf]);
     if (existingUser.rows.length > 0) {
       return res.status(409).json({ message: 'CPF já cadastrado' });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Insert new user (clients only)
     const result = await pool.query(`
       INSERT INTO users (
         name, cpf, email, phone, birth_date,
@@ -824,12 +694,10 @@ app.post('/api/auth/register', async (req, res) => {
       city?.trim() || null,
       state || null,
       hashedPassword,
-      ['client'] // Only clients can register
+      ['client']
     ]);
 
     const newUser = result.rows[0];
-
-    console.log('User registered successfully:', { id: newUser.id, name: newUser.name });
 
     res.status(201).json({
       message: 'Usuário criado com sucesso',
@@ -843,7 +711,7 @@ app.post('/api/auth/register', async (req, res) => {
 
   } catch (error) {
     console.error('Registration error:', error);
-    if (error.code === '23505') { // Unique constraint violation
+    if (error.code === '23505') {
       res.status(409).json({ message: 'CPF já cadastrado' });
     } else {
       res.status(500).json({ message: 'Erro interno do servidor' });
@@ -877,11 +745,8 @@ app.get('/api/users', authenticate, authorize(['admin']), async (req, res) => {
   }
 });
 
-// 🔥 PROFESSIONALS ROUTE - CORRIGIDO
 app.get('/api/professionals', authenticate, async (req, res) => {
   try {
-    console.log('🔄 Fetching professionals...');
-    
     const result = await pool.query(`
       SELECT 
         u.id, u.name, u.cpf, u.email, u.phone,
@@ -894,10 +759,9 @@ app.get('/api/professionals', authenticate, async (req, res) => {
       ORDER BY u.name
     `);
     
-    console.log('✅ Professionals found:', result.rows.length);
     res.json(result.rows);
   } catch (error) {
-    console.error('❌ Error fetching professionals:', error);
+    console.error('Error fetching professionals:', error);
     res.status(500).json({ message: 'Erro ao buscar profissionais' });
   }
 });
@@ -987,7 +851,6 @@ app.get('/api/dependents/:clientId', authenticate, async (req, res) => {
   }
 });
 
-// 🔥 DEPENDENTS CRUD ROUTES - IMPLEMENTAÇÃO COMPLETA
 app.post('/api/dependents', authenticate, async (req, res) => {
   try {
     const { client_id, name, cpf, birth_date } = req.body;
@@ -1055,7 +918,7 @@ app.delete('/api/dependents/:id', authenticate, async (req, res) => {
   }
 });
 
-// 🔥 CONSULTATIONS CRUD ROUTES - IMPLEMENTAÇÃO COMPLETA
+// Consultations routes
 app.post('/api/consultations', authenticate, async (req, res) => {
   try {
     const { client_id, dependent_id, professional_id, service_id, value, date } = req.body;
@@ -1077,7 +940,6 @@ app.post('/api/consultations', authenticate, async (req, res) => {
   }
 });
 
-// Consultations routes
 app.get('/api/consultations', authenticate, async (req, res) => {
   try {
     let query = `
@@ -1095,7 +957,6 @@ app.get('/api/consultations', authenticate, async (req, res) => {
     
     const params = [];
     
-    // Filter based on user role
     if (req.user.currentRole === 'client') {
       query += ' WHERE (c.client_id = $1 OR c.dependent_id IN (SELECT id FROM dependents WHERE client_id = $1))';
       params.push(req.user.id);
@@ -1123,7 +984,6 @@ app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, 
       return res.status(400).json({ message: 'Datas de início e fim são obrigatórias' });
     }
 
-    // Get revenue by professional
     const professionalRevenueQuery = `
       SELECT 
         u.name as professional_name,
@@ -1139,7 +999,6 @@ app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, 
       ORDER BY revenue DESC
     `;
 
-    // Get revenue by service
     const serviceRevenueQuery = `
       SELECT 
         s.name as service_name,
@@ -1152,7 +1011,6 @@ app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, 
       ORDER BY revenue DESC
     `;
 
-    // Get total revenue
     const totalRevenueQuery = `
       SELECT SUM(value) as total_revenue
       FROM consultations
@@ -1187,7 +1045,6 @@ app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, 
   }
 });
 
-// Professional revenue report
 app.get('/api/reports/professional-revenue', authenticate, authorize(['professional']), async (req, res) => {
   try {
     const { start_date, end_date } = req.query;
@@ -1196,20 +1053,13 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
       return res.status(400).json({ message: 'Datas de início e fim são obrigatórias' });
     }
 
-    console.log('🔄 Fetching professional revenue for user:', req.user.id);
-    console.log('🔄 Date range:', { start_date, end_date });
-
-    // Get professional data
     const professionalQuery = `
       SELECT percentage FROM users WHERE id = $1
     `;
     
     const professionalResult = await pool.query(professionalQuery, [req.user.id]);
     const percentage = parseFloat(professionalResult.rows[0]?.percentage || 50);
-    
-    console.log('🔄 Professional percentage:', percentage);
 
-    // Get consultations for this professional
     const consultationsQuery = `
       SELECT 
         c.date,
@@ -1225,7 +1075,6 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
       ORDER BY c.date DESC
     `;
 
-    // Get summary
     const summaryQuery = `
       SELECT 
         COUNT(c.id) as consultation_count,
@@ -1239,9 +1088,6 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
       pool.query(consultationsQuery, [req.user.id, start_date, percentage, end_date]),
       pool.query(summaryQuery, [req.user.id, percentage, start_date, end_date])
     ]);
-
-    console.log('🔄 Consultations found:', consultationsResult.rows.length);
-    console.log('🔄 Summary:', summaryResult.rows[0]);
 
     const summary = summaryResult.rows[0];
 
@@ -1261,15 +1107,14 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
       }))
     };
 
-    console.log('✅ Professional revenue response:', JSON.stringify(response, null, 2));
     res.json(response);
   } catch (error) {
-    console.error('❌ Error fetching professional revenue report:', error);
+    console.error('Error fetching professional revenue report:', error);
     res.status(500).json({ message: 'Erro ao gerar relatório' });
   }
 });
 
-// Catch-all handler: send back React's index.html file for client-side routing
+// 🔥 CATCH-ALL ROUTE - SERVE REACT APP
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
@@ -1287,7 +1132,7 @@ const startServer = async () => {
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log('🔥 Simple redirect solution implemented!');
+      console.log('🔥 MVP Simple redirect solution implemented!');
     });
   } catch (error) {
     console.error('Failed to start server:', error);
