@@ -56,32 +56,18 @@ function App() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
 
-  // 🔥🔥🔥 REDIRECIONAMENTO FORÇADO NO CLIENTE - GARANTIA DUPLA 🔥🔥🔥
+  // 🔥🔥🔥 REDIRECIONAMENTO SIMPLES E EFICAZ - SEM LOOPS 🔥🔥🔥
   useEffect(() => {
-    console.log('🔥 App mounted - checking for root redirect');
-    console.log('🔥 Current location:', location.pathname);
+    console.log('🔥 App useEffect - Location:', location.pathname);
     console.log('🔥 Is authenticated:', isAuthenticated);
     console.log('🔥 User:', user);
 
-    // Se estiver na raiz e não autenticado, redirecionar para login
-    if (location.pathname === '/' && !isAuthenticated) {
-      console.log('🔥🔥🔥 ROOT ACCESS DETECTED - CLIENT-SIDE REDIRECT TO /login');
+    // APENAS redirecionar se estiver na raiz E não autenticado
+    if (location.pathname === '/' && !isAuthenticated && !isLoading) {
+      console.log('🔥🔥🔥 ROOT ACCESS BY UNAUTHENTICATED USER - REDIRECTING TO LOGIN');
       window.location.replace('/login');
-      return;
     }
-
-    // Se estiver na raiz e autenticado, redirecionar para área apropriada
-    if (location.pathname === '/' && isAuthenticated && user) {
-      console.log('🔥🔥🔥 ROOT ACCESS BY AUTHENTICATED USER - REDIRECTING TO APPROPRIATE AREA');
-      if (user.currentRole === "client") {
-        window.location.replace('/client');
-      } else if (user.currentRole === "professional") {
-        window.location.replace('/professional');
-      } else if (user.currentRole === "admin") {
-        window.location.replace('/admin');
-      }
-    }
-  }, [location.pathname, isAuthenticated, user]);
+  }, [location.pathname, isAuthenticated, isLoading]);
 
   // Show loading while checking authentication
   if (isLoading) {

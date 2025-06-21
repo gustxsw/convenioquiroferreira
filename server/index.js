@@ -46,40 +46,6 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 
-// 🔥🔥🔥 MIDDLEWARE PARA REDIRECIONAMENTO FORÇADO - FUNCIONA EM TODOS OS DISPOSITIVOS 🔥🔥🔥
-app.use((req, res, next) => {
-  // Log detalhado para debug
-  console.log('🔥 Request intercepted:', {
-    url: req.url,
-    method: req.method,
-    hostname: req.hostname,
-    userAgent: req.get('User-Agent'),
-    headers: {
-      host: req.get('host'),
-      referer: req.get('referer'),
-      origin: req.get('origin')
-    }
-  });
-
-  // 🔥 REDIRECIONAMENTO FORÇADO PARA RAIZ E INDEX.HTML
-  if (req.url === '/' || req.url === '/index.html') {
-    console.log('🔥🔥🔥 ROOT ACCESS DETECTED - FORCING REDIRECT TO /login');
-    console.log('🔥 User-Agent:', req.get('User-Agent'));
-    
-    // Headers para evitar cache
-    res.set({
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0'
-    });
-    
-    return res.redirect(301, '/login');
-  }
-
-  // Continue para próximo middleware
-  next();
-});
-
 // 🔥 PWA ROUTES - SERVIR ARQUIVOS PWA
 app.get('/manifest.json', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
@@ -1366,8 +1332,7 @@ const startServer = async () => {
       console.log('🔥 MercadoPago SDK v2 configured with webhook: /api/webhooks/payment-success');
       console.log('🔥 Payment tables: client_payments & professional_payments created!');
       console.log('🔥 PWA configured with manifest.json and service worker!');
-      console.log('🔥🔥🔥 ROOT ROUTE ALWAYS REDIRECTS TO /login - PERFECT FOR MOBILE PWA! 🔥🔥🔥');
-      console.log('🔥🔥🔥 MOBILE REDIRECT MIDDLEWARE ACTIVE - WORKS ON ALL DEVICES! 🔥🔥🔥');
+      console.log('🔥🔥🔥 REDIRECIONAMENTO CORRIGIDO - SEM LOOPS! 🔥🔥🔥');
     });
   } catch (error) {
     console.error('Failed to start server:', error);
