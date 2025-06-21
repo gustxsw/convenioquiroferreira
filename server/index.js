@@ -46,6 +46,24 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 
+// 🔥🔥🔥 STATIC FILES MIDDLEWARE - DEVE VIR PRIMEIRO 🔥🔥🔥
+console.log('🔥 Setting up static files from:', path.join(__dirname, '../dist'));
+app.use(express.static(path.join(__dirname, '../dist'), {
+  maxAge: '1d', // Cache for 1 day
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, path) => {
+    // Set proper headers for different file types
+    if (path.endsWith('.js')) {
+      res.setHeader('Content-Type', 'application/javascript');
+    } else if (path.endsWith('.css')) {
+      res.setHeader('Content-Type', 'text/css');
+    } else if (path.endsWith('.html')) {
+      res.setHeader('Content-Type', 'text/html');
+    }
+  }
+}));
+
 // 🔥 PWA ROUTES - SERVIR ARQUIVOS PWA
 app.get('/manifest.json', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
@@ -84,9 +102,6 @@ app.get('/icon-192.png', (req, res) => {
 app.get('/icon-512.png', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/icon-512.png'));
 });
-
-// Serve static files from dist directory
-app.use(express.static(path.join(__dirname, '../dist')));
 
 // 🔥 HEALTH CHECK ROUTE
 app.get('/api/health', (req, res) => {
@@ -1305,14 +1320,20 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
 // 🔥🔥🔥 CATCH-ALL HANDLER - DEVE VIR POR ÚLTIMO 🔥🔥🔥
 // Catch-all handler: send back React's index.html file for client-side routing
 app.get('*', (req, res) => {
-  console.log('🔥 Catch-all route accessed for:', req.url);
-  
   // Se for uma rota de API que não existe, retornar 404
   if (req.url.startsWith('/api/')) {
+    console.log('🔥 API route not found:', req.url);
     return res.status(404).json({ message: 'API endpoint not found' });
   }
   
-  // Para todas as outras rotas, servir o React app
+  // Se for um arquivo estático que não foi encontrado, não logar
+  if (req.url.includes('.')) {
+    console.log('🔥 Static file not found:', req.url);
+    return res.status(404).end();
+  }
+  
+  // Para todas as outras rotas (SPA routes), servir o React app
+  console.log('🔥 Serving React app for route:', req.url);
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
@@ -1332,7 +1353,7 @@ const startServer = async () => {
       console.log('🔥 MercadoPago SDK v2 configured with webhook: /api/webhooks/payment-success');
       console.log('🔥 Payment tables: client_payments & professional_payments created!');
       console.log('🔥 PWA configured with manifest.json and service worker!');
-      console.log('🔥🔥🔥 REDIRECIONAMENTO CORRIGIDO - SEM LOOPS! 🔥🔥🔥');
+      console.log('🔥🔥🔥 STATIC FILES SERVING FIXED! 🔥🔥🔥');
     });
   } catch (error) {
     console.error('Failed to start server:', error);
