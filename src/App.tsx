@@ -69,7 +69,7 @@ function App() {
 
   return (
     <Routes>
-      {/* 🔥 ROOT ROUTE - SEMPRE REDIRECIONA PARA LOGIN */}
+      {/* 🔥 ROOT ROUTE - SEMPRE REDIRECIONA PARA LOGIN - SIMPLES E DIRETO */}
       <Route path="/" element={<Navigate to="/login" replace />} />
 
       {/* Auth routes */}
