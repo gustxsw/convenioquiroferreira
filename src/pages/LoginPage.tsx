@@ -1,22 +1,16 @@
 import React, { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { Link, useNavigate } from "react-router-dom";
-import { Users, Award, Calendar, Activity, UserPlus, ArrowLeft } from "lucide-react";
+import { Users, Award, Calendar, Activity, UserPlus } from "lucide-react";
 
 const LoginPage: React.FC = () => {
   const [cpf, setCpf] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  
-  // NOVA ABORDAGEM: Estados separados para cada tela
-  const [showRoleSelection, setShowRoleSelection] = useState(false);
-  const [userForRoleSelection, setUserForRoleSelection] = useState<any>(null);
 
   const { login, selectRole } = useAuth();
   const navigate = useNavigate();
-
-  console.log('🎯 RENDER - showRoleSelection:', showRoleSelection, 'userForRoleSelection:', !!userForRoleSelection);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,8 +68,6 @@ const LoginPage: React.FC = () => {
     ? cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
     : "";
 
-  // TELA DE LOGIN SIMPLES
-  console.log("🎯 Renderizando tela de login");
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <div className="flex flex-1">
@@ -233,18 +225,6 @@ const LoginPage: React.FC = () => {
                 <UserPlus className="h-5 w-5 mr-2" />
                 Criar conta de cliente
               </Link>
-            </div>
-
-            <div className="mt-6 text-center text-sm text-gray-500">
-              <p>
-                Para o primeiro acesso como cliente, utilize seu CPF como senha
-                ou entre em contato com o administrador.
-              </p>
-              <p className="mt-2">
-                <strong>Usuário de teste com múltiplas roles:</strong>
-                <br />
-                CPF: 555.555.555-55 | Senha: 55555555555
-              </p>
             </div>
           </div>
         </div>
