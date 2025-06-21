@@ -2,7 +2,7 @@
   "name": "Convênio Quiro Ferreira",
   "short_name": "Quiro Ferreira",
   "description": "Sistema completo para gestão de consultas e serviços do Convênio Quiro Ferreira",
-  "start_url": "/",
+  "start_url": "/login",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#c11c22",

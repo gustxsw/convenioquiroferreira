@@ -1,5 +1,5 @@
-import React from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import React, { useEffect } from "react";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
 
 // Layouts
@@ -54,6 +54,34 @@ const ProtectedRoute = ({
 
 function App() {
   const { user, isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
+
+  // 🔥🔥🔥 REDIRECIONAMENTO FORÇADO NO CLIENTE - GARANTIA DUPLA 🔥🔥🔥
+  useEffect(() => {
+    console.log('🔥 App mounted - checking for root redirect');
+    console.log('🔥 Current location:', location.pathname);
+    console.log('🔥 Is authenticated:', isAuthenticated);
+    console.log('🔥 User:', user);
+
+    // Se estiver na raiz e não autenticado, redirecionar para login
+    if (location.pathname === '/' && !isAuthenticated) {
+      console.log('🔥🔥🔥 ROOT ACCESS DETECTED - CLIENT-SIDE REDIRECT TO /login');
+      window.location.replace('/login');
+      return;
+    }
+
+    // Se estiver na raiz e autenticado, redirecionar para área apropriada
+    if (location.pathname === '/' && isAuthenticated && user) {
+      console.log('🔥🔥🔥 ROOT ACCESS BY AUTHENTICATED USER - REDIRECTING TO APPROPRIATE AREA');
+      if (user.currentRole === "client") {
+        window.location.replace('/client');
+      } else if (user.currentRole === "professional") {
+        window.location.replace('/professional');
+      } else if (user.currentRole === "admin") {
+        window.location.replace('/admin');
+      }
+    }
+  }, [location.pathname, isAuthenticated, user]);
 
   // Show loading while checking authentication
   if (isLoading) {
@@ -69,18 +97,25 @@ function App() {
 
   // Function to redirect to appropriate home page based on role
   const getHomePage = () => {
+    console.log('🔥 getHomePage called - isAuthenticated:', isAuthenticated, 'user:', user);
+    
     if (!isAuthenticated) {
+      console.log('🔥 Not authenticated - redirecting to login');
       return <Navigate to="/login" replace />;
     }
 
     if (user?.currentRole === "client") {
+      console.log('🔥 Client role - redirecting to /client');
       return <Navigate to="/client" replace />;
     } else if (user?.currentRole === "professional") {
+      console.log('🔥 Professional role - redirecting to /professional');
       return <Navigate to="/professional" replace />;
     } else if (user?.currentRole === "admin") {
+      console.log('🔥 Admin role - redirecting to /admin');
       return <Navigate to="/admin" replace />;
     }
 
+    console.log('🔥 No valid role - redirecting to login');
     return <Navigate to="/login" replace />;
   };
 

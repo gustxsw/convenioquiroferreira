@@ -46,18 +46,56 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 
+// 🔥🔥🔥 MIDDLEWARE PARA REDIRECIONAMENTO FORÇADO - FUNCIONA EM TODOS OS DISPOSITIVOS 🔥🔥🔥
+app.use((req, res, next) => {
+  // Log detalhado para debug
+  console.log('🔥 Request intercepted:', {
+    url: req.url,
+    method: req.method,
+    hostname: req.hostname,
+    userAgent: req.get('User-Agent'),
+    headers: {
+      host: req.get('host'),
+      referer: req.get('referer'),
+      origin: req.get('origin')
+    }
+  });
+
+  // 🔥 REDIRECIONAMENTO FORÇADO PARA RAIZ E INDEX.HTML
+  if (req.url === '/' || req.url === '/index.html') {
+    console.log('🔥🔥🔥 ROOT ACCESS DETECTED - FORCING REDIRECT TO /login');
+    console.log('🔥 User-Agent:', req.get('User-Agent'));
+    
+    // Headers para evitar cache
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
+    
+    return res.redirect(301, '/login');
+  }
+
+  // Continue para próximo middleware
+  next();
+});
+
 // 🔥 PWA ROUTES - SERVIR ARQUIVOS PWA
 app.get('/manifest.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, '../public/manifest.json'));
 });
 
 app.get('/sw.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, '../public/sw.js'));
 });
 
 app.get('/browserconfig.xml', (req, res) => {
   res.setHeader('Content-Type', 'application/xml');
+  res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, '../public/browserconfig.xml'));
 });
 
@@ -79,20 +117,6 @@ app.get('/icon-192.png', (req, res) => {
 
 app.get('/icon-512.png', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/icon-512.png'));
-});
-
-// 🔥🔥🔥 ROTA RAIZ - SEMPRE REDIRECIONA PARA LOGIN 🔥🔥🔥
-app.get('/', (req, res) => {
-  console.log('🔥 Root route accessed - ALWAYS redirecting to /login');
-  console.log('🔥 Request URL:', req.url);
-  console.log('🔥 Request hostname:', req.hostname);
-  res.redirect(301, '/login');
-});
-
-// 🔥🔥🔥 ROTA ESPECÍFICA PARA DOMÍNIOS - GARANTINDO REDIRECIONAMENTO 🔥🔥🔥
-app.get('/index.html', (req, res) => {
-  console.log('🔥 Index.html accessed - redirecting to /login');
-  res.redirect(301, '/login');
 });
 
 // Serve static files from dist directory
@@ -1343,6 +1367,7 @@ const startServer = async () => {
       console.log('🔥 Payment tables: client_payments & professional_payments created!');
       console.log('🔥 PWA configured with manifest.json and service worker!');
       console.log('🔥🔥🔥 ROOT ROUTE ALWAYS REDIRECTS TO /login - PERFECT FOR MOBILE PWA! 🔥🔥🔥');
+      console.log('🔥🔥🔥 MOBILE REDIRECT MIDDLEWARE ACTIVE - WORKS ON ALL DEVICES! 🔥🔥🔥');
     });
   } catch (error) {
     console.error('Failed to start server:', error);
