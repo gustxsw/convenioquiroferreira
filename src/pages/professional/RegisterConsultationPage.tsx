@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, Calendar, User, Users } from 'lucide-react';
+import { Search, Calendar, User, Users, AlertTriangle } from 'lucide-react';
 
 type Service = {
   id: number;
@@ -164,7 +164,7 @@ const RegisterConsultationPage: React.FC = () => {
       if (dependentResponse.ok) {
         const dependentData = await dependentResponse.json();
         
-        // Check if the client has active subscription
+        // 🔥 Check if the client has active subscription
         if (dependentData.client_subscription_status !== 'active') {
           setError('Este dependente não pode ser atendido pois o titular não possui assinatura ativa.');
           resetForm();
@@ -199,7 +199,7 @@ const RegisterConsultationPage: React.FC = () => {
       
       const clientData = await clientResponse.json();
       
-      // Check if client has active subscription
+      // 🔥 Check if client has active subscription
       if (clientData.subscription_status !== 'active') {
         setError('Este cliente não pode ser atendido pois não possui assinatura ativa.');
         resetForm();
@@ -285,6 +285,12 @@ const RegisterConsultationPage: React.FC = () => {
       return;
     }
     
+    // 🔥 Double check subscription status before submitting
+    if (subscriptionStatus !== 'active') {
+      setError('Não é possível registrar consulta para cliente sem assinatura ativa');
+      return;
+    }
+    
     if (!serviceId) {
       setError('É necessário selecionar um serviço');
       return;
@@ -360,6 +366,36 @@ const RegisterConsultationPage: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  // 🔥 Function to get subscription status display
+  const getSubscriptionStatusDisplay = (status: string) => {
+    switch (status) {
+      case 'active':
+        return {
+          text: 'Assinatura Ativa',
+          className: 'bg-green-100 text-green-800',
+          icon: null
+        };
+      case 'pending':
+        return {
+          text: 'Situação Cadastral Pendente',
+          className: 'bg-red-100 text-red-800',
+          icon: <AlertTriangle className="h-4 w-4 mr-1" />
+        };
+      case 'expired':
+        return {
+          text: 'Assinatura Vencida',
+          className: 'bg-red-100 text-red-800',
+          icon: <AlertTriangle className="h-4 w-4 mr-1" />
+        };
+      default:
+        return {
+          text: 'Status Desconhecido',
+          className: 'bg-gray-100 text-gray-800',
+          icon: <AlertTriangle className="h-4 w-4 mr-1" />
+        };
+    }
+  };
   
   return (
     <div>
@@ -370,7 +406,8 @@ const RegisterConsultationPage: React.FC = () => {
       
       <div className="card">
         {error && (
-          <div className="bg-red-50 text-red-600 p-3 rounded-md mb-4">
+          <div className="bg-red-50 text-red-600 p-3 rounded-md mb-4 flex items-center">
+            <AlertTriangle className="h-5 w-5 mr-2 flex-shrink-0" />
             {error}
           </div>
         )}
@@ -413,37 +450,69 @@ const RegisterConsultationPage: React.FC = () => {
             {/* Display found client or dependent */}
             {clientId && (
               <div className="mt-3">
-                <div className="p-3 bg-green-50 text-green-700 rounded-md mb-3">
+                <div className={`p-3 rounded-md mb-3 ${
+                  subscriptionStatus === 'active' 
+                    ? 'bg-green-50 text-green-700' 
+                    : 'bg-red-50 text-red-700'
+                }`}>
                   {foundDependent ? (
                     <div className="flex items-center">
                       <User className="h-5 w-5 mr-2" />
-                      <div>
+                      <div className="flex-1">
                         <p><span className="font-medium">Dependente:</span> {foundDependent.name}</p>
                         <p><span className="font-medium">Titular:</span> {clientName}</p>
-                        <p><span className="font-medium">Status:</span> 
-                          <span className="ml-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
-                            Assinatura Ativa
+                        <div className="flex items-center mt-1">
+                          <span className="font-medium mr-2">Status:</span>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium flex items-center ${
+                            getSubscriptionStatusDisplay(subscriptionStatus).className
+                          }`}>
+                            {getSubscriptionStatusDisplay(subscriptionStatus).icon}
+                            {getSubscriptionStatusDisplay(subscriptionStatus).text}
                           </span>
-                        </p>
+                        </div>
                       </div>
                     </div>
                   ) : (
                     <div className="flex items-center">
                       <Users className="h-5 w-5 mr-2" />
-                      <div>
+                      <div className="flex-1">
                         <p><span className="font-medium">Cliente:</span> {clientName}</p>
-                        <p><span className="font-medium">Status:</span> 
-                          <span className="ml-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
-                            Assinatura Ativa
+                        <div className="flex items-center mt-1">
+                          <span className="font-medium mr-2">Status:</span>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium flex items-center ${
+                            getSubscriptionStatusDisplay(subscriptionStatus).className
+                          }`}>
+                            {getSubscriptionStatusDisplay(subscriptionStatus).icon}
+                            {getSubscriptionStatusDisplay(subscriptionStatus).text}
                           </span>
-                        </p>
+                        </div>
                       </div>
                     </div>
                   )}
                 </div>
+
+                {/* 🔥 Show warning for non-active subscriptions */}
+                {subscriptionStatus !== 'active' && (
+                  <div className="bg-red-50 border-l-4 border-red-600 p-4 mb-4">
+                    <div className="flex items-center">
+                      <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
+                      <div>
+                        <p className="text-red-700 font-medium">
+                          Não é possível registrar consulta
+                        </p>
+                        <p className="text-red-600 text-sm">
+                          {subscriptionStatus === 'pending' 
+                            ? 'O cliente precisa regularizar sua situação cadastral com o convênio.'
+                            : 'O cliente precisa renovar sua assinatura para continuar utilizando os serviços.'
+                          }
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 
-                {/* Show dependents selection only if client was found directly */}
-                {!foundDependent && dependents.length > 0 && (
+                {/* Show dependents selection only if client was found directly and has active subscription */}
+                {!foundDependent && dependents.length > 0 && subscriptionStatus === 'active' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Selecionar Dependente (opcional)
@@ -466,103 +535,106 @@ const RegisterConsultationPage: React.FC = () => {
             )}
           </div>
           
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold mb-3 flex items-center">
-              <Calendar className="h-5 w-5 mr-2 text-red-600" />
-              Detalhes da Consulta
-            </h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
-                  Categoria do Serviço
-                </label>
-                <select
-                  id="category"
-                  value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
-                  className="input"
-                  disabled={isLoading}
-                  required
-                >
-                  <option value="">Selecione uma categoria</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          {/* Only show consultation details if subscription is active */}
+          {subscriptionStatus === 'active' && (
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold mb-3 flex items-center">
+                <Calendar className="h-5 w-5 mr-2 text-red-600" />
+                Detalhes da Consulta
+              </h2>
               
-              <div>
-                <label htmlFor="service" className="block text-sm font-medium text-gray-700 mb-1">
-                  Serviço
-                </label>
-                <select
-                  id="service"
-                  value={serviceId || ''}
-                  onChange={handleServiceChange}
-                  className="input"
-                  disabled={isLoading || !categoryId}
-                  required
-                >
-                  <option value="">Selecione um serviço</option>
-                  {filteredServices.map((service) => (
-                    <option key={service.id} value={service.id}>
-                      {service.name} - {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(service.base_price)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <label htmlFor="value" className="block text-sm font-medium text-gray-700 mb-1">
-                  Valor (R$)
-                </label>
-                <input
-                  id="value"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  className="input"
-                  disabled={isLoading}
-                  required
-                />
-              </div>
-              
-              <div>
-                <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">
-                  Data
-                </label>
-                <input
-                  id="date"
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="input"
-                  disabled={isLoading}
-                  required
-                />
-              </div>
-              
-              <div>
-                <label htmlFor="time" className="block text-sm font-medium text-gray-700 mb-1">
-                  Hora
-                </label>
-                <input
-                  id="time"
-                  type="time"
-                  value={time}
-                  onChange={(e) => setTime(e.target.value)}
-                  className="input"
-                  disabled={isLoading}
-                  required
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
+                    Categoria do Serviço
+                  </label>
+                  <select
+                    id="category"
+                    value={categoryId}
+                    onChange={(e) => setCategoryId(e.target.value)}
+                    className="input"
+                    disabled={isLoading}
+                    required
+                  >
+                    <option value="">Selecione uma categoria</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div>
+                  <label htmlFor="service" className="block text-sm font-medium text-gray-700 mb-1">
+                    Serviço
+                  </label>
+                  <select
+                    id="service"
+                    value={serviceId || ''}
+                    onChange={handleServiceChange}
+                    className="input"
+                    disabled={isLoading || !categoryId}
+                    required
+                  >
+                    <option value="">Selecione um serviço</option>
+                    {filteredServices.map((service) => (
+                      <option key={service.id} value={service.id}>
+                        {service.name} - {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(service.base_price)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div>
+                  <label htmlFor="value" className="block text-sm font-medium text-gray-700 mb-1">
+                    Valor (R$)
+                  </label>
+                  <input
+                    id="value"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    className="input"
+                    disabled={isLoading}
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">
+                    Data
+                  </label>
+                  <input
+                    id="date"
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="input"
+                    disabled={isLoading}
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="time" className="block text-sm font-medium text-gray-700 mb-1">
+                    Hora
+                  </label>
+                  <input
+                    id="time"
+                    type="time"
+                    value={time}
+                    onChange={(e) => setTime(e.target.value)}
+                    className="input"
+                    disabled={isLoading}
+                    required
+                  />
+                </div>
               </div>
             </div>
-          </div>
+          )}
           
           <div className="flex justify-end">
             <button
@@ -576,8 +648,20 @@ const RegisterConsultationPage: React.FC = () => {
             
             <button
               type="submit"
-              className={`btn btn-primary ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
-              disabled={isLoading || (!clientId && !selectedDependentId) || !serviceId || !value || !date || !time}
+              className={`btn btn-primary ${
+                isLoading || subscriptionStatus !== 'active' 
+                  ? 'opacity-70 cursor-not-allowed' 
+                  : ''
+              }`}
+              disabled={
+                isLoading || 
+                subscriptionStatus !== 'active' ||
+                (!clientId && !selectedDependentId) || 
+                !serviceId || 
+                !value || 
+                !date || 
+                !time
+              }
             >
               {isLoading ? 'Registrando...' : 'Registrar Consulta'}
             </button>

@@ -169,12 +169,12 @@ const AdminHomePage: React.FC = () => {
           month: monthCount,
         });
 
-        // Calculate user counts
+        // 🔥 FIXED: Calculate user counts correctly using roles array
         const clientCount = usersData.filter(
-          (u: any) => u.role === "client"
+          (u: any) => u.roles && u.roles.includes('client')
         ).length;
         const professionalCount = usersData.filter(
-          (u: any) => u.role === "professional"
+          (u: any) => u.roles && u.roles.includes('professional')
         ).length;
 
         setUserCounts({
