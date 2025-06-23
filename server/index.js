@@ -90,7 +90,7 @@ const initDatabase = async () => {
       )
     `);
 
-    // Create service categories table
+    // Create service categories table FIRST
     await pool.query(`
       CREATE TABLE IF NOT EXISTS service_categories (
         id SERIAL PRIMARY KEY,
@@ -100,14 +100,31 @@ const initDatabase = async () => {
       )
     `);
 
-    // Create services table
+    // 🔥 Insert default service category BEFORE creating services table
+    const categoryExists = await pool.query('SELECT id FROM service_categories WHERE name = $1', ['Fisioterapia']);
+    let categoryId = 1;
+    
+    if (categoryExists.rows.length === 0) {
+      const categoryResult = await pool.query(`
+        INSERT INTO service_categories (name, description) 
+        VALUES ($1, $2)
+        RETURNING id
+      `, ['Fisioterapia', 'Serviços de fisioterapia e reabilitação']);
+      categoryId = categoryResult.rows[0].id;
+      console.log('✅ Default service category created with ID:', categoryId);
+    } else {
+      categoryId = categoryExists.rows[0].id;
+      console.log('✅ Default service category already exists with ID:', categoryId);
+    }
+
+    // Create services table with proper foreign key reference
     await pool.query(`
       CREATE TABLE IF NOT EXISTS services (
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         description TEXT,
         base_price DECIMAL(10,2) NOT NULL,
-        category_id INTEGER REFERENCES service_categories(id),
+        category_id INTEGER REFERENCES service_categories(id) ON DELETE SET NULL,
         is_base_service BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -182,32 +199,43 @@ const initDatabase = async () => {
         INSERT INTO users (name, cpf, password, roles) 
         VALUES ($1, $2, $3, $4)
       `, ['Administrador', '00000000000', hashedPassword, ['admin']]);
-      console.log('Default admin user created');
+      console.log('✅ Default admin user created');
     }
 
-    // Insert default service category
-    const categoryExists = await pool.query('SELECT id FROM service_categories WHERE name = $1', ['Fisioterapia']);
-    if (categoryExists.rows.length === 0) {
-      await pool.query(`
-        INSERT INTO service_categories (name, description) 
-        VALUES ($1, $2)
-      `, ['Fisioterapia', 'Serviços de fisioterapia e reabilitação']);
-      console.log('Default service category created');
-    }
-
-    // Insert default services
+    // 🔥 Insert default service with proper category reference
     const serviceExists = await pool.query('SELECT id FROM services WHERE name = $1', ['Consulta Fisioterapia']);
     if (serviceExists.rows.length === 0) {
       await pool.query(`
         INSERT INTO services (name, description, base_price, category_id, is_base_service) 
         VALUES ($1, $2, $3, $4, $5)
-      `, ['Consulta Fisioterapia', 'Consulta básica de fisioterapia', 80.00, 1, true]);
-      console.log('Default service created');
+      `, ['Consulta Fisioterapia', 'Consulta básica de fisioterapia', 80.00, categoryId, true]);
+      console.log('✅ Default service created with category ID:', categoryId);
+    }
+
+    // 🔥 Add foreign key constraint for users.category_id if it doesn't exist
+    try {
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints 
+            WHERE constraint_name = 'users_category_id_fkey'
+          ) THEN
+            ALTER TABLE users 
+            ADD CONSTRAINT users_category_id_fkey 
+            FOREIGN KEY (category_id) REFERENCES service_categories(id) ON DELETE SET NULL;
+          END IF;
+        END $$;
+      `);
+      console.log('✅ Foreign key constraint for users.category_id ensured');
+    } catch (error) {
+      console.log('⚠️ Foreign key constraint already exists or could not be added:', error.message);
     }
 
     console.log('✅ Database initialized successfully!');
   } catch (error) {
     console.error('❌ Error initializing database:', error);
+    throw error; // Re-throw to prevent server from starting with broken DB
   }
 };
 
@@ -1161,6 +1189,42 @@ app.post('/api/consultations', authenticate, async (req, res) => {
     
     if (!professional_id || !service_id || !value || !date) {
       return res.status(400).json({ message: 'professional_id, service_id, value e date são obrigatórios' });
+    }
+    
+    // 🔥 BACKEND VALIDATION: Check subscription status before allowing consultation
+    let subscriptionStatus = null;
+    
+    if (dependent_id) {
+      // Check dependent's client subscription status
+      const dependentResult = await pool.query(`
+        SELECT u.subscription_status 
+        FROM dependents d 
+        JOIN users u ON d.client_id = u.id 
+        WHERE d.id = $1
+      `, [dependent_id]);
+      
+      if (dependentResult.rows.length === 0) {
+        return res.status(404).json({ message: 'Dependente não encontrado' });
+      }
+      
+      subscriptionStatus = dependentResult.rows[0].subscription_status;
+    } else if (client_id) {
+      // Check client subscription status
+      const clientResult = await pool.query(`
+        SELECT subscription_status FROM users WHERE id = $1
+      `, [client_id]);
+      
+      if (clientResult.rows.length === 0) {
+        return res.status(404).json({ message: 'Cliente não encontrado' });
+      }
+      
+      subscriptionStatus = clientResult.rows[0].subscription_status;
+    }
+    
+    if (subscriptionStatus !== 'active') {
+      return res.status(403).json({ 
+        message: 'Não é possível registrar consulta para cliente sem assinatura ativa' 
+      });
     }
     
     const result = await pool.query(`
