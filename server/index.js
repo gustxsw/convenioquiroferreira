@@ -726,6 +726,148 @@ app.get('/api/users', authenticate, authorize(['admin']), async (req, res) => {
   }
 });
 
+// 🔥 FIXED: Add missing CRUD routes for users
+app.post('/api/users', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const {
+      name, cpf, email, phone, birth_date,
+      address, address_number, address_complement,
+      neighborhood, city, state, password, roles,
+      percentage, category_id
+    } = req.body;
+
+    if (!name || !cpf || !password || !roles || roles.length === 0) {
+      return res.status(400).json({ message: 'Nome, CPF, senha e pelo menos uma role são obrigatórios' });
+    }
+
+    const cleanCpf = cpf.replace(/\D/g, '');
+
+    if (cleanCpf.length !== 11) {
+      return res.status(400).json({ message: 'CPF deve conter 11 dígitos' });
+    }
+
+    const existingUser = await pool.query('SELECT id FROM users WHERE cpf = $1', [cleanCpf]);
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({ message: 'CPF já cadastrado' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const result = await pool.query(`
+      INSERT INTO users (
+        name, cpf, email, phone, birth_date,
+        address, address_number, address_complement,
+        neighborhood, city, state, password, roles,
+        percentage, category_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      RETURNING id, name, cpf, roles
+    `, [
+      name.trim(),
+      cleanCpf,
+      email?.trim() || null,
+      phone?.replace(/\D/g, '') || null,
+      birth_date || null,
+      address?.trim() || null,
+      address_number?.trim() || null,
+      address_complement?.trim() || null,
+      neighborhood?.trim() || null,
+      city?.trim() || null,
+      state || null,
+      hashedPassword,
+      roles,
+      percentage || null,
+      category_id || null
+    ]);
+
+    const newUser = result.rows[0];
+
+    res.status(201).json({
+      message: 'Usuário criado com sucesso',
+      user: newUser
+    });
+
+  } catch (error) {
+    console.error('Error creating user:', error);
+    if (error.code === '23505') {
+      res.status(409).json({ message: 'CPF já cadastrado' });
+    } else {
+      res.status(500).json({ message: 'Erro interno do servidor' });
+    }
+  }
+});
+
+app.put('/api/users/:id', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      name, email, phone, birth_date,
+      address, address_number, address_complement,
+      neighborhood, city, state, roles,
+      percentage, category_id
+    } = req.body;
+
+    if (!name || !roles || roles.length === 0) {
+      return res.status(400).json({ message: 'Nome e pelo menos uma role são obrigatórios' });
+    }
+
+    const result = await pool.query(`
+      UPDATE users SET
+        name = $1, email = $2, phone = $3, birth_date = $4,
+        address = $5, address_number = $6, address_complement = $7,
+        neighborhood = $8, city = $9, state = $10, roles = $11,
+        percentage = $12, category_id = $13, updated_at = NOW()
+      WHERE id = $14
+      RETURNING id, name, cpf, roles
+    `, [
+      name.trim(),
+      email?.trim() || null,
+      phone?.replace(/\D/g, '') || null,
+      birth_date || null,
+      address?.trim() || null,
+      address_number?.trim() || null,
+      address_complement?.trim() || null,
+      neighborhood?.trim() || null,
+      city?.trim() || null,
+      state || null,
+      roles,
+      percentage || null,
+      category_id || null,
+      id
+    ]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+
+    res.json({
+      message: 'Usuário atualizado com sucesso',
+      user: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error('Error updating user:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+app.delete('/api/users/:id', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+
+    res.json({ message: 'Usuário excluído com sucesso' });
+
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
 app.get('/api/professionals', authenticate, async (req, res) => {
   try {
     const result = await pool.query(`
@@ -774,6 +916,27 @@ app.get('/api/service-categories', authenticate, async (req, res) => {
   }
 });
 
+app.post('/api/service-categories', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ message: 'Nome é obrigatório' });
+    }
+    
+    const result = await pool.query(`
+      INSERT INTO service_categories (name, description)
+      VALUES ($1, $2)
+      RETURNING *
+    `, [name, description]);
+    
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating service category:', error);
+    res.status(500).json({ message: 'Erro ao criar categoria' });
+  }
+});
+
 // Services routes
 app.get('/api/services', authenticate, async (req, res) => {
   try {
@@ -787,6 +950,67 @@ app.get('/api/services', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Error fetching services:', error);
     res.status(500).json({ message: 'Erro ao buscar serviços' });
+  }
+});
+
+app.post('/api/services', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const { name, description, base_price, category_id, is_base_service } = req.body;
+    
+    if (!name || !base_price) {
+      return res.status(400).json({ message: 'Nome e preço base são obrigatórios' });
+    }
+    
+    const result = await pool.query(`
+      INSERT INTO services (name, description, base_price, category_id, is_base_service)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+    `, [name, description, base_price, category_id, is_base_service]);
+    
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating service:', error);
+    res.status(500).json({ message: 'Erro ao criar serviço' });
+  }
+});
+
+app.put('/api/services/:id', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, base_price, category_id, is_base_service } = req.body;
+    
+    const result = await pool.query(`
+      UPDATE services 
+      SET name = $1, description = $2, base_price = $3, category_id = $4, is_base_service = $5
+      WHERE id = $6
+      RETURNING *
+    `, [name, description, base_price, category_id, is_base_service, id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Serviço não encontrado' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating service:', error);
+    res.status(500).json({ message: 'Erro ao atualizar serviço' });
+  }
+});
+
+app.delete('/api/services/:id', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const result = await pool.query('DELETE FROM services WHERE id = $1 RETURNING *', [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Serviço não encontrado' });
+    }
+    
+    res.json({ message: 'Serviço excluído com sucesso' });
+  } catch (error) {
+    console.error('Error deleting service:', error);
+    res.status(500).json({ message: 'Erro ao excluir serviço' });
   }
 });
 

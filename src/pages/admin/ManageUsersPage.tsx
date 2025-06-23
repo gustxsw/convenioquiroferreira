@@ -73,16 +73,14 @@ const ManageUsersPage: React.FC = () => {
 
   // Get API URL with fallback
   const getApiUrl = () => {
-    if (import.meta.env.VITE_API_URL) {
-      return import.meta.env.VITE_API_URL;
+    if (
+      window.location.hostname === "cartaoquiroferreira.com.br" ||
+      window.location.hostname === "www.cartaoquiroferreira.com.br"
+    ) {
+      return "https://www.cartaoquiroferreira.com.br";
     }
-    
-    if (window.location.hostname === 'cartaoquiroferreira.com.br' || 
-        window.location.hostname === 'www.cartaoquiroferreira.com.br') {
-      return 'https://www.cartaoquiroferreira.com.br';
-    }
-    
-    return 'http://localhost:3001';
+
+    return "http://localhost:3001";
   };
 
   // Apply filters
@@ -900,9 +898,6 @@ const ManageUsersPage: React.FC = () => {
                       className="input"
                       required
                     />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Para clientes, a senha inicial geralmente é o próprio CPF.
-                    </p>
                   </div>
                 )}
               </div>

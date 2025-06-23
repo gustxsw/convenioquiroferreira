@@ -226,13 +226,6 @@ const LoginPage: React.FC = () => {
                 Criar conta de cliente
               </Link>
             </div>
-
-            <div className="mt-6 text-center text-sm text-gray-500">
-              <p>
-                Para o primeiro acesso como cliente, utilize seu CPF como senha
-                ou entre em contato com o administrador.
-              </p>
-            </div>
           </div>
         </div>
       </div>
