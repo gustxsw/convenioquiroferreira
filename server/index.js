@@ -741,7 +741,7 @@ app.get('/api/users', authenticate, authorize(['admin']), async (req, res) => {
         u.id, u.name, u.cpf, u.email, u.phone, u.birth_date,
         u.address, u.address_number, u.address_complement,
         u.neighborhood, u.city, u.state, u.roles, u.percentage,
-        u.category_id, u.created_at,
+        u.category_id, u.created_at, u.subscription_status, u.subscription_expiry,
         sc.name as category_name
       FROM users u
       LEFT JOIN service_categories sc ON u.category_id = sc.id
@@ -751,6 +751,51 @@ app.get('/api/users', authenticate, authorize(['admin']), async (req, res) => {
   } catch (error) {
     console.error('Error fetching users:', error);
     res.status(500).json({ message: 'Erro ao buscar usuários' });
+  }
+});
+
+// 🔥 NEW: Route to activate client subscription
+app.put('/api/users/:id/activate', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Check if user exists and is a client
+    const userResult = await pool.query(
+      'SELECT id, name, roles FROM users WHERE id = $1',
+      [id]
+    );
+    
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+    
+    const user = userResult.rows[0];
+    
+    if (!user.roles || !user.roles.includes('client')) {
+      return res.status(400).json({ message: 'Apenas clientes podem ter assinatura ativada' });
+    }
+    
+    // Set subscription as active with 1 month expiry
+    const expiryDate = new Date();
+    expiryDate.setMonth(expiryDate.getMonth() + 1);
+    
+    const result = await pool.query(`
+      UPDATE users 
+      SET subscription_status = 'active', 
+          subscription_expiry = $1, 
+          updated_at = NOW()
+      WHERE id = $2
+      RETURNING id, name, subscription_status, subscription_expiry
+    `, [expiryDate, id]);
+    
+    res.json({
+      message: 'Cliente ativado com sucesso',
+      user: result.rows[0]
+    });
+    
+  } catch (error) {
+    console.error('Error activating client:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 

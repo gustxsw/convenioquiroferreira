@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { UserPlus, Edit, Trash2, User, Check, X, Search, Filter } from 'lucide-react';
+import { UserPlus, Edit, Trash2, User, Check, X, Search, Filter, UserCheck } from 'lucide-react';
 
 type UserData = {
   id: number;
@@ -18,6 +18,8 @@ type UserData = {
   roles: string[];
   percentage?: number;
   category_id?: number;
+  subscription_status?: string;
+  subscription_expiry?: string;
   created_at: string;
 };
 
@@ -70,6 +72,9 @@ const ManageUsersPage: React.FC = () => {
 
   // Filtered users
   const [filteredUsers, setFilteredUsers] = useState<UserData[]>([]);
+
+  // 🔥 NEW: Activation state
+  const [isActivating, setIsActivating] = useState<number | null>(null);
 
   // Get API URL with fallback
   const getApiUrl = () => {
@@ -177,6 +182,50 @@ const ManageUsersPage: React.FC = () => {
       setError('Não foi possível carregar os dados');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // 🔥 NEW: Function to activate client
+  const activateClient = async (userId: number) => {
+    try {
+      setIsActivating(userId);
+      setError('');
+      setSuccess('');
+      
+      const token = localStorage.getItem('token');
+      const apiUrl = getApiUrl();
+      
+      const response = await fetch(`${apiUrl}/api/users/${userId}/activate`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Falha ao ativar cliente');
+      }
+      
+      // Refresh users list
+      await fetchData();
+      
+      setSuccess('Cliente ativado com sucesso!');
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSuccess('');
+      }, 3000);
+    } catch (error) {
+      console.error('Error activating client:', error);
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError('Ocorreu um erro ao ativar o cliente');
+      }
+    } finally {
+      setIsActivating(null);
     }
   };
   
@@ -436,6 +485,32 @@ const ManageUsersPage: React.FC = () => {
     return date.toLocaleDateString('pt-BR');
   };
 
+  // 🔥 NEW: Function to get subscription status display
+  const getSubscriptionStatusDisplay = (status?: string) => {
+    switch (status) {
+      case 'active':
+        return {
+          text: 'Ativo',
+          className: 'bg-green-100 text-green-800'
+        };
+      case 'pending':
+        return {
+          text: 'Pendente',
+          className: 'bg-yellow-100 text-yellow-800'
+        };
+      case 'expired':
+        return {
+          text: 'Vencido',
+          className: 'bg-red-100 text-red-800'
+        };
+      default:
+        return {
+          text: 'N/A',
+          className: 'bg-gray-100 text-gray-800'
+        };
+    }
+  };
+
   const handleRoleChange = (role: string, checked: boolean) => {
     if (checked) {
       setRoles([...roles, role]);
@@ -609,6 +684,7 @@ const ManageUsersPage: React.FC = () => {
                   <th>Email</th>
                   <th>Telefone</th>
                   <th>Roles</th>
+                  <th>Status Assinatura</th>
                   <th>Categoria</th>
                   <th>Porcentagem</th>
                   <th>Data de Cadastro</th>
@@ -644,6 +720,17 @@ const ManageUsersPage: React.FC = () => {
                       </div>
                     </td>
                     <td>
+                      {user.roles?.includes('client') ? (
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          getSubscriptionStatusDisplay(user.subscription_status).className
+                        }`}>
+                          {getSubscriptionStatusDisplay(user.subscription_status).text}
+                        </span>
+                      ) : (
+                        <span className="text-gray-500">-</span>
+                      )}
+                    </td>
+                    <td>
                       {user.roles?.includes('professional') && user.category_id
                         ? categories.find(c => c.id === user.category_id)?.name || '-'
                         : '-'}
@@ -654,6 +741,20 @@ const ManageUsersPage: React.FC = () => {
                     <td>{formatDate(user.created_at)}</td>
                     <td>
                       <div className="flex space-x-2">
+                        {/* 🔥 NEW: Activate button for clients with pending status */}
+                        {user.roles?.includes('client') && user.subscription_status === 'pending' && (
+                          <button
+                            onClick={() => activateClient(user.id)}
+                            className={`p-1 text-green-600 hover:text-green-800 ${
+                              isActivating === user.id ? 'opacity-50 cursor-not-allowed' : ''
+                            }`}
+                            title="Ativar Cliente"
+                            disabled={isActivating === user.id}
+                          >
+                            <UserCheck className="h-5 w-5" />
+                          </button>
+                        )}
+                        
                         <button
                           onClick={() => openEditModal(user)}
                           className="p-1 text-blue-600 hover:text-blue-800"
