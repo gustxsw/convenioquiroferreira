@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, Calendar } from 'lucide-react';
+import { Search, Calendar, User, Users } from 'lucide-react';
 
 type Service = {
   id: number;
@@ -22,6 +22,7 @@ type Client = {
   id: number;
   name: string;
   cpf: string;
+  subscription_status: string;
 };
 
 type Dependent = {
@@ -29,6 +30,9 @@ type Dependent = {
   name: string;
   cpf: string;
   birth_date: string;
+  client_id: number;
+  client_name: string;
+  client_subscription_status: string;
 };
 
 const RegisterConsultationPage: React.FC = () => {
@@ -39,8 +43,10 @@ const RegisterConsultationPage: React.FC = () => {
   const [cpf, setCpf] = useState('');
   const [clientId, setClientId] = useState<number | null>(null);
   const [clientName, setClientName] = useState('');
+  const [subscriptionStatus, setSubscriptionStatus] = useState('');
   const [dependents, setDependents] = useState<Dependent[]>([]);
   const [selectedDependentId, setSelectedDependentId] = useState<number | null>(null);
+  const [foundDependent, setFoundDependent] = useState<Dependent | null>(null);
   const [categoryId, setCategoryId] = useState<string>('');
   const [serviceId, setServiceId] = useState<number | null>(null);
   const [value, setValue] = useState('');
@@ -129,8 +135,8 @@ const RegisterConsultationPage: React.FC = () => {
     }
   }, [categoryId, services]);
   
-  // Search client by CPF
-  const searchClient = async () => {
+  // Search client or dependent by CPF
+  const searchByCpf = async () => {
     setError('');
     setSuccess('');
     
@@ -145,28 +151,69 @@ const RegisterConsultationPage: React.FC = () => {
       
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
+      const cleanCpf = cpf.replace(/\D/g, '');
       
-      const response = await fetch(`${apiUrl}/api/clients/lookup?cpf=${cpf.replace(/\D/g, '')}`, {
+      // First, try to find a dependent with this CPF
+      const dependentResponse = await fetch(`${apiUrl}/api/dependents/lookup?cpf=${cleanCpf}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
         },
       });
       
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error('Cliente não encontrado. Verifique o CPF ou entre em contato com o administrador.');
+      if (dependentResponse.ok) {
+        const dependentData = await dependentResponse.json();
+        
+        // Check if the client has active subscription
+        if (dependentData.client_subscription_status !== 'active') {
+          setError('Este dependente não pode ser atendido pois o titular não possui assinatura ativa.');
+          resetForm();
+          return;
+        }
+        
+        setFoundDependent(dependentData);
+        setClientId(dependentData.client_id);
+        setClientName(dependentData.client_name);
+        setSubscriptionStatus(dependentData.client_subscription_status);
+        setSelectedDependentId(dependentData.id);
+        setDependents([]);
+        setSuccess(`Dependente encontrado: ${dependentData.name} (Titular: ${dependentData.client_name})`);
+        return;
+      }
+      
+      // If not found as dependent, try to find as client
+      const clientResponse = await fetch(`${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      
+      if (!clientResponse.ok) {
+        if (clientResponse.status === 404) {
+          throw new Error('Cliente ou dependente não encontrado. Verifique o CPF ou entre em contato com o administrador.');
         } else {
           throw new Error('Falha ao buscar cliente');
         }
       }
       
-      const data = await response.json();
-      setClientId(data.id);
-      setClientName(data.name);
+      const clientData = await clientResponse.json();
+      
+      // Check if client has active subscription
+      if (clientData.subscription_status !== 'active') {
+        setError('Este cliente não pode ser atendido pois não possui assinatura ativa.');
+        resetForm();
+        return;
+      }
+      
+      setClientId(clientData.id);
+      setClientName(clientData.name);
+      setSubscriptionStatus(clientData.subscription_status);
+      setSelectedDependentId(null);
+      setFoundDependent(null);
       
       // Fetch dependents
-      const dependentsResponse = await fetch(`${apiUrl}/api/dependents/${data.id}`, {
+      const dependentsResponse = await fetch(`${apiUrl}/api/dependents/${clientData.id}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -185,12 +232,19 @@ const RegisterConsultationPage: React.FC = () => {
       } else {
         setError('Ocorreu um erro ao buscar o cliente');
       }
-      setClientId(null);
-      setClientName('');
-      setDependents([]);
+      resetForm();
     } finally {
       setIsSearching(false);
     }
+  };
+  
+  const resetForm = () => {
+    setClientId(null);
+    setClientName('');
+    setSubscriptionStatus('');
+    setDependents([]);
+    setSelectedDependentId(null);
+    setFoundDependent(null);
   };
   
   // Update value when service changes
@@ -236,8 +290,6 @@ const RegisterConsultationPage: React.FC = () => {
       return;
     }
     
-    
-    
     if (!value || Number(value) <= 0) {
       setError('O valor deve ser maior que zero');
       return;
@@ -281,7 +333,9 @@ const RegisterConsultationPage: React.FC = () => {
       setCpf('');
       setClientId(null);
       setClientName('');
+      setSubscriptionStatus('');
       setSelectedDependentId(null);
+      setFoundDependent(null);
       setDependents([]);
       setCategoryId('');
       setServiceId(null);
@@ -331,7 +385,7 @@ const RegisterConsultationPage: React.FC = () => {
           <div className="mb-6">
             <h2 className="text-lg font-semibold mb-3 flex items-center">
               <Search className="h-5 w-5 mr-2 text-red-600" />
-              Buscar Cliente por CPF
+              Buscar por CPF (Cliente ou Dependente)
             </h2>
             
             <div className="flex items-center space-x-2">
@@ -348,7 +402,7 @@ const RegisterConsultationPage: React.FC = () => {
               
               <button
                 type="button"
-                onClick={searchClient}
+                onClick={searchByCpf}
                 className={`btn btn-primary ${isSearching ? 'opacity-70 cursor-not-allowed' : ''}`}
                 disabled={isSearching || isLoading || !cpf}
               >
@@ -356,13 +410,40 @@ const RegisterConsultationPage: React.FC = () => {
               </button>
             </div>
             
+            {/* Display found client or dependent */}
             {clientId && (
               <div className="mt-3">
                 <div className="p-3 bg-green-50 text-green-700 rounded-md mb-3">
-                  <p><span className="font-medium">Cliente:</span> {clientName}</p>
+                  {foundDependent ? (
+                    <div className="flex items-center">
+                      <User className="h-5 w-5 mr-2" />
+                      <div>
+                        <p><span className="font-medium">Dependente:</span> {foundDependent.name}</p>
+                        <p><span className="font-medium">Titular:</span> {clientName}</p>
+                        <p><span className="font-medium">Status:</span> 
+                          <span className="ml-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
+                            Assinatura Ativa
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center">
+                      <Users className="h-5 w-5 mr-2" />
+                      <div>
+                        <p><span className="font-medium">Cliente:</span> {clientName}</p>
+                        <p><span className="font-medium">Status:</span> 
+                          <span className="ml-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
+                            Assinatura Ativa
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 
-                {dependents.length > 0 && (
+                {/* Show dependents selection only if client was found directly */}
+                {!foundDependent && dependents.length > 0 && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Selecionar Dependente (opcional)

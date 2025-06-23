@@ -1014,7 +1014,7 @@ app.delete('/api/services/:id', authenticate, authorize(['admin']), async (req, 
   }
 });
 
-// Client lookup route
+// Client lookup route - 🔥 UPDATED: Check subscription status
 app.get('/api/clients/lookup', authenticate, async (req, res) => {
   try {
     const { cpf } = req.query;
@@ -1026,7 +1026,7 @@ app.get('/api/clients/lookup', authenticate, async (req, res) => {
     const cleanCpf = cpf.replace(/\D/g, '');
     
     const result = await pool.query(
-      'SELECT id, name, cpf FROM users WHERE cpf = $1 AND $2 = ANY(roles)',
+      'SELECT id, name, cpf, subscription_status FROM users WHERE cpf = $1 AND $2 = ANY(roles)',
       [cleanCpf, 'client']
     );
     
@@ -1038,6 +1038,37 @@ app.get('/api/clients/lookup', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Error looking up client:', error);
     res.status(500).json({ message: 'Erro ao buscar cliente' });
+  }
+});
+
+// 🔥 NEW: Dependent lookup route
+app.get('/api/dependents/lookup', authenticate, async (req, res) => {
+  try {
+    const { cpf } = req.query;
+    
+    if (!cpf) {
+      return res.status(400).json({ message: 'CPF é obrigatório' });
+    }
+    
+    const cleanCpf = cpf.replace(/\D/g, '');
+    
+    const result = await pool.query(`
+      SELECT 
+        d.id, d.name, d.cpf, d.client_id,
+        u.name as client_name, u.subscription_status as client_subscription_status
+      FROM dependents d
+      JOIN users u ON d.client_id = u.id
+      WHERE d.cpf = $1
+    `, [cleanCpf]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Dependente não encontrado' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error looking up dependent:', error);
+    res.status(500).json({ message: 'Erro ao buscar dependente' });
   }
 });
 
