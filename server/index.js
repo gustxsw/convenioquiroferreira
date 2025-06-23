@@ -185,25 +185,6 @@ const initDatabase = async () => {
       console.log('Default admin user created');
     }
 
-    // Insert test users with multiple roles
-    const testUsers = [
-      { name: 'Cliente Teste', cpf: '12345678901', password: '12345678901', roles: ['client'] },
-      { name: 'Profissional Teste', cpf: '98765432100', password: '98765432100', roles: ['professional'], percentage: 60, category_id: 1 },
-      { name: 'Multi Role User', cpf: '55555555555', password: '55555555555', roles: ['client', 'professional', 'admin'], percentage: 70, category_id: 1 }
-    ];
-
-    for (const user of testUsers) {
-      const userExists = await pool.query('SELECT id FROM users WHERE cpf = $1', [user.cpf]);
-      if (userExists.rows.length === 0) {
-        const hashedPassword = await bcrypt.hash(user.password, 10);
-        await pool.query(`
-          INSERT INTO users (name, cpf, password, roles, percentage, category_id) 
-          VALUES ($1, $2, $3, $4, $5, $6)
-        `, [user.name, user.cpf, hashedPassword, user.roles, user.percentage || null, user.category_id || null]);
-        console.log(`Test user ${user.name} created`);
-      }
-    }
-
     // Insert default service category
     const categoryExists = await pool.query('SELECT id FROM service_categories WHERE name = $1', ['Fisioterapia']);
     if (categoryExists.rows.length === 0) {

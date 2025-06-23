@@ -203,7 +203,7 @@ const ReportsPage: React.FC = () => {
               
               <div className="p-4 bg-green-50 rounded-lg">
                 <div className="text-center">
-                  <p className="text-gray-600 mb-1">Valor a Receber (Clínica)</p>
+                  <p className="text-gray-600 mb-1">Receita do Convênio</p>
                   <p className="text-3xl font-bold text-green-600">
                     {formatCurrency(calculateTotalClinicRevenue())}
                   </p>
@@ -212,7 +212,7 @@ const ReportsPage: React.FC = () => {
               
               <div className="p-4 bg-blue-50 rounded-lg">
                 <div className="text-center">
-                  <p className="text-gray-600 mb-1">Valor a Pagar (Profissionais)</p>
+                  <p className="text-gray-600 mb-1">Faturamento dos Profissionais</p>
                   <p className="text-3xl font-bold text-blue-600">
                     {formatCurrency(calculateTotalProfessionalPayments())}
                   </p>

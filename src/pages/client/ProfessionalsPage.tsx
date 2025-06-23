@@ -208,7 +208,7 @@ const ProfessionalsPage: React.FC = () => {
           <div className="flex items-center">
             <Phone className="h-4 w-4 text-red-600 mr-2" />
             <span className="text-red-800">
-              <strong>Telefone:</strong> (64) 98121-0313
+              <strong>Telefone:</strong> (64) 98124-9199
             </span>
           </div>
           <div className="flex items-center">

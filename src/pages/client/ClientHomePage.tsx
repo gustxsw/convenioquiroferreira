@@ -194,7 +194,7 @@ const ClientHomePage: React.FC = () => {
         <div className="space-y-2">
           <p>
             <span className="font-medium">Telefone para contato:</span> (64)
-            98121-0313
+            98124-9199
           </p>
           <p>
             <span className="font-medium">Horário de atendimento:</span> Segunda

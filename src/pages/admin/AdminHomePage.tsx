@@ -324,7 +324,7 @@ const AdminHomePage: React.FC = () => {
                 </div>
                 <div className="bg-green-50 p-4 rounded-lg">
                   <p className="text-sm text-green-600 font-medium">
-                    Receita da Clínica
+                    Receita do Convênio
                   </p>
                   <p className="text-2xl font-bold text-green-700">
                     {formatCurrency(calculateClinicRevenue())}
@@ -332,7 +332,7 @@ const AdminHomePage: React.FC = () => {
                 </div>
                 <div className="bg-orange-50 p-4 rounded-lg">
                   <p className="text-sm text-orange-600 font-medium">
-                    Pagamentos aos Profissionais
+                    Faturamento dos Profissionais
                   </p>
                   <p className="text-2xl font-bold text-orange-700">
                     {formatCurrency(

@@ -232,11 +232,6 @@ const LoginPage: React.FC = () => {
                 Para o primeiro acesso como cliente, utilize seu CPF como senha
                 ou entre em contato com o administrador.
               </p>
-              <p className="mt-2">
-                <strong>Usuário de teste com múltiplas roles:</strong>
-                <br />
-                CPF: 555.555.555-55 | Senha: 55555555555
-              </p>
             </div>
           </div>
         </div>

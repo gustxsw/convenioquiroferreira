@@ -132,7 +132,7 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
     }
   };
   
-  const totalAmount = (1 + dependentCount) * 30; // R$30 per person
+  const totalAmount = 250 + (dependentCount * 50); // R$250 titular + R$50 per dependent
   
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -166,9 +166,9 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
             <div className="bg-gray-50 p-4 rounded-lg">
               <h3 className="font-medium mb-2">Detalhes da Assinatura</h3>
               <div className="space-y-2">
-                <p>Titular: R$ 30,00</p>
+                <p>Titular: R$ 250,00</p>
                 {dependentCount > 0 && (
-                  <p>Dependentes ({dependentCount}): R$ {dependentCount * 30},00</p>
+                  <p>Dependentes ({dependentCount}): R$ {dependentCount * 50},00</p>
                 )}
                 <div className="border-t border-gray-200 pt-2 mt-2">
                   <p className="font-medium">Total: R$ {totalAmount},00</p>
