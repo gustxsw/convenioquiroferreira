@@ -754,10 +754,24 @@ app.get('/api/users', authenticate, authorize(['admin']), async (req, res) => {
   }
 });
 
-// 🔥 NEW: Route to activate client subscription
+// 🔥 UPDATED: Route to activate client subscription with custom expiry date
 app.put('/api/users/:id/activate', authenticate, authorize(['admin']), async (req, res) => {
   try {
     const { id } = req.params;
+    const { expiry_date } = req.body;
+    
+    // Validate expiry date
+    if (!expiry_date) {
+      return res.status(400).json({ message: 'Data de expiração é obrigatória' });
+    }
+    
+    const expiryDate = new Date(expiry_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (expiryDate <= today) {
+      return res.status(400).json({ message: 'Data de expiração deve ser posterior à data atual' });
+    }
     
     // Check if user exists and is a client
     const userResult = await pool.query(
@@ -775,10 +789,7 @@ app.put('/api/users/:id/activate', authenticate, authorize(['admin']), async (re
       return res.status(400).json({ message: 'Apenas clientes podem ter assinatura ativada' });
     }
     
-    // Set subscription as active with 1 month expiry
-    const expiryDate = new Date();
-    expiryDate.setMonth(expiryDate.getMonth() + 1);
-    
+    // Set subscription as active with custom expiry date
     const result = await pool.query(`
       UPDATE users 
       SET subscription_status = 'active', 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { UserPlus, Edit, Trash2, User, Check, X, Search, Filter, UserCheck } from 'lucide-react';
+import { UserPlus, Edit, Trash2, User, Check, X, Search, Filter, UserCheck, Calendar } from 'lucide-react';
 
 type UserData = {
   id: number;
@@ -75,6 +75,9 @@ const ManageUsersPage: React.FC = () => {
 
   // 🔥 NEW: Activation state
   const [isActivating, setIsActivating] = useState<number | null>(null);
+  const [showActivationModal, setShowActivationModal] = useState(false);
+  const [userToActivate, setUserToActivate] = useState<UserData | null>(null);
+  const [expiryDate, setExpiryDate] = useState('');
 
   // Get API URL with fallback
   const getApiUrl = () => {
@@ -185,28 +188,50 @@ const ManageUsersPage: React.FC = () => {
     }
   };
 
-  // 🔥 NEW: Function to activate client
-  const activateClient = async (userId: number) => {
+  // 🔥 NEW: Function to open activation modal
+  const openActivationModal = (user: UserData) => {
+    setUserToActivate(user);
+    
+    // Set default expiry date to 1 month from now
+    const defaultExpiry = new Date();
+    defaultExpiry.setMonth(defaultExpiry.getMonth() + 1);
+    setExpiryDate(defaultExpiry.toISOString().split('T')[0]);
+    
+    setShowActivationModal(true);
+  };
+
+  // 🔥 NEW: Function to activate client with custom expiry date
+  const activateClient = async () => {
+    if (!userToActivate || !expiryDate) return;
+    
     try {
-      setIsActivating(userId);
+      setIsActivating(userToActivate.id);
       setError('');
       setSuccess('');
       
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
       
-      const response = await fetch(`${apiUrl}/api/users/${userId}/activate`, {
+      const response = await fetch(`${apiUrl}/api/users/${userToActivate.id}/activate`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          expiry_date: expiryDate
+        }),
       });
       
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Falha ao ativar cliente');
       }
+      
+      // Close modal and refresh data
+      setShowActivationModal(false);
+      setUserToActivate(null);
+      setExpiryDate('');
       
       // Refresh users list
       await fetchData();
@@ -227,6 +252,13 @@ const ManageUsersPage: React.FC = () => {
     } finally {
       setIsActivating(null);
     }
+  };
+
+  // 🔥 NEW: Function to cancel activation
+  const cancelActivation = () => {
+    setShowActivationModal(false);
+    setUserToActivate(null);
+    setExpiryDate('');
   };
   
   const openCreateModal = () => {
@@ -744,7 +776,7 @@ const ManageUsersPage: React.FC = () => {
                         {/* 🔥 NEW: Activate button for clients with pending status */}
                         {user.roles?.includes('client') && user.subscription_status === 'pending' && (
                           <button
-                            onClick={() => activateClient(user.id)}
+                            onClick={() => openActivationModal(user)}
                             className={`p-1 text-green-600 hover:text-green-800 ${
                               isActivating === user.id ? 'opacity-50 cursor-not-allowed' : ''
                             }`}
@@ -778,6 +810,84 @@ const ManageUsersPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* 🔥 NEW: Activation modal */}
+      {showActivationModal && userToActivate && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold flex items-center">
+                <Calendar className="h-6 w-6 text-green-600 mr-2" />
+                Ativar Cliente
+              </h2>
+              <button
+                onClick={cancelActivation}
+                className="text-gray-500 hover:text-gray-700"
+                disabled={isActivating === userToActivate.id}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="mb-4">
+              <p className="text-gray-700 mb-2">
+                <span className="font-medium">Cliente:</span> {userToActivate.name}
+              </p>
+              <p className="text-gray-700 mb-4">
+                <span className="font-medium">CPF:</span> {formattedCpf(userToActivate.cpf)}
+              </p>
+            </div>
+
+            <div className="mb-6">
+              <label htmlFor="expiryDate" className="block text-sm font-medium text-gray-700 mb-1">
+                Data de Expiração da Assinatura *
+              </label>
+              <input
+                id="expiryDate"
+                type="date"
+                value={expiryDate}
+                onChange={(e) => setExpiryDate(e.target.value)}
+                className="input"
+                min={new Date().toISOString().split('T')[0]}
+                disabled={isActivating === userToActivate.id}
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                A assinatura ficará ativa até a data selecionada
+              </p>
+            </div>
+            
+            <div className="flex justify-end">
+              <button
+                onClick={cancelActivation}
+                className="btn btn-secondary mr-2"
+                disabled={isActivating === userToActivate.id}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={activateClient}
+                className={`btn btn-primary flex items-center ${
+                  isActivating === userToActivate.id ? 'opacity-70 cursor-not-allowed' : ''
+                }`}
+                disabled={isActivating === userToActivate.id || !expiryDate}
+              >
+                {isActivating === userToActivate.id ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Ativando...
+                  </>
+                ) : (
+                  <>
+                    <UserCheck className="h-5 w-5 mr-2" />
+                    Ativar Cliente
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* User form modal */}
       {isModalOpen && (
