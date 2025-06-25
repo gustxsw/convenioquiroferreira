@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { CalendarClock, PlusCircle, DollarSign, TrendingUp, Users, AlertCircle, RefreshCw } from 'lucide-react';
+import { CalendarClock, PlusCircle, DollarSign, TrendingUp, Users, AlertCircle, RefreshCw, Camera, Upload } from 'lucide-react';
 import PaymentSection from './PaymentSection';
 
 type RevenueReport = {
@@ -27,6 +27,10 @@ const ProfessionalHomePage: React.FC = () => {
   const [revenueReport, setRevenueReport] = useState<RevenueReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [uploadSuccess, setUploadSuccess] = useState('');
 
   // Get API URL with fallback
   const getApiUrl = () => {
@@ -63,6 +67,20 @@ const ProfessionalHomePage: React.FC = () => {
       console.log('🔄 Date range:', dateRange);
       console.log('🔄 User ID:', user?.id);
       
+      // Fetch user data to get photo_url
+      const userResponse = await fetch(`${apiUrl}/api/users/${user?.id}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (userResponse.ok) {
+        const userData = await userResponse.json();
+        setPhotoUrl(userData.photo_url);
+      }
+      
       const revenueResponse = await fetch(
         `${apiUrl}/api/reports/professional-revenue?start_date=${dateRange.start}&end_date=${dateRange.end}`,
         {
@@ -90,6 +108,63 @@ const ProfessionalHomePage: React.FC = () => {
       setError(error instanceof Error ? error.message : 'Não foi possível carregar os dados. Verifique sua conexão e tente novamente.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setUploadError('Por favor, selecione apenas arquivos de imagem');
+      return;
+    }
+
+    // Validate file size (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError('A imagem deve ter no máximo 5MB');
+      return;
+    }
+
+    try {
+      setIsUploadingPhoto(true);
+      setUploadError('');
+      setUploadSuccess('');
+
+      const token = localStorage.getItem('token');
+      const apiUrl = getApiUrl();
+
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await fetch(`${apiUrl}/api/upload-image`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Falha ao fazer upload da imagem');
+      }
+
+      const data = await response.json();
+      setPhotoUrl(data.imageUrl);
+      setUploadSuccess('Imagem atualizada com sucesso!');
+
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setUploadSuccess('');
+      }, 3000);
+
+    } catch (error) {
+      console.error('Error uploading photo:', error);
+      setUploadError(error instanceof Error ? error.message : 'Erro ao fazer upload da imagem');
+    } finally {
+      setIsUploadingPhoto(false);
     }
   };
   
@@ -125,10 +200,51 @@ const ProfessionalHomePage: React.FC = () => {
   
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Olá, {user?.name}</h1>
-          <p className="text-gray-600">Bem-vindo ao seu painel de profissional.</p>
+      <div className="flex justify-between items-start mb-6">
+        <div className="flex items-center space-x-4">
+          {/* Professional Photo */}
+          <div className="relative">
+            <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-red-100">
+              {photoUrl ? (
+                <img
+                  src={photoUrl}
+                  alt={`Foto de ${user?.name}`}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    target.nextElementSibling?.classList.remove('hidden');
+                  }}
+                />
+              ) : null}
+              <div className={`w-full h-full bg-red-100 flex items-center justify-center ${photoUrl ? 'hidden' : ''}`}>
+                <Camera className="h-6 w-6 text-red-600" />
+              </div>
+            </div>
+            
+            {/* Upload button */}
+            <label className="absolute -bottom-1 -right-1 bg-red-600 text-white rounded-full p-1.5 cursor-pointer hover:bg-red-700 transition-colors shadow-sm">
+              <Upload className="h-3 w-3" />
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoUpload}
+                className="hidden"
+                disabled={isUploadingPhoto}
+              />
+            </label>
+            
+            {isUploadingPhoto && (
+              <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Olá, {user?.name}</h1>
+            <p className="text-gray-600">Bem-vindo ao seu painel de profissional.</p>
+          </div>
         </div>
         
         <div className="flex space-x-3">
@@ -149,6 +265,25 @@ const ProfessionalHomePage: React.FC = () => {
           </Link>
         </div>
       </div>
+
+      {/* Upload feedback messages */}
+      {uploadError && (
+        <div className="bg-red-50 border-l-4 border-red-600 p-4 mb-6">
+          <div className="flex items-center">
+            <AlertCircle className="h-5 w-5 text-red-600 mr-2" />
+            <p className="text-red-700">{uploadError}</p>
+          </div>
+        </div>
+      )}
+
+      {uploadSuccess && (
+        <div className="bg-green-50 border-l-4 border-green-600 p-4 mb-6">
+          <div className="flex items-center">
+            <Camera className="h-5 w-5 text-green-600 mr-2" />
+            <p className="text-green-700">{uploadSuccess}</p>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-50 border-l-4 border-red-600 p-4 mb-6">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Phone, MapPin, Briefcase, Mail, Calendar } from "lucide-react";
+import { Phone, MapPin, Briefcase, Mail, Calendar, Camera } from "lucide-react";
 
 type Professional = {
   id: number;
@@ -14,6 +14,7 @@ type Professional = {
   city: string;
   state: string;
   category_name: string;
+  photo_url?: string;
 };
 
 const ProfessionalsPage: React.FC = () => {
@@ -140,10 +141,25 @@ const ProfessionalsPage: React.FC = () => {
               className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-all duration-200 hover:scale-105"
             >
               <div className="p-6">
-                {/* Header */}
+                {/* Header with Photo */}
                 <div className="text-center mb-6">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <Briefcase className="h-8 w-8 text-red-600" />
+                  <div className="w-20 h-20 mx-auto mb-3 relative">
+                    {professional.photo_url ? (
+                      <img
+                        src={professional.photo_url}
+                        alt={`Foto de ${professional.name}`}
+                        className="w-full h-full rounded-full object-cover border-2 border-red-100"
+                        onError={(e) => {
+                          // Fallback to default icon if image fails to load
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          target.nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                    ) : null}
+                    <div className={`w-full h-full bg-red-100 rounded-full flex items-center justify-center ${professional.photo_url ? 'hidden' : ''}`}>
+                      <Briefcase className="h-8 w-8 text-red-600" />
+                    </div>
                   </div>
                   <h2 className="text-xl font-semibold text-gray-900 mb-1">
                     {professional.name}

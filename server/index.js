@@ -8,6 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { pool } from './db.js';
 import { authenticate, authorize } from './middleware/auth.js';
+import upload from './middleware/upload.js';
 
 dotenv.config();
 
@@ -64,7 +65,7 @@ const initDatabase = async () => {
   try {
     console.log('🔥 Initializing database...');
     
-    // Create users table with roles array
+    // Create users table with roles array and photo_url
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -85,9 +86,23 @@ const initDatabase = async () => {
         category_id INTEGER,
         subscription_status VARCHAR(20) DEFAULT 'pending',
         subscription_expiry DATE,
+        photo_url TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
+    `);
+
+    // Add photo_url column if it doesn't exist
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'photo_url'
+        ) THEN
+          ALTER TABLE users ADD COLUMN photo_url TEXT;
+        END IF;
+      END $$;
     `);
 
     // Create service categories table FIRST
@@ -245,6 +260,36 @@ const getBaseUrl = (req) => {
   const host = req.headers['x-forwarded-host'] || req.get('host');
   return `${protocol}://${host}`;
 };
+
+// 🔥 NEW: Image upload route
+app.post('/api/upload-image', authenticate, authorize(['professional']), upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'Nenhuma imagem foi enviada' });
+    }
+
+    const imageUrl = req.file.path; // Cloudinary URL
+    const userId = req.user.id;
+
+    // Update user's photo_url in database
+    await pool.query(
+      'UPDATE users SET photo_url = $1, updated_at = NOW() WHERE id = $2',
+      [imageUrl, userId]
+    );
+
+    res.json({
+      message: 'Imagem enviada com sucesso',
+      imageUrl: imageUrl
+    });
+
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    res.status(500).json({ 
+      message: 'Erro ao fazer upload da imagem',
+      error: error.message 
+    });
+  }
+});
 
 // MercadoPago routes
 app.post('/api/create-subscription', authenticate, async (req, res) => {
@@ -742,7 +787,7 @@ app.get('/api/users', authenticate, authorize(['admin']), async (req, res) => {
         u.address, u.address_number, u.address_complement,
         u.neighborhood, u.city, u.state, u.roles, u.percentage,
         u.category_id, u.created_at, u.subscription_status, u.subscription_expiry,
-        sc.name as category_name
+        u.photo_url, sc.name as category_name
       FROM users u
       LEFT JOIN service_categories sc ON u.category_id = sc.id
       ORDER BY u.created_at DESC
@@ -959,7 +1004,7 @@ app.get('/api/professionals', authenticate, async (req, res) => {
         u.id, u.name, u.cpf, u.email, u.phone,
         u.address, u.address_number, u.address_complement,
         u.neighborhood, u.city, u.state, u.roles,
-        sc.name as category_name
+        u.photo_url, sc.name as category_name
       FROM users u
       LEFT JOIN service_categories sc ON u.category_id = sc.id
       WHERE 'professional' = ANY(u.roles)
