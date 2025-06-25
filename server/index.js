@@ -260,15 +260,41 @@ const getBaseUrl = (req) => {
   return `${protocol}://${host}`;
 };
 
-// 🔥 FIXED: Image upload route with better error handling
+// 🔥 FIXED: Image upload route with better error handling and validation
 app.post('/api/upload-image', authenticate, authorize(['professional']), async (req, res) => {
   try {
     console.log('🔄 Starting image upload process...');
-    console.log('📁 Files received:', req.files);
-    console.log('📁 File received:', req.file);
     
-    // Import upload middleware dynamically to avoid initialization issues
-    const { default: upload } = await import('./middleware/upload.js');
+    // Check Cloudinary environment variables
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+    const apiKey = process.env.CLOUDINARY_API_KEY;
+    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+    
+    console.log('🔍 Environment variables check:');
+    console.log('CLOUDINARY_CLOUD_NAME:', cloudName ? '✅ Found' : '❌ Missing');
+    console.log('CLOUDINARY_API_KEY:', apiKey ? '✅ Found' : '❌ Missing');
+    console.log('CLOUDINARY_API_SECRET:', apiSecret ? '✅ Found' : '❌ Missing');
+    
+    if (!cloudName || !apiKey || !apiSecret) {
+      return res.status(500).json({ 
+        message: 'Configuração do Cloudinary não encontrada',
+        error: 'Verifique as variáveis de ambiente CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET'
+      });
+    }
+    
+    // Import upload middleware dynamically
+    const { default: createUpload } = await import('./middleware/upload.js');
+    
+    let upload;
+    try {
+      upload = createUpload();
+    } catch (uploadError) {
+      console.error('❌ Error creating upload middleware:', uploadError);
+      return res.status(500).json({ 
+        message: 'Erro na configuração do upload',
+        error: uploadError.message 
+      });
+    }
     
     // Use multer middleware
     upload.single('image')(req, res, async (err) => {
