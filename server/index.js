@@ -8,7 +8,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { pool } from './db.js';
 import { authenticate, authorize } from './middleware/auth.js';
-import upload from './middleware/upload.js';
 
 dotenv.config();
 
@@ -261,31 +260,69 @@ const getBaseUrl = (req) => {
   return `${protocol}://${host}`;
 };
 
-// 🔥 NEW: Image upload route
-app.post('/api/upload-image', authenticate, authorize(['professional']), upload.single('image'), async (req, res) => {
+// 🔥 FIXED: Image upload route with better error handling
+app.post('/api/upload-image', authenticate, authorize(['professional']), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'Nenhuma imagem foi enviada' });
-    }
+    console.log('🔄 Starting image upload process...');
+    console.log('📁 Files received:', req.files);
+    console.log('📁 File received:', req.file);
+    
+    // Import upload middleware dynamically to avoid initialization issues
+    const { default: upload } = await import('./middleware/upload.js');
+    
+    // Use multer middleware
+    upload.single('image')(req, res, async (err) => {
+      try {
+        if (err) {
+          console.error('❌ Multer error:', err);
+          return res.status(400).json({ 
+            message: 'Erro no upload da imagem',
+            error: err.message 
+          });
+        }
 
-    const imageUrl = req.file.path; // Cloudinary URL
-    const userId = req.user.id;
+        if (!req.file) {
+          console.error('❌ No file received');
+          return res.status(400).json({ message: 'Nenhuma imagem foi enviada' });
+        }
 
-    // Update user's photo_url in database
-    await pool.query(
-      'UPDATE users SET photo_url = $1, updated_at = NOW() WHERE id = $2',
-      [imageUrl, userId]
-    );
+        console.log('✅ File uploaded to Cloudinary:', req.file.path);
+        
+        const imageUrl = req.file.path; // Cloudinary URL
+        const userId = req.user.id;
 
-    res.json({
-      message: 'Imagem enviada com sucesso',
-      imageUrl: imageUrl
+        console.log('🔄 Updating database with image URL:', imageUrl);
+
+        // Update user's photo_url in database
+        const result = await pool.query(
+          'UPDATE users SET photo_url = $1, updated_at = NOW() WHERE id = $2 RETURNING photo_url',
+          [imageUrl, userId]
+        );
+
+        if (result.rows.length === 0) {
+          throw new Error('Usuário não encontrado');
+        }
+
+        console.log('✅ Database updated successfully');
+
+        res.json({
+          message: 'Imagem enviada com sucesso',
+          imageUrl: imageUrl
+        });
+
+      } catch (dbError) {
+        console.error('❌ Database error:', dbError);
+        res.status(500).json({ 
+          message: 'Erro ao salvar imagem no banco de dados',
+          error: dbError.message 
+        });
+      }
     });
 
   } catch (error) {
-    console.error('Error uploading image:', error);
+    console.error('❌ General upload error:', error);
     res.status(500).json({ 
-      message: 'Erro ao fazer upload da imagem',
+      message: 'Erro interno do servidor',
       error: error.message 
     });
   }
