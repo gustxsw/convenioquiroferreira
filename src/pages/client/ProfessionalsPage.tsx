@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Phone, MapPin, Briefcase, Mail, Calendar, Camera } from "lucide-react";
+import { Phone, MapPin, Briefcase, Mail, Calendar, Camera, X } from "lucide-react";
 
 type Professional = {
   id: number;
@@ -21,6 +21,12 @@ const ProfessionalsPage: React.FC = () => {
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  
+  // 🔥 NEW: Modal state for photo viewing
+  const [selectedPhoto, setSelectedPhoto] = useState<{
+    url: string;
+    name: string;
+  } | null>(null);
 
   // Get API URL with fallback
   const getApiUrl = () => {
@@ -74,6 +80,39 @@ const ProfessionalsPage: React.FC = () => {
 
     fetchProfessionals();
   }, []);
+
+  // 🔥 NEW: Function to open photo modal
+  const openPhotoModal = (photoUrl: string, professionalName: string) => {
+    setSelectedPhoto({
+      url: photoUrl,
+      name: professionalName
+    });
+  };
+
+  // 🔥 NEW: Function to close photo modal
+  const closePhotoModal = () => {
+    setSelectedPhoto(null);
+  };
+
+  // 🔥 NEW: Handle escape key to close modal
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closePhotoModal();
+      }
+    };
+
+    if (selectedPhoto) {
+      document.addEventListener('keydown', handleEscape);
+      // Prevent body scroll when modal is open
+      document.body.style.overflow = 'hidden';
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'unset';
+    };
+  }, [selectedPhoto]);
 
   const formatPhone = (phone: string) => {
     if (!phone) return "Não informado";
@@ -145,17 +184,23 @@ const ProfessionalsPage: React.FC = () => {
                 <div className="text-center mb-6">
                   <div className="w-20 h-20 mx-auto mb-3 relative">
                     {professional.photo_url ? (
-                      <img
-                        src={professional.photo_url}
-                        alt={`Foto de ${professional.name}`}
-                        className="w-full h-full rounded-full object-cover border-2 border-red-100"
-                        onError={(e) => {
-                          // Fallback to default icon if image fails to load
-                          const target = e.target as HTMLImageElement;
-                          target.style.display = 'none';
-                          target.nextElementSibling?.classList.remove('hidden');
-                        }}
-                      />
+                      <button
+                        onClick={() => openPhotoModal(professional.photo_url!, professional.name)}
+                        className="w-full h-full rounded-full overflow-hidden border-2 border-red-100 hover:border-red-300 transition-colors cursor-pointer group"
+                        title="Clique para ampliar a foto"
+                      >
+                        <img
+                          src={professional.photo_url}
+                          alt={`Foto de ${professional.name}`}
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200"
+                          onError={(e) => {
+                            // Fallback to default icon if image fails to load
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            target.parentElement?.nextElementSibling?.classList.remove('hidden');
+                          }}
+                        />
+                      </button>
                     ) : null}
                     <div className={`w-full h-full bg-red-100 rounded-full flex items-center justify-center ${professional.photo_url ? 'hidden' : ''}`}>
                       <Briefcase className="h-8 w-8 text-red-600" />
@@ -212,6 +257,42 @@ const ProfessionalsPage: React.FC = () => {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* 🔥 NEW: Photo Modal */}
+      {selectedPhoto && (
+        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4">
+          {/* Backdrop - click to close */}
+          <div 
+            className="absolute inset-0 cursor-pointer"
+            onClick={closePhotoModal}
+          />
+          
+          {/* Modal Content */}
+          <div className="relative max-w-4xl max-h-full w-full h-full flex items-center justify-center">
+            {/* Close Button */}
+            <button
+              onClick={closePhotoModal}
+              className="absolute top-4 right-4 z-10 bg-black bg-opacity-50 text-white rounded-full p-2 hover:bg-opacity-70 transition-colors"
+              title="Fechar (ESC)"
+            >
+              <X className="h-6 w-6" />
+            </button>
+            
+            {/* Professional Name */}
+            <div className="absolute top-4 left-4 z-10 bg-black bg-opacity-50 text-white px-4 py-2 rounded-lg">
+              <p className="font-medium">{selectedPhoto.name}</p>
+            </div>
+            
+            {/* Image */}
+            <img
+              src={selectedPhoto.url}
+              alt={`Foto de ${selectedPhoto.name}`}
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+              onClick={(e) => e.stopPropagation()} // Prevent closing when clicking on image
+            />
+          </div>
         </div>
       )}
 
