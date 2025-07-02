@@ -280,13 +280,6 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
       ) : dependents.length === 0 ? (
         <div className="text-center py-8 bg-gray-50 rounded-lg">
           <p className="text-gray-600">Você ainda não possui dependentes cadastrados.</p>
-          <button
-            onClick={openCreateModal}
-            className="btn btn-primary mt-4 inline-flex items-center"
-          >
-            <UserPlus className="h-5 w-5 mr-2" />
-            Adicionar Dependente
-          </button>
         </div>
       ) : (
         <div className="table-container">
