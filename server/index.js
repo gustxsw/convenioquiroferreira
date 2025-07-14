@@ -571,7 +571,7 @@ app.post('/api/webhooks/payment-success', async (req, res) => {
             
             const userId = externalReference.split('_')[1];
             const expiryDate = new Date();
-            expiryDate.setMonth(expiryDate.getMonth() + 1);
+            expiryDate.setFullYear(expiryDate.getFullYear() + 1); // 1 year from now
             
             await pool.query(`
               UPDATE users 

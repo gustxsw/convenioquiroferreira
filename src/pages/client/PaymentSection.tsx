@@ -152,7 +152,7 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
             <div className="flex items-center mb-2">
               <Calendar className="h-5 w-5 text-green-600 mr-2" />
               <p className="text-green-700 font-medium">
-                Assinatura ativa até {formatDate(subscriptionExpiry)}
+                Sua assinatura anual está ativa. Renove antes do vencimento para continuar utilizando os serviços.
               </p>
             </div>
             <p className="text-sm text-green-600">
