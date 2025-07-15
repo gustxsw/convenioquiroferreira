@@ -322,13 +322,12 @@ const ClientHomePage: React.FC = () => {
         <h2 className="text-xl font-semibold mb-4">Informações do Convênio</h2>
         <div className="space-y-2">
           <p>
-            <span className="font-medium">Telefone para contato:</span> (64)
-            98124-9199
-          </p>
+            <div>
+              <p className="text-green-700 font-medium">
+                Sua assinatura está ativa até {formatDate(subscriptionExpiry)}
+              </p>
+            </div>
           <p>
-            <span className="font-medium">Horário de atendimento:</span> Segunda
-            a Sexta, das 8h às 18h
-          </p>
         </div>
       </div>
     </div>

@@ -166,12 +166,9 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
             <div className="bg-gray-50 p-4 rounded-lg">
               <h3 className="font-medium mb-2">Detalhes da Assinatura</h3>
               <div className="space-y-2">
-                <p>Titular: R$ 250,00</p>
+                      Sua assinatura está ativa até {formatDate(subscriptionExpiry)}
                 {dependentCount > 0 && (
                   <p>Dependentes ({dependentCount}): R$ {dependentCount * 50},00</p>
-                )}
-                <div className="border-t border-gray-200 pt-2 mt-2">
-                  <p className="font-medium">Total: R$ {totalAmount},00</p>
                 </div>
               </div>
             </div>
