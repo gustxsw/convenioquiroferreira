@@ -327,7 +327,7 @@ const ClientHomePage: React.FC = () => {
                 Sua assinatura está ativa até {formatDate(subscriptionExpiry)}
               </p>
             </div>
-          <p>
+          </p>
         </div>
       </div>
     </div>
