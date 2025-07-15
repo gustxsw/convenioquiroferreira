@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import DependentsSection from './DependentsSection';
-import PaymentSection from './PaymentSection';
+import { PaymentSection } from './PaymentSection';
 
 const ClientHomePage: React.FC = () => {
   const { user } = useAuth();
