@@ -1526,13 +1526,15 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
       SELECT 
         c.id,
         c.date,
-        c.value,
+        COALESCE(cl.name, d.name) as client_name,
         s.name as service_name,
-        COALESCE(d.name, client.name) as client_name
+        c.value as total_value,
+        ROUND(c.value * (100 - u.percentage) / 100, 2) as amount_to_pay
       FROM consultations c
       JOIN services s ON c.service_id = s.id
+      LEFT JOIN clients cl ON c.client_id = cl.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
-      LEFT JOIN users client ON c.client_id = client.id
+      JOIN users u ON c.professional_id = u.id
       WHERE c.professional_id = $1
       ORDER BY c.date DESC
     `, [professionalId]);
@@ -1549,36 +1551,31 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
     
     // Calculate totals
     const totalRevenue = consultations.reduce((sum, consultation) => {
-      return sum + parseFloat(consultation.value || 0);
+      return sum + parseFloat(consultation.total_value || 0);
     }, 0);
     
     const professionalEarnings = consultations.reduce((sum, consultation) => {
-      const professionalShare = consultation.value * (professionalPercentage / 100);
+      const professionalShare = consultation.total_value * (professionalPercentage / 100);
       return sum + professionalShare;
     }, 0);
     
     // Calculate amount to pay (clinic's share + pending amounts)
     const totalAmountToPay = consultations.reduce((sum, consultation) => {
-      const clinicShare = consultation.value * ((100 - professionalPercentage) / 100);
+      const clinicShare = consultation.total_value * ((100 - professionalPercentage) / 100);
       return sum + clinicShare;
     }, 0);
     
-    res.json({
+    const result = {
       summary: {
         professional_percentage: professionalPercentage,
         total_revenue: totalRevenue,
-        consultation_count: consultations.length, 
-        amount_to_pay: pendingAmount + totalAmountToPay
+        consultation_count: consultations.length || 0,
+        amount_to_pay: totalAmountToPay
       },
-      consultations: consultations.map(consultation => ({
-        date: consultation.date,
-        client_name: consultation.client_name || 'N/A',
-        service_name: consultation.service_name || 'N/A',
-        total_value: parseFloat(consultation.value || 0),
-        professional_earnings: parseFloat(consultation.value || 0) * (professionalPercentage / 100),
-        clinic_share: parseFloat(consultation.value || 0) * ((100 - professionalPercentage) / 100)
-      }))
-    });
+      consultations: consultations
+    };
+    
+    res.json(result);
   } catch (error) {
     console.error('Error fetching professional revenue report:', error);
     res.status(500).json({ message: 'Erro ao gerar relatório' });
