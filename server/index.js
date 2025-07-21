@@ -1529,12 +1529,12 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
         COALESCE(cl.name, d.name) as client_name,
         s.name as service_name,
         c.value as total_value,
-        ROUND(c.value * (100 - u.percentage) / 100, 2) as amount_to_pay
+        ROUND(c.value * (100 - COALESCE(u.percentage, 50)) / 100, 2) as amount_to_pay
       FROM consultations c
       JOIN services s ON c.service_id = s.id
-      LEFT JOIN clients cl ON c.client_id = cl.id
+      LEFT JOIN users cl ON c.client_id = cl.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
-      JOIN users u ON c.professional_id = u.id
+      LEFT JOIN users u ON c.professional_id = u.id
       WHERE c.professional_id = $1
       ORDER BY c.date DESC
     `, [professionalId]);
