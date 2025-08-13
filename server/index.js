@@ -341,32 +341,6 @@ const ensureDatabaseStructure = async () => {
 // Initialize database structure before starting server
 await ensureDatabaseStructure();
 
-const app = express();
-const PORT = process.env.PORT || 3001;
-
-// CORS configuration for production
-const corsOptions = {
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'https://cartaoquiroferreira.com.br',
-    'https://www.cartaoquiroferreira.com.br'
-  ],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
-};
-
-app.use(cors(corsOptions));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(cookieParser());
-
-// Serve static files in production
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../dist')));
-}
-
 // ==================== AUTH ROUTES ====================
 
 // Register route (only for clients)
