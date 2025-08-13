@@ -1864,7 +1864,7 @@ app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, 
     if (!start_date || !end_date) {
       return res.status(400).json({ message: 'Data inicial e final são obrigatórias' });
     }
-        c.created_at as date,
+
     // Get revenue by professional
     const professionalRevenueResult = await pool.query(`
       SELECT 
@@ -1876,7 +1876,7 @@ app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, 
         SUM(c.value * (100 - prof.percentage) / 100) as clinic_revenue
       FROM consultations c
       JOIN users prof ON c.professional_id = prof.id
-      WHERE c.date >= $1 AND c.date <= $2
+      WHERE c.created_at >= $1 AND c.created_at <= $2
         AND c.private_patient_id IS NULL
       GROUP BY prof.id, prof.name, prof.percentage
       ORDER BY revenue DESC
@@ -1890,7 +1890,7 @@ app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, 
         COUNT(c.id) as consultation_count
       FROM consultations c
       JOIN services s ON c.service_id = s.id
-      WHERE c.date >= $1 AND c.date <= $2
+      WHERE c.created_at >= $1 AND c.created_at <= $2
       GROUP BY s.id, s.name
       ORDER BY revenue DESC
     `, [start_date, end_date]);
@@ -1899,7 +1899,7 @@ app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, 
     const totalRevenueResult = await pool.query(`
       SELECT SUM(value) as total_revenue
       FROM consultations
-      WHERE date >= $1 AND date <= $2
+      WHERE created_at >= $1 AND created_at <= $2
         AND private_patient_id IS NULL
     `, [start_date, end_date]);
 
@@ -1933,7 +1933,7 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
     if (!start_date || !end_date) {
       return res.status(400).json({ message: 'Data inicial e final são obrigatórias' });
     }
-        c.created_at as date,
+
     // Get professional data
     const professionalResult = await pool.query(
       'SELECT percentage FROM users WHERE id = $1',
@@ -1949,7 +1949,7 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
     // Get consultations for the period
     const consultationsResult = await pool.query(`
       SELECT 
-        c.date, c.value as total_value,
+        c.created_at as date, c.value as total_value,
         COALESCE(u.name, d.name, pp.name) as client_name,
         s.name as service_name,
         CASE 
@@ -1962,7 +1962,7 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN services s ON c.service_id = s.id
       WHERE c.professional_id = $1 
-        AND c.date >= $2 AND c.date <= $4
+        AND c.created_at >= $2 AND c.created_at <= $4
       ORDER BY c.created_at DESC
     `, [req.user.id, start_date, professionalPercentage, end_date]);
 
@@ -2004,7 +2004,7 @@ app.get('/api/reports/professional-detailed', authenticate, authorize(['professi
     if (!start_date || !end_date) {
       return res.status(400).json({ message: 'Data inicial e final são obrigatórias' });
     }
-        c.created_at as date,
+
     // Get professional data
     const professionalResult = await pool.query(
       'SELECT percentage FROM users WHERE id = $1',
@@ -2023,10 +2023,12 @@ app.get('/api/reports/professional-detailed', authenticate, authorize(['professi
         END as consultation_type
       FROM consultations c
       WHERE c.professional_id = $1 
-        AND c.date >= $2 AND c.date <= $3
         AND c.created_at >= $2 
         AND c.created_at <= $3
       ORDER BY c.created_at DESC
+    `, [req.user.id, start_date, end_date]);
+
+    const consultations = consultationsResult.rows;
     const convenioConsultations = consultations.filter(c => c.consultation_type === 'convenio');
     const privateConsultations = consultations.filter(c => c.consultation_type === 'private');
 
@@ -2060,9 +2062,9 @@ app.get('/api/reports/clients-by-city', authenticate, authorize(['admin']), asyn
       SELECT 
         city, state,
         COUNT(*) as client_count,
-        COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
-        COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
-        COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
+        COUNT(CASE WHEN subscription_status = 'active\' THEN 1 END) as active_clients,
+        COUNT(CASE WHEN subscription_status = 'pending\' THEN 1 END) as pending_clients,
+        COUNT(CASE WHEN subscription_status = 'expired\' THEN 1 END) as expired_clients
       FROM users 
       WHERE 'client' = ANY(roles) 
         AND city IS NOT NULL AND city != ''
@@ -2138,9 +2140,8 @@ app.get('/api/reports/professionals-by-city', authenticate, authorize(['admin'])
 
 // ==================== IMAGE UPLOAD ROUTE ====================
 
-        c.created_at >= $1 
-        AND c.created_at <= $2
-      ORDER BY c.created_at DESC
+app.post('/api/upload-image', authenticate, async (req, res) => {
+  try {
     const upload = createUpload();
     
     upload.single('image')(req, res, async (err) => {
@@ -2206,8 +2207,8 @@ app.post('/api/create-subscription', authenticate, authorize(['client']), async 
     // Mock MercadoPago response for development
     const mockPaymentData = {
       id: paymentResult.rows[0].id,
-      init_point: `https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=mock_${paymentResult.rows[0].id}`,
-      sandbox_init_point: `https://sandbox.mercadopago.com.br/checkout/v1/redirect?pref_id=mock_${paymentResult.rows[0].id}`
+      init_point: \`https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=mock_${paymentResult.rows[0].id}`,
+      sandbox_init_point: \`https://sandbox.mercadopago.com.br/checkout/v1/redirect?pref_id=mock_${paymentResult.rows[0].id}`
     };
 
     res.json(mockPaymentData);
@@ -2236,8 +2237,8 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
     // Mock MercadoPago response
     const mockPaymentData = {
       id: paymentResult.rows[0].id,
-      init_point: `https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=prof_${paymentResult.rows[0].id}`,
-      sandbox_init_point: `https://sandbox.mercadopago.com.br/checkout/v1/redirect?pref_id=prof_${paymentResult.rows[0].id}`
+      init_point: \`https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=prof_${paymentResult.rows[0].id}`,
+      sandbox_init_point: \`https://sandbox.mercadopago.com.br/checkout/v1/redirect?pref_id=prof_${paymentResult.rows[0].id}`
     };
 
     res.json(mockPaymentData);
@@ -2274,7 +2275,7 @@ app.use((err, req, res, next) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📊 Database connected successfully`);
+  console.log(\`🚀 Server running on port ${PORT}`);
+  console.log(\`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(\`📊 Database connected successfully`);
 });
