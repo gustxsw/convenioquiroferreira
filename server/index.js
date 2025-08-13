@@ -116,7 +116,7 @@ const setupDatabase = async () => {
         neighborhood VARCHAR(100),
         city VARCHAR(100),
         state VARCHAR(2),
-        password_hash VARCHAR(255) NOT NULL,
+        password VARCHAR(255) NOT NULL,
         roles TEXT[] DEFAULT ARRAY['client'],
         percentage INTEGER DEFAULT 50,
         category_id INTEGER,
@@ -648,7 +648,7 @@ app.post("/api/auth/register", async (req, res) => {
     const result = await pool.query(
       `INSERT INTO users (
         name, cpf, email, phone, birth_date, address, address_number, 
-        address_complement, neighborhood, city, state, password_hash, roles
+        address_complement, neighborhood, city, state, password, roles
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       ON CONFLICT (cpf) DO NOTHING
       RETURNING id, name, cpf, roles`,
@@ -700,7 +700,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     // Find user by CPF
     const result = await pool.query(
-      "SELECT id, name, cpf, password_hash, roles FROM users WHERE cpf = $1",
+      "SELECT id, name, cpf, password, roles FROM users WHERE cpf = $1",
       [cpf]
     );
 
@@ -711,7 +711,7 @@ app.post("/api/auth/login", async (req, res) => {
     const user = result.rows[0];
 
     // Verify password
-    const isValidPassword = await bcrypt.compare(password, user.password_hash);
+    const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
       return res.status(401).json({ message: "Credenciais inválidas" });
     }
@@ -916,11 +916,9 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
 
     // Validate required fields
     if (!name || !cpf || !password || !roles || roles.length === 0) {
-      return res
-        .status(400)
-        .json({
-          message: "Nome, CPF, senha e pelo menos uma role são obrigatórios",
-        });
+      return res.status(400).json({
+        message: "Nome, CPF, senha e pelo menos uma role são obrigatórios",
+      });
     }
 
     // Hash password
@@ -930,7 +928,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
     const result = await pool.query(
       `INSERT INTO users (
         name, cpf, email, phone, birth_date, address, address_number, 
-        address_complement, neighborhood, city, state, password_hash, roles, percentage, category_id
+        address_complement, neighborhood, city, state, password, roles, percentage, category_id
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       ON CONFLICT (cpf) DO NOTHING
       RETURNING id, name, cpf, roles`,
@@ -1031,7 +1029,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
 
       // Verify current password
       const userResult = await pool.query(
-        "SELECT password_hash FROM users WHERE id = $1",
+        "SELECT password FROM users WHERE id = $1",
         [id]
       );
       if (userResult.rows.length === 0) {
@@ -1040,14 +1038,14 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
 
       const isValidPassword = await bcrypt.compare(
         currentPassword,
-        userResult.rows[0].password_hash
+        userResult.rows[0].password
       );
       if (!isValidPassword) {
         return res.status(400).json({ message: "Senha atual incorreta" });
       }
 
       const newPasswordHash = await bcrypt.hash(newPassword, 10);
-      updateQuery += `, password_hash = $${++paramCount}`;
+      updateQuery += `, password = $${++paramCount}`;
       queryParams.push(newPasswordHash);
     }
 
@@ -1563,11 +1561,9 @@ app.post(
       const { professional_id, expires_at, reason } = req.body;
 
       if (!professional_id || !expires_at) {
-        return res
-          .status(400)
-          .json({
-            message: "ID do profissional e data de expiração são obrigatórios",
-          });
+        return res.status(400).json({
+          message: "ID do profissional e data de expiração são obrigatórios",
+        });
       }
 
       const result = await pool.query(
@@ -2054,12 +2050,10 @@ app.post(
 
       // Validate that at least one patient type is provided
       if (!client_id && !dependent_id && !private_patient_id) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "É necessário especificar um cliente, dependente ou paciente particular",
-          });
+        return res.status(400).json({
+          message:
+            "É necessário especificar um cliente, dependente ou paciente particular",
+        });
       }
 
       // Validate required fields
@@ -2338,12 +2332,10 @@ app.post(
         req.body;
 
       if (!title || !document_type || !template_data) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "Título, tipo de documento e dados do template são obrigatórios",
-          });
+        return res.status(400).json({
+          message:
+            "Título, tipo de documento e dados do template são obrigatórios",
+        });
       }
 
       // Generate document
@@ -2424,11 +2416,9 @@ app.post(
           });
         } catch (dbError) {
           console.error("❌ Database update error:", dbError);
-          res
-            .status(500)
-            .json({
-              message: "Erro ao salvar URL da imagem no banco de dados",
-            });
+          res.status(500).json({
+            message: "Erro ao salvar URL da imagem no banco de dados",
+          });
         }
       });
     } catch (error) {
@@ -2816,11 +2806,9 @@ app.post(
   async (req, res) => {
     try {
       if (!mercadopagoEnabled || !preferenceClient) {
-        return res
-          .status(503)
-          .json({
-            message: "Serviço de pagamento temporariamente indisponível",
-          });
+        return res.status(503).json({
+          message: "Serviço de pagamento temporariamente indisponível",
+        });
       }
 
       const { amount } = req.body;
