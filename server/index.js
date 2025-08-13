@@ -1191,7 +1191,7 @@ app.get('/api/consultations', authenticate, async (req, res) => {
     let query = `
       SELECT 
         c.*,
-        COALESCE(u.name, d.name, pp.name) as client_name,
+        c.created_at as date,
         s.name as service_name,
         prof.name as professional_name,
         CASE 
@@ -1864,7 +1864,7 @@ app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, 
     if (!start_date || !end_date) {
       return res.status(400).json({ message: 'Data inicial e final são obrigatórias' });
     }
-
+        c.created_at as date,
     // Get revenue by professional
     const professionalRevenueResult = await pool.query(`
       SELECT 
@@ -1933,7 +1933,7 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
     if (!start_date || !end_date) {
       return res.status(400).json({ message: 'Data inicial e final são obrigatórias' });
     }
-
+        c.created_at as date,
     // Get professional data
     const professionalResult = await pool.query(
       'SELECT percentage FROM users WHERE id = $1',
@@ -1963,7 +1963,7 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
       LEFT JOIN services s ON c.service_id = s.id
       WHERE c.professional_id = $1 
         AND c.date >= $2 AND c.date <= $4
-      ORDER BY c.date DESC
+      ORDER BY c.created_at DESC
     `, [req.user.id, start_date, professionalPercentage, end_date]);
 
     // Calculate summary
@@ -2004,7 +2004,7 @@ app.get('/api/reports/professional-detailed', authenticate, authorize(['professi
     if (!start_date || !end_date) {
       return res.status(400).json({ message: 'Data inicial e final são obrigatórias' });
     }
-
+        c.created_at as date,
     // Get professional data
     const professionalResult = await pool.query(
       'SELECT percentage FROM users WHERE id = $1',
@@ -2024,9 +2024,9 @@ app.get('/api/reports/professional-detailed', authenticate, authorize(['professi
       FROM consultations c
       WHERE c.professional_id = $1 
         AND c.date >= $2 AND c.date <= $3
-    `, [req.user.id, start_date, end_date]);
-
-    const consultations = consultationsResult.rows;
+        AND c.created_at >= $2 
+        AND c.created_at <= $3
+      ORDER BY c.created_at DESC
     const convenioConsultations = consultations.filter(c => c.consultation_type === 'convenio');
     const privateConsultations = consultations.filter(c => c.consultation_type === 'private');
 
@@ -2138,9 +2138,9 @@ app.get('/api/reports/professionals-by-city', authenticate, authorize(['admin'])
 
 // ==================== IMAGE UPLOAD ROUTE ====================
 
-// Upload image route
-app.post('/api/upload-image', authenticate, async (req, res) => {
-  try {
+        c.created_at >= $1 
+        AND c.created_at <= $2
+      ORDER BY c.created_at DESC
     const upload = createUpload();
     
     upload.single('image')(req, res, async (err) => {
