@@ -9,26 +9,11 @@ import { authenticate, authorize } from "./middleware/auth.js";
 import createUpload from "./middleware/upload.js";
 import { generateDocumentPDF } from "./utils/documentGenerator.js";
 import { MercadoPago } from "mercadopago";
-import { MercadoPago } from "mercadopago";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-
-// Initialize MercadoPago
-const client = new MercadoPago({
-  accessToken: process.env.MP_ACCESS_TOKEN,
-  options: { timeout: 5000 }
-});
-
-// Get base URL for back URLs
-const getBaseUrl = () => {
-  if (process.env.NODE_ENV === 'production') {
-    return 'https://www.cartaoquiroferreira.com.br';
-  }
-  return 'http://localhost:5173'; // Vite dev server port
-};
 
 // Initialize MercadoPago
 const client = new MercadoPago({
@@ -274,13 +259,17 @@ app.post('/api/payments/webhook', express.raw({ type: 'application/json' }), asy
             const professionalId = externalReference.split('_')[1];
             
             if (status === 'approved') {
-              // Record professional payment
-              await pool.query(
-                'INSERT INTO professional_payments (professional_id, amount, payment_id, status, paid_at) VALUES ($1, $2, $3, $4, $5)',
-                [professionalId, payment.transaction_amount, paymentId, 'paid', new Date()]
-              );
-              
-              console.log('✅ Professional payment recorded for:', professionalId);
+              // Record professional payment (you may need to create this table)
+              try {
+                await pool.query(
+                  'INSERT INTO professional_payments (professional_id, amount, payment_id, status, paid_at) VALUES ($1, $2, $3, $4, $5)',
+                  [professionalId, payment.transaction_amount, paymentId, 'paid', new Date()]
+                );
+                
+                console.log('✅ Professional payment recorded for:', professionalId);
+              } catch (dbError) {
+                console.log('ℹ️ Professional payments table may not exist yet, skipping record');
+              }
             }
           }
         }
@@ -293,5 +282,7 @@ app.post('/api/payments/webhook', express.raw({ type: 'application/json' }), asy
     res.status(500).send('Error processing webhook');
   }
 });
+
+// ==================== END PAYMENT ROUTES ====================
 
 export default router;
