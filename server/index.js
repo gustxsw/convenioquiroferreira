@@ -203,6 +203,9 @@ app.use(cookieParser());
 // Serve static files from dist directory
 app.use(express.static(path.join(process.cwd(), "dist")));
 
+// Payment routes
+app.use('/api', paymentsRouter);
+
 // 🔥 DATABASE SETUP FUNCTION
 const setupDatabase = async () => {
   try {
@@ -3115,8 +3118,6 @@ app.get("/payment/pending", (req, res) => {
     </html>
   `);
 });
-
-app.use('/api', paymentsRouter);
 
 // Catch-all route for SPA
 app.get("*", (req, res) => {
