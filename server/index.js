@@ -3,8 +3,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import mercadopagoPackage from 'mercadopago';
-const { MercadoPago } = mercadopagoPackage;
+import { MercadoPagoConfig, Preference } from 'mercadopago';
 import multer from 'multer';
 import { CloudinaryStorage } from 'multer-storage-cloudinary';
 import { v2 as cloudinary } from 'cloudinary';
@@ -16,7 +15,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Initialize MercadoPago
-const mpClient = new MercadoPago({
+const mpClient = new MercadoPagoConfig({
   accessToken: process.env.MP_ACCESS_TOKEN,
   options: { timeout: 5000 }
 });
@@ -689,7 +688,8 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
 
     console.log('🔄 Creating MercadoPago preference:', preference);
 
-    const response = await mpClient.preferences.create({ body: preference });
+    const preferenceClient = new Preference(mpClient);
+    const response = await preferenceClient.create({ body: preference });
     
     console.log('✅ MercadoPago preference created:', response.id);
 
@@ -767,7 +767,8 @@ app.post('/api/professional/create-payment', authenticate, async (req, res) => {
 
     console.log('🔄 Creating MercadoPago preference for professional:', preference);
 
-    const response = await mpClient.preferences.create({ body: preference });
+    const preferenceClient = new Preference(mpClient);
+    const response = await preferenceClient.create({ body: preference });
     
     console.log('✅ MercadoPago preference created:', response.id);
 
