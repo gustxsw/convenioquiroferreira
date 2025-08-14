@@ -5,6 +5,7 @@ import { pool } from "./db.js";
 import { authenticate, authorize } from "./middleware/auth.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { MercadoPago } from "mercadopago";
 import cors from "cors";
 import { MercadoPagoConfig, Preference } from "mercadopago";
 import cookieParser from "cookie-parser";
@@ -151,6 +152,20 @@ const mercadopagoEnabled = initializeMercadoPago();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Initialize MercadoPago
+const client = new MercadoPago({
+  accessToken: process.env.MP_ACCESS_TOKEN,
+  options: { timeout: 5000 }
+});
+
+// Get base URL for back URLs
+const getBaseUrl = () => {
+  if (process.env.NODE_ENV === 'production') {
+    return 'https://www.cartaoquiroferreira.com.br';
+  }
+  return 'http://localhost:5173'; // Vite dev server port
+};
 
 // 🔥 CORS CONFIGURATION FOR PRODUCTION
 const corsOptions = {
