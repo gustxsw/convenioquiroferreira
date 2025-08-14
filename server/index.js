@@ -3,6 +3,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import path from 'path';
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 import multer from 'multer';
 import { CloudinaryStorage } from 'multer-storage-cloudinary';
