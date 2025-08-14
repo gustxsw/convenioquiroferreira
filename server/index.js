@@ -1119,10 +1119,10 @@ app.get("/api/clients/lookup", authenticate, async (req, res) => {
 
     if (!cpf) {
       return res.status(400).json({ message: "CPF é obrigatório" });
-    }
-
-    const result = await pool.query(
-      `SELECT id, name, cpf, subscription_status, subscription_expiry
+        COUNT(*)::integer as client_count,
+        COUNT(CASE WHEN subscription_status = 'active' THEN 1 END)::integer as active_clients,
+        COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END)::integer as pending_clients,
+        COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END)::integer as expired_clients
        FROM users 
        WHERE cpf = $1 AND roles::jsonb ? 'client'`,
       [cpf]
@@ -1154,6 +1154,14 @@ app.get("/api/professionals", authenticate, async (req, res) => {
       ORDER BY u.name
     `);
 
+    // Ensure all numeric values are properly converted to integers
+    const processedData = result.rows.map(row => ({
+      ...row,
+      client_count: parseInt(row.client_count) || 0,
+      active_clients: parseInt(row.active_clients) || 0,
+      pending_clients: parseInt(row.pending_clients) || 0,
+      expired_clients: parseInt(row.expired_clients) || 0
+    }));
     const professionals = result.rows.map((prof) => ({
       ...prof,
       roles: JSON.parse(prof.roles || "[]"),
@@ -1765,7 +1773,7 @@ app.delete(
       res.json({ message: "Local excluído com sucesso" });
     } catch (error) {
       console.error("Error deleting attendance location:", error);
-      res.status(500).json({ message: "Erro ao excluir local" });
+    res.json(processedData);
     }
   }
 );
@@ -1788,11 +1796,11 @@ app.post("/api/upload-image", authenticate, async (req, res) => {
       }
 
       if (!req.file) {
-        return res.status(400).json({
+        COUNT(u.id)::integer as total_professionals,
           message: "Nenhuma imagem foi enviada",
         });
       }
-
+            'count', COUNT(u.id)::integer
       console.log("✅ Image uploaded to Cloudinary:", req.file.path);
 
       // Update user's photo_url in database
@@ -1804,8 +1812,47 @@ app.post("/api/upload-image", authenticate, async (req, res) => {
       res.json({
         message: "Imagem enviada com sucesso",
         imageUrl: req.file.path,
+    // Process the data to ensure proper numeric conversion and grouping
+    const cityMap = new Map();
+    
+    result.rows.forEach(row => {
+      const key = `${row.city}-${row.state}`;
+      
+      if (!cityMap.has(key)) {
+        cityMap.set(key, {
+          city: row.city,
+          state: row.state,
+          total_professionals: 0,
+          categories: []
+        });
+      }
+      
+      const cityData = cityMap.get(key);
+      
+      // Ensure categories is an array and process each category
+      const categories = Array.isArray(row.categories) ? row.categories : [row.categories];
+      
+      categories.forEach(category => {
+        if (category && category.category_name) {
+          const existingCategory = cityData.categories.find(c => c.category_name === category.category_name);
+          if (existingCategory) {
+            existingCategory.count = parseInt(existingCategory.count) + parseInt(category.count || 0);
+          } else {
+            cityData.categories.push({
+              category_name: category.category_name,
+              count: parseInt(category.count || 0)
+            });
+          }
+          cityData.total_professionals += parseInt(category.count || 0);
+        }
       });
     });
+    
+    // Convert map back to array and sort
+    const processedData = Array.from(cityMap.values())
+      .sort((a, b) => b.total_professionals - a.total_professionals);
+      });
+    res.json(processedData);
   } catch (error) {
     console.error("❌ Error in image upload route:", error);
     res.status(500).json({
