@@ -2793,10 +2793,10 @@ app.get(
       SELECT 
         city,
         state,
-        COUNT(*) as client_count,
-        COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
-        COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
-        COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
+        COUNT(*)::integer as client_count,
+        SUM(CASE WHEN subscription_status = 'active' THEN 1 ELSE 0 END)::integer as active_clients,
+        SUM(CASE WHEN subscription_status = 'pending' THEN 1 ELSE 0 END)::integer as pending_clients,
+        SUM(CASE WHEN subscription_status = 'expired' THEN 1 ELSE 0 END)::integer as expired_clients
       FROM users 
       WHERE 'client' = ANY(roles) 
         AND city IS NOT NULL 
@@ -2805,6 +2805,15 @@ app.get(
       ORDER BY client_count DESC, city
     `);
 
+    // Ensure all numeric values are properly converted to integers
+    const processedData = result.rows.map(row => ({
+      ...row,
+      client_count: parseInt(row.client_count) || 0,
+      active_clients: parseInt(row.active_clients) || 0,
+      pending_clients: parseInt(row.pending_clients) || 0,
+      expired_clients: parseInt(row.expired_clients) || 0
+    }));
+    
       res.json(result.rows);
     } catch (error) {
       console.error("Error generating clients by city report:", error);
@@ -2929,7 +2938,7 @@ app.post("/api/create-subscription", authenticate, async (req, res) => {
     });
   } catch (error) {
     console.error("Error creating subscription payment:", error);
-    res.status(500).json({
+    res.json(processedData);
       message: "Erro ao criar pagamento",
       details: error.message,
     });
@@ -3101,11 +3110,11 @@ app.get("/payment/pending", (req, res) => {
 });
 
 // Catch-all route for SPA
-app.get("*", (req, res) => {
+        COUNT(u.id)::integer as total_professionals,
   res.sendFile(path.join(process.cwd(), "dist", "index.html"));
 });
 
-// Error handling middleware
+            'count', category_counts.count::integer
 app.use((error, req, res, next) => {
   console.error("Unhandled error:", error);
   res.status(500).json({ message: "Erro interno do servidor" });
@@ -3115,7 +3124,7 @@ app.use((error, req, res, next) => {
 const startServer = async () => {
   try {
     console.log("🚀 Starting Convênio Quiro Ferreira Server...");
-
+          COUNT(*)::integer as count
     // Setup database first
     await setupDatabase();
 
@@ -3131,7 +3140,17 @@ const startServer = async () => {
 
       // Initialize database schema
       await initializeDatabase();
-    });
+    // Ensure all numeric values are properly converted to integers
+    const processedData = result.rows.map(row => ({
+      ...row,
+      total_professionals: parseInt(row.total_professionals) || 0,
+      categories: row.categories.map((cat: any) => ({
+        ...cat,
+        count: parseInt(cat.count) || 0
+      }))
+    }));
+    
+    res.json(processedData);
   } catch (error) {
     console.error("❌ Failed to start server:", error);
     process.exit(1);
