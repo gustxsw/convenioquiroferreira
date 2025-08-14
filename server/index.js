@@ -10,6 +10,7 @@ import { MercadoPagoConfig, Preference } from "mercadopago";
 import cookieParser from "cookie-parser";
 import createUpload from "./middleware/upload.js";
 import { generateDocumentPDF } from "./utils/documentGenerator.js";
+import paymentsRouter from './routes/payments.js';
 import dotenv from "dotenv";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -3099,6 +3100,8 @@ app.get("/payment/pending", (req, res) => {
     </html>
   `);
 });
+
+app.use('/api', paymentsRouter);
 
 // Catch-all route for SPA
 app.get("*", (req, res) => {
