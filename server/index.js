@@ -639,6 +639,13 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
     const userResult = await pool.query(
       'SELECT name, email, cpf FROM users WHERE id = $1',
       [user_id]
+    // Get the correct base URL
+    const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+    const host = req.headers.host;
+    const baseUrl = `${protocol}://${host}`;
+    
+    console.log('🔍 Base URL for back_urls:', baseUrl);
+    
     );
 
     if (userResult.rows.length === 0) {
@@ -695,6 +702,8 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
     console.log('✅ MercadoPago preference created:', response.id);
 
     // Save payment record
+    console.log('🔍 Preference data:', JSON.stringify(preferenceData, null, 2));
+    
     await pool.query(`
       INSERT INTO payments (user_id, payment_type, amount, mp_preference_id, external_reference)
       VALUES ($1, 'subscription', $2, $3, $4)
@@ -737,6 +746,13 @@ app.post('/api/professional/create-payment', authenticate, async (req, res) => {
     const professional = userResult.rows[0];
 
     // Create preference
+    // Get the correct base URL
+    const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+    const host = req.headers.host;
+    const baseUrl = `${protocol}://${host}`;
+    
+    console.log('🔍 Base URL for back_urls:', baseUrl);
+    
     const preference = {
       items: [
         {
@@ -766,6 +782,8 @@ app.post('/api/professional/create-payment', authenticate, async (req, res) => {
       statement_descriptor: 'QUIRO FERREIRA'
     };
 
+    console.log('🔍 Professional preference data:', JSON.stringify(preferenceData, null, 2));
+    
     console.log('🔄 Creating MercadoPago preference for professional:', preference);
 
     const preferenceClient = new Preference(mpClient);
