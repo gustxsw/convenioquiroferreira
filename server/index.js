@@ -1325,7 +1325,7 @@ app.post(
         address, address_number, address_complement, neighborhood,
         city, state, zip_code
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-      RETURNING *`,
+        cpf && cpf.trim() ? cpf.replace(/\D/g, '') : null,
         [
           req.user.id,
           name.trim(),
