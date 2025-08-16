@@ -2246,6 +2246,92 @@ app.post("/api/upload-image", authenticate, async (req, res) => {
 
 // ==================== PAYMENT ROUTES ====================
 
+// Helper function to get base URL
+const getBaseUrl = (req) => {
+  return `${req.protocol}://${req.get('host')}`;
+};
+
+// Create subscription payment
+app.post('/api/create-subscription', authenticate, authorize(['client']), async (req, res) => {
+  try {
+    const { user_id, dependent_ids } = req.body;
+    
+    console.log('🔄 Creating subscription for user:', user_id);
+    console.log('🔄 Dependent IDs:', dependent_ids);
+    
+    // Calculate amount (R$250 titular + R$50 per dependent)
+    const titularPrice = 250;
+    const dependentPrice = 50;
+    const totalPeople = 1 + (dependent_ids ? dependent_ids.length : 0);
+    const amount = titularPrice + ((dependent_ids ? dependent_ids.length : 0) * dependentPrice);
+    
+    const externalReference = `subscription_${user_id}_${Date.now()}`;
+    const baseUrl = getBaseUrl(req);
+    
+    const preferenceData = {
+      items: [
+        {
+          id: 'subscription',
+          title: `Assinatura Convênio Quiro Ferreira - ${totalPeople} pessoa(s)`,
+          description: `Assinatura mensal - Titular (R$ ${titularPrice}) + ${dependent_ids ? dependent_ids.length : 0} dependente(s) (R$ ${dependentPrice} cada)`,
+          quantity: 1,
+          unit_price: amount,
+          currency_id: 'BRL'
+        }
+      ],
+      payer: {
+        name: req.user.name,
+        email: 'cliente@cartaoquiroferreira.com.br'
+      },
+      payment_methods: {
+        excluded_payment_types: [],
+        excluded_payment_methods: [],
+        installments: 12
+      },
+      back_urls: {
+        success: `${baseUrl}/client?payment=success`,
+        failure: `${baseUrl}/client?payment=failure`, 
+        pending: `${baseUrl}/client?payment=pending`
+      },
+      auto_return: 'approved',
+      external_reference: externalReference,
+      notification_url: `${baseUrl}/api/webhooks/payment-success`,
+      statement_descriptor: 'QUIRO FERREIRA',
+      expires: false
+    };
+
+    console.log('🔄 Creating preference with data:', preferenceData);
+
+    const result = await preference.create({ body: preferenceData });
+    
+    console.log('✅ Preference created:', result.id);
+
+    // Save payment record
+    await pool.query(
+      `INSERT INTO client_payments (
+        user_id, preference_id, amount, external_reference, description
+      ) VALUES ($1, $2, $3, $4, $5)`,
+      [
+        user_id,
+        result.id,
+        amount,
+        externalReference,
+        `Assinatura Convênio - ${totalPeople} pessoa(s)`
+      ]
+    );
+
+    res.json({
+      preference_id: result.id,
+      init_point: result.init_point,
+      sandbox_init_point: result.sandbox_init_point
+    });
+
+  } catch (error) {
+    console.error('❌ Error creating subscription:', error);
+    res.status(500).json({ message: 'Erro ao criar pagamento de assinatura' });
+  }
+});
+
 // 🔥 CLIENT SUBSCRIPTION PAYMENT
 app.post(
   "/api/create-subscription",
