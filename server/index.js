@@ -1377,7 +1377,7 @@ app.put(
       } = req.body;
 
       const result = await pool.query(
-        `UPDATE private_patients SET 
+        \`UPDATE private_patients SET 
         name = $1, email = $2, phone = $3, birth_date = $4,
         address = $5, address_number = $6, address_complement = $7,
         neighborhood = $8, city = $9, state = $10, zip_code = $11
@@ -1495,7 +1495,7 @@ app.post(
       }
 
       const result = await pool.query(
-        `INSERT INTO attendance_locations (
+        \`INSERT INTO attendance_locations (
         professional_id, name, address, address_number, address_complement,
         neighborhood, city, state, zip_code, phone, is_default
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -1556,7 +1556,7 @@ app.put(
       }
 
       const result = await pool.query(
-        `UPDATE attendance_locations SET 
+        \`UPDATE attendance_locations SET 
         name = $1, address = $2, address_number = $3, address_complement = $4,
         neighborhood = $5, city = $6, state = $7, zip_code = $8, phone = $9, is_default = $10
        WHERE id = $11 AND professional_id = $12 RETURNING *`,
@@ -1730,7 +1730,7 @@ app.post(
       }
 
       const result = await pool.query(
-        `INSERT INTO consultations (
+        \`INSERT INTO consultations (
         client_id, dependent_id, private_patient_id, professional_id,
         service_id, location_id, value, date, status, notes
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -1860,7 +1860,7 @@ app.post(
       }
 
       const result = await pool.query(
-        `INSERT INTO medical_records (
+        \`INSERT INTO medical_records (
         professional_id, private_patient_id, chief_complaint,
         history_present_illness, past_medical_history, medications,
         allergies, physical_examination, diagnosis, treatment_plan,
@@ -1916,7 +1916,7 @@ app.put(
       } = req.body;
 
       const result = await pool.query(
-        `UPDATE medical_records SET 
+        \`UPDATE medical_records SET 
         chief_complaint = $1, history_present_illness = $2,
         past_medical_history = $3, medications = $4, allergies = $5,
         physical_examination = $6, diagnosis = $7, treatment_plan = $8,
@@ -2062,7 +2062,7 @@ app.post(
       );
 
       const result = await pool.query(
-        `INSERT INTO medical_documents (
+        \`INSERT INTO medical_documents (
         professional_id, private_patient_id, title, document_type, document_url
       ) VALUES ($1, $2, $3, $4, $5)
       RETURNING *`,
@@ -2150,7 +2150,7 @@ app.post(
 
       // Create new access
       const result = await pool.query(
-        `INSERT INTO scheduling_access (professional_id, granted_by, expires_at, reason)
+        \`INSERT INTO scheduling_access (professional_id, granted_by, expires_at, reason)
        VALUES ($1, $2, $3, $4) RETURNING *`,
         [professional_id, req.user.id, expires_at || null, reason || null]
       );
@@ -2267,8 +2267,8 @@ app.post(
       const preferenceData = {
         items: [
           {
-            id: `subscription_${user_id}`,
-            title: `Assinatura Convênio Quiro Ferreira - Titular + ${dependent_ids.length} Dependente(s)`,
+            id: \`subscription_${user_id}`,
+            title: \`Assinatura Convênio Quiro Ferreira - Titular + ${dependent_ids.length} Dependente(s)`,
             quantity: 1,
             unit_price: totalAmount,
             currency_id: "BRL",
@@ -2278,19 +2278,19 @@ app.post(
           email: "cliente@quiroferreira.com.br",
         },
         back_urls: {
-          success: `${req.protocol}://${req.get(
+          success: \`${req.protocol}://${req.get(
             "host"
           )}/api/payment/client/success`,
-          failure: `${req.protocol}://${req.get(
+          failure: \`${req.protocol}://${req.get(
             "host"
           )}/api/payment/client/failure`,
-          pending: `${req.protocol}://${req.get(
+          pending: \`${req.protocol}://${req.get(
             "host"
           )}/api/payment/client/pending`,
         },
         auto_return: "approved",
-        external_reference: `client_${user_id}_${Date.now()}`,
-        notification_url: `${req.protocol}://${req.get(
+        external_reference: \`client_${user_id}_${Date.now()}`,
+        notification_url: \`${req.protocol}://${req.get(
           "host"
         )}/api/payment/client/webhook`,
         statement_descriptor: "QUIRO FERREIRA",
@@ -2312,7 +2312,7 @@ app.post(
 
       // Save payment record
       await pool.query(
-        `INSERT INTO client_payments (
+        \`INSERT INTO client_payments (
         user_id, preference_id, amount, external_reference, description
       ) VALUES ($1, $2, $3, $4, $5)`,
         [
@@ -2320,7 +2320,7 @@ app.post(
           result.id,
           totalAmount,
           preferenceData.external_reference,
-          `Assinatura Convênio - Titular + ${dependent_ids.length} Dependente(s)`,
+          \`Assinatura Convênio - Titular + ${dependent_ids.length} Dependente(s)`,
         ]
       );
 
@@ -2358,8 +2358,8 @@ app.post(
       const preferenceData = {
         items: [
           {
-            id: `professional_payment_${professional_id}`,
-            title: `Repasse ao Convênio Quiro Ferreira - ${req.user.name}`,
+            id: \`professional_payment_${professional_id}`,
+            title: \`Repasse ao Convênio Quiro Ferreira - ${req.user.name}`,
             quantity: 1,
             unit_price: parseFloat(amount),
             currency_id: "BRL",
@@ -2369,19 +2369,19 @@ app.post(
           email: "profissional@quiroferreira.com.br",
         },
         back_urls: {
-          success: `${req.protocol}://${req.get(
+          success: \`${req.protocol}://${req.get(
             "host"
           )}/api/payment/professional/success`,
-          failure: `${req.protocol}://${req.get(
+          failure: \`${req.protocol}://${req.get(
             "host"
           )}/api/payment/professional/failure`,
-          pending: `${req.protocol}://${req.get(
+          pending: \`${req.protocol}://${req.get(
             "host"
           )}/api/payment/professional/pending`,
         },
         auto_return: "approved",
-        external_reference: `professional_${professional_id}_${Date.now()}`,
-        notification_url: `${req.protocol}://${req.get(
+        external_reference: \`professional_${professional_id}_${Date.now()}`,
+        notification_url: \`${req.protocol}://${req.get(
           "host"
         )}/api/payment/professional/webhook`,
         statement_descriptor: "QUIRO FERREIRA",
@@ -2403,7 +2403,7 @@ app.post(
 
       // Save payment record
       await pool.query(
-        `INSERT INTO professional_payments (
+        \`INSERT INTO professional_payments (
         professional_id, preference_id, amount, external_reference, description
       ) VALUES ($1, $2, $3, $4, $5)`,
         [
@@ -2411,7 +2411,7 @@ app.post(
           result.id,
           amount,
           preferenceData.external_reference,
-          `Repasse ao Convênio - ${req.user.name}`,
+          \`Repasse ao Convênio - ${req.user.name}`,
         ]
       );
 
@@ -2443,8 +2443,8 @@ app.post(
       const preferenceData = {
         items: [
           {
-            id: `scheduling_${professional_id}`,
-            title: `Acesso à Agenda Quiro Ferreira - ${months} mês(es)`,
+            id: \`scheduling_${professional_id}`,
+            title: \`Acesso à Agenda Quiro Ferreira - ${months} mês(es)`,
             quantity: 1,
             unit_price: totalAmount,
             currency_id: "BRL",
@@ -2454,19 +2454,19 @@ app.post(
           email: "profissional@quiroferreira.com.br",
         },
         back_urls: {
-          success: `${req.protocol}://${req.get(
+          success: \`${req.protocol}://${req.get(
             "host"
           )}/api/payment/scheduling/success`,
-          failure: `${req.protocol}://${req.get(
+          failure: \`${req.protocol}://${req.get(
             "host"
           )}/api/payment/scheduling/failure`,
-          pending: `${req.protocol}://${req.get(
+          pending: \`${req.protocol}://${req.get(
             "host"
           )}/api/payment/scheduling/pending`,
         },
         auto_return: "approved",
-        external_reference: `scheduling_${professional_id}_${Date.now()}`,
-        notification_url: `${req.protocol}://${req.get(
+        external_reference: \`scheduling_${professional_id}_${Date.now()}`,
+        notification_url: \`${req.protocol}://${req.get(
           "host"
         )}/api/payment/scheduling/webhook`,
         statement_descriptor: "QUIRO FERREIRA",
@@ -2485,7 +2485,7 @@ app.post(
 
       // Save payment record
       await pool.query(
-        `INSERT INTO scheduling_payments (
+        \`INSERT INTO scheduling_payments (
         professional_id, preference_id, amount, external_reference, description
       ) VALUES ($1, $2, $3, $4, $5)`,
         [
@@ -2493,7 +2493,7 @@ app.post(
           result.id,
           totalAmount,
           preferenceData.external_reference,
-          `Acesso à Agenda - ${months} mês(es)`,
+          \`Acesso à Agenda - ${months} mês(es)`,
         ]
       );
 
@@ -2525,7 +2525,7 @@ app.get("/api/payment/client/success", async (req, res) => {
     if (payment_id && status === "approved") {
       // Update payment status
       await pool.query(
-        `UPDATE client_payments SET 
+        \`UPDATE client_payments SET 
           payment_id = $1, status = 'approved', date_approved = CURRENT_TIMESTAMP
          WHERE external_reference = $2`,
         [payment_id, external_reference]
@@ -2543,7 +2543,7 @@ app.get("/api/payment/client/success", async (req, res) => {
         expiryDate.setFullYear(expiryDate.getFullYear() + 1); // 1 year from now
 
         await pool.query(
-          `UPDATE users SET 
+          \`UPDATE users SET 
             subscription_status = 'active',
             subscription_expiry = $1
            WHERE id = $2`,
@@ -2573,7 +2573,7 @@ app.get("/api/payment/client/failure", async (req, res) => {
 
     if (external_reference) {
       await pool.query(
-        `UPDATE client_payments SET 
+        \`UPDATE client_payments SET 
           payment_id = $1, status = 'rejected'
          WHERE external_reference = $2`,
         [payment_id || null, external_reference]
@@ -2599,7 +2599,7 @@ app.get("/api/payment/client/pending", async (req, res) => {
 
     if (external_reference) {
       await pool.query(
-        `UPDATE client_payments SET 
+        \`UPDATE client_payments SET 
           payment_id = $1, status = 'pending'
          WHERE external_reference = $2`,
         [payment_id || null, external_reference]
@@ -2626,7 +2626,7 @@ app.get("/api/payment/professional/success", async (req, res) => {
 
     if (payment_id && status === "approved") {
       await pool.query(
-        `UPDATE professional_payments SET 
+        \`UPDATE professional_payments SET 
           payment_id = $1, status = 'approved', date_approved = CURRENT_TIMESTAMP
          WHERE external_reference = $2`,
         [payment_id, external_reference]
@@ -2652,7 +2652,7 @@ app.get("/api/payment/professional/failure", async (req, res) => {
 
     if (external_reference) {
       await pool.query(
-        `UPDATE professional_payments SET 
+        \`UPDATE professional_payments SET 
           payment_id = $1, status = 'rejected'
          WHERE external_reference = $2`,
         [payment_id || null, external_reference]
@@ -2678,7 +2678,7 @@ app.get("/api/payment/professional/pending", async (req, res) => {
 
     if (external_reference) {
       await pool.query(
-        `UPDATE professional_payments SET 
+        \`UPDATE professional_payments SET 
           payment_id = $1, status = 'pending'
          WHERE external_reference = $2`,
         [payment_id || null, external_reference]
@@ -2705,7 +2705,7 @@ app.get("/api/payment/scheduling/success", async (req, res) => {
 
     if (payment_id && status === "approved") {
       await pool.query(
-        `UPDATE scheduling_payments SET 
+        \`UPDATE scheduling_payments SET 
           payment_id = $1, status = 'approved', date_approved = CURRENT_TIMESTAMP
          WHERE external_reference = $2`,
         [payment_id, external_reference]
@@ -2734,7 +2734,7 @@ app.get("/api/payment/scheduling/failure", async (req, res) => {
 
     if (external_reference) {
       await pool.query(
-        `UPDATE scheduling_payments SET 
+        \`UPDATE scheduling_payments SET 
           payment_id = $1, status = 'rejected'
          WHERE external_reference = $2`,
         [payment_id || null, external_reference]
@@ -2760,7 +2760,7 @@ app.get("/api/payment/scheduling/pending", async (req, res) => {
 
     if (external_reference) {
       await pool.query(
-        `UPDATE scheduling_payments SET 
+        \`UPDATE scheduling_payments SET 
           payment_id = $1, status = 'pending'
          WHERE external_reference = $2`,
         [payment_id || null, external_reference]
@@ -2795,7 +2795,7 @@ app.post("/api/payment/client/webhook", async (req, res) => {
 
         // Update payment record
         await pool.query(
-          `UPDATE client_payments SET 
+          \`UPDATE client_payments SET 
             payment_id = $1, status = $2, payment_method = $3, payment_type = $4,
             payer_email = $5, date_approved = $6, date_created = $7,
             last_modified = $8, webhook_data = $9
@@ -2827,7 +2827,7 @@ app.post("/api/payment/client/webhook", async (req, res) => {
             expiryDate.setFullYear(expiryDate.getFullYear() + 1); // 1 year from now
 
             await pool.query(
-              `UPDATE users SET 
+              \`UPDATE users SET 
                 subscription_status = 'active',
                 subscription_expiry = $1
                WHERE id = $2`,
@@ -2874,7 +2874,7 @@ app.post("/api/payment/professional/webhook", async (req, res) => {
 
         // Update payment record
         await pool.query(
-          `UPDATE professional_payments SET 
+          \`UPDATE professional_payments SET 
             payment_id = $1, status = $2, payment_method = $3, payment_type = $4,
             payer_email = $5, date_approved = $6, date_created = $7,
             last_modified = $8, webhook_data = $9
@@ -2928,7 +2928,7 @@ app.post("/api/payment/scheduling/webhook", async (req, res) => {
 
         // Update payment record
         await pool.query(
-          `UPDATE scheduling_payments SET 
+          \`UPDATE scheduling_payments SET 
             payment_id = $1, status = $2, payment_method = $3, payment_type = $4,
             payer_email = $5, date_approved = $6, date_created = $7,
             last_modified = $8, webhook_data = $9
@@ -2984,7 +2984,7 @@ app.get("/api/payments/client/:userId", authenticate, async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT * FROM client_payments 
+      \`SELECT * FROM client_payments 
        WHERE user_id = $1 
        ORDER BY created_at DESC`,
       [userId]
@@ -3014,7 +3014,7 @@ app.get(
       }
 
       const result = await pool.query(
-        `SELECT * FROM professional_payments 
+        \`SELECT * FROM professional_payments 
        WHERE professional_id = $1 
        ORDER BY created_at DESC`,
         [professionalId]
@@ -3047,7 +3047,7 @@ app.get(
       }
 
       const result = await pool.query(
-        `SELECT * FROM scheduling_payments 
+        \`SELECT * FROM scheduling_payments 
        WHERE professional_id = $1 
        ORDER BY created_at DESC`,
         [professionalId]
@@ -3296,9 +3296,9 @@ app.get(
         city,
         state,
         COUNT(*) as client_count,
-        COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
-        COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
-        COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
+        COUNT(CASE WHEN subscription_status = 'active\' THEN 1 END) as active_clients,
+        COUNT(CASE WHEN subscription_status = 'pending\' THEN 1 END) as pending_clients,
+        COUNT(CASE WHEN subscription_status = 'expired\' THEN 1 END) as expired_clients
       FROM users 
       WHERE 'client' = ANY(roles) 
         AND city IS NOT NULL 
@@ -3393,10 +3393,10 @@ app.get("*", (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
+  console.log(\`🚀 Server running on port ${PORT}`);
+  console.log(\`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
   console.log(
-    `💳 MercadoPago configured: ${process.env.MP_ACCESS_TOKEN ? "✅" : "❌"}`
+    \`💳 MercadoPago configured: ${process.env.MP_ACCESS_TOKEN ? "✅" : "❌"}`
   );
 });
 
