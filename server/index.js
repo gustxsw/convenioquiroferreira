@@ -76,7 +76,7 @@ const initializeDatabase = async () => {
         neighborhood VARCHAR(100),
         city VARCHAR(100),
         state VARCHAR(2),
-        password_hash VARCHAR(255) NOT NULL,
+        password VARCHAR(255) NOT NULL,
         roles TEXT[] DEFAULT ARRAY['client'],
         percentage INTEGER DEFAULT 50,
         category_id INTEGER,
@@ -318,7 +318,7 @@ app.post("/api/auth/login", async (req, res) => {
     const cleanCpf = cpf.replace(/\D/g, "");
 
     const result = await pool.query(
-      "SELECT id, name, cpf, roles, password_hash FROM users WHERE cpf = $1",
+      "SELECT id, name, cpf, roles, password FROM users WHERE cpf = $1",
       [cleanCpf]
     );
 
@@ -327,7 +327,7 @@ app.post("/api/auth/login", async (req, res) => {
     }
 
     const user = result.rows[0];
-    const isValidPassword = await bcrypt.compare(password, user.password_hash);
+    const isValidPassword = await bcrypt.compare(password, user.password);
 
     if (!isValidPassword) {
       return res.status(401).json({ message: "Credenciais inválidas" });
@@ -506,7 +506,7 @@ app.post("/api/auth/register", async (req, res) => {
     const result = await pool.query(
       `INSERT INTO users (
         name, cpf, email, phone, birth_date, address, address_number,
-        address_complement, neighborhood, city, state, password_hash, roles
+        address_complement, neighborhood, city, state, password, roles
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING id, name, cpf, roles`,
       [
@@ -657,7 +657,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
     const result = await pool.query(
       `INSERT INTO users (
         name, cpf, email, phone, birth_date, address, address_number,
-        address_complement, neighborhood, city, state, password_hash, roles,
+        address_complement, neighborhood, city, state, password, roles,
         percentage, category_id
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING id, name, cpf, roles`,
@@ -762,7 +762,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
     // Handle password change
     if (newPassword && currentPassword) {
       const userResult = await pool.query(
-        "SELECT password_hash FROM users WHERE id = $1",
+        "SELECT password FROM users WHERE id = $1",
         [id]
       );
 
@@ -772,14 +772,14 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
 
       const isValidPassword = await bcrypt.compare(
         currentPassword,
-        userResult.rows[0].password_hash
+        userResult.rows[0].password
       );
       if (!isValidPassword) {
         return res.status(400).json({ message: "Senha atual incorreta" });
       }
 
       const hashedNewPassword = await bcrypt.hash(newPassword, 10);
-      updateQuery += `, password_hash = $${paramIndex}`;
+      updateQuery += `, password = $${paramIndex}`;
       queryParams.push(hashedNewPassword);
       paramIndex++;
     }
