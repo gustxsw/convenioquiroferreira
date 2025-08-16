@@ -1377,7 +1377,7 @@ app.put(
       } = req.body;
 
       const result = await pool.query(
-        \`UPDATE private_patients SET 
+        UPDATE private_patients SET 
         name = $1, email = $2, phone = $3, birth_date = $4,
         address = $5, address_number = $6, address_complement = $7,
         neighborhood = $8, city = $9, state = $10, zip_code = $11
