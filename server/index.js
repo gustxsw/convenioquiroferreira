@@ -1329,7 +1329,7 @@ app.post(
         [
           req.user.id,
           name.trim(),
-          cleanCpf,
+          cleanCpf || null,
           email?.trim() || null,
           phone?.replace(/\D/g, "") || null,
           birth_date || null,
