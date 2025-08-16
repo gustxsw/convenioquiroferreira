@@ -1556,7 +1556,7 @@ app.put(
       }
 
       const result = await pool.query(
-        \`UPDATE attendance_locations SET 
+        UPDATE attendance_locations SET 
         name = $1, address = $2, address_number = $3, address_complement = $4,
         neighborhood = $5, city = $6, state = $7, zip_code = $8, phone = $9, is_default = $10
        WHERE id = $11 AND professional_id = $12 RETURNING *`,
@@ -1916,7 +1916,7 @@ app.put(
       } = req.body;
 
       const result = await pool.query(
-        \`UPDATE medical_records SET 
+        UPDATE medical_records SET 
         chief_complaint = $1, history_present_illness = $2,
         past_medical_history = $3, medications = $4, allergies = $5,
         physical_examination = $6, diagnosis = $7, treatment_plan = $8,
@@ -2525,7 +2525,7 @@ app.get("/api/payment/client/success", async (req, res) => {
     if (payment_id && status === "approved") {
       // Update payment status
       await pool.query(
-        \`UPDATE client_payments SET 
+        UPDATE client_payments SET 
           payment_id = $1, status = 'approved', date_approved = CURRENT_TIMESTAMP
          WHERE external_reference = $2`,
         [payment_id, external_reference]
@@ -2543,7 +2543,7 @@ app.get("/api/payment/client/success", async (req, res) => {
         expiryDate.setFullYear(expiryDate.getFullYear() + 1); // 1 year from now
 
         await pool.query(
-          \`UPDATE users SET 
+          UPDATE users SET 
             subscription_status = 'active',
             subscription_expiry = $1
            WHERE id = $2`,
@@ -2573,7 +2573,7 @@ app.get("/api/payment/client/failure", async (req, res) => {
 
     if (external_reference) {
       await pool.query(
-        \`UPDATE client_payments SET 
+        UPDATE client_payments SET 
           payment_id = $1, status = 'rejected'
          WHERE external_reference = $2`,
         [payment_id || null, external_reference]
@@ -2599,7 +2599,7 @@ app.get("/api/payment/client/pending", async (req, res) => {
 
     if (external_reference) {
       await pool.query(
-        \`UPDATE client_payments SET 
+        UPDATE client_payments SET 
           payment_id = $1, status = 'pending'
          WHERE external_reference = $2`,
         [payment_id || null, external_reference]
@@ -2626,7 +2626,7 @@ app.get("/api/payment/professional/success", async (req, res) => {
 
     if (payment_id && status === "approved") {
       await pool.query(
-        \`UPDATE professional_payments SET 
+        UPDATE professional_payments SET 
           payment_id = $1, status = 'approved', date_approved = CURRENT_TIMESTAMP
          WHERE external_reference = $2`,
         [payment_id, external_reference]
@@ -2652,7 +2652,7 @@ app.get("/api/payment/professional/failure", async (req, res) => {
 
     if (external_reference) {
       await pool.query(
-        \`UPDATE professional_payments SET 
+        UPDATE professional_payments SET 
           payment_id = $1, status = 'rejected'
          WHERE external_reference = $2`,
         [payment_id || null, external_reference]
@@ -2678,7 +2678,7 @@ app.get("/api/payment/professional/pending", async (req, res) => {
 
     if (external_reference) {
       await pool.query(
-        \`UPDATE professional_payments SET 
+        UPDATE professional_payments SET 
           payment_id = $1, status = 'pending'
          WHERE external_reference = $2`,
         [payment_id || null, external_reference]
@@ -2705,7 +2705,7 @@ app.get("/api/payment/scheduling/success", async (req, res) => {
 
     if (payment_id && status === "approved") {
       await pool.query(
-        \`UPDATE scheduling_payments SET 
+        UPDATE scheduling_payments SET 
           payment_id = $1, status = 'approved', date_approved = CURRENT_TIMESTAMP
          WHERE external_reference = $2`,
         [payment_id, external_reference]
@@ -2734,7 +2734,7 @@ app.get("/api/payment/scheduling/failure", async (req, res) => {
 
     if (external_reference) {
       await pool.query(
-        \`UPDATE scheduling_payments SET 
+        UPDATE scheduling_payments SET 
           payment_id = $1, status = 'rejected'
          WHERE external_reference = $2`,
         [payment_id || null, external_reference]
@@ -2760,7 +2760,7 @@ app.get("/api/payment/scheduling/pending", async (req, res) => {
 
     if (external_reference) {
       await pool.query(
-        \`UPDATE scheduling_payments SET 
+        UPDATE scheduling_payments SET 
           payment_id = $1, status = 'pending'
          WHERE external_reference = $2`,
         [payment_id || null, external_reference]
@@ -2795,7 +2795,7 @@ app.post("/api/payment/client/webhook", async (req, res) => {
 
         // Update payment record
         await pool.query(
-          \`UPDATE client_payments SET 
+          UPDATE client_payments SET 
             payment_id = $1, status = $2, payment_method = $3, payment_type = $4,
             payer_email = $5, date_approved = $6, date_created = $7,
             last_modified = $8, webhook_data = $9
@@ -2827,7 +2827,7 @@ app.post("/api/payment/client/webhook", async (req, res) => {
             expiryDate.setFullYear(expiryDate.getFullYear() + 1); // 1 year from now
 
             await pool.query(
-              \`UPDATE users SET 
+              UPDATE users SET 
                 subscription_status = 'active',
                 subscription_expiry = $1
                WHERE id = $2`,
@@ -2874,7 +2874,7 @@ app.post("/api/payment/professional/webhook", async (req, res) => {
 
         // Update payment record
         await pool.query(
-          \`UPDATE professional_payments SET 
+          UPDATE professional_payments SET 
             payment_id = $1, status = $2, payment_method = $3, payment_type = $4,
             payer_email = $5, date_approved = $6, date_created = $7,
             last_modified = $8, webhook_data = $9
@@ -2928,7 +2928,7 @@ app.post("/api/payment/scheduling/webhook", async (req, res) => {
 
         // Update payment record
         await pool.query(
-          \`UPDATE scheduling_payments SET 
+          UPDATE scheduling_payments SET 
             payment_id = $1, status = $2, payment_method = $3, payment_type = $4,
             payer_email = $5, date_approved = $6, date_created = $7,
             last_modified = $8, webhook_data = $9
