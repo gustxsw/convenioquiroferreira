@@ -36,6 +36,13 @@ type Service = {
   base_price: number;
 };
 
+type AttendanceLocation = {
+  id: number;
+  name: string;
+  address: string;
+  is_default: boolean;
+};
+
 type PrivatePatient = {
   id: number;
   name: string;
@@ -47,6 +54,7 @@ const SchedulingPage: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [privatePatients, setPrivatePatients] = useState<PrivatePatient[]>([]);
+  const [attendanceLocations, setAttendanceLocations] = useState<AttendanceLocation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -73,6 +81,7 @@ const SchedulingPage: React.FC = () => {
     time: "",
     service_id: "",
     value: "",
+    location_id: "",
     notes: "",
   });
 
@@ -104,7 +113,10 @@ const SchedulingPage: React.FC = () => {
 
       // Fetch appointments
       const appointmentsResponse = await fetch(`${apiUrl}/api/consultations`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
       });
 
       if (appointmentsResponse.ok) {
@@ -131,26 +143,63 @@ const SchedulingPage: React.FC = () => {
 
         console.log("✅ Processed appointments:", filteredAppointments);
         setAppointments(filteredAppointments);
+      } else {
+        console.error("Appointments response error:", appointmentsResponse.status);
       }
 
       // Fetch services
       const servicesResponse = await fetch(`${apiUrl}/api/services`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
       });
 
       if (servicesResponse.ok) {
         const servicesData = await servicesResponse.json();
+        console.log("Services loaded:", servicesData.length);
         setServices(servicesData);
+      } else {
+        console.error("Services response error:", servicesResponse.status);
       }
 
       // Fetch private patients
       const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
       });
 
       if (patientsResponse.ok) {
         const patientsData = await patientsResponse.json();
-        setPrivatePatients(patientsData);
+        console.log("Private patients loaded:", patientsData.length);
+        setPrivatePatients(Array.isArray(patientsData) ? patientsData : []);
+      } else {
+        console.error("Private patients response error:", patientsResponse.status);
+        setPrivatePatients([]);
+      }
+
+      // Fetch attendance locations
+      const locationsResponse = await fetch(`${apiUrl}/api/attendance-locations`, {
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+      });
+
+      if (locationsResponse.ok) {
+        const locationsData = await locationsResponse.json();
+        console.log("Attendance locations loaded:", locationsData.length);
+        setAttendanceLocations(locationsData);
+        
+        // Set default location if exists
+        const defaultLocation = locationsData.find((loc: AttendanceLocation) => loc.is_default);
+        if (defaultLocation) {
+          setFormData(prev => ({ ...prev, location_id: defaultLocation.id.toString() }));
+        }
+      } else {
+        console.error("Attendance locations response error:", locationsResponse.status);
       }
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -202,6 +251,7 @@ const SchedulingPage: React.FC = () => {
             ? parseInt(formData.private_patient_id)
             : null,
         service_id: parseInt(formData.service_id),
+        location_id: formData.location_id ? parseInt(formData.location_id) : null,
         value: parseFloat(formData.value),
         date: new Date(`${formData.date}T${formData.time}`).toISOString(),
         status: "scheduled", // Status inicial
@@ -234,6 +284,7 @@ const SchedulingPage: React.FC = () => {
         time: "",
         service_id: "",
         value: "",
+        location_id: "",
         notes: "",
       });
       setSuccess("Agendamento criado com sucesso!");
@@ -359,6 +410,7 @@ const SchedulingPage: React.FC = () => {
   };
 
   const formatCpf = (value: string) => {
+    if (!value) return '';
     const numericValue = value.replace(/\D/g, "");
     return numericValue.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   };
@@ -697,10 +749,15 @@ const SchedulingPage: React.FC = () => {
                       <option value="">Selecione um paciente</option>
                       {privatePatients.map((patient) => (
                         <option key={patient.id} value={patient.id}>
-                          {patient.name} - {formatCpf(patient.cpf)}
+                          {patient.name} - {patient.cpf ? formatCpf(patient.cpf) : 'CPF não informado'}
                         </option>
                       ))}
                     </select>
+                    {privatePatients.length === 0 && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        Nenhum paciente particular cadastrado. Cadastre pacientes na seção "Pacientes Particulares".
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -779,6 +836,33 @@ const SchedulingPage: React.FC = () => {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Local de Atendimento
+                  </label>
+                  <select
+                    value={formData.location_id || ''}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        location_id: e.target.value,
+                      }))
+                    }
+                    className="input"
+                  >
+                    <option value="">Selecione um local</option>
+                    {attendanceLocations.map((location) => (
+                      <option key={location.id} value={location.id}>
+                        {location.name} {location.is_default && "(Padrão)"}
+                      </option>
+                    ))}
+                  </select>
+                  {attendanceLocations.length === 0 && (
+                    <p className="text-sm text-gray-500 mt-1">
+                      Configure seus locais de atendimento no perfil.
+                    </p>
+                  )}
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Observações

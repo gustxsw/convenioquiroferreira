@@ -158,12 +158,16 @@ const ManageUsersPage: React.FC = () => {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
       });
       
       if (categoriesResponse.ok) {
         const categoriesData = await categoriesResponse.json();
+        console.log("Categories loaded:", categoriesData.length);
         setCategories(categoriesData);
+      } else {
+        console.warn("Categories not available:", categoriesResponse.status);
       }
       
       // Fetch users
@@ -171,14 +175,17 @@ const ManageUsersPage: React.FC = () => {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
       });
       
       if (!usersResponse.ok) {
+        console.error("Users response error:", usersResponse.status);
         throw new Error('Falha ao carregar usuários');
       }
       
       const usersData = await usersResponse.json();
+      console.log("Users data loaded:", usersData.length);
       setUsers(usersData);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -192,9 +199,9 @@ const ManageUsersPage: React.FC = () => {
   const openActivationModal = (user: UserData) => {
     setUserToActivate(user);
     
-    // Set default expiry date to 1 month from now
+    // Set default expiry date to 1 year from now
     const defaultExpiry = new Date();
-    defaultExpiry.setMonth(defaultExpiry.getMonth() + 1);
+    defaultExpiry.setFullYear(defaultExpiry.getFullYear() + 1);
     setExpiryDate(defaultExpiry.toISOString().split('T')[0]);
     
     setShowActivationModal(true);

@@ -61,15 +61,11 @@ const ReportsPage: React.FC = () => {
 
   // Get API URL with fallback
   const getApiUrl = () => {
-    if (import.meta.env.VITE_API_URL) {
-      return import.meta.env.VITE_API_URL;
-    }
-
     if (
       window.location.hostname === "cartaoquiroferreira.com.br" ||
       window.location.hostname === "www.cartaoquiroferreira.com.br"
     ) {
-      return "https://convenioquiroferreira.onrender.com";
+      return "https://www.cartaoquiroferreira.com.br";
     }
 
     return "http://localhost:3001";
@@ -95,7 +91,8 @@ const ReportsPage: React.FC = () => {
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      console.log("Fetching report from:", apiUrl);
+      console.log("🔄 Fetching revenue report from:", `${apiUrl}/api/reports/revenue`);
+      console.log("🔄 Date range:", { startDate, endDate });
 
       const response = await fetch(
         `${apiUrl}/api/reports/revenue?start_date=${startDate}&end_date=${endDate}`,
@@ -103,19 +100,25 @@ const ReportsPage: React.FC = () => {
           method: "GET",
           headers: {
             Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
         }
       );
 
+      console.log("📡 Revenue report response status:", response.status);
+
       if (!response.ok) {
-        throw new Error("Falha ao carregar relatório");
+        const errorText = await response.text();
+        console.error("❌ Revenue report error details:", errorText);
+        throw new Error(`Falha ao carregar relatório de receita: ${response.status}`);
       }
 
       const data = await response.json();
+      console.log("✅ Revenue report data:", data);
       setReport(data);
     } catch (error) {
       console.error("Error fetching report:", error);
-      setError("Não foi possível carregar o relatório");
+      setError(error instanceof Error ? error.message : "Não foi possível carregar o relatório de receita");
       setReport(null);
     } finally {
       setIsLoading(false);
@@ -135,6 +138,8 @@ const ReportsPage: React.FC = () => {
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
+      console.log("🔄 Fetching city reports from:", `${apiUrl}/api/reports/clients-by-city`);
+
       // Fetch clients by city
       const clientsResponse = await fetch(
         `${apiUrl}/api/reports/clients-by-city`,
@@ -142,13 +147,20 @@ const ReportsPage: React.FC = () => {
           method: "GET",
           headers: {
             Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
         }
       );
 
+      console.log("📡 Clients by city response status:", clientsResponse.status);
+
       if (clientsResponse.ok) {
         const clientsData = await clientsResponse.json();
+        console.log("✅ Clients by city loaded:", clientsData);
         setClientsReport(clientsData);
+      } else {
+        console.warn("⚠️ Clients by city not available:", clientsResponse.status);
+        setClientsReport([]);
       }
 
       // Fetch professionals by city
@@ -158,13 +170,20 @@ const ReportsPage: React.FC = () => {
           method: "GET",
           headers: {
             Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
         }
       );
 
+      console.log("📡 Professionals by city response status:", professionalsResponse.status);
+
       if (professionalsResponse.ok) {
         const professionalsData = await professionalsResponse.json();
+        console.log("✅ Professionals by city loaded:", professionalsData);
         setProfessionalsReport(professionalsData);
+      } else {
+        console.warn("⚠️ Professionals by city not available:", professionalsResponse.status);
+        setProfessionalsReport([]);
       }
     } catch (error) {
       console.error("Error fetching city reports:", error);
@@ -516,7 +535,7 @@ const ReportsPage: React.FC = () => {
                     </p>
                     <p className="text-2xl font-bold text-green-700">
                       {clientsReport.reduce(
-                        (sum, city) => sum + city.active_clients,
+                        (sum, city) => sum + Number(city.active_clients),
                         0
                       )}
                     </p>
@@ -529,7 +548,7 @@ const ReportsPage: React.FC = () => {
                     </p>
                     <p className="text-2xl font-bold text-yellow-700">
                       {clientsReport.reduce(
-                        (sum, city) => sum + city.pending_clients,
+                        (sum, city) => sum + Number(city.pending_clients),
                         0
                       )}
                     </p>
@@ -542,7 +561,7 @@ const ReportsPage: React.FC = () => {
                     </p>
                     <p className="text-2xl font-bold text-red-700">
                       {clientsReport.reduce(
-                        (sum, city) => sum + city.expired_clients,
+                        (sum, city) => sum + Number(city.expired_clients),
                         0
                       )}
                     </p>

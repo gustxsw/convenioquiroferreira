@@ -114,14 +114,17 @@ const AdminHomePage: React.FC = () => {
           method: "GET",
           headers: {
             Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
         });
 
         if (!usersResponse.ok) {
           throw new Error("Falha ao carregar dados de usuários");
+        console.error("Consultations response error:", consultationsResponse.status);
         }
 
         const usersData = await usersResponse.json();
+        console.log("Users data loaded:", usersData.length);
 
         // Fetch monthly revenue report
         const dateRange = getCurrentMonthRange();
@@ -137,7 +140,10 @@ const AdminHomePage: React.FC = () => {
 
         if (revenueResponse.ok) {
           const revenueData = await revenueResponse.json();
+          console.log("Revenue data loaded:", revenueData);
           setMonthlyRevenue(revenueData);
+        } else {
+          console.warn("Revenue data not available:", revenueResponse.status);
         }
 
         // Calculate consultation counts
@@ -161,6 +167,7 @@ const AdminHomePage: React.FC = () => {
         const monthCount = consultationsData.filter(
           (c: any) => new Date(c.date) >= monthAgo
         ).length;
+        console.log("Consultations data loaded:", consultationsData.length);
 
         setConsultationCounts({
           total: consultationsData.length,
@@ -169,7 +176,7 @@ const AdminHomePage: React.FC = () => {
           month: monthCount,
         });
 
-        // 🔥 FIXED: Calculate user counts correctly using roles array
+        // Calculate user counts correctly using roles array
         const clientCount = usersData.filter(
           (u: any) => u.roles && u.roles.includes('client')
         ).length;
