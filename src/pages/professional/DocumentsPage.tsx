@@ -1,14 +1,26 @@
-import React, { useState, useEffect } from 'react';
-import { FileImage, FileText, Upload, Download, Eye, Plus, Search, Calendar, X, Check, User } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import {
+  FileImage,
+  FileText,
+  Upload,
+  Download,
+  Eye,
+  Plus,
+  Search,
+  Calendar,
+  X,
+  Check,
+  User,
+} from "lucide-react";
 
-type DocumentType = 
-  | 'certificate' 
-  | 'prescription' 
-  | 'consent_form' 
-  | 'exam_request' 
-  | 'declaration' 
-  | 'lgpd' 
-  | 'other';
+type DocumentType =
+  | "certificate"
+  | "prescription"
+  | "consent_form"
+  | "exam_request"
+  | "declaration"
+  | "lgpd"
+  | "other";
 
 type Document = {
   id: number;
@@ -28,32 +40,32 @@ type PrivatePatient = {
 const DocumentsPage: React.FC = () => {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [patients, setPatients] = useState<PrivatePatient[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedType, setSelectedType] = useState<DocumentType | ''>('');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedType, setSelectedType] = useState<DocumentType | "">("");
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  
+
   // Form state
   const [formData, setFormData] = useState({
-    document_type: 'certificate' as DocumentType,
-    patient_id: '',
-    patient_type: 'private',
-    title: '',
-    patientName: '',
-    patientCpf: '',
-    description: '',
-    cid: '',
-    days: '',
-    procedure: '',
-    risks: '',
-    prescription: '',
-    content: '',
-    professionalName: '',
-    professionalSpecialty: '',
-    crm: ''
+    document_type: "certificate" as DocumentType,
+    patient_id: "",
+    patient_type: "private",
+    title: "",
+    patientName: "",
+    patientCpf: "",
+    description: "",
+    cid: "",
+    days: "",
+    procedure: "",
+    risks: "",
+    prescription: "",
+    content: "",
+    professionalName: "",
+    professionalSpecialty: "",
+    crm: "",
   });
 
   // Get API URL
@@ -68,13 +80,13 @@ const DocumentsPage: React.FC = () => {
   };
 
   const documentTypes = [
-    { value: 'certificate', label: 'Atestado Médico', icon: '📋' },
-    { value: 'prescription', label: 'Receituário', icon: '💊' },
-    { value: 'consent_form', label: 'Termo de Consentimento', icon: '✍️' },
-    { value: 'exam_request', label: 'Solicitação de Exames', icon: '🔬' },
-    { value: 'declaration', label: 'Declaração', icon: '📄' },
-    { value: 'lgpd', label: 'Termo LGPD', icon: '🔒' },
-    { value: 'other', label: 'Outros', icon: '📁' }
+    { value: "certificate", label: "Atestado Médico", icon: "📋" },
+    { value: "prescription", label: "Receituário", icon: "💊" },
+    { value: "consent_form", label: "Termo de Consentimento", icon: "✍️" },
+    { value: "exam_request", label: "Solicitação de Exames", icon: "🔬" },
+    { value: "declaration", label: "Declaração", icon: "📄" },
+    { value: "lgpd", label: "Termo LGPD", icon: "🔒" },
+    { value: "other", label: "Outros", icon: "📁" },
   ];
 
   useEffect(() => {
@@ -84,12 +96,12 @@ const DocumentsPage: React.FC = () => {
   const fetchData = async () => {
     try {
       setIsLoading(true);
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       // Fetch documents
       const documentsResponse = await fetch(`${apiUrl}/api/medical-documents`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (documentsResponse.ok) {
@@ -99,7 +111,7 @@ const DocumentsPage: React.FC = () => {
 
       // Fetch private patients
       const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (patientsResponse.ok) {
@@ -107,70 +119,78 @@ const DocumentsPage: React.FC = () => {
         setPatients(patientsData);
       }
     } catch (error) {
-      console.error('Error fetching data:', error);
-      setError('Não foi possível carregar os dados');
+      console.error("Error fetching data:", error);
+      setError("Não foi possível carregar os dados");
     } finally {
       setIsLoading(false);
     }
   };
 
   const getDocumentTypeInfo = (type: DocumentType) => {
-    return documentTypes.find(dt => dt.value === type) || documentTypes[documentTypes.length - 1];
+    return (
+      documentTypes.find((dt) => dt.value === type) ||
+      documentTypes[documentTypes.length - 1]
+    );
   };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+    return date.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
-  const filteredDocuments = documents.filter(doc => {
-    const matchesSearch = doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         doc.patient_name.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredDocuments = documents.filter((doc) => {
+    const matchesSearch =
+      doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      doc.patient_name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = !selectedType || doc.document_type === selectedType;
     return matchesSearch && matchesType;
   });
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleInputChange = (
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
+  ) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handlePatientSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const patientId = e.target.value;
-    const patient = patients.find(p => p.id.toString() === patientId);
-    
-    setFormData(prev => ({
+    const patient = patients.find((p) => p.id.toString() === patientId);
+
+    setFormData((prev) => ({
       ...prev,
       patient_id: patientId,
-      patientName: patient?.name || '',
-      patientCpf: patient?.cpf || ''
+      patientName: patient?.name || "",
+      patientCpf: patient?.cpf || "",
     }));
   };
 
   const openCreateModal = () => {
     setFormData({
-      document_type: 'certificate',
-      patient_id: '',
-      patient_type: 'private',
-      title: '',
-      patientName: '',
-      patientCpf: '',
-      description: '',
-      cid: '',
-      days: '',
-      procedure: '',
-      risks: '',
-      prescription: '',
-      content: '',
-      professionalName: '',
-      professionalSpecialty: '',
-      crm: ''
+      document_type: "certificate",
+      patient_id: "",
+      patient_type: "private",
+      title: "",
+      patientName: "",
+      patientCpf: "",
+      description: "",
+      cid: "",
+      days: "",
+      procedure: "",
+      risks: "",
+      prescription: "",
+      content: "",
+      professionalName: "",
+      professionalSpecialty: "",
+      crm: "",
     });
     setShowCreateModal(true);
   };
@@ -182,61 +202,70 @@ const DocumentsPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsCreating(true);
-    setError('');
-    setSuccess('');
+    setError("");
+    setSuccess("");
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       const response = await fetch(`${apiUrl}/api/medical-documents`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           title: formData.title,
           document_type: formData.document_type,
-          private_patient_id: formData.patient_type === 'private' ? parseInt(formData.patient_id) : null,
-          template_data: formData
-        })
+          private_patient_id:
+            formData.patient_type === "private"
+              ? parseInt(formData.patient_id)
+              : null,
+          template_data: formData,
+        }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Erro ao criar documento');
+        throw new Error(errorData.message || "Erro ao criar documento");
       }
 
       const result = await response.json();
       const { title, documentUrl } = result;
 
       // Clean filename
-      const fileName = title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
-      
+      const fileName = title
+        .replace(/[^a-zA-Z0-9\s]/g, "")
+        .replace(/\s+/g, "_");
+
       // Create download link that opens in new tab for mobile compatibility
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = documentUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+
       // For desktop browsers, try to force download
-      if (window.navigator.userAgent.indexOf('Mobile') === -1) {
+      if (window.navigator.userAgent.indexOf("Mobile") === -1) {
         link.download = `${fileName}.html`;
       }
-      
+
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
-      setSuccess('Documento aberto em nova aba. Use Ctrl+S (ou Cmd+S no Mac) para salvar ou imprimir.');
+      setSuccess(
+        "Documento aberto em nova aba. Use Ctrl+S (ou Cmd+S no Mac) para salvar ou imprimir."
+      );
       await fetchData();
 
       setTimeout(() => {
         closeModal();
       }, 1500);
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Erro ao criar documento');
+      setError(
+        error instanceof Error ? error.message : "Erro ao criar documento"
+      );
     } finally {
       setIsCreating(false);
     }
@@ -244,7 +273,7 @@ const DocumentsPage: React.FC = () => {
 
   const renderFormFields = () => {
     switch (formData.document_type) {
-      case 'certificate':
+      case "certificate":
         return (
           <>
             <div>
@@ -292,7 +321,7 @@ const DocumentsPage: React.FC = () => {
           </>
         );
 
-      case 'prescription':
+      case "prescription":
         return (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -309,7 +338,7 @@ const DocumentsPage: React.FC = () => {
           </div>
         );
 
-      case 'consent_form':
+      case "consent_form":
         return (
           <>
             <div>
@@ -373,15 +402,16 @@ const DocumentsPage: React.FC = () => {
         );
     }
   };
-
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Documentos Médicos</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Documentos Médicos
+          </h1>
           <p className="text-gray-600">Gere e gerencie documentos médicos</p>
         </div>
-        
+
         <button
           onClick={openCreateModal}
           className="btn btn-primary flex items-center"
@@ -406,7 +436,7 @@ const DocumentsPage: React.FC = () => {
 
         <select
           value={selectedType}
-          onChange={(e) => setSelectedType(e.target.value as DocumentType | '')}
+          onChange={(e) => setSelectedType(e.target.value as DocumentType | "")}
           className="input"
         >
           <option value="">Todos os tipos</option>
@@ -440,13 +470,14 @@ const DocumentsPage: React.FC = () => {
           <div className="text-center py-12">
             <FileText className="h-16 w-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {searchTerm || selectedType ? 'Nenhum documento encontrado' : 'Nenhum documento criado'}
+              {searchTerm || selectedType
+                ? "Nenhum documento encontrado"
+                : "Nenhum documento criado"}
             </h3>
             <p className="text-gray-600 mb-4">
               {searchTerm || selectedType
-                ? 'Tente ajustar os filtros de busca.'
-                : 'Comece criando seu primeiro documento médico.'
-              }
+                ? "Tente ajustar os filtros de busca."
+                : "Comece criando seu primeiro documento médico."}
             </p>
             {!searchTerm && !selectedType && (
               <button
@@ -502,7 +533,9 @@ const DocumentsPage: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <User className="h-4 w-4 text-gray-400 mr-2" />
-                          <span className="text-sm text-gray-900">{document.patient_name}</span>
+                          <span className="text-sm text-gray-900">
+                            {document.patient_name}
+                          </span>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -618,7 +651,11 @@ const DocumentsPage: React.FC = () => {
                     <option value="">Selecione um paciente</option>
                     {patients.map((patient) => (
                       <option key={patient.id} value={patient.id}>
-                        {patient.name} - CPF: {patient.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}
+                        {patient.name} - CPF:{" "}
+                        {patient.cpf.replace(
+                          /(\d{3})(\d{3})(\d{3})(\d{2})/,
+                          "$1.$2.$3-$4"
+                        )}
                       </option>
                     ))}
                   </select>
@@ -680,12 +717,14 @@ const DocumentsPage: React.FC = () => {
                 >
                   Cancelar
                 </button>
-                <button 
-                  type="submit" 
-                  className={`btn btn-primary ${isCreating ? 'opacity-70 cursor-not-allowed' : ''}`}
+                <button
+                  type="submit"
+                  className={`btn btn-primary ${
+                    isCreating ? "opacity-70 cursor-not-allowed" : ""
+                  }`}
                   disabled={isCreating}
                 >
-                  {isCreating ? 'Criando...' : 'Criar Documento'}
+                  {isCreating ? "Criando..." : "Criar Documento"}
                 </button>
               </div>
             </form>

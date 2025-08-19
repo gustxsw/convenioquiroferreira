@@ -1,5 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { FilePlus, Edit, Trash2, FileText, Check, X, FolderPlus } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import {
+  FilePlus,
+  Edit,
+  Trash2,
+  FileText,
+  Check,
+  X,
+  FolderPlus,
+} from "lucide-react";
 
 type Service = {
   id: number;
@@ -21,155 +29,178 @@ const ManageServicesPage: React.FC = () => {
   const [services, setServices] = useState<Service[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
+  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [selectedService, setSelectedService] = useState<Service | null>(null);
-  
+
   // Category modal state
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  
+
   // Form state
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [basePrice, setBasePrice] = useState('');
-  const [categoryId, setCategoryId] = useState<string>('');
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [basePrice, setBasePrice] = useState("");
+  const [categoryId, setCategoryId] = useState<string>("");
   const [isBaseService, setIsBaseService] = useState(false);
-  
+
   // Category form state
-  const [categoryName, setCategoryName] = useState('');
-  const [categoryDescription, setCategoryDescription] = useState('');
-  
+  const [categoryName, setCategoryName] = useState("");
+  const [categoryDescription, setCategoryDescription] = useState("");
+
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [serviceToDelete, setServiceToDelete] = useState<Service | null>(null);
 
   // Get API URL with fallback
   const getApiUrl = () => {
-    if (import.meta.env.VITE_API_URL) {
-      return import.meta.env.VITE_API_URL;
+    if (
+      window.location.hostname === "cartaoquiroferreira.com.br" ||
+      window.location.hostname === "www.cartaoquiroferreira.com.br"
+    ) {
+      return "https://www.cartaoquiroferreira.com.br";
     }
-    
-    if (window.location.hostname === 'cartaoquiroferreira.com.br' || 
-        window.location.hostname === 'www.cartaoquiroferreira.com.br') {
-      return 'https://convenioquiroferreira.onrender.com';
-    }
-    
-    return 'http://localhost:3001';
+
+    return "http://localhost:3001";
   };
-  
+
   useEffect(() => {
     fetchData();
   }, []);
-  
+
   const fetchData = async () => {
     try {
       setIsLoading(true);
-      setError('');
-      
-      const token = localStorage.getItem('token');
+      setError("");
+
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
-      
-      console.log('Fetching services data from:', apiUrl);
-      
+
+      console.log("🔄 Fetching services data from:", `${apiUrl}/api/services`);
+
       try {
         // Fetch categories
-        const categoriesResponse = await fetch(`${apiUrl}/api/service-categories`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        });
-        
+        const categoriesResponse = await fetch(
+          `${apiUrl}/api/service-categories`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        console.log(
+          "📡 Categories response status:",
+          categoriesResponse.status
+        );
+
         if (categoriesResponse.ok) {
           const categoriesData = await categoriesResponse.json();
-          console.log('✅ Categories loaded:', categoriesData.length);
+          console.log("✅ Categories loaded:", categoriesData.length);
           setCategories(categoriesData);
         } else {
-          console.warn('⚠️ Categories not available:', categoriesResponse.status);
+          const errorText = await categoriesResponse.text();
+          console.warn(
+            "⚠️ Categories not available:",
+            categoriesResponse.status,
+            errorText
+          );
           setCategories([]);
         }
       } catch (error) {
-        console.error('❌ Error fetching categories:', error);
+        console.error("❌ Error fetching categories:", error);
         setCategories([]);
       }
-      
+
       try {
         // Fetch services
         const servicesResponse = await fetch(`${apiUrl}/api/services`, {
-          method: 'GET',
+          method: "GET",
           headers: {
-            'Authorization': `Bearer ${token}`,
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
         });
-        
+
+        console.log("📡 Services response status:", servicesResponse.status);
+
         if (servicesResponse.ok) {
           const servicesData = await servicesResponse.json();
-          console.log('✅ Services loaded:', servicesData.length);
+          console.log("✅ Services loaded:", servicesData.length);
+          console.log("✅ Services data:", servicesData);
           setServices(servicesData);
         } else {
-          console.warn('⚠️ Services not available:', servicesResponse.status);
+          const errorText = await servicesResponse.text();
+          console.error(
+            "❌ Services not available:",
+            servicesResponse.status,
+            errorText
+          );
+          setError(`Erro ao carregar serviços: ${servicesResponse.status}`);
           setServices([]);
         }
       } catch (error) {
-        console.error('❌ Error fetching services:', error);
+        console.error("❌ Error fetching services:", error);
+        setError("Erro de conexão ao carregar serviços");
         setServices([]);
       }
     } catch (error) {
-      console.error('Error fetching data:', error);
-      setError('Não foi possível carregar alguns dados. Tente novamente.');
+      console.error("Error fetching data:", error);
+      setError("Não foi possível carregar alguns dados. Tente novamente.");
     } finally {
       setIsLoading(false);
     }
   };
-  
+
   const openCreateModal = () => {
-    setModalMode('create');
-    setName('');
-    setDescription('');
-    setBasePrice('');
-    setCategoryId('');
+    setModalMode("create");
+    setName("");
+    setDescription("");
+    setBasePrice("");
+    setCategoryId("");
     setIsBaseService(false);
     setSelectedService(null);
     setIsModalOpen(true);
   };
-  
+
   const openEditModal = (service: Service) => {
-    setModalMode('edit');
+    setModalMode("edit");
     setName(service.name);
     setDescription(service.description);
     setBasePrice(service.base_price.toString());
-    setCategoryId(service.category_id?.toString() || '');
+    setCategoryId(service.category_id?.toString() || "");
     setIsBaseService(service.is_base_service);
     setSelectedService(service);
     setIsModalOpen(true);
   };
-  
+
   const closeModal = () => {
     setIsModalOpen(false);
-    setSuccess('');
-    setError('');
+    setSuccess("");
+    setError("");
   };
-  
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setSuccess('');
-    
+    setError("");
+    setSuccess("");
+
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
-      
+
       // Validate base price
       const priceValue = parseFloat(basePrice);
       if (isNaN(priceValue) || priceValue <= 0) {
-        setError('O preço base deve ser um valor numérico maior que zero');
+        setError("O preço base deve ser um valor numérico maior que zero");
         return;
       }
-      
+
       const serviceData = {
         name,
         description,
@@ -177,46 +208,49 @@ const ManageServicesPage: React.FC = () => {
         category_id: categoryId ? parseInt(categoryId) : null,
         is_base_service: isBaseService,
       };
-      
-      if (modalMode === 'create') {
+
+      if (modalMode === "create") {
         // Create service
         const response = await fetch(`${apiUrl}/api/services`, {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
           body: JSON.stringify(serviceData),
         });
-        
+
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.message || 'Falha ao criar serviço');
+          throw new Error(errorData.message || "Falha ao criar serviço");
         }
-        
-        setSuccess('Serviço criado com sucesso!');
-      } else if (modalMode === 'edit' && selectedService) {
+
+        setSuccess("Serviço criado com sucesso!");
+      } else if (modalMode === "edit" && selectedService) {
         // Update service
-        const response = await fetch(`${apiUrl}/api/services/${selectedService.id}`, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(serviceData),
-        });
-        
+        const response = await fetch(
+          `${apiUrl}/api/services/${selectedService.id}`,
+          {
+            method: "PUT",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(serviceData),
+          }
+        );
+
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.message || 'Falha ao atualizar serviço');
+          throw new Error(errorData.message || "Falha ao atualizar serviço");
         }
-        
-        setSuccess('Serviço atualizado com sucesso!');
+
+        setSuccess("Serviço atualizado com sucesso!");
       }
-      
+
       // Refresh services list
       await fetchData();
-      
+
       // Close modal after short delay
       setTimeout(() => {
         closeModal();
@@ -225,117 +259,124 @@ const ManageServicesPage: React.FC = () => {
       if (error instanceof Error) {
         setError(error.message);
       } else {
-        setError('Ocorreu um erro ao processar a solicitação');
+        setError("Ocorreu um erro ao processar a solicitação");
       }
     }
   };
-  
+
   const handleCategorySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setSuccess('');
-    
+    setError("");
+    setSuccess("");
+
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
-      
+
       const response = await fetch(`${apiUrl}/api/service-categories`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           name: categoryName,
           description: categoryDescription,
         }),
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Falha ao criar categoria');
+        throw new Error(errorData.message || "Falha ao criar categoria");
       }
-      
+
       // Refresh data
       await fetchData();
-      
-      setSuccess('Categoria criada com sucesso!');
-      
+
+      setSuccess("Categoria criada com sucesso!");
+
       // Close modal after short delay
       setTimeout(() => {
         setIsCategoryModalOpen(false);
-        setCategoryName('');
-        setCategoryDescription('');
+        setCategoryName("");
+        setCategoryDescription("");
       }, 1500);
     } catch (error) {
       if (error instanceof Error) {
         setError(error.message);
       } else {
-        setError('Ocorreu um erro ao criar a categoria');
+        setError("Ocorreu um erro ao criar a categoria");
       }
     }
   };
-  
+
   const confirmDelete = (service: Service) => {
     setServiceToDelete(service);
     setShowDeleteConfirm(true);
   };
-  
+
   const cancelDelete = () => {
     setServiceToDelete(null);
     setShowDeleteConfirm(false);
   };
-  
+
   const deleteService = async () => {
     if (!serviceToDelete) return;
-    
+
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
-      
-      const response = await fetch(`${apiUrl}/api/services/${serviceToDelete.id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-      
+
+      const response = await fetch(
+        `${apiUrl}/api/services/${serviceToDelete.id}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Falha ao excluir serviço');
+        throw new Error(errorData.message || "Falha ao excluir serviço");
       }
-      
+
       // Refresh services list
       await fetchData();
-      
-      setSuccess('Serviço excluído com sucesso!');
+
+      setSuccess("Serviço excluído com sucesso!");
     } catch (error) {
       if (error instanceof Error) {
         setError(error.message);
       } else {
-        setError('Ocorreu um erro ao excluir o serviço');
+        setError("Ocorreu um erro ao excluir o serviço");
       }
     } finally {
       setServiceToDelete(null);
       setShowDeleteConfirm(false);
     }
   };
-  
+
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
     }).format(value);
   };
-  
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Gerenciar Serviços</h1>
-          <p className="text-gray-600">Adicione, edite ou remova serviços do sistema</p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Gerenciar Serviços
+          </h1>
+          <p className="text-gray-600">
+            Adicione, edite ou remova serviços do sistema
+          </p>
         </div>
-        
+
         <div className="flex space-x-2">
           <button
             onClick={() => setIsCategoryModalOpen(true)}
@@ -344,7 +385,7 @@ const ManageServicesPage: React.FC = () => {
             <FolderPlus className="h-5 w-5 mr-2" />
             Nova Categoria
           </button>
-          
+
           <button
             onClick={openCreateModal}
             className="btn btn-primary flex items-center"
@@ -354,19 +395,19 @@ const ManageServicesPage: React.FC = () => {
           </button>
         </div>
       </div>
-      
+
       {error && (
         <div className="bg-red-50 text-red-600 p-4 rounded-md mb-6">
           {error}
         </div>
       )}
-      
+
       {success && (
         <div className="bg-green-50 text-green-600 p-4 rounded-md mb-6">
           {success}
         </div>
       )}
-      
+
       <div className="card">
         {isLoading ? (
           <div className="text-center py-8">
@@ -403,16 +444,18 @@ const ManageServicesPage: React.FC = () => {
                       <FileText className="h-5 w-5 mr-2 text-gray-500" />
                       {service.name}
                     </td>
-                    <td>{service.category_name || 'Sem categoria'}</td>
+                    <td>{service.category_name || "Sem categoria"}</td>
                     <td>{service.description}</td>
                     <td>{formatCurrency(service.base_price)}</td>
                     <td>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        service.is_base_service
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {service.is_base_service ? 'Base' : 'Específico'}
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          service.is_base_service
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-gray-100 text-gray-800"
+                        }`}
+                      >
+                        {service.is_base_service ? "Base" : "Específico"}
                       </span>
                     </td>
                     <td>
@@ -440,14 +483,16 @@ const ManageServicesPage: React.FC = () => {
           </div>
         )}
       </div>
-      
+
       {/* Service form modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold">
-                {modalMode === 'create' ? 'Adicionar Serviço' : 'Editar Serviço'}
+                {modalMode === "create"
+                  ? "Adicionar Serviço"
+                  : "Editar Serviço"}
               </h2>
               <button
                 onClick={closeModal}
@@ -456,22 +501,25 @@ const ManageServicesPage: React.FC = () => {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            
+
             {error && (
               <div className="bg-red-50 text-red-600 p-3 rounded-md mb-4">
                 {error}
               </div>
             )}
-            
+
             {success && (
               <div className="bg-green-50 text-green-600 p-3 rounded-md mb-4">
                 {success}
               </div>
             )}
-            
+
             <form onSubmit={handleSubmit}>
               <div className="mb-4">
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                  htmlFor="name"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Nome do Serviço
                 </label>
                 <input
@@ -483,9 +531,12 @@ const ManageServicesPage: React.FC = () => {
                   required
                 />
               </div>
-              
+
               <div className="mb-4">
-                <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                  htmlFor="category"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Categoria
                 </label>
                 <select
@@ -502,9 +553,12 @@ const ManageServicesPage: React.FC = () => {
                   ))}
                 </select>
               </div>
-              
+
               <div className="mb-4">
-                <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                  htmlFor="description"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Descrição
                 </label>
                 <textarea
@@ -515,9 +569,12 @@ const ManageServicesPage: React.FC = () => {
                   required
                 />
               </div>
-              
+
               <div className="mb-4">
-                <label htmlFor="basePrice" className="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                  htmlFor="basePrice"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Preço Base (R$)
                 </label>
                 <input
@@ -531,7 +588,7 @@ const ManageServicesPage: React.FC = () => {
                   required
                 />
               </div>
-              
+
               <div className="mb-6">
                 <label className="flex items-center">
                   <input
@@ -545,7 +602,7 @@ const ManageServicesPage: React.FC = () => {
                   </span>
                 </label>
               </div>
-              
+
               <div className="flex justify-end">
                 <button
                   type="button"
@@ -555,14 +612,14 @@ const ManageServicesPage: React.FC = () => {
                   Cancelar
                 </button>
                 <button type="submit" className="btn btn-primary">
-                  {modalMode === 'create' ? 'Adicionar' : 'Salvar Alterações'}
+                  {modalMode === "create" ? "Adicionar" : "Salvar Alterações"}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-      
+
       {/* Category form modal */}
       {isCategoryModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -576,22 +633,25 @@ const ManageServicesPage: React.FC = () => {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            
+
             {error && (
               <div className="bg-red-50 text-red-600 p-3 rounded-md mb-4">
                 {error}
               </div>
             )}
-            
+
             {success && (
               <div className="bg-green-50 text-green-600 p-3 rounded-md mb-4">
                 {success}
               </div>
             )}
-            
+
             <form onSubmit={handleCategorySubmit}>
               <div className="mb-4">
-                <label htmlFor="categoryName" className="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                  htmlFor="categoryName"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Nome da Categoria
                 </label>
                 <input
@@ -603,9 +663,12 @@ const ManageServicesPage: React.FC = () => {
                   required
                 />
               </div>
-              
+
               <div className="mb-6">
-                <label htmlFor="categoryDescription" className="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                  htmlFor="categoryDescription"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Descrição
                 </label>
                 <textarea
@@ -616,7 +679,7 @@ const ManageServicesPage: React.FC = () => {
                   required
                 />
               </div>
-              
+
               <div className="flex justify-end">
                 <button
                   type="button"
@@ -633,18 +696,19 @@ const ManageServicesPage: React.FC = () => {
           </div>
         </div>
       )}
-      
+
       {/* Delete confirmation modal */}
       {showDeleteConfirm && serviceToDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <h2 className="text-xl font-bold mb-4">Confirmar Exclusão</h2>
-            
+
             <p className="mb-6">
-              Tem certeza que deseja excluir o serviço <strong>{serviceToDelete.name}</strong>?
-              Esta ação não pode ser desfeita.
+              Tem certeza que deseja excluir o serviço{" "}
+              <strong>{serviceToDelete.name}</strong>? Esta ação não pode ser
+              desfeita.
             </p>
-            
+
             <div className="flex justify-end">
               <button
                 onClick={cancelDelete}
