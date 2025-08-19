@@ -268,7 +268,7 @@ const createTables = async () => {
         period_end DATE NOT NULL,
         consultation_count INTEGER DEFAULT 0,
         total_revenue DECIMAL(10,2) DEFAULT 0,
-        professional_percentage INTEGER DEFAULT 50,
+        percentage INTEGER DEFAULT 50,
         amount_due DECIMAL(10,2) DEFAULT 0,
         status VARCHAR(20) DEFAULT 'pending',
         payment_method VARCHAR(50),
@@ -2527,7 +2527,7 @@ app.get(
         `
       SELECT 
         prof.name as professional_name,
-        prof.percentage::integer as professional_percentage,
+        prof.percentage::integer as percentage,
         SUM(c.value) as revenue,
         COUNT(c.id)::integer as consultation_count,
         SUM(c.value * prof.percentage / 100) as professional_payment,
@@ -2627,7 +2627,7 @@ app.get(
       const summary = await pool.query(
         `
       SELECT 
-        $2::integer as professional_percentage,
+        $2::integer as percentage,
         COALESCE(SUM(c.value), 0) as total_revenue,
         COUNT(c.id)::integer as consultation_count,
         COALESCE(SUM(c.value * (100 - $2) / 100), 0) as amount_to_pay
@@ -2680,7 +2680,7 @@ app.get(
         COALESCE(SUM(CASE WHEN c.client_id IS NOT NULL THEN c.value ELSE 0 END), 0) as convenio_revenue,
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
         COALESCE(SUM(c.value), 0) as total_revenue,
-        $2::integer as professional_percentage,
+        $2::integer as percentage,
         COALESCE(SUM(CASE WHEN c.client_id IS NOT NULL THEN c.value * (100 - $2) / 100 ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
       WHERE c.professional_id = $1 
