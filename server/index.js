@@ -119,7 +119,7 @@ const createTables = async () => {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS dependents (
         id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        client_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         name VARCHAR(255) NOT NULL,
         cpf VARCHAR(11) NOT NULL UNIQUE,
         birth_date DATE,
@@ -136,7 +136,7 @@ const createTables = async () => {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS consultations (
         id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id),
+        client_id INTEGER REFERENCES users(id),
         dependent_id INTEGER REFERENCES dependents(id),
         private_patient_id INTEGER,
         professional_id INTEGER REFERENCES users(id),
@@ -228,7 +228,7 @@ const createTables = async () => {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS client_payments (
         id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        client_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         payment_id VARCHAR(255) UNIQUE,
         amount DECIMAL(10,2) NOT NULL,
         months INTEGER DEFAULT 1,
@@ -246,7 +246,7 @@ const createTables = async () => {
       CREATE TABLE IF NOT EXISTS dependent_payments (
         id SERIAL PRIMARY KEY,
         dependent_id INTEGER REFERENCES dependents(id) ON DELETE CASCADE,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        client_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         payment_id VARCHAR(255) UNIQUE,
         amount DECIMAL(10,2) DEFAULT 50.00,
         status VARCHAR(20) DEFAULT 'pending',
@@ -299,12 +299,12 @@ const createTables = async () => {
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_users_cpf ON users(cpf);
       CREATE INDEX IF NOT EXISTS idx_users_roles ON users USING GIN(roles);
-      CREATE INDEX IF NOT EXISTS idx_consultations_client ON consultations(user_id);
+      CREATE INDEX IF NOT EXISTS idx_consultations_client ON consultations(client_id);
       CREATE INDEX IF NOT EXISTS idx_consultations_professional ON consultations(professional_id);
       CREATE INDEX IF NOT EXISTS idx_consultations_date ON consultations(date);
-      CREATE INDEX IF NOT EXISTS idx_dependents_client ON dependents(user_id);
+      CREATE INDEX IF NOT EXISTS idx_dependents_client ON dependents(client_id);
       CREATE INDEX IF NOT EXISTS idx_dependents_cpf ON dependents(cpf);
-      CREATE INDEX IF NOT EXISTS idx_client_payments_client ON client_payments(user_id);
+      CREATE INDEX IF NOT EXISTS idx_client_payments_client ON client_payments(client_id);
       CREATE INDEX IF NOT EXISTS idx_dependent_payments_dependent ON dependent_payments(dependent_id);
       CREATE INDEX IF NOT EXISTS idx_professional_payments_professional ON professional_payments(professional_id);
       CREATE INDEX IF NOT EXISTS idx_agenda_payments_professional ON agenda_payments(professional_id);
@@ -659,26 +659,26 @@ app.post(
   authorize(["admin"]),
   async (req, res) => {
     try {
-      const { user_id, expiry_date } = req.body;
+      const { client_id, expiry_date } = req.body;
 
       console.log("🔄 Received activation request:", {
-        user_id,
+        client_id,
         expiry_date,
         body: req.body,
       });
 
       // Validate required fields
-      if (!user_id || !expiry_date) {
-        console.error("❌ Missing required fields:", { user_id, expiry_date });
+      if (!client_id || !expiry_date) {
+        console.error("❌ Missing required fields:", { client_id, expiry_date });
         return res.status(400).json({
-          message: `Campos obrigatórios ausentes. user_id: ${user_id}, expiry_date: ${expiry_date}`,
+          message: `Campos obrigatórios ausentes. client_id: ${client_id}, expiry_date: ${expiry_date}`,
         });
       }
 
-      // Validate user_id is a number
-      const userId = parseInt(user_id);
+      // Validate client_id is a number
+      const userId = parseInt(client_id);
       if (isNaN(userId)) {
-        console.error("❌ Invalid user_id:", user_id);
+        console.error("❌ Invalid client_id:", client_id);
         return res.status(400).json({
           message: "ID do usuário deve ser um número válido",
         });
@@ -1240,7 +1240,7 @@ app.get("/api/consultations", authenticate, async (req, res) => {
              prof.name as professional_name,
              CASE WHEN c.dependent_id IS NOT NULL THEN true ELSE false END as is_dependent
       FROM consultations c
-      LEFT JOIN users u ON c.user_id = u.id
+      LEFT JOIN users u ON c.client_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN services s ON c.service_id = s.id
@@ -1253,7 +1253,7 @@ app.get("/api/consultations", authenticate, async (req, res) => {
       query += " WHERE c.professional_id = $1";
       values.push(req.user.id);
     } else if (req.user.currentRole === "client") {
-      query += " WHERE (c.user_id = $1 OR d.user_id = $1)";
+      query += " WHERE (c.client_id = $1 OR d.client_id = $1)";
       values.push(req.user.id);
     }
 
@@ -1289,11 +1289,11 @@ app.get(
              prof.name as professional_name,
              CASE WHEN c.dependent_id IS NOT NULL THEN true ELSE false END as is_dependent
       FROM consultations c
-      LEFT JOIN users u ON c.user_id = u.id
+      LEFT JOIN users u ON c.client_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN services s ON c.service_id = s.id
       LEFT JOIN users prof ON c.professional_id = prof.id
-      WHERE c.user_id = $1 OR d.user_id = $1
+      WHERE c.client_id = $1 OR d.client_id = $1
       ORDER BY c.date DESC
     `,
         [clientId]
@@ -1314,7 +1314,7 @@ app.post(
   async (req, res) => {
     try {
       const {
-        user_id,
+        client_id,
         dependent_id,
         private_patient_id,
         service_id,
@@ -1331,7 +1331,7 @@ app.post(
           .json({ message: "Serviço, valor e data são obrigatórios" });
       }
 
-      if (!user_id && !dependent_id && !private_patient_id) {
+      if (!client_id && !dependent_id && !private_patient_id) {
         return res
           .status(400)
           .json({
@@ -1343,14 +1343,14 @@ app.post(
       const result = await pool.query(
         `
       INSERT INTO consultations (
-        user_id, dependent_id, private_patient_id, professional_id, 
+        client_id, dependent_id, private_patient_id, professional_id, 
         service_id, location_id, value, date, status, notes
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *
     `,
         [
-          user_id || null,
+          client_id || null,
           dependent_id || null,
           private_patient_id || null,
           req.user.id,
@@ -1480,7 +1480,7 @@ app.get("/api/dependents/:clientId", authenticate, async (req, res) => {
              END as current_status
       FROM dependents d
       LEFT JOIN dependent_payments dp ON d.id = dp.dependent_id AND dp.status = 'approved'
-      WHERE d.user_id = $1
+      WHERE d.client_id = $1
       ORDER BY d.created_at DESC
     `,
       [clientId]
@@ -1509,7 +1509,7 @@ app.get(
 
       const result = await pool.query(
         `
-      SELECT d.id, d.name, d.cpf, d.user_id, u.name as client_name,
+      SELECT d.id, d.name, d.cpf, d.client_id, u.name as client_name,
              CASE 
                WHEN dp.status = 'approved' THEN 'active'
                WHEN dp.status = 'pending' THEN 'pending'
@@ -1517,7 +1517,7 @@ app.get(
              END as dependent_subscription_status,
              u.subscription_status as client_subscription_status
       FROM dependents d
-      JOIN users u ON d.user_id = u.id
+      JOIN users u ON d.client_id = u.id
       LEFT JOIN dependent_payments dp ON d.id = dp.dependent_id AND dp.status = 'approved'
       WHERE d.cpf = $1
     `,
@@ -1538,9 +1538,9 @@ app.get(
 
 app.post("/api/dependents", authenticate, async (req, res) => {
   try {
-    const { user_id, name, cpf, birth_date } = req.body;
+    const { client_id, name, cpf, birth_date } = req.body;
 
-    if (!user_id || !name || !cpf) {
+    if (!client_id || !name || !cpf) {
       return res
         .status(400)
         .json({ message: "Client ID, nome e CPF são obrigatórios" });
@@ -1548,7 +1548,7 @@ app.post("/api/dependents", authenticate, async (req, res) => {
 
     if (
       req.user.currentRole !== "admin" &&
-      req.user.id !== parseInt(user_id)
+      req.user.id !== parseInt(client_id)
     ) {
       return res.status(403).json({ message: "Acesso não autorizado" });
     }
@@ -1567,11 +1567,11 @@ app.post("/api/dependents", authenticate, async (req, res) => {
 
     const result = await pool.query(
       `
-      INSERT INTO dependents (user_id, name, cpf, birth_date)
+      INSERT INTO dependents (client_id, name, cpf, birth_date)
       VALUES ($1, $2, $3, $4)
       RETURNING *
     `,
-      [user_id, name, cleanCpf, birth_date || null]
+      [client_id, name, cleanCpf, birth_date || null]
     );
 
     res.status(201).json({
@@ -1590,7 +1590,7 @@ app.put("/api/dependents/:id", authenticate, async (req, res) => {
     const { name, birth_date } = req.body;
 
     const dependentResult = await pool.query(
-      "SELECT user_id FROM dependents WHERE id = $1",
+      "SELECT client_id FROM dependents WHERE id = $1",
       [id]
     );
 
@@ -1598,7 +1598,7 @@ app.put("/api/dependents/:id", authenticate, async (req, res) => {
       return res.status(404).json({ message: "Dependente não encontrado" });
     }
 
-    const clientId = dependentResult.rows[0].user_id;
+    const clientId = dependentResult.rows[0].client_id;
 
     if (req.user.currentRole !== "admin" && req.user.id !== clientId) {
       return res.status(403).json({ message: "Acesso não autorizado" });
@@ -1629,7 +1629,7 @@ app.delete("/api/dependents/:id", authenticate, async (req, res) => {
     const { id } = req.params;
 
     const dependentResult = await pool.query(
-      "SELECT user_id FROM dependents WHERE id = $1",
+      "SELECT client_id FROM dependents WHERE id = $1",
       [id]
     );
 
@@ -1637,7 +1637,7 @@ app.delete("/api/dependents/:id", authenticate, async (req, res) => {
       return res.status(404).json({ message: "Dependente não encontrado" });
     }
 
-    const clientId = dependentResult.rows[0].user_id;
+    const clientId = dependentResult.rows[0].client_id;
 
     if (req.user.currentRole !== "admin" && req.user.id !== clientId) {
       return res.status(403).json({ message: "Acesso não autorizado" });
@@ -1668,7 +1668,7 @@ app.get(
              END as current_status,
              dp.activated_at
       FROM dependents d
-      JOIN users u ON d.user_id = u.id
+      JOIN users u ON d.client_id = u.id
       LEFT JOIN dependent_payments dp ON d.id = dp.dependent_id AND dp.status = 'approved'
       ORDER BY d.created_at DESC
     `);
@@ -2535,7 +2535,7 @@ app.get(
       FROM consultations c
       JOIN users prof ON c.professional_id = prof.id
       WHERE c.date >= $1 AND c.date <= $2 
-        AND c.user_id IS NOT NULL
+        AND c.client_id IS NOT NULL
       GROUP BY prof.id, prof.name, prof.percentage
       ORDER BY revenue DESC
     `,
@@ -2551,7 +2551,7 @@ app.get(
       FROM consultations c
       JOIN services s ON c.service_id = s.id
       WHERE c.date >= $1 AND c.date <= $2 
-        AND c.user_id IS NOT NULL
+        AND c.client_id IS NOT NULL
       GROUP BY s.id, s.name
       ORDER BY revenue DESC
     `,
@@ -2563,7 +2563,7 @@ app.get(
       SELECT COALESCE(SUM(value), 0) as total_revenue
       FROM consultations 
       WHERE date >= $1 AND date <= $2 
-        AND user_id IS NOT NULL
+        AND client_id IS NOT NULL
     `,
         [start_date, end_date]
       );
@@ -2613,12 +2613,12 @@ app.get(
              c.value as total_value,
              (c.value * (100 - $3) / 100) as amount_to_pay
       FROM consultations c
-      LEFT JOIN users u ON c.user_id = u.id
+      LEFT JOIN users u ON c.client_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN services s ON c.service_id = s.id
       WHERE c.professional_id = $1 
         AND c.date >= $2 AND c.date <= $4
-        AND c.user_id IS NOT NULL
+        AND c.client_id IS NOT NULL
       ORDER BY c.date DESC
     `,
         [req.user.id, start_date, professionalPercentage, end_date]
@@ -2634,7 +2634,7 @@ app.get(
       FROM consultations c
       WHERE c.professional_id = $1 
         AND c.date >= $3 AND c.date <= $4
-        AND c.user_id IS NOT NULL
+        AND c.client_id IS NOT NULL
     `,
         [req.user.id, professionalPercentage, start_date, end_date]
       );
@@ -2674,14 +2674,14 @@ app.get(
       const summary = await pool.query(
         `
       SELECT 
-        COUNT(CASE WHEN c.user_id IS NOT NULL THEN 1 END)::integer as convenio_consultations,
+        COUNT(CASE WHEN c.client_id IS NOT NULL THEN 1 END)::integer as convenio_consultations,
         COUNT(CASE WHEN c.private_patient_id IS NOT NULL THEN 1 END)::integer as private_consultations,
         COUNT(c.id)::integer as total_consultations,
-        COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL THEN c.value ELSE 0 END), 0) as convenio_revenue,
+        COALESCE(SUM(CASE WHEN c.client_id IS NOT NULL THEN c.value ELSE 0 END), 0) as convenio_revenue,
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
         COALESCE(SUM(c.value), 0) as total_revenue,
         $2::integer as professional_percentage,
-        COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL THEN c.value * (100 - $2) / 100 ELSE 0 END), 0) as amount_to_pay
+        COALESCE(SUM(CASE WHEN c.client_id IS NOT NULL THEN c.value * (100 - $2) / 100 ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
       WHERE c.professional_id = $1 
         AND c.date >= $3 AND c.date <= $4
@@ -2786,8 +2786,8 @@ app.get(
 // Payment routes
 app.post("/api/create-subscription", authenticate, async (req, res) => {
   try {
-    const { user_id } = req.body;
-    const userId = user_id || req.user.id;
+    const { client_id } = req.body;
+    const userId = client_id || req.user.id;
 
     if (req.user.currentRole !== "admin" && req.user.id !== userId) {
       return res.status(403).json({ message: "Acesso não autorizado" });
@@ -2838,7 +2838,7 @@ app.post("/api/create-subscription", authenticate, async (req, res) => {
 
     await pool.query(
       `
-      INSERT INTO client_payments (user_id, payment_id, amount, external_reference, status)
+      INSERT INTO client_payments (client_id, payment_id, amount, external_reference, status)
       VALUES ($1, $2, $3, $4, $5)
     `,
       [userId, result.id, 250.0, externalReference, "pending"]
@@ -2866,7 +2866,7 @@ app.post(
         `
       SELECT d.*, u.name as client_name, u.email as client_email
       FROM dependents d
-      JOIN users u ON d.user_id = u.id
+      JOIN users u ON d.client_id = u.id
       WHERE d.id = $1
     `,
         [id]
@@ -2880,7 +2880,7 @@ app.post(
 
       if (
         req.user.currentRole !== "admin" &&
-        req.user.id !== dependent.user_id
+        req.user.id !== dependent.client_id
       ) {
         return res.status(403).json({ message: "Acesso não autorizado" });
       }
@@ -2902,7 +2902,7 @@ app.post(
           name: dependent.client_name,
           email:
             dependent.client_email ||
-            `client${dependent.user_id}@cartaoquiroferreira.com.br`,
+            `client${dependent.client_id}@cartaoquiroferreira.com.br`,
         },
         back_urls: {
           success:
@@ -2922,10 +2922,10 @@ app.post(
 
       await pool.query(
         `
-      INSERT INTO dependent_payments (dependent_id, user_id, payment_id, amount, external_reference, status)
+      INSERT INTO dependent_payments (dependent_id, client_id, payment_id, amount, external_reference, status)
       VALUES ($1, $2, $3, $4, $5, $6)
     `,
-        [id, dependent.user_id, result.id, 50.0, externalReference, "pending"]
+        [id, dependent.client_id, result.id, 50.0, externalReference, "pending"]
       );
 
       res.json({
