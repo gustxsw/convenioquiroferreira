@@ -681,7 +681,7 @@ const ReportsPage: React.FC = () => {
                     </p>
                     <p className="text-2xl font-bold text-green-700">
                       {professionalsReport.reduce(
-                        (sum, city) => sum + city.total_professionals,
+                        (sum, city) => sum + Number(city.total_professionals),
                         0
                       )}
                     </p>
