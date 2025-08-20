@@ -1173,6 +1173,138 @@ const SchedulingPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de Reagendamento */}
+      {showRescheduleModal && selectedAppointment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-bold flex items-center">
+                  <Calendar className="h-6 w-6 text-blue-600 mr-2" />
+                  Reagendar Consulta
+                </h2>
+                <button
+                  onClick={closeRescheduleModal}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+
+            {error && (
+              <div className="mx-6 mt-4 bg-red-50 text-red-600 p-3 rounded-lg">
+                {error}
+              </div>
+            )}
+
+            <div className="p-6">
+              {/* Informações da consulta atual */}
+              <div className="bg-gray-50 p-4 rounded-lg mb-6">
+                <div className="flex items-center mb-2">
+                  {selectedAppointment.is_dependent ? (
+                    <Users className="h-4 w-4 text-blue-600 mr-2" />
+                  ) : (
+                    <User className="h-4 w-4 text-green-600 mr-2" />
+                  )}
+                  <span className="font-medium">
+                    {selectedAppointment.client_name}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600 mb-1">
+                  <strong>Serviço:</strong> {selectedAppointment.service_name}
+                </p>
+                <p className="text-sm text-gray-600 mb-1">
+                  <strong>Data/Hora Atual:</strong>{" "}
+                  {format(
+                    new Date(selectedAppointment.date),
+                    "dd/MM/yyyy 'às' HH:mm"
+                  )}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <strong>Valor:</strong>{" "}
+                  {formatCurrency(selectedAppointment.value)}
+                </p>
+              </div>
+
+              {/* Nova data e hora */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Nova Data *
+                  </label>
+                  <input
+                    type="date"
+                    value={rescheduleData.date}
+                    onChange={(e) => setRescheduleData(prev => ({
+                      ...prev,
+                      date: e.target.value
+                    }))}
+                    className="input"
+                    min={new Date().toISOString().split('T')[0]}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Nova Hora *
+                  </label>
+                  <select
+                    value={rescheduleData.time}
+                    onChange={(e) => setRescheduleData(prev => ({
+                      ...prev,
+                      time: e.target.value
+                    }))}
+                    className="input"
+                    required
+                  >
+                    <option value="">Selecione um horário</option>
+                    {timeSlots.map((time) => (
+                      <option key={time} value={time}>
+                        {time}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 mt-6">
+                <button
+                  type="button"
+                  onClick={closeRescheduleModal}
+                  className="btn btn-secondary"
+                  disabled={isRescheduling}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleReschedule}
+                  className={`btn btn-primary ${
+                    isRescheduling ? "opacity-70 cursor-not-allowed" : ""
+                  }`}
+                  disabled={
+                    isRescheduling || !rescheduleData.date || !rescheduleData.time
+                  }
+                >
+                  {isRescheduling ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Reagendando...
+                    </>
+                  ) : (
+                    <>
+                      <Calendar className="h-4 w-4 mr-2" />
+                      Reagendar
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
