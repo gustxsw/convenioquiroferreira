@@ -2508,11 +2508,8 @@ app.post('/api/upload-image', authenticate, authorize(['professional']), async (
     // Use multer middleware
     upload.single('image')(req, res, async (err) => {
       if (err) {
-        // Calculate amount to pay to clinic (percentage of convenio revenue only)
-        const convenioRevenue = Number(revenue.convenio_revenue);
-        const professionalPercentage = Number(revenue.professional_percentage);
-        const professionalShare = convenioRevenue * (professionalPercentage / 100);
-        const amountToPay = convenioRevenue - professionalShare;
+        console.error('❌ Upload error:', err);
+        return res.status(400).json({ 
           message: err.message || 'Erro no upload da imagem' 
         });
       }
@@ -2520,11 +2517,7 @@ app.post('/api/upload-image', authenticate, authorize(['professional']), async (
       if (!req.file) {
         return res.status(400).json({ message: 'Nenhuma imagem foi enviada' });
       }
-            CASE 
-              WHEN c.private_patient_id IS NULL THEN 
-                c.value * ((100 - COALESCE(p.professional_percentage, 50)) / 100)
-              ELSE 0 
-            END as amount_to_pay
+
       try {
         console.log('✅ Image uploaded successfully:', req.file.path);
         
