@@ -2077,10 +2077,9 @@ app.get('/api/reports/professional-detailed', authenticate, authorize(['professi
 
     if (!start_date || !end_date) {
       return res.status(400).json({ message: 'Datas de início e fim são obrigatórias' });
-    }
-
-    // Get professional percentage
-    const profResult = await pool.query(
+    // Calculate amount to pay to clinic (ALL consultations - convenio AND private)
+    // Professional keeps their percentage, clinic gets the rest
+    const amountToPay = totalRevenue * ((100 - professionalPercentage) / 100);
       'SELECT percentage FROM users WHERE id = $1',
       [professionalId]
     );
@@ -2098,9 +2097,7 @@ app.get('/api/reports/professional-detailed', authenticate, authorize(['professi
         SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END) as private_revenue,
         SUM(CASE WHEN c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($2 / 100) ELSE 0 END) as amount_to_pay
       FROM consultations c
-      WHERE c.professional_id = $1 AND c.date >= $3 AND c.date <= $4
-    `, [professionalId, 100 - professionalPercentage, start_date, end_date]);
-
+      amount_to_pay: Number(consultation.value) * ((100 - professionalPercentage) / 100)
     const summary = summaryResult.rows[0];
 
     res.json({
