@@ -123,6 +123,11 @@ const ProfessionalHomePage: React.FC = () => {
 
       const revenueData = await revenueResponse.json();
       console.log("✅ Revenue data received:", revenueData);
+     
+     // Force refresh of data to ensure latest calculations
+     setTimeout(() => {
+       setRevenueReport(revenueData);
+     }, 100);
       setRevenueReport(revenueData);
     } catch (error) {
       console.error("❌ Error fetching data:", error);
