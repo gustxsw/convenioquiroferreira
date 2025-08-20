@@ -749,10 +749,10 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
 app.get('/api/users/:id/subscription-status', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-    
-    const result = await pool.query(`
-      SELECT u.subscription_status, u.subscription_expiry, c.client_id
-      FROM users u
+    const result = await pool.query(
+      'SELECT subscription_status, subscription_expiry FROM users WHERE id = $1',
+      [userId]
+    );
       LEFT JOIN clients c ON u.client_id = c.client_id
       WHERE u.id = $1
     `, [id]);
@@ -780,8 +780,8 @@ app.get('/api/clients/lookup', authenticate, async (req, res) => {
     }
 
     const result = await pool.query(
-      'SELECT id as client_id, name, cpf, subscription_status, subscription_expiry FROM users WHERE cpf = $1 AND \'client\' = ANY(roles)',
-      [cpf.replace(/\D/g, '')]
+      'SELECT * FROM users WHERE cpf = $1 AND $2 = ANY(roles)',
+      [cpf, 'client']
     );
 
     if (result.rows.length === 0) {
@@ -790,7 +790,7 @@ app.get('/api/clients/lookup', authenticate, async (req, res) => {
 
     const client = result.rows[0];
     res.json({
-      id: client.client_id, // This is actually users.id
+      id: client.id,
       name: client.name,
       cpf: client.cpf,
       subscription_status: client.subscription_status,
@@ -845,10 +845,10 @@ app.get('/api/dependents/:clientId', authenticate, async (req, res) => {
     const { clientId } = req.params;
     
     // Verify client exists and user has access
-    const clientCheck = await pool.query(
-      'SELECT id FROM users WHERE id = $1 AND \'client\' = ANY(roles)',
-      [clientId]
-    );
+      `SELECT d.*, u.subscription_status as client_subscription_status 
+       FROM dependents d 
+       LEFT JOIN users u ON d.client_id = u.id 
+       WHERE d.client_id = $1 
 
     if (clientCheck.rows.length === 0) {
       return res.status(404).json({ message: 'Cliente não encontrado' });
@@ -1322,7 +1322,7 @@ app.get('/api/consultations/client/:clientId', authenticate, async (req, res) =>
       return res.status(403).json({ message: 'Acesso não autorizado' });
     }
 
-    const result = await pool.query(`
+        COALESCE(client_user.name, d.name, pp.name) as client_name,
       SELECT c.*, 
              s.name as service_name,
              u.name as professional_name,
@@ -1331,7 +1331,7 @@ app.get('/api/consultations/client/:clientId', authenticate, async (req, res) =>
       FROM consultations c
       LEFT JOIN services s ON c.service_id = s.id
       LEFT JOIN users u ON c.professional_id = u.id
-      LEFT JOIN users cl ON c.client_id = cl.id
+       LEFT JOIN users client_user ON c.client_id = client_user.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       WHERE c.client_id = $1 OR d.client_id = $1
       ORDER BY c.date DESC
@@ -2259,6 +2259,7 @@ app.get('/api/reports/clients-by-city', authenticate, authorize(['admin']), asyn
       FROM users 
       WHERE 'client' = ANY(roles)
       AND city IS NOT NULL AND city != ''
+        AND 'client' = ANY(roles)
       GROUP BY city, state
       ORDER BY client_count DESC, city
     `);
