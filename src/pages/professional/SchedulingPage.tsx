@@ -1,41 +1,77 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
 import {
   Calendar,
-  Clock,
-  User,
   Plus,
-  Check,
-  X,
-  AlertCircle,
-  ChevronLeft,
-  ChevronRight,
+  Search,
+  Filter,
+  Edit,
+  Trash2,
+  User,
   Users,
-  Edit2,
+  Clock,
   CheckCircle,
   XCircle,
-  PlayCircle,
-} from "lucide-react";
-import { format, addDays, subDays, isSameDay } from "date-fns";
-import { ptBR } from "date-fns/locale";
+  X,
+  Check,
+  MessageCircle,
+  RefreshCw,
+  CalendarDays,
+  MapPin
+} from 'lucide-react';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 type Appointment = {
   id: number;
+  client_id: number | null;
+  dependent_id: number | null;
+  private_patient_id: number | null;
+  client_name: string;
+  client_phone: string | null;
+  service_name: string;
+  location_name: string | null;
   date: string;
   time: string;
-  client_name: string;
-  service_name: string;
-  status: "scheduled" | "confirmed" | "completed" | "cancelled";
+  status: 'scheduled' | 'completed' | 'cancelled';
   value: number;
-  notes?: string;
-  is_dependent: boolean;
-  session_number?: number;
-  total_sessions?: number;
+  is_recurring: boolean;
+  recurring_days: string[] | null;
+  session_count: number | null;
+  total_sessions: number | null;
+  created_at: string;
 };
 
 type Service = {
   id: number;
   name: string;
   base_price: number;
+  category_name: string;
+};
+
+type Client = {
+  id: number;
+  name: string;
+  cpf: string;
+  phone: string;
+  subscription_status: string;
+};
+
+type Dependent = {
+  id: number;
+  name: string;
+  cpf: string;
+  client_id: number;
+  client_name: string;
+  client_phone: string;
+  subscription_status: string;
+};
+
+type PrivatePatient = {
+  id: number;
+  name: string;
+  cpf: string;
+  phone: string;
 };
 
 type AttendanceLocation = {
@@ -45,57 +81,55 @@ type AttendanceLocation = {
   is_default: boolean;
 };
 
-type PrivatePatient = {
-  id: number;
-  name: string;
-  cpf: string;
-};
-
 const SchedulingPage: React.FC = () => {
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const { user } = useAuth();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
-  const [privatePatients, setPrivatePatients] = useState<PrivatePatient[]>([]);
-  const [attendanceLocations, setAttendanceLocations] = useState<
-    AttendanceLocation[]
-  >([]);
+  const [filteredAppointments, setFilteredAppointments] = useState<Appointment[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-  // New appointment modal
-  const [showNewModal, setShowNewModal] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
-
-  // Status change modal
-  const [showStatusModal, setShowStatusModal] = useState(false);
+  // Modal states
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
-  const [newStatus, setNewStatus] = useState<"scheduled" | "confirmed" | "completed" | "cancelled">("scheduled");
-  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-
-  // Reschedule modal
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
-  const [isRescheduling, setIsRescheduling] = useState(false);
-  const [rescheduleData, setRescheduleData] = useState({
-    date: "",
-    time: "",
-  });
+
+  // Form data
+  const [services, setServices] = useState<Service[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [dependents, setDependents] = useState<Dependent[]>([]);
+  const [privatePatients, setPrivatePatients] = useState<PrivatePatient[]>([]);
+  const [attendanceLocations, setAttendanceLocations] = useState<AttendanceLocation[]>([]);
 
   // Form state
   const [formData, setFormData] = useState({
-    patient_type: "convenio",
-    client_cpf: "",
-    private_patient_id: "",
-    date: format(new Date(), "yyyy-MM-dd"),
-    time: "",
-    service_id: "",
-    value: "",
-    location_id: "",
-    notes: "",
+    patient_type: 'convenio' as 'convenio' | 'private',
+    client_id: '',
+    dependent_id: '',
+    private_patient_id: '',
+    service_id: '',
+    location_id: '',
+    date: '',
+    time: '',
+    value: '',
     is_recurring: false,
-    total_sessions: 1,
     recurring_days: [] as string[],
+    total_sessions: ''
   });
+
+  // Reschedule data
+  const [rescheduleData, setRescheduleData] = useState({
+    date: '',
+    time: ''
+  });
+  const [isRescheduling, setIsRescheduling] = useState(false);
+
+  // Delete confirmation
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [appointmentToDelete, setAppointmentToDelete] = useState<Appointment | null>(null);
 
   // Get API URL
   const getApiUrl = () => {
@@ -110,988 +144,776 @@ const SchedulingPage: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, [selectedDate]);
+  }, []);
+
+  useEffect(() => {
+    let filtered = appointments;
+
+    if (searchTerm) {
+      filtered = filtered.filter(apt =>
+        apt.client_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        apt.service_name.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    if (statusFilter) {
+      filtered = filtered.filter(apt => apt.status === statusFilter);
+    }
+
+    setFilteredAppointments(filtered);
+  }, [appointments, searchTerm, statusFilter]);
 
   const fetchData = async () => {
     try {
       setIsLoading(true);
-      setError("");
-
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
-      const dateStr = format(selectedDate, "yyyy-MM-dd");
-
-      console.log("🔄 Fetching appointments for date:", dateStr);
 
       // Fetch appointments
-      const appointmentsResponse = await fetch(`${apiUrl}/api/consultations`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+      const appointmentsResponse = await fetch(`${apiUrl}/api/appointments`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
 
       if (appointmentsResponse.ok) {
         const appointmentsData = await appointmentsResponse.json();
-        console.log("✅ Raw appointments data:", appointmentsData);
-
-        // Filter by selected date and convert to appointment format
-        const filteredAppointments = appointmentsData
-          .filter((consultation: any) => {
-            const consultationDate = new Date(consultation.date);
-            return isSameDay(consultationDate, selectedDate);
-          })
-          .map((consultation: any) => ({
-            id: consultation.id,
-            date: consultation.date,
-            time: format(new Date(consultation.date), "HH:mm"),
-            client_name: consultation.client_name,
-            service_name: consultation.service_name,
-            status: consultation.status || "completed",
-            value: consultation.value,
-            notes: consultation.notes || "",
-            is_dependent: consultation.is_dependent || false,
-            session_number: consultation.session_number || null,
-            total_sessions: consultation.total_sessions || null,
-          }));
-
-        console.log("✅ Processed appointments:", filteredAppointments);
-        setAppointments(filteredAppointments);
-      } else {
-        console.error("Appointments response error:", appointmentsResponse.status);
-        setAppointments([]);
+        setAppointments(appointmentsData);
       }
 
       // Fetch services
       const servicesResponse = await fetch(`${apiUrl}/api/services`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+        headers: { 'Authorization': `Bearer ${token}` }
       });
 
       if (servicesResponse.ok) {
         const servicesData = await servicesResponse.json();
-        console.log("Services loaded:", servicesData.length);
         setServices(servicesData);
-      } else {
-        console.error("Services response error:", servicesResponse.status);
-        setServices([]);
+      }
+
+      // Fetch clients
+      const clientsResponse = await fetch(`${apiUrl}/api/clients`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (clientsResponse.ok) {
+        const clientsData = await clientsResponse.json();
+        setClients(clientsData);
+      }
+
+      // Fetch dependents
+      const dependentsResponse = await fetch(`${apiUrl}/api/admin/dependents`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (dependentsResponse.ok) {
+        const dependentsData = await dependentsResponse.json();
+        setDependents(dependentsData);
       }
 
       // Fetch private patients
-      const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+      const privatePatientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
 
-      if (patientsResponse.ok) {
-        const patientsData = await patientsResponse.json();
-        console.log("Private patients loaded:", patientsData.length);
-        setPrivatePatients(Array.isArray(patientsData) ? patientsData : []);
-      } else {
-        console.error("Private patients response error:", patientsResponse.status);
-        setPrivatePatients([]);
+      if (privatePatientsResponse.ok) {
+        const privatePatientsData = await privatePatientsResponse.json();
+        setPrivatePatients(privatePatientsData);
       }
 
       // Fetch attendance locations
       const locationsResponse = await fetch(`${apiUrl}/api/attendance-locations`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+        headers: { 'Authorization': `Bearer ${token}` }
       });
 
       if (locationsResponse.ok) {
         const locationsData = await locationsResponse.json();
-        console.log("Attendance locations loaded:", locationsData.length);
         setAttendanceLocations(locationsData);
-
-        // Set default location if exists
-        const defaultLocation = locationsData.find(
-          (loc: AttendanceLocation) => loc.is_default
-        );
-        if (defaultLocation) {
-          setFormData((prev) => ({
-            ...prev,
-            location_id: defaultLocation.id.toString(),
-          }));
-        }
-      } else {
-        console.error("Attendance locations response error:", locationsResponse.status);
-        setAttendanceLocations([]);
       }
+
     } catch (error) {
-      console.error("Error fetching data:", error);
-      setError("Não foi possível carregar os dados da agenda");
+      console.error('Error fetching data:', error);
+      setError('Não foi possível carregar os dados');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const createAppointment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    try {
-      setIsCreating(true);
-      const token = localStorage.getItem("token");
-      const apiUrl = getApiUrl();
-
-      let clientData = null;
-
-      // Se for convênio, buscar cliente por CPF
-      if (formData.patient_type === "convenio") {
-        const clientResponse = await fetch(
-          `${apiUrl}/api/clients/lookup?cpf=${formData.client_cpf.replace(/\D/g, "")}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-
-        if (!clientResponse.ok) {
-          throw new Error("Cliente não encontrado");
-        }
-
-        clientData = await clientResponse.json();
-
-        if (clientData.subscription_status !== "active") {
-          throw new Error("Cliente não possui assinatura ativa");
-        }
-      }
-
-      if (formData.is_recurring) {
-        // Criar consultas recorrentes
-        const recurringData = {
-          client_id: formData.patient_type === "convenio" ? clientData.id : null,
-          private_patient_id: formData.patient_type === "private" ? parseInt(formData.private_patient_id) : null,
-          service_id: parseInt(formData.service_id),
-          location_id: formData.location_id ? parseInt(formData.location_id) : null,
-          value: parseFloat(formData.value),
-          start_date: formData.date,
-          start_time: formData.time,
-          total_sessions: parseInt(formData.total_sessions.toString()),
-          recurring_days: formData.recurring_days,
-          notes: formData.notes,
-        };
-
-        const response = await fetch(`${apiUrl}/api/consultations/recurring`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(recurringData),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || "Falha ao criar consultas recorrentes");
-        }
-
-        setSuccess(`${formData.total_sessions} consultas recorrentes criadas com sucesso!`);
-      } else {
-        // Criar consulta única
-        const consultationData = {
-          client_id: formData.patient_type === "convenio" ? clientData.id : null,
-          private_patient_id: formData.patient_type === "private" ? parseInt(formData.private_patient_id) : null,
-          service_id: parseInt(formData.service_id),
-          location_id: formData.location_id ? parseInt(formData.location_id) : null,
-          value: parseFloat(formData.value),
-          date: new Date(`${formData.date}T${formData.time}`).toISOString(),
-          status: "scheduled",
-          notes: formData.notes,
-        };
-
-        const response = await fetch(`${apiUrl}/api/consultations`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(consultationData),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || "Falha ao criar agendamento");
-        }
-
-        setSuccess("Agendamento criado com sucesso!");
-      }
-
-      await fetchData();
-      setShowNewModal(false);
-      resetForm();
-      setTimeout(() => setSuccess(""), 3000);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Erro ao criar agendamento");
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
-  const resetForm = () => {
+  const openCreateModal = () => {
+    setModalMode('create');
     setFormData({
-      patient_type: "convenio",
-      client_cpf: "",
-      private_patient_id: "",
-      date: format(selectedDate, "yyyy-MM-dd"),
-      time: "",
-      service_id: "",
-      value: "",
-      location_id: "",
-      notes: "",
+      patient_type: 'convenio',
+      client_id: '',
+      dependent_id: '',
+      private_patient_id: '',
+      service_id: '',
+      location_id: '',
+      date: '',
+      time: '',
+      value: '',
       is_recurring: false,
-      total_sessions: 1,
       recurring_days: [],
+      total_sessions: ''
     });
-  };
-
-  const openStatusModal = (appointment: Appointment) => {
-    console.log("🔄 Opening status modal for appointment:", appointment);
-    setSelectedAppointment(appointment);
-    setNewStatus(appointment.status);
-    setShowStatusModal(true);
-  };
-
-  const closeStatusModal = () => {
-    setShowStatusModal(false);
     setSelectedAppointment(null);
-    setError("");
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (appointment: Appointment) => {
+    setModalMode('edit');
+    setFormData({
+      patient_type: appointment.private_patient_id ? 'private' : 'convenio',
+      client_id: appointment.client_id?.toString() || '',
+      dependent_id: appointment.dependent_id?.toString() || '',
+      private_patient_id: appointment.private_patient_id?.toString() || '',
+      service_id: '', // Would need to be fetched from consultation
+      location_id: '', // Would need to be fetched
+      date: appointment.date,
+      time: appointment.time,
+      value: appointment.value.toString(),
+      is_recurring: appointment.is_recurring,
+      recurring_days: appointment.recurring_days || [],
+      total_sessions: appointment.total_sessions?.toString() || ''
+    });
+    setSelectedAppointment(appointment);
+    setIsModalOpen(true);
   };
 
   const openRescheduleModal = (appointment: Appointment) => {
     setSelectedAppointment(appointment);
     setRescheduleData({
-      date: format(new Date(appointment.date), "yyyy-MM-dd"),
-      time: appointment.time,
+      date: appointment.date,
+      time: appointment.time
     });
     setShowRescheduleModal(true);
   };
 
-  const closeRescheduleModal = () => {
-    setShowRescheduleModal(false);
-    setSelectedAppointment(null);
-    setRescheduleData({ date: "", time: "" });
-    setError("");
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setError('');
+    setSuccess('');
   };
 
-  const handleReschedule = async () => {
+  const closeRescheduleModal = () => {
+    setShowRescheduleModal(false);
+    setRescheduleData({ date: '', time: '' });
+    setIsRescheduling(false);
+    setError('');
+    setSuccess('');
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value, type } = e.target;
+    
+    if (type === 'checkbox') {
+      const checked = (e.target as HTMLInputElement).checked;
+      setFormData(prev => ({ ...prev, [name]: checked }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
+  };
+
+  const handleRecurringDaysChange = (day: string) => {
+    setFormData(prev => ({
+      ...prev,
+      recurring_days: prev.recurring_days.includes(day)
+        ? prev.recurring_days.filter(d => d !== day)
+        : [...prev.recurring_days, day]
+    }));
+  };
+
+  const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const serviceId = e.target.value;
+    setFormData(prev => ({ ...prev, service_id: serviceId }));
+
+    const selectedService = services.find(s => s.id.toString() === serviceId);
+    if (selectedService) {
+      setFormData(prev => ({ ...prev, value: selectedService.base_price.toString() }));
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    try {
+      const token = localStorage.getItem('token');
+      const apiUrl = getApiUrl();
+
+      const appointmentData = {
+        patient_type: formData.patient_type,
+        client_id: formData.client_id ? parseInt(formData.client_id) : null,
+        dependent_id: formData.dependent_id ? parseInt(formData.dependent_id) : null,
+        private_patient_id: formData.private_patient_id ? parseInt(formData.private_patient_id) : null,
+        service_id: parseInt(formData.service_id),
+        location_id: formData.location_id ? parseInt(formData.location_id) : null,
+        date: formData.date,
+        time: formData.time,
+        value: parseFloat(formData.value),
+        is_recurring: formData.is_recurring,
+        recurring_days: formData.is_recurring ? formData.recurring_days : null,
+        total_sessions: formData.is_recurring && formData.total_sessions ? parseInt(formData.total_sessions) : null
+      };
+
+      const url = modalMode === 'create' 
+        ? `${apiUrl}/api/appointments`
+        : `${apiUrl}/api/appointments/${selectedAppointment?.id}`;
+
+      const method = modalMode === 'create' ? 'POST' : 'PUT';
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(appointmentData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erro ao salvar agendamento');
+      }
+
+      setSuccess(modalMode === 'create' ? 'Agendamento criado com sucesso!' : 'Agendamento atualizado com sucesso!');
+      await fetchData();
+
+      setTimeout(() => {
+        closeModal();
+      }, 1500);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Erro ao salvar agendamento');
+    }
+  };
+
+  const handleReschedule = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!selectedAppointment) return;
 
     try {
       setIsRescheduling(true);
-      setError("");
+      setError('');
+      setSuccess('');
 
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
 
-      const response = await fetch(
-        `${apiUrl}/api/consultations/${selectedAppointment.id}/reschedule`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            new_date: rescheduleData.date,
-            new_time: rescheduleData.time,
-          }),
-        }
-      );
+      const response = await fetch(`${apiUrl}/api/appointments/${selectedAppointment.id}/reschedule`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          date: rescheduleData.date,
+          time: rescheduleData.time
+        })
+      });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || "Erro ao reagendar consulta");
+        throw new Error(errorData.message || 'Erro ao reagendar');
       }
 
+      setSuccess('Consulta reagendada com sucesso!');
       await fetchData();
-      setShowRescheduleModal(false);
-      setSelectedAppointment(null);
-      setSuccess("Consulta reagendada com sucesso!");
-      setTimeout(() => setSuccess(""), 3000);
+
+      setTimeout(() => {
+        closeRescheduleModal();
+      }, 1500);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Erro ao reagendar consulta");
+      setError(error instanceof Error ? error.message : 'Erro ao reagendar consulta');
     } finally {
       setIsRescheduling(false);
     }
   };
 
-  const updateAppointmentStatus = async () => {
-    if (!selectedAppointment) return;
-
+  const updateAppointmentStatus = async (appointmentId: number, status: 'completed' | 'cancelled') => {
     try {
-      setIsUpdatingStatus(true);
-      setError("");
-
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
 
-      console.log("🔄 Updating appointment status:", {
-        id: selectedAppointment.id,
-        newStatus,
-        currentStatus: selectedAppointment.status,
+      const response = await fetch(`${apiUrl}/api/appointments/${appointmentId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ status })
       });
-
-      const response = await fetch(
-        `${apiUrl}/api/consultations/${selectedAppointment.id}/status`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ status: newStatus }),
-        }
-      );
-
-      console.log("📡 Status update response status:", response.status);
 
       if (!response.ok) {
         const errorData = await response.json();
-        console.error("❌ Status update error:", errorData);
-        throw new Error(errorData.message || "Erro ao atualizar status");
+        throw new Error(errorData.message || 'Erro ao atualizar status');
       }
 
-      const responseData = await response.json();
-      console.log("✅ Status update response:", responseData);
-
+      setSuccess(`Consulta ${status === 'completed' ? 'marcada como realizada' : 'cancelada'} com sucesso!`);
       await fetchData();
-      setShowStatusModal(false);
-      setSelectedAppointment(null);
-      setSuccess("Status atualizado com sucesso!");
-      setTimeout(() => setSuccess(""), 3000);
     } catch (error) {
-      console.error("❌ Error updating status:", error);
-      setError(error instanceof Error ? error.message : "Erro ao atualizar status");
-    } finally {
-      setIsUpdatingStatus(false);
+      setError(error instanceof Error ? error.message : 'Erro ao atualizar status');
     }
   };
 
-  const getStatusInfo = (status: string) => {
+  const confirmDelete = (appointment: Appointment) => {
+    setAppointmentToDelete(appointment);
+    setShowDeleteConfirm(true);
+  };
+
+  const cancelDelete = () => {
+    setAppointmentToDelete(null);
+    setShowDeleteConfirm(false);
+  };
+
+  const deleteAppointment = async () => {
+    if (!appointmentToDelete) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const apiUrl = getApiUrl();
+
+      const response = await fetch(`${apiUrl}/api/appointments/${appointmentToDelete.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erro ao excluir agendamento');
+      }
+
+      await fetchData();
+      setSuccess('Agendamento excluído com sucesso!');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Erro ao excluir agendamento');
+    } finally {
+      setAppointmentToDelete(null);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  // 🔥 NOVA FUNÇÃO: Abrir WhatsApp com mensagem automática
+  const openWhatsApp = (appointment: Appointment) => {
+    if (!appointment.client_phone) {
+      setError('Cliente não possui telefone cadastrado');
+      return;
+    }
+
+    // Limpar o número (apenas dígitos)
+    const cleanPhone = appointment.client_phone.replace(/\D/g, '');
+    
+    // Verificar se tem 10 ou 11 dígitos (formato brasileiro)
+    if (cleanPhone.length < 10 || cleanPhone.length > 11) {
+      setError('Número de telefone inválido');
+      return;
+    }
+
+    // Formatar data e hora
+    const appointmentDate = format(new Date(appointment.date), "dd/MM/yyyy", { locale: ptBR });
+    const appointmentTime = appointment.time;
+
+    // Criar mensagem automática
+    const message = `Olá ${appointment.client_name}, gostaria de confirmar o seu agendamento com ${user?.name} no dia ${appointmentDate} às ${appointmentTime}`;
+
+    // Criar URL do WhatsApp (55 = Brasil, 64 = Goiás)
+    const whatsappUrl = `https://wa.me/5564${cleanPhone}?text=${encodeURIComponent(message)}`;
+
+    // Abrir em nova aba
+    window.open(whatsappUrl, '_blank');
+  };
+
+  const getStatusDisplay = (status: string) => {
     switch (status) {
-      case "scheduled":
+      case 'scheduled':
         return {
-          text: "Agendado",
-          className: "bg-blue-100 text-blue-800 border-blue-200",
-          icon: <Clock className="h-3 w-3 mr-1" />,
+          text: 'Agendado',
+          className: 'bg-blue-100 text-blue-800',
+          icon: <Clock className="h-3 w-3 mr-1" />
         };
-      case "confirmed":
+      case 'completed':
         return {
-          text: "Confirmado",
-          className: "bg-green-100 text-green-800 border-green-200",
-          icon: <CheckCircle className="h-3 w-3 mr-1" />,
+          text: 'Realizado',
+          className: 'bg-green-100 text-green-800',
+          icon: <CheckCircle className="h-3 w-3 mr-1" />
         };
-      case "completed":
+      case 'cancelled':
         return {
-          text: "Concluído",
-          className: "bg-gray-100 text-gray-800 border-gray-200",
-          icon: <Check className="h-3 w-3 mr-1" />,
-        };
-      case "cancelled":
-        return {
-          text: "Cancelado",
-          className: "bg-red-100 text-red-800 border-red-200",
-          icon: <XCircle className="h-3 w-3 mr-1" />,
+          text: 'Cancelado',
+          className: 'bg-red-100 text-red-800',
+          icon: <XCircle className="h-3 w-3 mr-1" />
         };
       default:
         return {
-          text: "Desconhecido",
-          className: "bg-gray-100 text-gray-800 border-gray-200",
-          icon: <AlertCircle className="h-3 w-3 mr-1" />,
+          text: status,
+          className: 'bg-gray-100 text-gray-800',
+          icon: null
         };
+    }
+  };
+
+  const formatDateTime = (date: string, time: string) => {
+    try {
+      const dateTime = new Date(`${date}T${time}`);
+      return format(dateTime, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
+    } catch (error) {
+      return `${date} às ${time}`;
     }
   };
 
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
     }).format(value);
   };
 
-  const formatCpf = (value: string) => {
-    if (!value) return "";
-    const numericValue = value.replace(/\D/g, "");
-    return numericValue.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
-  };
-
-  const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const serviceId = e.target.value;
-    setFormData((prev) => ({ ...prev, service_id: serviceId }));
-
-    // Auto-fill value based on service
-    const service = services.find((s) => s.id.toString() === serviceId);
-    if (service) {
-      setFormData((prev) => ({
-        ...prev,
-        value: service.base_price.toString(),
-      }));
-    }
-  };
-
-  const handleRecurringDayChange = (day: string, checked: boolean) => {
-    setFormData((prev) => ({
-      ...prev,
-      recurring_days: checked
-        ? [...prev.recurring_days, day]
-        : prev.recurring_days.filter((d) => d !== day),
-    }));
-  };
-
-  const generateTimeSlots = () => {
-    const slots = [];
-    for (let hour = 8; hour <= 18; hour++) {
-      for (let minute = 0; minute < 60; minute += 30) {
-        const timeStr = `${hour.toString().padStart(2, "0")}:${minute
-          .toString()
-          .padStart(2, "0")}`;
-        slots.push(timeStr);
-      }
-    }
-    return slots;
-  };
-
-  // Generate WhatsApp link with confirmation message
-  const generateWhatsAppLink = (appointment: any) => {
-    if (!appointment.client_phone) return '#';
-    
-    // Clean phone number and add Brazil code
-    const cleanPhone = appointment.client_phone.replace(/\D/g, '');
-    const fullPhone = `5564${cleanPhone}`; // 55 (Brazil) + 64 (Goiás) + phone
-    
-    // Format date and time for message
-    const appointmentDate = new Date(appointment.date);
-    const formattedDate = appointmentDate.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
-    const formattedTime = appointmentDate.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-    
-    // Create message
-    const message = `Olá ${appointment.client_name}, gostaria de confirmar o seu agendamento com ${user?.name} no dia ${formattedDate} às ${formattedTime}`;
-    
-    // Encode message for URL
-    const encodedMessage = encodeURIComponent(message);
-    
-    return `https://wa.me/${fullPhone}?text=${encodedMessage}`;
-  };
-
-  const timeSlots = generateTimeSlots();
-  const dailyAppointments = appointments.sort((a, b) => a.time.localeCompare(b.time));
-
-  const daysOfWeek = [
-    { value: "monday", label: "Segunda" },
-    { value: "tuesday", label: "Terça" },
-    { value: "wednesday", label: "Quarta" },
-    { value: "thursday", label: "Quinta" },
-    { value: "friday", label: "Sexta" },
-    { value: "saturday", label: "Sábado" },
-    { value: "sunday", label: "Domingo" },
+  const weekDays = [
+    { value: 'monday', label: 'Segunda' },
+    { value: 'tuesday', label: 'Terça' },
+    { value: 'wednesday', label: 'Quarta' },
+    { value: 'thursday', label: 'Quinta' },
+    { value: 'friday', label: 'Sexta' },
+    { value: 'saturday', label: 'Sábado' },
+    { value: 'sunday', label: 'Domingo' }
   ];
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Agenda</h1>
-          <p className="text-gray-600">Visualize e gerencie seus agendamentos</p>
+          <h1 className="text-2xl font-bold text-gray-900">Agenda de Consultas</h1>
+          <p className="text-gray-600">Gerencie seus agendamentos e consultas</p>
         </div>
 
         <button
-          onClick={() => setShowNewModal(true)}
+          onClick={openCreateModal}
           className="btn btn-primary flex items-center"
         >
           <Plus className="h-5 w-5 mr-2" />
-          Nova Consulta
+          Novo Agendamento
+        </button>
+      </div>
+
+      {/* Filters */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Buscar por paciente ou serviço..."
+            className="input pl-10"
+          />
+        </div>
+
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="input"
+        >
+          <option value="">Todos os status</option>
+          <option value="scheduled">Agendado</option>
+          <option value="completed">Realizado</option>
+          <option value="cancelled">Cancelado</option>
+        </select>
+
+        <button
+          onClick={() => {
+            setSearchTerm('');
+            setStatusFilter('');
+          }}
+          className="btn btn-secondary"
+        >
+          Limpar Filtros
         </button>
       </div>
 
       {error && (
-        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 flex items-center">
-          <AlertCircle className="h-5 w-5 mr-2" />
+        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6">
           {error}
         </div>
       )}
 
       {success && (
-        <div className="bg-green-50 text-green-600 p-4 rounded-lg mb-6 flex items-center">
-          <Check className="h-5 w-5 mr-2" />
+        <div className="bg-green-50 text-green-600 p-4 rounded-lg mb-6">
           {success}
         </div>
       )}
 
-      {/* Navegação de Data */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => setSelectedDate(subDays(selectedDate, 1))}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-
-          <div className="text-center">
-            <h2 className="text-xl font-semibold text-gray-900">
-              {format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })}
-            </h2>
-            <p className="text-sm text-gray-600">
-              {dailyAppointments.length} agendamento(s)
-            </p>
-          </div>
-
-          <button
-            onClick={() => setSelectedDate(addDays(selectedDate, 1))}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ChevronRight className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="flex justify-center mt-4">
-          <button
-            onClick={() => setSelectedDate(new Date())}
-            className="btn btn-secondary"
-          >
-            Hoje
-          </button>
-        </div>
-      </div>
-
-      {/* Lista de Agendamentos */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
         {isLoading ? (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
             <p className="text-gray-600">Carregando agendamentos...</p>
           </div>
-        ) : dailyAppointments.length === 0 ? (
+        ) : filteredAppointments.length === 0 ? (
           <div className="text-center py-12">
             <Calendar className="h-16 w-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Nenhum agendamento para este dia
+              {searchTerm || statusFilter ? 'Nenhum agendamento encontrado' : 'Nenhum agendamento cadastrado'}
             </h3>
             <p className="text-gray-600 mb-4">
-              Sua agenda está livre para{" "}
-              {format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}
+              {searchTerm || statusFilter
+                ? 'Tente ajustar os filtros de busca.'
+                : 'Comece criando seu primeiro agendamento.'
+              }
             </p>
-            <button
-              onClick={() => setShowNewModal(true)}
-              className="btn btn-primary inline-flex items-center"
-            >
-              <Plus className="h-5 w-5 mr-2" />
-              Criar Agendamento
-            </button>
+            {!searchTerm && !statusFilter && (
+              <button
+                onClick={openCreateModal}
+                className="btn btn-primary inline-flex items-center"
+              >
+                <Plus className="h-5 w-5 mr-2" />
+                Criar Primeiro Agendamento
+              </button>
+            )}
           </div>
         ) : (
-          <div className="flex">
-            {/* Coluna de Horários */}
-            <div className="w-24 bg-gray-50 border-r border-gray-200">
-              <div className="sticky top-0 bg-gray-100 p-3 border-b border-gray-200">
-                <div className="text-xs font-medium text-gray-600 text-center">
-                  HORÁRIO
-                </div>
-              </div>
-              <div className="space-y-0">
-                {timeSlots.map((timeSlot) => (
-                  <div
-                    key={timeSlot}
-                    className="h-16 flex items-center justify-center border-b border-gray-100 text-sm font-medium text-gray-700"
-                  >
-                    {timeSlot}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Coluna de Agendamentos */}
-            <div className="flex-1">
-              <div className="sticky top-0 bg-gray-100 p-3 border-b border-gray-200">
-                <div className="text-xs font-medium text-gray-600 text-center">
-                  AGENDAMENTOS
-                </div>
-              </div>
-              <div className="relative">
-                {timeSlots.map((timeSlot) => {
-                  const appointment = dailyAppointments.find((apt) => apt.time === timeSlot);
-
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Paciente
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Serviço
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Data/Hora
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Local
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Valor
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Ações
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredAppointments.map((appointment) => {
+                  const statusInfo = getStatusDisplay(appointment.status);
                   return (
-                    <div
-                      key={timeSlot}
-                      className="h-16 border-b border-gray-100 flex items-center px-4 hover:bg-gray-50 transition-colors"
-                    >
-                      {appointment ? (
-                        <div className="flex items-center justify-between w-full">
-                          <div className="flex items-center space-x-3 flex-1">
-                            {/* Informações do paciente */}
-                            <div className="flex-1">
-                              <div className="flex items-center mb-1">
-                                {appointment.is_dependent ? (
-                                  <Users className="h-4 w-4 text-blue-600 mr-2" />
-                                ) : (
-                                  <User className="h-4 w-4 text-green-600 mr-2" />
-                                )}
-                                <span className="font-medium text-gray-900 text-sm">
-                                  {appointment.client_name}
-                                </span>
-                                {appointment.is_dependent && (
-                                  <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
-                                    Dependente
-                                  </span>
-                                )}
-                                {appointment.session_number && appointment.total_sessions && (
-                                  <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs">
-                                    {appointment.session_number}/{appointment.total_sessions}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center space-x-4">
-                                <p className="text-xs text-gray-600">
-                                  {appointment.service_name}
-                                </p>
-                                <p className="text-xs font-medium text-green-600">
-                                  {formatCurrency(appointment.value)}
-                                </p>
-                              </div>
-                              {appointment.notes && (
-                                <p className="text-xs text-gray-500 mt-1 italic truncate">
-                                  "{appointment.notes}"
-                                </p>
+                    <tr key={appointment.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 h-10 w-10">
+                            <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
+                              {appointment.private_patient_id ? (
+                                <User className="h-5 w-5 text-red-600" />
+                              ) : (
+                                <Users className="h-5 w-5 text-red-600" />
                               )}
                             </div>
                           </div>
-
-                          {/* Actions */}
-                          <div className="flex items-center space-x-2">
-                            <button
-                              onClick={() => openRescheduleModal(appointment)}
-                              className="p-1 text-blue-600 hover:text-blue-800"
-                              title="Reagendar"
-                            >
-                              <Calendar className="h-4 w-4" />
-                            </button>
-                            
-                            {/* WhatsApp Button - only for scheduled appointments */}
-                            {appointment.status === 'scheduled' && appointment.client_phone && (
-                              <a
-                                href={generateWhatsAppLink(appointment)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                title="Confirmar via WhatsApp"
-                              >
-                                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.465 3.63"/>
-                                </svg>
-                              </a>
-                            )}
-                            <button
-                              onClick={() => openStatusModal(appointment)}
-                              className={`px-2 py-1 rounded text-xs font-medium flex items-center border transition-all hover:shadow-sm ${
-                                getStatusInfo(appointment.status).className
-                              }`}
-                              title="Clique para alterar o status"
-                            >
-                              {getStatusInfo(appointment.status).icon}
-                              {getStatusInfo(appointment.status).text}
-                            </button>
+                          <div className="ml-4">
+                            <div className="text-sm font-medium text-gray-900">
+                              {appointment.client_name}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {appointment.private_patient_id ? 'Particular' : 'Convênio'}
+                            </div>
                           </div>
                         </div>
-                      ) : (
-                        <div className="text-xs text-gray-400 italic">
-                          Horário livre
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{appointment.service_name}</div>
+                        {appointment.is_recurring && (
+                          <div className="flex items-center mt-1">
+                            <RefreshCw className="h-3 w-3 text-purple-600 mr-1" />
+                            <span className="text-xs text-purple-600">Recorrente</span>
+                            {appointment.session_count && appointment.total_sessions && (
+                              <span className="ml-1 px-1 py-0.5 bg-purple-100 text-purple-800 rounded text-xs">
+                                {appointment.session_count}/{appointment.total_sessions}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center text-sm text-gray-900">
+                          <CalendarDays className="h-3 w-3 mr-1" />
+                          {formatDateTime(appointment.date, appointment.time)}
                         </div>
-                      )}
-                    </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center text-sm text-gray-500">
+                          <MapPin className="h-3 w-3 mr-1" />
+                          {appointment.location_name || 'Não informado'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full flex items-center w-fit ${statusInfo.className}`}>
+                          {statusInfo.icon}
+                          {statusInfo.text}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {formatCurrency(appointment.value)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <div className="flex items-center justify-end space-x-2">
+                          {/* 🔥 BOTÃO WHATSAPP - só aparece se status = agendado e tem telefone */}
+                          {appointment.status === 'scheduled' && appointment.client_phone && (
+                            <button
+                              onClick={() => openWhatsApp(appointment)}
+                              className="text-green-600 hover:text-green-900"
+                              title="Confirmar via WhatsApp"
+                            >
+                              <MessageCircle className="h-4 w-4" />
+                            </button>
+                          )}
+                          
+                          {appointment.status === 'scheduled' && (
+                            <>
+                              <button
+                                onClick={() => openRescheduleModal(appointment)}
+                                className="text-blue-600 hover:text-blue-900"
+                                title="Reagendar"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => updateAppointmentStatus(appointment.id, 'completed')}
+                                className="text-green-600 hover:text-green-900"
+                                title="Marcar como realizada"
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => updateAppointmentStatus(appointment.id, 'cancelled')}
+                                className="text-red-600 hover:text-red-900"
+                                title="Cancelar"
+                              >
+                                <XCircle className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
+                          <button
+                            onClick={() => confirmDelete(appointment)}
+                            className="text-red-600 hover:text-red-900"
+                            title="Excluir"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
                   );
                 })}
-              </div>
-            </div>
+              </tbody>
+            </table>
           </div>
         )}
       </div>
 
-      {/* Estatísticas do Dia */}
-      {dailyAppointments.length > 0 && (
-        <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-200">
-            <div className="text-2xl font-bold text-blue-600">
-              {dailyAppointments.filter((a) => a.status === "scheduled").length}
-            </div>
-            <div className="text-sm text-blue-700 flex items-center justify-center">
-              <Clock className="h-3 w-3 mr-1" />
-              Agendados
-            </div>
-          </div>
-
-          <div className="bg-green-50 p-4 rounded-lg text-center border border-green-200">
-            <div className="text-2xl font-bold text-green-600">
-              {dailyAppointments.filter((a) => a.status === "confirmed").length}
-            </div>
-            <div className="text-sm text-green-700 flex items-center justify-center">
-              <CheckCircle className="h-3 w-3 mr-1" />
-              Confirmados
-            </div>
-          </div>
-
-          <div className="bg-gray-50 p-4 rounded-lg text-center border border-gray-200">
-            <div className="text-2xl font-bold text-gray-600">
-              {dailyAppointments.filter((a) => a.status === "completed").length}
-            </div>
-            <div className="text-sm text-gray-700 flex items-center justify-center">
-              <Check className="h-3 w-3 mr-1" />
-              Concluídos
-            </div>
-          </div>
-
-          <div className="bg-red-50 p-4 rounded-lg text-center border border-red-200">
-            <div className="text-2xl font-bold text-red-600">
-              {dailyAppointments.filter((a) => a.status === "cancelled").length}
-            </div>
-            <div className="text-sm text-red-700 flex items-center justify-center">
-              <XCircle className="h-3 w-3 mr-1" />
-              Cancelados
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de Nova Consulta */}
-      {showNewModal && (
+      {/* Create/Edit Modal */}
+      {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold flex items-center">
-                  <Plus className="h-6 w-6 text-red-600 mr-2" />
-                  Nova Consulta
-                </h2>
-                <button
-                  onClick={() => setShowNewModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
+              <h2 className="text-xl font-bold">
+                {modalMode === 'create' ? 'Novo Agendamento' : 'Editar Agendamento'}
+              </h2>
             </div>
 
-            {error && (
-              <div className="mx-6 mt-4 bg-red-50 text-red-600 p-3 rounded-lg">
-                {error}
-              </div>
-            )}
-
-            <form onSubmit={createAppointment} className="p-6">
+            <form onSubmit={handleSubmit} className="p-6">
               <div className="space-y-6">
-                {/* Tipo de Paciente */}
+                {/* Patient Type Selection */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tipo de Paciente *
+                    Tipo de Paciente
                   </label>
                   <select
+                    name="patient_type"
                     value={formData.patient_type}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        patient_type: e.target.value,
-                        client_cpf: "",
-                        private_patient_id: "",
-                      }))
-                    }
+                    onChange={handleInputChange}
                     className="input"
                     required
                   >
-                    <option value="convenio">Cliente do Convênio</option>
-                    <option value="private">Paciente Particular</option>
+                    <option value="convenio">Convênio</option>
+                    <option value="private">Particular</option>
                   </select>
                 </div>
 
-                {/* Cliente do Convênio */}
-                {formData.patient_type === "convenio" && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      CPF do Cliente *
-                    </label>
-                    <input
-                      type="text"
-                      value={formatCpf(formData.client_cpf)}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          client_cpf: e.target.value.replace(/\D/g, ""),
-                        }))
-                      }
-                      className="input"
-                      placeholder="000.000.000-00"
-                      required
-                    />
-                  </div>
-                )}
+                {/* Patient Selection */}
+                {formData.patient_type === 'convenio' ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Cliente
+                      </label>
+                      <select
+                        name="client_id"
+                        value={formData.client_id}
+                        onChange={handleInputChange}
+                        className="input"
+                      >
+                        <option value="">Selecione um cliente</option>
+                        {clients.filter(c => c.subscription_status === 'active').map((client) => (
+                          <option key={client.id} value={client.id}>
+                            {client.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                {/* Paciente Particular */}
-                {formData.patient_type === "private" && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Dependente (opcional)
+                      </label>
+                      <select
+                        name="dependent_id"
+                        value={formData.dependent_id}
+                        onChange={handleInputChange}
+                        className="input"
+                      >
+                        <option value="">Consulta para o titular</option>
+                        {dependents
+                          .filter(d => d.subscription_status === 'active')
+                          .map((dependent) => (
+                          <option key={dependent.id} value={dependent.id}>
+                            {dependent.name} (Titular: {dependent.client_name})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ) : (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Paciente Particular *
+                      Paciente Particular
                     </label>
                     <select
+                      name="private_patient_id"
                       value={formData.private_patient_id}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          private_patient_id: e.target.value,
-                        }))
-                      }
+                      onChange={handleInputChange}
                       className="input"
-                      required
+                      required={formData.patient_type === 'private'}
                     >
                       <option value="">Selecione um paciente</option>
                       {privatePatients.map((patient) => (
                         <option key={patient.id} value={patient.id}>
-                          {patient.name} -{" "}
-                          {patient.cpf ? formatCpf(patient.cpf) : "CPF não informado"}
+                          {patient.name}
                         </option>
                       ))}
                     </select>
-                    {privatePatients.length === 0 && (
-                      <p className="text-sm text-gray-500 mt-1">
-                        Nenhum paciente particular cadastrado. Cadastre pacientes na seção "Pacientes Particulares".
-                      </p>
-                    )}
                   </div>
                 )}
 
-                {/* Data e Hora */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Data *
-                    </label>
-                    <input
-                      type="date"
-                      value={formData.date}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, date: e.target.value }))
-                      }
-                      className="input"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Horário *
-                    </label>
-                    <select
-                      value={formData.time}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, time: e.target.value }))
-                      }
-                      className="input"
-                      required
-                    >
-                      <option value="">Selecione um horário</option>
-                      {timeSlots.map((time) => (
-                        <option key={time} value={time}>
-                          {time}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Consulta Recorrente */}
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center mb-4">
-                    <input
-                      type="checkbox"
-                      id="is_recurring"
-                      checked={formData.is_recurring}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          is_recurring: e.target.checked,
-                          total_sessions: e.target.checked ? 2 : 1,
-                          recurring_days: e.target.checked ? [] : [],
-                        }))
-                      }
-                      className="rounded border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50"
-                    />
-                    <label htmlFor="is_recurring" className="ml-2 text-sm font-medium text-gray-700">
-                      Consulta Recorrente
-                    </label>
-                  </div>
-
-                  {formData.is_recurring && (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Número de Sessões *
-                        </label>
-                        <input
-                          type="number"
-                          min="2"
-                          max="52"
-                          value={formData.total_sessions}
-                          onChange={(e) =>
-                            setFormData((prev) => ({
-                              ...prev,
-                              total_sessions: parseInt(e.target.value) || 1,
-                            }))
-                          }
-                          className="input"
-                          required
-                        />
-                        <p className="text-xs text-gray-500 mt-1">
-                          Quantas sessões serão realizadas no total
-                        </p>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Dias da Semana *
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {daysOfWeek.map((day) => (
-                            <label key={day.value} className="flex items-center">
-                              <input
-                                type="checkbox"
-                                checked={formData.recurring_days.includes(day.value)}
-                                onChange={(e) =>
-                                  handleRecurringDayChange(day.value, e.target.checked)
-                                }
-                                className="rounded border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50"
-                              />
-                              <span className="ml-2 text-sm text-gray-700">
-                                {day.label}
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                          Selecione os dias da semana para repetir a consulta
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Serviço e Valor */}
+                {/* Service and Location */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Serviço *
                     </label>
                     <select
+                      name="service_id"
                       value={formData.service_id}
                       onChange={handleServiceChange}
                       className="input"
@@ -1108,90 +930,139 @@ const SchedulingPage: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Local de Atendimento
+                    </label>
+                    <select
+                      name="location_id"
+                      value={formData.location_id}
+                      onChange={handleInputChange}
+                      className="input"
+                    >
+                      <option value="">Selecione um local</option>
+                      {attendanceLocations.map((location) => (
+                        <option key={location.id} value={location.id}>
+                          {location.name} {location.is_default && '(Padrão)'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Date, Time and Value */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Data *
+                    </label>
+                    <input
+                      type="date"
+                      name="date"
+                      value={formData.date}
+                      onChange={handleInputChange}
+                      className="input"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Hora *
+                    </label>
+                    <input
+                      type="time"
+                      name="time"
+                      value={formData.time}
+                      onChange={handleInputChange}
+                      className="input"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
                       Valor (R$) *
                     </label>
                     <input
                       type="number"
+                      name="value"
+                      value={formData.value}
+                      onChange={handleInputChange}
+                      className="input"
                       min="0"
                       step="0.01"
-                      value={formData.value}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          value: e.target.value,
-                        }))
-                      }
-                      className="input"
                       required
                     />
                   </div>
                 </div>
 
-                {/* Local de Atendimento */}
+                {/* Recurring Options */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Local de Atendimento
+                  <label className="flex items-center mb-4">
+                    <input
+                      type="checkbox"
+                      name="is_recurring"
+                      checked={formData.is_recurring}
+                      onChange={handleInputChange}
+                      className="rounded border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50"
+                    />
+                    <span className="ml-2 text-sm text-gray-600">
+                      Consulta recorrente (múltiplas sessões)
+                    </span>
                   </label>
-                  <select
-                    value={formData.location_id || ""}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        location_id: e.target.value,
-                      }))
-                    }
-                    className="input"
-                  >
-                    <option value="">Selecione um local</option>
-                    {attendanceLocations.map((location) => (
-                      <option key={location.id} value={location.id}>
-                        {location.name} {location.is_default && "(Padrão)"}
-                      </option>
-                    ))}
-                  </select>
-                  {attendanceLocations.length === 0 && (
-                    <p className="text-sm text-gray-500 mt-1">
-                      Configure seus locais de atendimento no perfil.
-                    </p>
-                  )}
-                </div>
 
-                {/* Observações */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Observações
-                  </label>
-                  <textarea
-                    value={formData.notes}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        notes: e.target.value,
-                      }))
-                    }
-                    className="input min-h-[80px]"
-                    placeholder="Observações sobre a consulta..."
-                  />
+                  {formData.is_recurring && (
+                    <div className="space-y-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Dias da Semana
+                        </label>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                          {weekDays.map((day) => (
+                            <label key={day.value} className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={formData.recurring_days.includes(day.value)}
+                                onChange={() => handleRecurringDaysChange(day.value)}
+                                className="rounded border-gray-300 text-purple-600 shadow-sm focus:border-purple-300 focus:ring focus:ring-purple-200 focus:ring-opacity-50"
+                              />
+                              <span className="ml-2 text-sm text-gray-600">
+                                {day.label}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Total de Sessões
+                        </label>
+                        <input
+                          type="number"
+                          name="total_sessions"
+                          value={formData.total_sessions}
+                          onChange={handleInputChange}
+                          className="input"
+                          min="1"
+                          max="20"
+                          placeholder="Ex: 5"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-3 mt-6">
+              <div className="flex justify-end space-x-3 mt-8 pt-6 border-t border-gray-200">
                 <button
                   type="button"
-                  onClick={() => setShowNewModal(false)}
+                  onClick={closeModal}
                   className="btn btn-secondary"
-                  disabled={isCreating}
                 >
                   Cancelar
                 </button>
-                <button
-                  type="submit"
-                  className={`btn btn-primary ${
-                    isCreating ? "opacity-70 cursor-not-allowed" : ""
-                  }`}
-                  disabled={isCreating}
-                >
-                  {isCreating ? "Criando..." : formData.is_recurring ? "Criar Consultas Recorrentes" : "Agendar Consulta"}
+                <button type="submit" className="btn btn-primary">
+                  {modalMode === 'create' ? 'Criar Agendamento' : 'Salvar Alterações'}
                 </button>
               </div>
             </form>
@@ -1199,212 +1070,15 @@ const SchedulingPage: React.FC = () => {
         </div>
       )}
 
-      {/* Modal de Alteração de Status */}
-      {showStatusModal && selectedAppointment && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-md">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold flex items-center">
-                  <Edit2 className="h-6 w-6 text-blue-600 mr-2" />
-                  Alterar Status
-                </h2>
-                <button
-                  onClick={closeStatusModal}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-            </div>
-
-            {error && (
-              <div className="mx-6 mt-4 bg-red-50 text-red-600 p-3 rounded-lg">
-                {error}
-              </div>
-            )}
-
-            <div className="p-6">
-              {/* Informações do agendamento */}
-              <div className="bg-gray-50 p-4 rounded-lg mb-6">
-                <div className="flex items-center mb-2">
-                  {selectedAppointment.is_dependent ? (
-                    <Users className="h-4 w-4 text-blue-600 mr-2" />
-                  ) : (
-                    <User className="h-4 w-4 text-green-600 mr-2" />
-                  )}
-                  <span className="font-medium">
-                    {selectedAppointment.client_name}
-                  </span>
-                </div>
-                <p className="text-sm text-gray-600 mb-1">
-                  <strong>Serviço:</strong> {selectedAppointment.service_name}
-                </p>
-                <p className="text-sm text-gray-600 mb-1">
-                  <strong>Data/Hora:</strong>{" "}
-                  {format(new Date(selectedAppointment.date), "dd/MM/yyyy 'às' HH:mm")}
-                </p>
-                <p className="text-sm text-gray-600">
-                  <strong>Valor:</strong> {formatCurrency(selectedAppointment.value)}
-                </p>
-              </div>
-
-              {/* Seleção de novo status */}
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Selecione o novo status:
-                </label>
-
-                <div className="space-y-2">
-                  <label
-                    className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
-                      newStatus === "scheduled"
-                        ? "border-blue-300 bg-blue-50"
-                        : "border-gray-200 hover:bg-gray-50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="status"
-                      value="scheduled"
-                      checked={newStatus === "scheduled"}
-                      onChange={(e) => setNewStatus(e.target.value as any)}
-                      className="text-blue-600 focus:ring-blue-500"
-                    />
-                    <div className="ml-3 flex items-center">
-                      <Clock className="h-4 w-4 text-blue-600 mr-2" />
-                      <div>
-                        <div className="font-medium text-gray-900">Agendado</div>
-                        <div className="text-sm text-gray-500">Consulta marcada</div>
-                      </div>
-                    </div>
-                  </label>
-
-                  <label
-                    className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
-                      newStatus === "confirmed"
-                        ? "border-green-300 bg-green-50"
-                        : "border-gray-200 hover:bg-gray-50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="status"
-                      value="confirmed"
-                      checked={newStatus === "confirmed"}
-                      onChange={(e) => setNewStatus(e.target.value as any)}
-                      className="text-green-600 focus:ring-green-500"
-                    />
-                    <div className="ml-3 flex items-center">
-                      <CheckCircle className="h-4 w-4 text-green-600 mr-2" />
-                      <div>
-                        <div className="font-medium text-gray-900">Confirmado</div>
-                        <div className="text-sm text-gray-500">Paciente confirmou</div>
-                      </div>
-                    </div>
-                  </label>
-
-                  <label
-                    className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
-                      newStatus === "completed"
-                        ? "border-gray-300 bg-gray-50"
-                        : "border-gray-200 hover:bg-gray-50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="status"
-                      value="completed"
-                      checked={newStatus === "completed"}
-                      onChange={(e) => setNewStatus(e.target.value as any)}
-                      className="text-gray-600 focus:ring-gray-500"
-                    />
-                    <div className="ml-3 flex items-center">
-                      <Check className="h-4 w-4 text-gray-600 mr-2" />
-                      <div>
-                        <div className="font-medium text-gray-900">Concluído</div>
-                        <div className="text-sm text-gray-500">Consulta realizada</div>
-                      </div>
-                    </div>
-                  </label>
-
-                  <label
-                    className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
-                      newStatus === "cancelled"
-                        ? "border-red-300 bg-red-50"
-                        : "border-gray-200 hover:bg-gray-50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="status"
-                      value="cancelled"
-                      checked={newStatus === "cancelled"}
-                      onChange={(e) => setNewStatus(e.target.value as any)}
-                      className="text-red-600 focus:ring-red-500"
-                    />
-                    <div className="ml-3 flex items-center">
-                      <XCircle className="h-4 w-4 text-red-600 mr-2" />
-                      <div>
-                        <div className="font-medium text-gray-900">Cancelado</div>
-                        <div className="text-sm text-gray-500">Consulta cancelada</div>
-                      </div>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-3 mt-6">
-                <button
-                  type="button"
-                  onClick={closeStatusModal}
-                  className="btn btn-secondary"
-                  disabled={isUpdatingStatus}
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={updateAppointmentStatus}
-                  className={`btn btn-primary ${
-                    isUpdatingStatus ? "opacity-70 cursor-not-allowed" : ""
-                  }`}
-                  disabled={isUpdatingStatus || newStatus === selectedAppointment.status}
-                >
-                  {isUpdatingStatus ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Atualizando...
-                    </>
-                  ) : (
-                    <>
-                      <Check className="h-4 w-4 mr-2" />
-                      Atualizar Status
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de Reagendamento */}
+      {/* Reschedule Modal */}
       {showRescheduleModal && selectedAppointment && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-md">
             <div className="p-6 border-b border-gray-200">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold flex items-center">
-                  <Calendar className="h-6 w-6 text-blue-600 mr-2" />
-                  Reagendar Consulta
-                </h2>
-                <button
-                  onClick={closeRescheduleModal}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
+              <h2 className="text-xl font-bold">Reagendar Consulta</h2>
+              <p className="text-gray-600 mt-1">
+                Paciente: {selectedAppointment.client_name}
+              </p>
             </div>
 
             {error && (
@@ -1413,32 +1087,13 @@ const SchedulingPage: React.FC = () => {
               </div>
             )}
 
-            <div className="p-6">
-              {/* Informações da consulta atual */}
-              <div className="bg-gray-50 p-4 rounded-lg mb-6">
-                <div className="flex items-center mb-2">
-                  {selectedAppointment.is_dependent ? (
-                    <Users className="h-4 w-4 text-blue-600 mr-2" />
-                  ) : (
-                    <User className="h-4 w-4 text-green-600 mr-2" />
-                  )}
-                  <span className="font-medium">
-                    {selectedAppointment.client_name}
-                  </span>
-                </div>
-                <p className="text-sm text-gray-600 mb-1">
-                  <strong>Serviço:</strong> {selectedAppointment.service_name}
-                </p>
-                <p className="text-sm text-gray-600 mb-1">
-                  <strong>Data/Hora Atual:</strong>{" "}
-                  {format(new Date(selectedAppointment.date), "dd/MM/yyyy 'às' HH:mm")}
-                </p>
-                <p className="text-sm text-gray-600">
-                  <strong>Valor:</strong> {formatCurrency(selectedAppointment.value)}
-                </p>
+            {success && (
+              <div className="mx-6 mt-4 bg-green-50 text-green-600 p-3 rounded-lg">
+                {success}
               </div>
+            )}
 
-              {/* Nova data e hora */}
+            <form onSubmit={handleReschedule} className="p-6">
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1447,14 +1102,8 @@ const SchedulingPage: React.FC = () => {
                   <input
                     type="date"
                     value={rescheduleData.date}
-                    onChange={(e) =>
-                      setRescheduleData((prev) => ({
-                        ...prev,
-                        date: e.target.value,
-                      }))
-                    }
+                    onChange={(e) => setRescheduleData(prev => ({ ...prev, date: e.target.value }))}
                     className="input"
-                    min={new Date().toISOString().split("T")[0]}
                     required
                   />
                 </div>
@@ -1463,24 +1112,19 @@ const SchedulingPage: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Nova Hora *
                   </label>
-                  <select
+                  <input
+                    type="time"
                     value={rescheduleData.time}
-                    onChange={(e) =>
-                      setRescheduleData((prev) => ({
-                        ...prev,
-                        time: e.target.value,
-                      }))
-                    }
+                    onChange={(e) => setRescheduleData(prev => ({ ...prev, time: e.target.value }))}
                     className="input"
                     required
-                  >
-                    <option value="">Selecione um horário</option>
-                    {timeSlots.map((time) => (
-                      <option key={time} value={time}>
-                        {time}
-                      </option>
-                    ))}
-                  </select>
+                  />
+                </div>
+
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <p className="text-sm text-blue-700">
+                    <strong>Agendamento atual:</strong> {formatDateTime(selectedAppointment.date, selectedAppointment.time)}
+                  </p>
                 </div>
               </div>
 
@@ -1493,28 +1137,45 @@ const SchedulingPage: React.FC = () => {
                 >
                   Cancelar
                 </button>
-                <button
-                  onClick={handleReschedule}
-                  className={`btn btn-primary ${
-                    isRescheduling ? "opacity-70 cursor-not-allowed" : ""
-                  }`}
-                  disabled={
-                    isRescheduling || !rescheduleData.date || !rescheduleData.time
-                  }
+                <button 
+                  type="submit" 
+                  className={`btn btn-primary ${isRescheduling ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  disabled={isRescheduling}
                 >
-                  {isRescheduling ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Reagendando...
-                    </>
-                  ) : (
-                    <>
-                      <Calendar className="h-4 w-4 mr-2" />
-                      Reagendar
-                    </>
-                  )}
+                  {isRescheduling ? 'Reagendando...' : 'Reagendar'}
                 </button>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation modal */}
+      {showDeleteConfirm && appointmentToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md p-6">
+            <h2 className="text-xl font-bold mb-4">Confirmar Exclusão</h2>
+            
+            <p className="mb-6">
+              Tem certeza que deseja excluir o agendamento de <strong>{appointmentToDelete.client_name}</strong>?
+              Esta ação não pode ser desfeita.
+            </p>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={cancelDelete}
+                className="btn btn-secondary flex items-center"
+              >
+                <X className="h-4 w-4 mr-2" />
+                Cancelar
+              </button>
+              <button
+                onClick={deleteAppointment}
+                className="btn bg-red-600 text-white hover:bg-red-700 flex items-center"
+              >
+                <Check className="h-4 w-4 mr-2" />
+                Confirmar
+              </button>
             </div>
           </div>
         </div>
