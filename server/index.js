@@ -1525,6 +1525,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
     res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
+
 // ==================== PRIVATE PATIENTS ROUTES ====================
 
 app.get('/api/private-patients', authenticate, authorize(['professional']), async (req, res) => {
@@ -2095,16 +2096,13 @@ app.get('/api/reports/professional-detailed', authenticate, authorize(['professi
         COUNT(CASE WHEN c.private_patient_id IS NOT NULL THEN 1 END) as private_consultations,
         SUM(c.value) as total_revenue,
         SUM(CASE WHEN c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value ELSE 0 END) as convenio_revenue,
-        SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END) as private_revenue
+        SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END) as private_revenue,
+        SUM(CASE WHEN c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($2 / 100) ELSE 0 END) as amount_to_pay
       FROM consultations c
-      WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $3
-    `, [professionalId, start_date, end_date]);
+      WHERE c.professional_id = $1 AND c.date >= $3 AND c.date <= $4
+    `, [professionalId, 100 - professionalPercentage, start_date, end_date]);
 
     const summary = summaryResult.rows[0];
-
-    // Calculate amount to pay to clinic (ONLY from convenio consultations)
-    const convenioRevenue = Number(summary.convenio_revenue) || 0;
-    const amountToPay = convenioRevenue * ((100 - professionalPercentage) / 100);
 
     res.json({
       summary: {
@@ -2112,10 +2110,10 @@ app.get('/api/reports/professional-detailed', authenticate, authorize(['professi
         convenio_consultations: Number(summary.convenio_consultations) || 0,
         private_consultations: Number(summary.private_consultations) || 0,
         total_revenue: Number(summary.total_revenue) || 0,
-        convenio_revenue: convenioRevenue,
+        convenio_revenue: Number(summary.convenio_revenue) || 0,
         private_revenue: Number(summary.private_revenue) || 0,
         professional_percentage: professionalPercentage,
-        amount_to_pay: amountToPay
+        amount_to_pay: Number(summary.amount_to_pay) || 0
       }
     });
   } catch (error) {
