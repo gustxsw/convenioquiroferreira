@@ -8,7 +8,7 @@ import { pool } from './db.js';
 import { authenticate, authorize } from './middleware/auth.js';
 import createUpload from './middleware/upload.js';
 import { generateDocumentPDF } from './utils/documentGenerator.js';
-import mercadopago from 'mercadopago';
+import { MercadoPagoConfig, Preference } from 'mercadopago';
 
 // Load environment variables
 dotenv.config();
@@ -17,8 +17,8 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Configure MercadoPago SDK v2
-mercadopago.configure({
-  access_token: process.env.MP_ACCESS_TOKEN,
+const client = new MercadoPagoConfig({
+  accessToken: process.env.MP_ACCESS_TOKEN,
 });
 
 // CORS configuration for production
@@ -1050,7 +1050,7 @@ app.post('/api/dependents/:id/create-payment', authenticate, async (req, res) =>
     }
 
     // Create payment preference
-    const preference = {
+    const preferenceData = {
       items: [{
         title: `Ativação de Dependente - ${dependent.name}`,
         quantity: 1,
@@ -1077,17 +1077,18 @@ app.post('/api/dependents/:id/create-payment', authenticate, async (req, res) =>
       }
     };
 
-    const response = await mercadopago.preferences.create(preference);
+    const preference = new Preference(client);
+    const response = await preference.create({ body: preferenceData });
     
     // Store payment reference
     await pool.query(
       'UPDATE dependents SET payment_reference = $1 WHERE id = $2',
-      [response.body.id, dependent.id]
+      [response.id, dependent.id]
     );
 
     res.json({
-      preference_id: response.body.id,
-      init_point: response.body.init_point
+      preference_id: response.id,
+      init_point: response.init_point
     });
   } catch (error) {
     console.error('Error creating dependent payment:', error);
@@ -1120,7 +1121,7 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
     }
 
     // Create payment preference
-    const preference = {
+    const preferenceData = {
       items: [{
         title: 'Assinatura Cartão Quiro Ferreira - Titular',
         quantity: 1,
@@ -1147,11 +1148,12 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
       }
     };
 
-    const response = await mercadopago.preferences.create(preference);
+    const preference = new Preference(client);
+    const response = await preference.create({ body: preferenceData });
     
     res.json({
-      preference_id: response.body.id,
-      init_point: response.body.init_point
+      preference_id: response.id,
+      init_point: response.init_point
     });
   } catch (error) {
     console.error('Error creating subscription payment:', error);
@@ -1182,7 +1184,7 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
     
     const professional = userResult.rows[0];
     
-    const preference = {
+    const preferenceData = {
       items: [{
         title: 'Repasse ao Convênio Quiro Ferreira',
         description: `Pagamento de repasse - ${professional.name}`,
@@ -1212,18 +1214,19 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
       }
     };
     
-    const response = await mercadopago.preferences.create(preference);
+    const preference = new Preference(client);
+    const response = await preference.create({ body: preferenceData });
     
     // Save payment record
     await pool.query(
       `INSERT INTO professional_payments (professional_id, amount, payment_method, payment_reference, mercadopago_preference_id) 
        VALUES ($1, $2, 'mercadopago', $3, $4)`,
-      [professionalId, amount, preference.external_reference, response.body.id]
+      [professionalId, amount, preferenceData.external_reference, response.id]
     );
     
     res.json({
-      preference_id: response.body.id,
-      init_point: response.body.init_point
+      preference_id: response.id,
+      init_point: response.init_point
     });
     
   } catch (error) {
@@ -1254,7 +1257,7 @@ app.post('/api/agenda/create-payment', authenticate, async (req, res) => {
     
     const consultation = result.rows[0];
     
-    const preference = {
+    const preferenceData = {
       items: [{
         title: `Consulta - ${consultation.service_name}`,
         description: `Pagamento da consulta para ${consultation.client_name}`,
@@ -1285,18 +1288,19 @@ app.post('/api/agenda/create-payment', authenticate, async (req, res) => {
       }
     };
     
-    const response = await mercadopago.preferences.create(preference);
+    const preference = new Preference(client);
+    const response = await preference.create({ body: preferenceData });
     
     // Save payment record
     await pool.query(
       `INSERT INTO agenda_payments (client_id, consultation_id, amount, payment_method, payment_reference, mercadopago_preference_id) 
        VALUES ($1, $2, $3, 'mercadopago', $4, $5)`,
-      [consultation.client_id, consultation_id, amount, preference.external_reference, response.body.id]
+      [consultation.client_id, consultation_id, amount, preferenceData.external_reference, response.id]
     );
     
     res.json({
-      preference_id: response.body.id,
-      init_point: response.body.init_point
+      preference_id: response.id,
+      init_point: response.init_point
     });
     
   } catch (error) {
