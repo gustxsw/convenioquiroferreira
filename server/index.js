@@ -118,9 +118,17 @@ async function checkAndFixDatabaseStructure() {
     for (const column of userColumns) {
       const [columnName] = column.split(' ');
       try {
-        await client.query(`
-          DO $$ 
+            CASE 
+              WHEN dp.status = 'approved' THEN 'active'
+              WHEN dp.status = 'pending' THEN 'pending'
+              WHEN dp.status = 'cancelled' OR dp.status = 'rejected' THEN 'expired'
+              ELSE 'pending'
+            END as subscription_status,
+            dp.expires_at as subscription_expiry
           BEGIN 
+          LEFT JOIN dependent_payments dp ON d.id = dp.dependent_id 
+            AND dp.status = 'approved'
+            AND (dp.expires_at IS NULL OR dp.expires_at > NOW())
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = '${columnName}') THEN
               ALTER TABLE users ADD COLUMN ${column};
             END IF;

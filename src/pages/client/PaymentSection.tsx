@@ -199,27 +199,7 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
   if (verifiedStatus === "active") {
     console.log("✅ CLIENTE ATIVO: Mostrando apenas status da assinatura");
     return (
-      <div className="card mb-6">
-        <div className="flex items-center mb-4">
-          <CheckCircle className="h-6 w-6 text-green-600 mr-2" />
-          <h2 className="text-xl font-semibold">Assinatura Ativa</h2>
-        </div>
-
-        <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-          <div className="flex items-center mb-2">
-            <Calendar className="h-5 w-5 text-green-600 mr-2" />
-            <p className="text-green-700 font-medium">
-              Sua assinatura está ativa até{" "}
-              {subscriptionExpiry
-                ? formatDate(subscriptionExpiry)
-                : "20/09/2025"}
-            </p>
-          </div>
-          <p className="text-sm text-green-600">
-            Aproveite todos os benefícios do seu convênio.
-          </p>
-        </div>
-      </div>
+      null
     );
   }
 

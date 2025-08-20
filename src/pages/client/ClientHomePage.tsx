@@ -345,23 +345,28 @@ const ClientHomePage: React.FC = () => {
         </div>
       )}
 
-      {subscriptionStatus === "pending" && (
-        <div className="bg-yellow-50 border-l-4 border-yellow-600 p-4 mb-6">
-          <div className="flex items-center">
-            <AlertCircle className="h-5 w-5 text-yellow-600 mr-2" />
-            <p className="text-yellow-700">
-              Complete seu cadastro realizando o pagamento da assinatura.
-            </p>
-          </div>
-        </div>
-      )}
 
-      {user && (
-        <PaymentSection
-          userId={user.id}
-          subscriptionStatus={subscriptionStatus}
-          subscriptionExpiry={subscriptionExpiry}
-        />
+      {subscriptionStatus !== "active" && (
+        <>
+          {subscriptionStatus === "pending" && (
+            <div className="bg-yellow-50 border-l-4 border-yellow-600 p-4 mb-6">
+              <div className="flex items-center">
+                <AlertCircle className="h-5 w-5 text-yellow-600 mr-2" />
+                <p className="text-yellow-700">
+                  Complete seu cadastro realizando o pagamento da assinatura.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {user && (
+            <PaymentSection
+              userId={user.id}
+              subscriptionStatus={subscriptionStatus}
+              subscriptionExpiry={subscriptionExpiry}
+            />
+          )}
+        </>
       )}
 
       {user && <DependentsSection clientId={user.id} />}
