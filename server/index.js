@@ -2235,14 +2235,14 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
       external_reference: `subscription_${userId}_${Date.now()}`,
       back_urls: {
         success: process.env.NODE_ENV === 'production' 
-          ? 'https://cartaoquiroferreira.com.br/client?payment=success'
-          : 'http://localhost:5173/client?payment=success',
+          ? 'https://cartaoquiroferreira.com.br/client?payment=success&type=subscription'
+          : 'http://localhost:5173/client?payment=success&type=subscription',
         failure: process.env.NODE_ENV === 'production'
-          ? 'https://cartaoquiroferreira.com.br/client?payment=failure'
-          : 'http://localhost:5173/client?payment=failure',
+          ? 'https://cartaoquiroferreira.com.br/client?payment=failure&type=subscription'
+          : 'http://localhost:5173/client?payment=failure&type=subscription',
         pending: process.env.NODE_ENV === 'production'
-          ? 'https://cartaoquiroferreira.com.br/client?payment=pending'
-          : 'http://localhost:5173/client?payment=pending'
+          ? 'https://cartaoquiroferreira.com.br/client?payment=pending&type=subscription'
+          : 'http://localhost:5173/client?payment=pending&type=subscription'
       },
       auto_return: 'approved',
       notification_url: process.env.NODE_ENV === 'production'
