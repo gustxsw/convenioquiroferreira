@@ -56,41 +56,18 @@ async function checkAndFixDatabaseStructure() {
   const client = await pool.connect();
   
   try {
-    console.log('🔄 Checking and fixing database structure...');
+    console.log('🔄 Checking and fixing database structure (users-only)...');
     
     // Start transaction for safety
     await client.query('BEGIN');
     
-    // 1. Ensure clients table has correct structure
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS clients (
-        client_id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        cpf VARCHAR(11) UNIQUE,
-        email VARCHAR(255),
-        phone VARCHAR(20),
-        birth_date DATE,
-        address TEXT,
-        address_number VARCHAR(20),
-        address_complement VARCHAR(100),
-        neighborhood VARCHAR(100),
-        city VARCHAR(100),
-        state VARCHAR(2),
-        zip_code VARCHAR(8),
-        subscription_status VARCHAR(20) DEFAULT 'pending',
-        subscription_expiry DATE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    // 2. Ensure users table has correct structure
+    // 1. Ensure users table has proper structure (no separate clients table)
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
-        client_id INTEGER REFERENCES clients(client_id),
+        client_id INTEGER DEFAULT NULL,
         name VARCHAR(255) NOT NULL,
-        cpf VARCHAR(11) UNIQUE NOT NULL,
+        cpf VARCHAR(11) UNIQUE,
         email VARCHAR(255),
         phone VARCHAR(20),
         birth_date DATE,
@@ -114,12 +91,51 @@ async function checkAndFixDatabaseStructure() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    
-    // 3. Ensure dependents table structure
+    console.log('✅ Users table verified/created');
+
+    // Add missing columns to users if they don't exist (including client fields)
+    const userColumns = [
+      'client_id INTEGER',
+      'roles TEXT[]',
+      'photo_url TEXT',
+      'category_id INTEGER',
+      'percentage DECIMAL(5,2) DEFAULT 50.00',
+      'crm VARCHAR(50)',
+      'signature_url TEXT',
+      'subscription_status VARCHAR(20) DEFAULT \'pending\'',
+      'subscription_expiry DATE',
+      'address TEXT',
+      'address_number VARCHAR(20)',
+      'address_complement VARCHAR(100)',
+      'neighborhood VARCHAR(100)',
+      'city VARCHAR(100)',
+      'state VARCHAR(2)',
+      'zip_code VARCHAR(8)',
+      'birth_date DATE'
+    ];
+
+    for (const column of userColumns) {
+      const [columnName] = column.split(' ');
+      try {
+        await client.query(`
+          DO $$ 
+          BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = '${columnName}') THEN
+              ALTER TABLE users ADD COLUMN ${column};
+            END IF;
+          END $$;
+        `);
+      } catch (error) {
+        console.warn(`Warning: Could not add column ${columnName}:`, error.message);
+      }
+    }
+    console.log('✅ Users table columns verified');
+
+    // 2. Ensure dependents table references users(id) as client_id
     await client.query(`
       CREATE TABLE IF NOT EXISTS dependents (
         id SERIAL PRIMARY KEY,
-        client_id INTEGER NOT NULL REFERENCES clients(client_id) ON DELETE CASCADE,
+        client_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         name VARCHAR(255) NOT NULL,
         cpf VARCHAR(11) UNIQUE,
         birth_date DATE,
@@ -132,12 +148,13 @@ async function checkAndFixDatabaseStructure() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    
-    // 4. Ensure consultations table structure
+    console.log('✅ Dependents table verified/created');
+
+    // 3. Ensure consultations table has proper structure
     await client.query(`
       CREATE TABLE IF NOT EXISTS consultations (
         id SERIAL PRIMARY KEY,
-        client_id INTEGER REFERENCES clients(client_id),
+        client_id INTEGER REFERENCES users(id),
         dependent_id INTEGER REFERENCES dependents(id),
         private_patient_id INTEGER,
         professional_id INTEGER NOT NULL REFERENCES users(id),
@@ -151,18 +168,18 @@ async function checkAndFixDatabaseStructure() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    
-    // 5. Payment tables
+    console.log('✅ Consultations table verified/created');
+
+    // 4. Create payment tables with proper client_id references
     await client.query(`
       CREATE TABLE IF NOT EXISTS client_payments (
         id SERIAL PRIMARY KEY,
-        client_id INTEGER NOT NULL REFERENCES clients(client_id) ON DELETE CASCADE,
+        client_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         amount DECIMAL(10,2) NOT NULL,
-        payment_method VARCHAR(50),
+        payment_type VARCHAR(50) DEFAULT 'subscription',
+        mp_payment_id VARCHAR(100),
+        mp_preference_id VARCHAR(100),
         payment_status VARCHAR(20) DEFAULT 'pending',
-        payment_reference VARCHAR(255),
-        mercadopago_payment_id VARCHAR(255),
-        mercadopago_preference_id VARCHAR(255),
         paid_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -172,13 +189,11 @@ async function checkAndFixDatabaseStructure() {
       CREATE TABLE IF NOT EXISTS dependent_payments (
         id SERIAL PRIMARY KEY,
         dependent_id INTEGER NOT NULL REFERENCES dependents(id) ON DELETE CASCADE,
-        client_id INTEGER NOT NULL REFERENCES clients(client_id) ON DELETE CASCADE,
+        client_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         amount DECIMAL(10,2) NOT NULL,
-        payment_method VARCHAR(50),
+        mp_payment_id VARCHAR(100),
+        mp_preference_id VARCHAR(100),
         payment_status VARCHAR(20) DEFAULT 'pending',
-        payment_reference VARCHAR(255),
-        mercadopago_payment_id VARCHAR(255),
-        mercadopago_preference_id VARCHAR(255),
         paid_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -202,20 +217,29 @@ async function checkAndFixDatabaseStructure() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS agenda_payments (
         id SERIAL PRIMARY KEY,
-        client_id INTEGER NOT NULL REFERENCES clients(client_id) ON DELETE CASCADE,
+        client_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         consultation_id INTEGER REFERENCES consultations(id),
         amount DECIMAL(10,2) NOT NULL,
-        payment_method VARCHAR(50),
+        mp_payment_id VARCHAR(100),
+        mp_preference_id VARCHAR(100),
         payment_status VARCHAR(20) DEFAULT 'pending',
-        payment_reference VARCHAR(255),
-        mercadopago_payment_id VARCHAR(255),
-        mercadopago_preference_id VARCHAR(255),
         paid_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
     
-    // 6. Other essential tables
+    console.log('✅ Payment tables verified/created');
+
+    // 5. Create other necessary tables
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS service_categories (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
     await client.query(`
       CREATE TABLE IF NOT EXISTS services (
         id SERIAL PRIMARY KEY,
@@ -224,15 +248,6 @@ async function checkAndFixDatabaseStructure() {
         base_price DECIMAL(10,2) NOT NULL,
         category_id INTEGER,
         is_base_service BOOLEAN DEFAULT false,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS service_categories (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        description TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -309,57 +324,12 @@ async function checkAndFixDatabaseStructure() {
       )
     `);
     
-    // 7. Add missing columns to existing tables
-    const columnsToAdd = [
-      // Users table columns
-      { table: 'users', column: 'client_id', type: 'INTEGER REFERENCES clients(client_id)' },
-      { table: 'users', column: 'roles', type: 'TEXT[] DEFAULT ARRAY[\'client\']' },
-      { table: 'users', column: 'photo_url', type: 'TEXT' },
-      { table: 'users', column: 'category_id', type: 'INTEGER' },
-      { table: 'users', column: 'percentage', type: 'DECIMAL(5,2) DEFAULT 50.00' },
-      { table: 'users', column: 'crm', type: 'VARCHAR(50)' },
-      { table: 'users', column: 'signature_url', type: 'TEXT' },
-      { table: 'users', column: 'subscription_status', type: 'VARCHAR(20) DEFAULT \'pending\'' },
-      { table: 'users', column: 'subscription_expiry', type: 'DATE' },
-      
-      // Consultations table columns
-      { table: 'consultations', column: 'client_id', type: 'INTEGER REFERENCES clients(client_id)' },
-      { table: 'consultations', column: 'dependent_id', type: 'INTEGER REFERENCES dependents(id)' },
-      { table: 'consultations', column: 'private_patient_id', type: 'INTEGER' },
-      { table: 'consultations', column: 'location_id', type: 'INTEGER' },
-      { table: 'consultations', column: 'status', type: 'VARCHAR(20) DEFAULT \'completed\'' },
-      { table: 'consultations', column: 'notes', type: 'TEXT' },
-      
-      // Dependents table columns
-      { table: 'dependents', column: 'subscription_status', type: 'VARCHAR(20) DEFAULT \'pending\'' },
-      { table: 'dependents', column: 'subscription_expiry', type: 'DATE' },
-      { table: 'dependents', column: 'billing_amount', type: 'DECIMAL(10,2) DEFAULT 50.00' },
-      { table: 'dependents', column: 'payment_reference', type: 'VARCHAR(255)' },
-      { table: 'dependents', column: 'activated_at', type: 'TIMESTAMP' }
-    ];
-    
-    for (const { table, column, type } of columnsToAdd) {
-      try {
-        await client.query(`
-          DO $$ 
-          BEGIN 
-            IF NOT EXISTS (
-              SELECT 1 FROM information_schema.columns 
-              WHERE table_name = '${table}' AND column_name = '${column}'
-            ) THEN
-              ALTER TABLE ${table} ADD COLUMN ${column} ${type};
-            END IF;
-          END $$;
-        `);
-      } catch (error) {
-        console.warn(`Warning: Could not add column ${column} to ${table}:`, error.message);
-      }
-    }
-    
-    // 8. Migrate old role data to roles array if needed
+    console.log('✅ All tables verified/created');
+
+    // 6. Migrate role to roles array if needed
     try {
       const roleColumnExists = await client.query(`
-        SELECT 1 FROM information_schema.columns 
+        SELECT column_name FROM information_schema.columns 
         WHERE table_name = 'users' AND column_name = 'role'
       `);
       
@@ -371,58 +341,29 @@ async function checkAndFixDatabaseStructure() {
         `);
         console.log('✅ Migrated role data to roles array');
       }
+      console.log('✅ Role migration completed');
     } catch (error) {
       console.warn('Warning: Could not migrate role data:', error.message);
     }
-    
-    // 9. Ensure foreign key constraints exist
-    const constraints = [
-      {
-        table: 'users',
-        constraint: 'fk_users_client_id',
-        definition: 'FOREIGN KEY (client_id) REFERENCES clients(client_id)'
-      },
-      {
-        table: 'dependents',
-        constraint: 'fk_dependents_client_id',
-        definition: 'FOREIGN KEY (client_id) REFERENCES clients(client_id) ON DELETE CASCADE'
-      },
-      {
-        table: 'consultations',
-        constraint: 'fk_consultations_client_id',
-        definition: 'FOREIGN KEY (client_id) REFERENCES clients(client_id)'
-      },
-      {
-        table: 'consultations',
-        constraint: 'fk_consultations_dependent_id',
-        definition: 'FOREIGN KEY (dependent_id) REFERENCES dependents(id)'
-      }
-    ];
-    
-    for (const { table, constraint, definition } of constraints) {
-      try {
-        await client.query(`
-          DO $$ 
-          BEGIN 
-            IF NOT EXISTS (
-              SELECT 1 FROM information_schema.table_constraints 
-              WHERE table_name = '${table}' AND constraint_name = '${constraint}'
-            ) THEN
-              ALTER TABLE ${table} ADD CONSTRAINT ${constraint} ${definition};
-            END IF;
-          END $$;
-        `);
-      } catch (error) {
-        console.warn(`Warning: Could not add constraint ${constraint}:`, error.message);
-      }
+
+    // 7. Set client_id for users who are clients (have 'client' role)
+    try {
+      await client.query(`
+        UPDATE users 
+        SET client_id = id 
+        WHERE 'client' = ANY(roles) AND client_id IS NULL
+      `);
+      console.log('✅ Client IDs synchronized for client users');
+    } catch (error) {
+      console.log('⚠️ Client ID sync not needed or failed:', error.message);
     }
-    
+
     await client.query('COMMIT');
-    console.log('✅ Database structure verified and corrected');
+    console.log('✅ Database structure verification completed');
     
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('❌ Error checking database structure:', error);
+    console.error('❌ Error in database structure verification:', error);
   } finally {
     client.release();
   }
@@ -836,24 +777,61 @@ app.get('/api/clients/lookup', authenticate, async (req, res) => {
     if (!cpf) {
       return res.status(400).json({ message: 'CPF é obrigatório' });
     }
-    
-    const cleanCpf = cpf.replace(/\D/g, '');
-    
-    const result = await pool.query(`
-      SELECT c.client_id, c.name, c.cpf, c.subscription_status, c.subscription_expiry,
-             u.id as user_id
-      FROM clients c
-      LEFT JOIN users u ON c.client_id = u.client_id
-      WHERE c.cpf = $1
-    `, [cleanCpf]);
-    
+
+    const result = await pool.query(
+      'SELECT id as client_id, name, cpf, subscription_status, subscription_expiry FROM users WHERE cpf = $1 AND \'client\' = ANY(roles)',
+      [cpf.replace(/\D/g, '')]
+    );
+
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Cliente não encontrado' });
     }
-    
-    res.json(result.rows[0]);
+
+    const client = result.rows[0];
+    res.json({
+      id: client.client_id, // This is actually users.id
+      name: client.name,
+      cpf: client.cpf,
+      subscription_status: client.subscription_status,
+      subscription_expiry: client.subscription_expiry
+    });
   } catch (error) {
     console.error('Error looking up client:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Get all clients (admin only)
+app.get('/api/clients', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id as client_id, name, cpf, email, phone, subscription_status, subscription_expiry, created_at
+      FROM users 
+      WHERE 'client' = ANY(roles)
+      ORDER BY created_at DESC
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching clients:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Update client subscription status
+app.put('/api/clients/:id/subscription', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { subscription_status, subscription_expiry } = req.body;
+
+    await pool.query(
+      'UPDATE users SET subscription_status = $1, subscription_expiry = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 AND \'client\' = ANY(roles)',
+      [subscription_status, subscription_expiry, id]
+    );
+
+    res.json({ message: 'Status de assinatura atualizado com sucesso' });
+  } catch (error) {
+    console.error('Error updating subscription status:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
@@ -865,18 +843,33 @@ app.get('/api/dependents/:clientId', authenticate, async (req, res) => {
   try {
     const { clientId } = req.params;
     
+    // Verify client exists and user has access
+    const clientCheck = await pool.query(
+      'SELECT id FROM users WHERE id = $1 AND \'client\' = ANY(roles)',
+      [clientId]
+    );
+
+    if (clientCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Cliente não encontrado' });
+    }
+
+    // Check if user has access (is the client or is admin)
+    if (req.user.currentRole !== 'admin' && req.user.id !== parseInt(clientId)) {
+      return res.status(403).json({ message: 'Acesso não autorizado' });
+    }
+
     const result = await pool.query(`
       SELECT d.*, 
              CASE 
-               WHEN d.subscription_expiry IS NOT NULL AND d.subscription_expiry < CURRENT_DATE 
-               THEN 'expired'
-               ELSE d.subscription_status 
+               WHEN d.subscription_status = 'active' AND d.subscription_expiry > CURRENT_DATE THEN 'active'
+               WHEN d.subscription_status = 'active' AND d.subscription_expiry <= CURRENT_DATE THEN 'expired'
+               ELSE d.subscription_status
              END as current_status
       FROM dependents d
       WHERE d.client_id = $1
       ORDER BY d.created_at DESC
     `, [clientId]);
-    
+
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching dependents:', error);
@@ -892,26 +885,21 @@ app.get('/api/dependents/lookup', authenticate, async (req, res) => {
     if (!cpf) {
       return res.status(400).json({ message: 'CPF é obrigatório' });
     }
-    
-    const cleanCpf = cpf.replace(/\D/g, '');
-    
+
     const result = await pool.query(`
-      SELECT d.id, d.name, d.cpf, d.client_id, d.subscription_status,
-             d.subscription_expiry, c.name as client_name,
-             CASE 
-               WHEN d.subscription_expiry IS NOT NULL AND d.subscription_expiry < CURRENT_DATE 
-               THEN 'expired'
-               ELSE d.subscription_status 
-             END as dependent_subscription_status
+      SELECT d.*, 
+             u.name as client_name,
+             u.subscription_status as client_subscription_status,
+             d.subscription_status as dependent_subscription_status
       FROM dependents d
-      JOIN clients c ON d.client_id = c.client_id
+      JOIN users u ON d.client_id = u.id
       WHERE d.cpf = $1
-    `, [cleanCpf]);
-    
+    `, [cpf.replace(/\D/g, '')]);
+
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Dependente não encontrado' });
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error looking up dependent:', error);
@@ -924,38 +912,45 @@ app.post('/api/dependents', authenticate, async (req, res) => {
   try {
     const { client_id, name, cpf, birth_date } = req.body;
     
-    if (!client_id || !name || !cpf) {
-      return res.status(400).json({ message: 'Client ID, nome e CPF são obrigatórios' });
+    // Verify client exists
+    const clientCheck = await pool.query(
+      'SELECT id FROM users WHERE id = $1 AND \'client\' = ANY(roles)',
+      [client_id]
+    );
+
+    if (clientCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Cliente não encontrado' });
     }
-    
-    const cleanCpf = cpf.replace(/\D/g, '');
-    
+
+    // Check if user has access (is the client or is admin)
+    if (req.user.currentRole !== 'admin' && req.user.id !== parseInt(client_id)) {
+      return res.status(403).json({ message: 'Acesso não autorizado' });
+    }
+
     // Check if CPF already exists
-    const existingDependent = await pool.query(
-      'SELECT id FROM dependents WHERE cpf = $1',
-      [cleanCpf]
-    );
-    
-    if (existingDependent.rows.length > 0) {
-      return res.status(409).json({ message: 'CPF já cadastrado como dependente' });
+    if (cpf) {
+      const cpfCheck = await pool.query(
+        'SELECT id FROM dependents WHERE cpf = $1',
+        [cpf]
+      );
+
+      if (cpfCheck.rows.length > 0) {
+        return res.status(400).json({ message: 'CPF já cadastrado' });
+      }
     }
-    
+
     const result = await pool.query(
-      `INSERT INTO dependents (client_id, name, cpf, birth_date, subscription_status, billing_amount) 
-       VALUES ($1, $2, $3, $4, 'pending', 50.00) 
+      `INSERT INTO dependents (client_id, name, cpf, birth_date, subscription_status, billing_amount)
+       VALUES ($1, $2, $3, $4, 'pending', 50.00)
        RETURNING *`,
-      [client_id, name, cleanCpf, birth_date]
+      [client_id, name, cpf, birth_date]
     );
-    
-    res.status(201).json({
-      message: 'Dependente criado com sucesso',
-      dependent: result.rows[0]
-    });
-    
+
+    res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error creating dependent:', error);
     if (error.code === '23505') {
-      res.status(409).json({ message: 'CPF já cadastrado' });
+      res.status(400).json({ message: 'CPF já cadastrado' });
     } else {
       res.status(500).json({ message: 'Erro interno do servidor' });
     }
@@ -967,24 +962,30 @@ app.put('/api/dependents/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, birth_date } = req.body;
-    
-    const result = await pool.query(
-      `UPDATE dependents 
-       SET name = $1, birth_date = $2, updated_at = CURRENT_TIMESTAMP 
-       WHERE id = $3 
-       RETURNING *`,
-      [name, birth_date, id]
+
+    // Get dependent to check client_id
+    const dependentCheck = await pool.query(
+      'SELECT client_id FROM dependents WHERE id = $1',
+      [id]
     );
-    
-    if (result.rows.length === 0) {
+
+    if (dependentCheck.rows.length === 0) {
       return res.status(404).json({ message: 'Dependente não encontrado' });
     }
-    
-    res.json({
-      message: 'Dependente atualizado com sucesso',
-      dependent: result.rows[0]
-    });
-    
+
+    const dependent = dependentCheck.rows[0];
+
+    // Check if user has access
+    if (req.user.currentRole !== 'admin' && req.user.id !== dependent.client_id) {
+      return res.status(403).json({ message: 'Acesso não autorizado' });
+    }
+
+    await pool.query(
+      'UPDATE dependents SET name = $1, birth_date = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
+      [name, birth_date, id]
+    );
+
+    res.json({ message: 'Dependente atualizado com sucesso' });
   } catch (error) {
     console.error('Error updating dependent:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
@@ -995,17 +996,102 @@ app.put('/api/dependents/:id', authenticate, async (req, res) => {
 app.delete('/api/dependents/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-    
-    const result = await pool.query('DELETE FROM dependents WHERE id = $1 RETURNING *', [id]);
-    
-    if (result.rows.length === 0) {
+
+    // Get dependent to check client_id
+    const dependentCheck = await pool.query(
+      'SELECT client_id FROM dependents WHERE id = $1',
+      [id]
+    );
+
+    if (dependentCheck.rows.length === 0) {
       return res.status(404).json({ message: 'Dependente não encontrado' });
     }
-    
+
+    const dependent = dependentCheck.rows[0];
+
+    // Check if user has access
+    if (req.user.currentRole !== 'admin' && req.user.id !== dependent.client_id) {
+      return res.status(403).json({ message: 'Acesso não autorizado' });
+    }
+
+    await pool.query('DELETE FROM dependents WHERE id = $1', [id]);
+
     res.json({ message: 'Dependente excluído com sucesso' });
   } catch (error) {
     console.error('Error deleting dependent:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Create dependent payment
+app.post('/api/dependents/:id/create-payment', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get dependent info
+    const dependentResult = await pool.query(`
+      SELECT d.*, 
+             u.name as client_name,
+             u.email as client_email
+      FROM dependents d
+      JOIN users u ON d.client_id = u.id
+      WHERE d.id = $1
+    `, [id]);
+
+    if (dependentResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Dependente não encontrado' });
+    }
+
+    const dependent = dependentResult.rows[0];
+
+    // Check if user has access
+    if (req.user.currentRole !== 'admin' && req.user.id !== dependent.client_id) {
+      return res.status(403).json({ message: 'Acesso não autorizado' });
+    }
+
+    // Create payment preference
+    const preference = {
+      items: [{
+        title: `Ativação de Dependente - ${dependent.name}`,
+        quantity: 1,
+        unit_price: 50.00,
+        currency_id: 'BRL'
+      }],
+      payer: {
+        name: dependent.client_name,
+        email: dependent.client_email || 'contato@quiroferreira.com.br'
+      },
+      back_urls: {
+        success: `${getBaseUrl()}/client?payment=success&type=dependent`,
+        failure: `${getBaseUrl()}/client?payment=failure&type=dependent`,
+        pending: `${getBaseUrl()}/client?payment=pending&type=dependent`
+      },
+      auto_return: 'approved',
+      notification_url: `${getBaseUrl()}/api/webhook/mercadopago`,
+      external_reference: `dependent_${dependent.id}`,
+      metadata: {
+        type: 'dependent_payment',
+        dependent_id: dependent.id,
+        client_id: dependent.client_id,
+        amount: 50.00
+      }
+    };
+
+    const response = await mercadopago.preferences.create(preference);
+    
+    // Store payment reference
+    await pool.query(
+      'UPDATE dependents SET payment_reference = $1 WHERE id = $2',
+      [response.body.id, dependent.id]
+    );
+
+    res.json({
+      preference_id: response.body.id,
+      init_point: response.body.init_point
+    });
+  } catch (error) {
+    console.error('Error creating dependent payment:', error);
+    res.status(500).json({ message: 'Erro ao criar pagamento' });
   }
 });
 
@@ -1015,150 +1101,60 @@ app.delete('/api/dependents/:id', authenticate, async (req, res) => {
 app.post('/api/create-subscription', authenticate, async (req, res) => {
   try {
     const { user_id } = req.body;
-    const urls = getProductionUrls();
     
-    // Get user and client data
-    const userResult = await pool.query(`
-      SELECT u.*, c.client_id 
-      FROM users u 
-      LEFT JOIN clients c ON u.client_id = c.client_id 
-      WHERE u.id = $1
-    `, [user_id]);
-    
+    // Get user info
+    const userResult = await pool.query(
+      'SELECT id, name, email, cpf FROM users WHERE id = $1',
+      [user_id]
+    );
+
     if (userResult.rows.length === 0) {
       return res.status(404).json({ message: 'Usuário não encontrado' });
     }
-    
+
     const user = userResult.rows[0];
-    
-    // Check if already has active subscription
-    if (user.subscription_status === 'active') {
-      return res.status(400).json({ message: 'Usuário já possui assinatura ativa' });
+
+    // Check if user has access
+    if (req.user.currentRole !== 'admin' && req.user.id !== parseInt(user_id)) {
+      return res.status(403).json({ message: 'Acesso não autorizado' });
     }
-    
+
+    // Create payment preference
     const preference = {
       items: [{
-        title: 'Assinatura Convênio Quiro Ferreira - Titular',
-        description: `Assinatura mensal para ${user.name}`,
+        title: 'Assinatura Cartão Quiro Ferreira - Titular',
         quantity: 1,
-        currency_id: 'BRL',
-        unit_price: 250.00
+        unit_price: 250.00,
+        currency_id: 'BRL'
       }],
       payer: {
         name: user.name,
-        email: user.email || 'cliente@cartaoquiroferreira.com.br',
-        identification: {
-          type: 'CPF',
-          number: user.cpf
-        }
+        email: user.email || 'contato@quiroferreira.com.br'
       },
       back_urls: {
-        success: `${urls.baseUrl}/client?payment=success&type=subscription`,
-        failure: `${urls.baseUrl}/client?payment=failure&type=subscription`,
-        pending: `${urls.baseUrl}/client?payment=pending&type=subscription`
+        success: `${getBaseUrl()}/client?payment=success&type=subscription`,
+        failure: `${getBaseUrl()}/client?payment=failure&type=subscription`,
+        pending: `${getBaseUrl()}/client?payment=pending&type=subscription`
       },
       auto_return: 'approved',
-      external_reference: `subscription_${user_id}_${Date.now()}`,
-      notification_url: `${urls.baseUrl}/api/webhooks/mercadopago`,
+      notification_url: `${getBaseUrl()}/api/webhook/mercadopago`,
+      external_reference: `subscription_${user.id}`,
       metadata: {
-        user_id: user_id,
-        client_id: user.client_id,
-        payment_type: 'subscription'
+        type: 'subscription_payment',
+        user_id: user.id,
+        client_id: user.id, // Same as user_id since no separate clients table
+        amount: 250.00
       }
     };
-    
+
     const response = await mercadopago.preferences.create(preference);
-    
-    // Save payment record
-    await pool.query(
-      `INSERT INTO client_payments (client_id, amount, payment_method, payment_reference, mercadopago_preference_id) 
-       VALUES ($1, $2, 'mercadopago', $3, $4)`,
-      [user.client_id, 250.00, preference.external_reference, response.body.id]
-    );
     
     res.json({
       preference_id: response.body.id,
       init_point: response.body.init_point
     });
-    
   } catch (error) {
     console.error('Error creating subscription payment:', error);
-    res.status(500).json({ message: 'Erro ao criar pagamento' });
-  }
-});
-
-// Create dependent payment
-app.post('/api/dependents/:id/create-payment', authenticate, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const urls = getProductionUrls();
-    
-    // Get dependent and client data
-    const result = await pool.query(`
-      SELECT d.*, c.name as client_name, c.cpf as client_cpf, c.email as client_email
-      FROM dependents d
-      JOIN clients c ON d.client_id = c.client_id
-      WHERE d.id = $1
-    `, [id]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Dependente não encontrado' });
-    }
-    
-    const dependent = result.rows[0];
-    
-    // Check if already active
-    if (dependent.subscription_status === 'active') {
-      return res.status(400).json({ message: 'Dependente já possui assinatura ativa' });
-    }
-    
-    const preference = {
-      items: [{
-        title: 'Ativação de Dependente - Convênio Quiro Ferreira',
-        description: `Ativação do dependente ${dependent.name}`,
-        quantity: 1,
-        currency_id: 'BRL',
-        unit_price: dependent.billing_amount || 50.00
-      }],
-      payer: {
-        name: dependent.client_name,
-        email: dependent.client_email || 'cliente@cartaoquiroferreira.com.br',
-        identification: {
-          type: 'CPF',
-          number: dependent.client_cpf
-        }
-      },
-      back_urls: {
-        success: `${urls.baseUrl}/client?payment=success&type=dependent`,
-        failure: `${urls.baseUrl}/client?payment=failure&type=dependent`,
-        pending: `${urls.baseUrl}/client?payment=pending&type=dependent`
-      },
-      auto_return: 'approved',
-      external_reference: `dependent_${id}_${Date.now()}`,
-      notification_url: `${urls.baseUrl}/api/webhooks/mercadopago`,
-      metadata: {
-        dependent_id: id,
-        client_id: dependent.client_id,
-        payment_type: 'dependent'
-      }
-    };
-    
-    const response = await mercadopago.preferences.create(preference);
-    
-    // Save payment record
-    await pool.query(
-      `INSERT INTO dependent_payments (dependent_id, client_id, amount, payment_method, payment_reference, mercadopago_preference_id) 
-       VALUES ($1, $2, $3, 'mercadopago', $4, $5)`,
-      [id, dependent.client_id, dependent.billing_amount || 50.00, preference.external_reference, response.body.id]
-    );
-    
-    res.json({
-      preference_id: response.body.id,
-      init_point: response.body.init_point
-    });
-    
-  } catch (error) {
-    console.error('Error creating dependent payment:', error);
     res.status(500).json({ message: 'Erro ao criar pagamento' });
   }
 });
@@ -1311,6 +1307,38 @@ app.post('/api/agenda/create-payment', authenticate, async (req, res) => {
 
 // ==================== CONSULTATION ROUTES ====================
 
+// Get consultations for a client
+app.get('/api/consultations/client/:clientId', authenticate, async (req, res) => {
+  try {
+    const { clientId } = req.params;
+    
+    // Check if user has access
+    if (req.user.currentRole !== 'admin' && req.user.id !== parseInt(clientId)) {
+      return res.status(403).json({ message: 'Acesso não autorizado' });
+    }
+
+    const result = await pool.query(`
+      SELECT c.*, 
+             s.name as service_name,
+             u.name as professional_name,
+             COALESCE(d.name, cl.name) as client_name,
+             CASE WHEN d.id IS NOT NULL THEN true ELSE false END as is_dependent
+      FROM consultations c
+      LEFT JOIN services s ON c.service_id = s.id
+      LEFT JOIN users u ON c.professional_id = u.id
+      LEFT JOIN users cl ON c.client_id = cl.id
+      LEFT JOIN dependents d ON c.dependent_id = d.id
+      WHERE c.client_id = $1 OR d.client_id = $1
+      ORDER BY c.date DESC
+    `, [clientId]);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching client consultations:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
 // Get all consultations
 app.get('/api/consultations', authenticate, async (req, res) => {
   try {
@@ -1323,7 +1351,7 @@ app.get('/api/consultations', authenticate, async (req, res) => {
              al.name as location_name,
              CASE WHEN d.id IS NOT NULL THEN true ELSE false END as is_dependent
       FROM consultations c
-      LEFT JOIN clients cl ON c.client_id = cl.client_id
+      LEFT JOIN users cl ON c.client_id = cl.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN services s ON c.service_id = s.id
@@ -1349,65 +1377,49 @@ app.get('/api/consultations', authenticate, async (req, res) => {
   }
 });
 
-// Get consultations by client
-app.get('/api/consultations/client/:clientId', authenticate, async (req, res) => {
-  try {
-    const { clientId } = req.params;
-    
-    const result = await pool.query(`
-      SELECT c.*, 
-             COALESCE(d.name, cl.name) as client_name,
-             s.name as service_name,
-             u.name as professional_name,
-             CASE WHEN d.id IS NOT NULL THEN true ELSE false END as is_dependent
-      FROM consultations c
-      LEFT JOIN clients cl ON c.client_id = cl.client_id
-      LEFT JOIN dependents d ON c.dependent_id = d.id
-      LEFT JOIN services s ON c.service_id = s.id
-      LEFT JOIN users u ON c.professional_id = u.id
-      WHERE c.client_id = $1 OR d.client_id = $1
-      ORDER BY c.date DESC
-    `, [clientId]);
-    
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching client consultations:', error);
-    res.status(500).json({ message: 'Erro interno do servidor' });
-  }
-});
-
 // Create consultation
-app.post('/api/consultations', authenticate, async (req, res) => {
+app.post('/api/consultations', authenticate, authorize(['professional', 'admin']), async (req, res) => {
   try {
-    const {
-      client_id, dependent_id, private_patient_id, service_id, location_id,
-      value, date, status = 'completed', notes
+    const { 
+      client_id, 
+      dependent_id, 
+      private_patient_id, 
+      service_id, 
+      location_id, 
+      value, 
+      date, 
+      status = 'completed',
+      notes 
     } = req.body;
-    
-    const professional_id = req.user.id;
-    
-    if (!service_id || !value || !date) {
-      return res.status(400).json({ message: 'Serviço, valor e data são obrigatórios' });
+
+    // Validate that we have either client_id, dependent_id, or private_patient_id
+    if (!client_id && !dependent_id && !private_patient_id) {
+      return res.status(400).json({ message: 'É necessário especificar um cliente, dependente ou paciente particular' });
     }
-    
-    if (!client_id && !private_patient_id) {
-      return res.status(400).json({ message: 'Cliente ou paciente particular é obrigatório' });
+
+    // If dependent_id is provided, get the client_id
+    let finalClientId = client_id;
+    if (dependent_id) {
+      const dependentResult = await pool.query(
+        'SELECT client_id FROM dependents WHERE id = $1',
+        [dependent_id]
+      );
+      
+      if (dependentResult.rows.length === 0) {
+        return res.status(404).json({ message: 'Dependente não encontrado' });
+      }
+      
+      finalClientId = dependentResult.rows[0].client_id;
     }
-    
+
     const result = await pool.query(
-      `INSERT INTO consultations (client_id, dependent_id, private_patient_id, professional_id, 
-       service_id, location_id, value, date, status, notes) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
+      `INSERT INTO consultations (client_id, dependent_id, private_patient_id, professional_id, service_id, location_id, value, date, status, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [client_id, dependent_id, private_patient_id, professional_id, service_id, 
-       location_id, value, date, status, notes]
+      [finalClientId, dependent_id, private_patient_id, req.user.id, service_id, location_id, value, date, status, notes]
     );
-    
-    res.status(201).json({
-      message: 'Consulta registrada com sucesso',
-      consultation: result.rows[0]
-    });
-    
+
+    res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error creating consultation:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
@@ -1415,30 +1427,40 @@ app.post('/api/consultations', authenticate, async (req, res) => {
 });
 
 // Update consultation status
-app.put('/api/consultations/:id/status', authenticate, async (req, res) => {
+app.put('/api/consultations/:id/status', authenticate, authorize(['professional', 'admin']), async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    
+
+    // Validate status
     const validStatuses = ['scheduled', 'confirmed', 'completed', 'cancelled'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ message: 'Status inválido' });
     }
-    
-    const result = await pool.query(
-      'UPDATE consultations SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
-      [status, id]
+
+    // Check if consultation exists and user has access
+    const consultationCheck = await pool.query(
+      'SELECT professional_id FROM consultations WHERE id = $1',
+      [id]
     );
-    
-    if (result.rows.length === 0) {
+
+    if (consultationCheck.rows.length === 0) {
       return res.status(404).json({ message: 'Consulta não encontrada' });
     }
-    
-    res.json({
-      message: 'Status atualizado com sucesso',
-      consultation: result.rows[0]
-    });
-    
+
+    const consultation = consultationCheck.rows[0];
+
+    // Check access (professional can only update their own consultations)
+    if (req.user.currentRole === 'professional' && req.user.id !== consultation.professional_id) {
+      return res.status(403).json({ message: 'Acesso não autorizado' });
+    }
+
+    await pool.query(
+      'UPDATE consultations SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [status, id]
+    );
+
+    res.json({ message: 'Status da consulta atualizado com sucesso' });
   } catch (error) {
     console.error('Error updating consultation status:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
@@ -2055,55 +2077,51 @@ app.delete('/api/attendance-locations/:id', authenticate, authorize(['profession
 app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, res) => {
   try {
     const { start_date, end_date } = req.query;
-    
+
     if (!start_date || !end_date) {
       return res.status(400).json({ message: 'Datas de início e fim são obrigatórias' });
     }
-    
+
+    // Get total revenue
+    const totalResult = await pool.query(
+      'SELECT COALESCE(SUM(value), 0) as total_revenue FROM consultations WHERE date >= $1 AND date <= $2',
+      [start_date, end_date]
+    );
+
     // Get revenue by professional
-    const professionalRevenue = await pool.query(`
+    const professionalResult = await pool.query(`
       SELECT 
         u.name as professional_name,
-        COALESCE(u.percentage, 50) as professional_percentage,
+        u.percentage as professional_percentage,
         COALESCE(SUM(c.value), 0) as revenue,
         COUNT(c.id) as consultation_count,
-        COALESCE(SUM(c.value * (COALESCE(u.percentage, 50) / 100)), 0) as professional_payment,
-        COALESCE(SUM(c.value * ((100 - COALESCE(u.percentage, 50)) / 100)), 0) as clinic_revenue
-      FROM users u
-      LEFT JOIN consultations c ON u.id = c.professional_id 
-        AND c.date >= $1 AND c.date <= $2
-        AND c.client_id IS NOT NULL
-      WHERE 'professional' = ANY(u.roles)
+        COALESCE(SUM(c.value * (u.percentage / 100)), 0) as professional_payment,
+        COALESCE(SUM(c.value * ((100 - u.percentage) / 100)), 0) as clinic_revenue
+      FROM consultations c
+      JOIN users u ON c.professional_id = u.id
+      WHERE c.date >= $1 AND c.date <= $2
       GROUP BY u.id, u.name, u.percentage
       ORDER BY revenue DESC
     `, [start_date, end_date]);
-    
+
     // Get revenue by service
-    const serviceRevenue = await pool.query(`
+    const serviceResult = await pool.query(`
       SELECT 
         s.name as service_name,
         COALESCE(SUM(c.value), 0) as revenue,
         COUNT(c.id) as consultation_count
-      FROM services s
-      LEFT JOIN consultations c ON s.id = c.service_id 
-        AND c.date >= $1 AND c.date <= $2
-        AND c.client_id IS NOT NULL
+      FROM consultations c
+      JOIN services s ON c.service_id = s.id
+      WHERE c.date >= $1 AND c.date <= $2
       GROUP BY s.id, s.name
-      HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
     `, [start_date, end_date]);
-    
-    // Calculate total revenue
-    const totalRevenue = professionalRevenue.rows.reduce(
-      (sum, prof) => sum + parseFloat(prof.revenue || 0), 0
-    );
-    
+
     res.json({
-      total_revenue: totalRevenue,
-      revenue_by_professional: professionalRevenue.rows,
-      revenue_by_service: serviceRevenue.rows
+      total_revenue: totalResult.rows[0].total_revenue,
+      revenue_by_professional: professionalResult.rows,
+      revenue_by_service: serviceResult.rows
     });
-    
   } catch (error) {
     console.error('Error generating revenue report:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
@@ -2227,20 +2245,19 @@ app.get('/api/reports/clients-by-city', authenticate, authorize(['admin']), asyn
   try {
     const result = await pool.query(`
       SELECT 
-        c.city,
-        c.state,
+        city,
+        state,
         COUNT(*) as client_count,
-        COUNT(CASE WHEN c.subscription_status = 'active' THEN 1 END) as active_clients,
-        COUNT(CASE WHEN c.subscription_status = 'pending' THEN 1 END) as pending_clients,
-        COUNT(CASE WHEN c.subscription_status = 'expired' OR 
-                    (c.subscription_expiry IS NOT NULL AND c.subscription_expiry < CURRENT_DATE) 
-               THEN 1 END) as expired_clients
-      FROM clients c
-      WHERE c.city IS NOT NULL AND c.city != ''
-      GROUP BY c.city, c.state
-      ORDER BY client_count DESC, c.city
+        COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
+        COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
+        COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
+      FROM users 
+      WHERE 'client' = ANY(roles)
+      AND city IS NOT NULL AND city != ''
+      GROUP BY city, state
+      ORDER BY client_count DESC, city
     `);
-    
+
     res.json(result.rows);
   } catch (error) {
     console.error('Error generating clients by city report:', error);
