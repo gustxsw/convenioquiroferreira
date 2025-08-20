@@ -1351,6 +1351,180 @@ app.put('/api/consultations/:id/status', authenticate, authorize(['professional'
   }
 });
 
+// Update consultation date and time
+app.put('/api/consultations/:id/reschedule', authenticate, authorize(['professional', 'admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { date, time } = req.body;
+
+    console.log('🔄 Rescheduling consultation:', { id, date, time });
+
+    if (!date || !time) {
+      return res.status(400).json({ message: 'Data e hora são obrigatórios' });
+    }
+
+    // Combine date and time
+    const newDateTime = new Date(`${date}T${time}`);
+    
+    // Validate that the new date is not in the past
+    if (newDateTime < new Date()) {
+      return res.status(400).json({ message: 'Não é possível agendar para uma data/hora no passado' });
+    }
+
+    const result = await pool.query(
+      'UPDATE consultations SET date = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
+      [newDateTime.toISOString(), id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Consulta não encontrada' });
+    }
+
+    console.log('✅ Consultation rescheduled:', result.rows[0]);
+
+    res.json({
+      message: 'Consulta reagendada com sucesso',
+      consultation: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error rescheduling consultation:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Create recurring consultations
+app.post('/api/consultations/recurring', authenticate, authorize(['professional', 'admin']), async (req, res) => {
+  try {
+    const {
+      client_id,
+      dependent_id,
+      private_patient_id,
+      service_id,
+      location_id,
+      value,
+      start_date,
+      start_time,
+      sessions_count,
+      recurrence_days, // Array of days: ['monday', 'wednesday', 'friday']
+      notes
+    } = req.body;
+
+    console.log('🔄 Creating recurring consultations:', req.body);
+
+    // Validate required fields
+    if (!service_id || !value || !start_date || !start_time || !sessions_count || !recurrence_days) {
+      return res.status(400).json({ message: 'Todos os campos obrigatórios devem ser preenchidos' });
+    }
+
+    if (sessions_count < 1 || sessions_count > 52) {
+      return res.status(400).json({ message: 'Número de sessões deve ser entre 1 e 52' });
+    }
+
+    if (!Array.isArray(recurrence_days) || recurrence_days.length === 0) {
+      return res.status(400).json({ message: 'Pelo menos um dia da semana deve ser selecionado' });
+    }
+
+    // Validate patient selection
+    if (!client_id && !private_patient_id) {
+      return res.status(400).json({ message: 'Cliente ou paciente particular deve ser selecionado' });
+    }
+
+    // Map day names to numbers (0 = Sunday, 1 = Monday, etc.)
+    const dayMap = {
+      'sunday': 0,
+      'monday': 1,
+      'tuesday': 2,
+      'wednesday': 3,
+      'thursday': 4,
+      'friday': 5,
+      'saturday': 6
+    };
+
+    const dayNumbers = recurrence_days.map(day => dayMap[day.toLowerCase()]).filter(num => num !== undefined);
+
+    if (dayNumbers.length === 0) {
+      return res.status(400).json({ message: 'Dias da semana inválidos' });
+    }
+
+    // Generate consultation dates
+    const consultationDates = [];
+    const startDateTime = new Date(`${start_date}T${start_time}`);
+    let currentDate = new Date(startDateTime);
+    let sessionsCreated = 0;
+
+    // Find next occurrence of the selected days
+    while (sessionsCreated < sessions_count) {
+      if (dayNumbers.includes(currentDate.getDay())) {
+        consultationDates.push(new Date(currentDate));
+        sessionsCreated++;
+      }
+      currentDate.setDate(currentDate.getDate() + 1);
+      
+      // Safety check to prevent infinite loop
+      if (consultationDates.length === 0 && currentDate > new Date(startDateTime.getTime() + (365 * 24 * 60 * 60 * 1000))) {
+        throw new Error('Não foi possível gerar as datas das consultas');
+      }
+    }
+
+    // Create all consultations in a transaction
+    const client = await pool.connect();
+    
+    try {
+      await client.query('BEGIN');
+
+      const createdConsultations = [];
+
+      for (let i = 0; i < consultationDates.length; i++) {
+        const consultationDate = consultationDates[i];
+        const sessionNumber = i + 1;
+        const sessionNotes = notes ? `${notes} (Sessão ${sessionNumber}/${sessions_count})` : `Sessão ${sessionNumber}/${sessions_count}`;
+
+        const result = await client.query(
+          `INSERT INTO consultations 
+           (client_id, dependent_id, private_patient_id, professional_id, service_id, location_id, value, date, status, notes, is_recurring, session_number, total_sessions, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+           RETURNING *`,
+          [
+            client_id || null,
+            dependent_id || null,
+            private_patient_id || null,
+            req.user.id,
+            service_id,
+            location_id || null,
+            value,
+            consultationDate.toISOString(),
+            'scheduled',
+            sessionNotes,
+            true,
+            sessionNumber,
+            sessions_count
+          ]
+        );
+
+        createdConsultations.push(result.rows[0]);
+      }
+
+      await client.query('COMMIT');
+
+      console.log('✅ Recurring consultations created:', createdConsultations.length);
+
+      res.status(201).json({
+        message: `${createdConsultations.length} consultas recorrentes criadas com sucesso`,
+        consultations: createdConsultations
+      });
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+  } catch (error) {
+    console.error('Error creating recurring consultations:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
 // ==================== PRIVATE PATIENTS ROUTES ====================
 
 app.get('/api/private-patients', authenticate, authorize(['professional']), async (req, res) => {
