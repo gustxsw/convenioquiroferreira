@@ -803,6 +803,23 @@ app.get('/api/clients/lookup', authenticate, async (req, res) => {
   }
 });
 
+// Get all clients for professional
+app.get('/api/clients', authenticate, authorize(['professional', 'admin']), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, name, cpf, phone, subscription_status
+      FROM users 
+      WHERE 'client' = ANY(roles)
+      ORDER BY name
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching clients:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
 // ==================== DEPENDENTS ROUTES ====================
 
 app.get('/api/dependents/:clientId', authenticate, async (req, res) => {
