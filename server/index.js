@@ -585,32 +585,28 @@ app.post('/api/auth/register', async (req, res) => {
       await client.query('BEGIN');
       
       // Create client record
-      const clientResult = await client.query(
-        `INSERT INTO clients (name, cpf, email, phone, birth_date, address, address_number, 
-         address_complement, neighborhood, city, state, subscription_status) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending') 
-         RETURNING client_id`,
+      const clientResult = await pool.query(
+        `INSERT INTO users (name, cpf, email, phone, birth_date, address, address_number, 
+         address_complement, neighborhood, city, state, password, roles, subscription_status) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, ARRAY['client'], 'pending') 
+         RETURNING id`,
         [name, cleanCpf, email, phone, birth_date, address, address_number, 
-         address_complement, neighborhood, city, state]
+         address_complement, neighborhood, city, state, hashedPassword]
       );
       
-      const clientId = clientResult.rows[0].client_id;
+      const userId = clientResult.rows[0].id;
       
-      // Create user record linked to client
-      const userResult = await client.query(
-        `INSERT INTO users (client_id, name, cpf, email, phone, birth_date, address, 
-         address_number, address_complement, neighborhood, city, state, password, roles, subscription_status) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, ARRAY['client'], 'pending') 
-         RETURNING id`,
-        [clientId, name, cleanCpf, email, phone, birth_date, address, 
-         address_number, address_complement, neighborhood, city, state, hashedPassword]
+      // Set client_id to same as user id
+      await client.query(
+        'UPDATE users SET client_id = $1 WHERE id = $1',
+        [userId]
       );
       
       await client.query('COMMIT');
       
       const userData = {
-        id: userResult.rows[0].id,
-        client_id: clientId,
+        id: userId,
+        client_id: userId,
         name,
         cpf: cleanCpf,
         roles: ['client']
@@ -651,9 +647,8 @@ app.get('/api/users', authenticate, authorize(['admin']), async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT u.id, u.name, u.cpf, u.email, u.phone, u.roles, u.subscription_status, 
-             u.subscription_expiry, u.created_at, c.client_id
+             u.subscription_expiry, u.created_at, u.client_id
       FROM users u
-      LEFT JOIN clients c ON u.client_id = c.client_id
       ORDER BY u.created_at DESC
     `);
     
@@ -670,9 +665,8 @@ app.get('/api/users/:id', authenticate, async (req, res) => {
     const { id } = req.params;
     
     const result = await pool.query(`
-      SELECT u.*, c.client_id, sc.name as category_name
+      SELECT u.*, sc.name as category_name
       FROM users u
-      LEFT JOIN clients c ON u.client_id = c.client_id
       LEFT JOIN service_categories sc ON u.category_id = sc.id
       WHERE u.id = $1
     `, [id]);
@@ -751,11 +745,8 @@ app.get('/api/users/:id/subscription-status', authenticate, async (req, res) => 
     const { id } = req.params;
     const result = await pool.query(
       'SELECT subscription_status, subscription_expiry FROM users WHERE id = $1',
-      [userId]
+      [id]
     );
-      LEFT JOIN clients c ON u.client_id = c.client_id
-      WHERE u.id = $1
-    `, [id]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Usuário não encontrado' });
@@ -844,11 +835,11 @@ app.get('/api/dependents/:clientId', authenticate, async (req, res) => {
   try {
     const { clientId } = req.params;
     
-    // Verify client exists and user has access
-      `SELECT d.*, u.subscription_status as client_subscription_status 
-       FROM dependents d 
-       LEFT JOIN users u ON d.client_id = u.id 
-       WHERE d.client_id = $1 
+    // Verify client exists and u\ser has access
+    const clientCheck = await pool.query(
+      'SELECT id FROM users WHERE id = $1 AND \'client\' = ANY(roles)',
+      [clientId]
+    );
 
     if (clientCheck.rows.length === 0) {
       return res.status(404).json({ message: 'Cliente não encontrado' });
@@ -1063,12 +1054,12 @@ app.post('/api/dependents/:id/create-payment', authenticate, async (req, res) =>
         email: dependent.client_email || 'contato@quiroferreira.com.br'
       },
       back_urls: {
-        success: `${getBaseUrl()}/client?payment=success&type=dependent`,
-        failure: `${getBaseUrl()}/client?payment=failure&type=dependent`,
-        pending: `${getBaseUrl()}/client?payment=pending&type=dependent`
+        success: `${getProductionUrls().baseUrl}/client?payment=success&type=dependent`,
+        failure: `${getProductionUrls().baseUrl}/client?payment=failure&type=dependent`,
+        pending: `${getProductionUrls().baseUrl}/client?payment=pending&type=dependent`
       },
       auto_return: 'approved',
-      notification_url: `${getBaseUrl()}/api/webhook/mercadopago`,
+      notification_url: `${getProductionUrls().baseUrl}/api/webhook/mercadopago`,
       external_reference: `dependent_${dependent.id}`,
       metadata: {
         type: 'dependent_payment',
@@ -1134,12 +1125,12 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
         email: user.email || 'contato@quiroferreira.com.br'
       },
       back_urls: {
-        success: `${getBaseUrl()}/client?payment=success&type=subscription`,
-        failure: `${getBaseUrl()}/client?payment=failure&type=subscription`,
-        pending: `${getBaseUrl()}/client?payment=pending&type=subscription`
+        success: `${getProductionUrls().baseUrl}/client?payment=success&type=subscription`,
+        failure: `${getProductionUrls().baseUrl}/client?payment=failure&type=subscription`,
+        pending: `${getProductionUrls().baseUrl}/client?payment=pending&type=subscription`
       },
       auto_return: 'approved',
-      notification_url: `${getBaseUrl()}/api/webhook/mercadopago`,
+      notification_url: `${getProductionUrls().baseUrl}/api/webhook/mercadopago`,
       external_reference: `subscription_${user.id}`,
       metadata: {
         type: 'subscription_payment',
@@ -1244,10 +1235,10 @@ app.post('/api/agenda/create-payment', authenticate, async (req, res) => {
     
     // Get consultation and client data
     const result = await pool.query(`
-      SELECT c.*, cl.name as client_name, cl.cpf as client_cpf, cl.email as client_email,
+      SELECT c.*, u.name as client_name, u.cpf as client_cpf, u.email as client_email,
              s.name as service_name
       FROM consultations c
-      JOIN clients cl ON c.client_id = cl.client_id
+      JOIN users u ON c.client_id = u.id
       JOIN services s ON c.service_id = s.id
       WHERE c.id = $1
     `, [consultation_id]);
@@ -1322,17 +1313,18 @@ app.get('/api/consultations/client/:clientId', authenticate, async (req, res) =>
       return res.status(403).json({ message: 'Acesso não autorizado' });
     }
 
-        COALESCE(client_user.name, d.name, pp.name) as client_name,
+    const result = await pool.query(`
       SELECT c.*, 
              s.name as service_name,
              u.name as professional_name,
-             COALESCE(d.name, cl.name) as client_name,
+             COALESCE(d.name, client_user.name, pp.name) as client_name,
              CASE WHEN d.id IS NOT NULL THEN true ELSE false END as is_dependent
       FROM consultations c
       LEFT JOIN services s ON c.service_id = s.id
       LEFT JOIN users u ON c.professional_id = u.id
-       LEFT JOIN users client_user ON c.client_id = client_user.id
+      LEFT JOIN users client_user ON c.client_id = client_user.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
+      LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       WHERE c.client_id = $1 OR d.client_id = $1
       ORDER BY c.date DESC
     `, [clientId]);
@@ -1418,7 +1410,7 @@ app.post('/api/consultations', authenticate, authorize(['professional', 'admin']
     }
 
     const result = await pool.query(
-      `INSERT INTO consultations (client_id, dependent_id, private_patient_id, professional_id, service_id, location_id, value, date, status, notes)
+      \`INSERT INTO consultations (client_id, dependent_id, private_patient_id, professional_id, service_id, location_id, value, date, status, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
       [finalClientId, dependent_id, private_patient_id, req.user.id, service_id, location_id, value, date, status, notes]
@@ -1501,7 +1493,7 @@ app.post('/api/services', authenticate, authorize(['admin']), async (req, res) =
     }
     
     const result = await pool.query(
-      `INSERT INTO services (name, description, base_price, category_id, is_base_service) 
+      \`INSERT INTO services (name, description, base_price, category_id, is_base_service) 
        VALUES ($1, $2, $3, $4, $5) 
        RETURNING *`,
       [name, description, base_price, category_id, is_base_service || false]
@@ -1525,7 +1517,7 @@ app.put('/api/services/:id', authenticate, authorize(['admin']), async (req, res
     const { name, description, base_price, category_id, is_base_service } = req.body;
     
     const result = await pool.query(
-      `UPDATE services 
+      \`UPDATE services 
        SET name = $1, description = $2, base_price = $3, category_id = $4, is_base_service = $5 
        WHERE id = $6 
        RETURNING *`,
@@ -1655,7 +1647,7 @@ app.post('/api/private-patients', authenticate, authorize(['professional']), asy
     }
     
     const result = await pool.query(
-      `INSERT INTO private_patients (professional_id, name, cpf, email, phone, birth_date, 
+      \`INSERT INTO private_patients (professional_id, name, cpf, email, phone, birth_date, 
        address, address_number, address_complement, neighborhood, city, state, zip_code) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) 
        RETURNING *`,
@@ -1684,7 +1676,7 @@ app.put('/api/private-patients/:id', authenticate, authorize(['professional']), 
     } = req.body;
     
     const result = await pool.query(
-      `UPDATE private_patients 
+      \`UPDATE private_patients 
        SET name = $1, email = $2, phone = $3, birth_date = $4, address = $5, 
            address_number = $6, address_complement = $7, neighborhood = $8, 
            city = $9, state = $10, zip_code = $11, updated_at = CURRENT_TIMESTAMP
@@ -1770,7 +1762,7 @@ app.post('/api/medical-records', authenticate, authorize(['professional']), asyn
     }
     
     const result = await pool.query(
-      `INSERT INTO medical_records (professional_id, private_patient_id, patient_name, 
+      \`INSERT INTO medical_records (professional_id, private_patient_id, patient_name, 
        chief_complaint, history_present_illness, past_medical_history, medications, 
        allergies, physical_examination, diagnosis, treatment_plan, notes, vital_signs) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) 
@@ -1801,7 +1793,7 @@ app.put('/api/medical-records/:id', authenticate, authorize(['professional']), a
     } = req.body;
     
     const result = await pool.query(
-      `UPDATE medical_records 
+      \`UPDATE medical_records 
        SET chief_complaint = $1, history_present_illness = $2, past_medical_history = $3,
            medications = $4, allergies = $5, physical_examination = $6, diagnosis = $7,
            treatment_plan = $8, notes = $9, vital_signs = $10, updated_at = CURRENT_TIMESTAMP
@@ -1909,7 +1901,7 @@ app.post('/api/medical-documents', authenticate, authorize(['professional']), as
     const document = await generateDocumentPDF(document_type, template_data);
     
     const result = await pool.query(
-      `INSERT INTO medical_documents (professional_id, private_patient_id, title, document_type, document_url) 
+      \`INSERT INTO medical_documents (professional_id, private_patient_id, title, document_type, document_url) 
        VALUES ($1, $2, $3, $4, $5) 
        RETURNING *`,
       [req.user.id, private_patient_id, title, document_type, document.url]
@@ -1971,7 +1963,7 @@ app.post('/api/attendance-locations', authenticate, authorize(['professional']),
       }
       
       const result = await client.query(
-        `INSERT INTO attendance_locations (professional_id, name, address, address_number, 
+        \`INSERT INTO attendance_locations (professional_id, name, address, address_number, 
          address_complement, neighborhood, city, state, zip_code, phone, is_default) 
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
          RETURNING *`,
@@ -2022,7 +2014,7 @@ app.put('/api/attendance-locations/:id', authenticate, authorize(['professional'
       }
       
       const result = await client.query(
-        `UPDATE attendance_locations 
+        \`UPDATE attendance_locations 
          SET name = $1, address = $2, address_number = $3, address_complement = $4,
              neighborhood = $5, city = $6, state = $7, zip_code = $8, phone = $9, is_default = $10
          WHERE id = $11 AND professional_id = $12 
@@ -2163,7 +2155,7 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
                ELSE 0
              END as amount_to_pay
       FROM consultations c
-      LEFT JOIN clients cl ON c.client_id = cl.client_id
+      LEFT JOIN users cl ON c.client_id = cl.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN services s ON c.service_id = s.id
@@ -2253,13 +2245,12 @@ app.get('/api/reports/clients-by-city', authenticate, authorize(['admin']), asyn
         city,
         state,
         COUNT(*) as client_count,
-        COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
-        COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
-        COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
+        COUNT(CASE WHEN subscription_status = 'active\' THEN 1 END) as active_clients,
+        COUNT(CASE WHEN subscription_status = 'pending\' THEN 1 END) as pending_clients,
+        COUNT(CASE WHEN subscription_status = 'expired\' THEN 1 END) as expired_clients
       FROM users 
       WHERE 'client' = ANY(roles)
-      AND city IS NOT NULL AND city != ''
-        AND 'client' = ANY(roles)
+        AND city IS NOT NULL AND city != ''
       GROUP BY city, state
       ORDER BY client_count DESC, city
     `);
@@ -2328,9 +2319,9 @@ app.get('/api/reports/professionals-by-city', authenticate, authorize(['admin'])
 app.get('/api/admin/dependents', authenticate, authorize(['admin']), async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT d.*, c.name as client_name
+      SELECT d.*, u.name as client_name
       FROM dependents d
-      JOIN clients c ON d.client_id = c.client_id
+      JOIN users u ON d.client_id = u.id
       ORDER BY d.created_at DESC
     `);
     
@@ -2476,25 +2467,17 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
               const expiryDate = new Date();
               expiryDate.setFullYear(expiryDate.getFullYear() + 1);
               
-              await client.query(
-                `UPDATE users 
+ \             await client.query(
+                \`UPDATE users 
                  SET subscription_status = 'active', subscription_expiry = $1 
                  WHERE id = $2`,
                 [expiryDate, userId]
               );
               
-              // Update client subscription
-              await client.query(
-                `UPDATE clients 
-                 SET subscription_status = 'active', subscription_expiry = $1 
-                 WHERE client_id = (SELECT client_id FROM users WHERE id = $2)`,
-                [expiryDate, userId]
-              );
-              
               // Update payment record
               await client.query(
-                `UPDATE client_payments 
-                 SET payment_status = 'approved', mercadopago_payment_id = $1, paid_at = CURRENT_TIMESTAMP 
+                \`UPDATE client_payments 
+                 SET payment_status = 'approved', mp_payment_id = $1, paid_at = CURRENT_TIMESTAMP 
                  WHERE payment_reference = $2`,
                 [paymentId, externalReference]
               );
@@ -2523,7 +2506,7 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
               expiryDate.setFullYear(expiryDate.getFullYear() + 1);
               
               await client.query(
-                `UPDATE dependents 
+                \`UPDATE dependents 
                  SET subscription_status = 'active', subscription_expiry = $1, activated_at = CURRENT_TIMESTAMP 
                  WHERE id = $2`,
                 [expiryDate, dependentId]
@@ -2531,8 +2514,8 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
               
               // Update payment record
               await client.query(
-                `UPDATE dependent_payments 
-                 SET payment_status = 'approved', mercadopago_payment_id = $1, paid_at = CURRENT_TIMESTAMP 
+                \`UPDATE dependent_payments 
+                 SET payment_status = 'approved', mp_payment_id = $1, paid_at = CURRENT_TIMESTAMP 
                  WHERE payment_reference = $2`,
                 [paymentId, externalReference]
               );
@@ -2550,7 +2533,7 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
         } else if (externalReference.startsWith('professional_')) {
           // Handle professional payment
           await pool.query(
-            `UPDATE professional_payments 
+            \`UPDATE professional_payments 
              SET payment_status = 'approved', mercadopago_payment_id = $1, paid_at = CURRENT_TIMESTAMP 
              WHERE payment_reference = $2`,
             [paymentId, externalReference]
@@ -2560,8 +2543,8 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
         } else if (externalReference.startsWith('agenda_')) {
           // Handle agenda payment
           await pool.query(
-            `UPDATE agenda_payments 
-             SET payment_status = 'approved', mercadopago_payment_id = $1, paid_at = CURRENT_TIMESTAMP 
+            \`UPDATE agenda_payments 
+             SET payment_status = 'approved', mp_payment_id = $1, paid_at = CURRENT_TIMESTAMP 
              WHERE payment_reference = $2`,
             [paymentId, externalReference]
           );
@@ -2602,9 +2585,9 @@ async function startServer() {
     
     // Start server
     app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`🔗 Base URL: ${getProductionUrls().baseUrl}`);
+      console.log(\`🚀 Server running on port ${PORT}`);
+      console.log(\`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(\`🔗 Base URL: ${getProductionUrls().baseUrl}`);
     });
     
   } catch (error) {
