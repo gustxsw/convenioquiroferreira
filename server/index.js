@@ -2256,14 +2256,14 @@ app.post('/api/agenda/create-payment', authenticate, async (req, res) => {
       external_reference: `agenda_${professional_id}_${Date.now()}`,
       back_urls: {
         success: process.env.NODE_ENV === 'production' 
-          ? 'https://cartaoquiroferreira.com.br/client?payment=success&type=agenda'
-          : 'http://localhost:5173/client?payment=success&type=agenda',
+          ? 'https://cartaoquiroferreira.com.br/professional?payment=success&type=agenda'
+          : 'http://localhost:5173/professional?payment=success&type=agenda',
         failure: process.env.NODE_ENV === 'production'
-          ? 'https://cartaoquiroferreira.com.br/client?payment=failure&type=agenda'
-          : 'http://localhost:5173/client?payment=failure&type=agenda',
+          ? 'https://cartaoquiroferreira.com.br/professional?payment=failure&type=agenda'
+          : 'http://localhost:5173/professional?payment=failure&type=agenda',
         pending: process.env.NODE_ENV === 'production'
-          ? 'https://cartaoquiroferreira.com.br/client?payment=pending&type=agenda'
-          : 'http://localhost:5173/client?payment=pending&type=agenda'
+          ? 'https://cartaoquiroferreira.com.br/professional?payment=pending&type=agenda'
+          : 'http://localhost:5173/professional?payment=pending&type=agenda'
       },
       auto_return: 'approved',
       notification_url: process.env.NODE_ENV === 'production'
