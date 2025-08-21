@@ -2757,7 +2757,8 @@ app.post("/api/dependents/:id/create-payment", authenticate, async (req, res) =>
     const preferenceData = {
       items: [
         {
-          title: \`Ativação de Dependente - ${dependent.name}`,
+          title: `Ativação de Dependente - ${dependent.name}`,
+          description: `Ativação da assinatura do dependente ${dependent.name}`,
           quantity: 1,
           unit_price: dependent.billing_amount || 50,
           currency_id: "BRL",
@@ -2768,13 +2769,13 @@ app.post("/api/dependents/:id/create-payment", authenticate, async (req, res) =>
         email: dependent.client_email || "cliente@quiroferreira.com.br",
       },
       back_urls: {
-        success: \`${req.protocol}://${req.get("host")}/client?payment=success&type=dependent`,
-        failure: \`${req.protocol}://${req.get("host")}/client?payment=failure&type=dependent`,
-        pending: \`${req.protocol}://${req.get("host")}/client?payment=pending&type=dependent`,
+        success: `${req.protocol}://${req.get("host")}/client?payment=success&type=dependent`,
+        failure: `${req.protocol}://${req.get("host")}/client?payment=failure&type=dependent`,
+        pending: `${req.protocol}://${req.get("host")}/client?payment=pending&type=dependent`,
       },
       auto_return: "approved",
-      external_reference: \`dependent_${id}`,
-      notification_url: \`${req.protocol}://${req.get("host")}/api/webhooks/mercadopago`,
+      external_reference: `dependent_${id}`,
+      notification_url: `${req.protocol}://${req.get("host")}/api/webhooks/mercadopago`,
     };
 
     const result = await preference.create({ body: preferenceData });
@@ -2826,7 +2827,7 @@ app.post(
       const preferenceData = {
         items: [
           {
-            title: \`Repasse ao Convênio - ${user.name}`,
+            title: `Repasse ao Convênio - ${user.name}`,
             quantity: 1,
             unit_price: parseFloat(amount),
             currency_id: "BRL",
@@ -2837,13 +2838,13 @@ app.post(
           email: user.email || "profissional@quiroferreira.com.br",
         },
         back_urls: {
-          success: \`${req.protocol}://${req.get("host")}/professional?payment=success&type=professional`,
-          failure: \`${req.protocol}://${req.get("host")}/professional?payment=failure&type=professional`,
-          pending: \`${req.protocol}://${req.get("host")}/professional?payment=pending&type=professional`,
+          success: `${req.protocol}://${req.get("host")}/professional?payment=success&type=professional`,
+          failure: `${req.protocol}://${req.get("host")}/professional?payment=failure&type=professional`,
+          pending: `${req.protocol}://${req.get("host")}/professional?payment=pending&type=professional`,
         },
         auto_return: "approved",
-        external_reference: \`professional_${req.user.id}`,
-        notification_url: \`${req.protocol}://${req.get("host")}/api/webhooks/mercadopago`,
+        external_reference: `professional_${req.user.id}`,
+        notification_url: `${req.protocol}://${req.get("host")}/api/webhooks/mercadopago`,
       };
 
       const result = await preference.create({ body: preferenceData });
@@ -2892,7 +2893,7 @@ app.post("/api/agenda/create-payment", authenticate, async (req, res) => {
     const preferenceData = {
       items: [
         {
-          title: \`Acesso à Agenda - ${user.name}`,
+          title: `Acesso à Agenda - ${user.name}`,
           quantity: 1,
           unit_price: parseFloat(amount),
           currency_id: "BRL",
@@ -2903,13 +2904,13 @@ app.post("/api/agenda/create-payment", authenticate, async (req, res) => {
         email: user.email || "profissional@quiroferreira.com.br",
       },
       back_urls: {
-        success: \`${req.protocol}://${req.get("host")}/professional?payment=success&type=agenda`,
-        failure: \`${req.protocol}://${req.get("host")}/professional?payment=failure&type=agenda`,
-        pending: \`${req.protocol}://${req.get("host")}/professional?payment=pending&type=agenda`,
+        success: `${req.protocol}://${req.get("host")}/professional?payment=success&type=agenda`,
+        failure: `${req.protocol}://${req.get("host")}/professional?payment=failure&type=agenda`,
+        pending: `${req.protocol}://${req.get("host")}/professional?payment=pending&type=agenda`,
       },
       auto_return: "approved",
-      external_reference: \`agenda_${req.user.id}`,
-      notification_url: \`${req.protocol}://${req.get("host")}/api/webhooks/mercadopago`,
+      external_reference: `agenda_${req.user.id}`,
+      notification_url: `${req.protocol}://${req.get("host")}/api/webhooks/mercadopago`,
     };
 
     const result = await preference.create({ body: preferenceData });
@@ -2958,7 +2959,7 @@ app.post("/api/webhooks/mercadopago", async (req, res) => {
           expiryDate.setFullYear(expiryDate.getFullYear() + 1);
 
           await pool.query(
-            \`UPDATE users 
+            `UPDATE users 
              SET subscription_status = 'active', 
                  subscription_expiry = $1,
                  updated_at = NOW()
@@ -2977,7 +2978,7 @@ app.post("/api/webhooks/mercadopago", async (req, res) => {
           expiryDate.setFullYear(expiryDate.getFullYear() + 1);
 
           await pool.query(
-            \`UPDATE dependents 
+            `UPDATE dependents 
              SET subscription_status = 'active',
                  subscription_expiry = $1,
                  activated_at = NOW(),
@@ -2994,7 +2995,7 @@ app.post("/api/webhooks/mercadopago", async (req, res) => {
           const professionalId = externalReference.replace("professional_", "");
 
           await pool.query(
-            \`UPDATE users 
+            `UPDATE users 
              SET amount_to_pay = 0,
                  last_payment_date = NOW(),
                  updated_at = NOW()
@@ -3013,7 +3014,7 @@ app.post("/api/webhooks/mercadopago", async (req, res) => {
           expiryDate.setMonth(expiryDate.getMonth() + 1);
 
           await pool.query(
-            \`INSERT INTO scheduling_access (professional_id, has_access, expires_at, granted_by, granted_at, reason)
+            `INSERT INTO scheduling_access (professional_id, has_access, expires_at, granted_by, granted_at, reason)
              VALUES ($1, true, $2, $1, NOW(), 'Pagamento da agenda')
              ON CONFLICT (professional_id) 
              DO UPDATE SET 
@@ -3094,6 +3095,6 @@ app.get("*", (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(\`🚀 Server running on port ${PORT}`);
-  console.log(\`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
 });
