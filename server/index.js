@@ -97,6 +97,136 @@ const ensureDatabaseColumns = async () => {
   }
 };
 
+// Function to add missing columns
+const addMissingColumns = async () => {
+  try {
+    console.log('🔄 Checking and adding missing columns...');
+    
+    // Add has_access column to scheduling_access table
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'scheduling_access' AND column_name = 'has_access'
+        ) THEN
+          ALTER TABLE scheduling_access ADD COLUMN has_access BOOLEAN DEFAULT true;
+          UPDATE scheduling_access SET has_access = true WHERE has_access IS NULL;
+          ALTER TABLE scheduling_access ALTER COLUMN has_access SET NOT NULL;
+          RAISE NOTICE 'Added has_access column to scheduling_access table';
+        END IF;
+      END $$;
+    `);
+    
+    // Add expires_at column to scheduling_access table
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'scheduling_access' AND column_name = 'expires_at'
+        ) THEN
+          ALTER TABLE scheduling_access ADD COLUMN expires_at TIMESTAMPTZ;
+          RAISE NOTICE 'Added expires_at column to scheduling_access table';
+        END IF;
+      END $$;
+    `);
+    
+    // Add granted_by column to scheduling_access table
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'scheduling_access' AND column_name = 'granted_by'
+        ) THEN
+          ALTER TABLE scheduling_access ADD COLUMN granted_by INTEGER REFERENCES users(id);
+          RAISE NOTICE 'Added granted_by column to scheduling_access table';
+        END IF;
+      END $$;
+    `);
+    
+    // Add reason column to scheduling_access table
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'scheduling_access' AND column_name = 'reason'
+        ) THEN
+          ALTER TABLE scheduling_access ADD COLUMN reason TEXT;
+          RAISE NOTICE 'Added reason column to scheduling_access table';
+        END IF;
+      END $$;
+    `);
+    
+    // Add subscription_status column to dependents table
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'dependents' AND column_name = 'subscription_status'
+        ) THEN
+          ALTER TABLE dependents ADD COLUMN subscription_status TEXT DEFAULT 'pending';
+          UPDATE dependents SET subscription_status = 'pending' WHERE subscription_status IS NULL;
+          ALTER TABLE dependents ALTER COLUMN subscription_status SET NOT NULL;
+          RAISE NOTICE 'Added subscription_status column to dependents table';
+        END IF;
+      END $$;
+    `);
+    
+    // Add billing_amount column to dependents table
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'dependents' AND column_name = 'billing_amount'
+        ) THEN
+          ALTER TABLE dependents ADD COLUMN billing_amount DECIMAL(10,2) DEFAULT 50.00;
+          UPDATE dependents SET billing_amount = 50.00 WHERE billing_amount IS NULL;
+          ALTER TABLE dependents ALTER COLUMN billing_amount SET NOT NULL;
+          RAISE NOTICE 'Added billing_amount column to dependents table';
+        END IF;
+      END $$;
+    `);
+    
+    // Add category_name column to users table
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'users' AND column_name = 'category_name'
+        ) THEN
+          ALTER TABLE users ADD COLUMN category_name TEXT;
+          RAISE NOTICE 'Added category_name column to users table';
+        END IF;
+      END $$;
+    `);
+    
+    // Add category_id column to users table
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'users' AND column_name = 'category_id'
+        ) THEN
+          ALTER TABLE users ADD COLUMN category_id INTEGER REFERENCES service_categories(id);
+          RAISE NOTICE 'Added category_id column to users table';
+        END IF;
+      END $$;
+    `);
+    
+    console.log('✅ Missing columns check completed');
+  } catch (error) {
+    console.error('❌ Error adding missing columns:', error);
+    // Don't throw error to prevent server startup failure
+  }
+};
+
 // Executar verificação de colunas na inicialização
 ensureDatabaseColumns();
 
