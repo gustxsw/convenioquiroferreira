@@ -1765,6 +1765,18 @@ app.delete(
     try {
       const { id } = req.params;
 
+      // Check if service is being used in consultations
+      const consultationCheck = await pool.query(
+        "SELECT COUNT(*) as count FROM consultations WHERE service_id = $1",
+        [id]
+      );
+
+      if (parseInt(consultationCheck.rows[0].count) > 0) {
+        return res.status(400).json({
+          message: "Não é possível excluir este serviço pois ele possui consultas registradas",
+        });
+      }
+
       const result = await pool.query(
         "DELETE FROM services WHERE id = $1 RETURNING id",
         [id]
@@ -1840,11 +1852,13 @@ app.get("/api/professionals", authenticate, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
-        id, name, email, phone, address, address_number, address_complement,
-        neighborhood, city, state, category_name, photo_url
-      FROM users 
-      WHERE 'professional' = ANY(roles)
-      ORDER BY name
+        u.id, u.name, u.email, u.phone, u.address, u.address_number, u.address_complement,
+        u.neighborhood, u.city, u.state, u.photo_url,
+        sc.name as category_name
+      FROM users u
+      LEFT JOIN service_categories sc ON u.category_id = sc.id
+      WHERE 'professional' = ANY(u.roles)
+      ORDER BY u.name
     `);
 
     res.json(result.rows);
@@ -2112,17 +2126,18 @@ app.get(
     try {
       const result = await pool.query(`
         SELECT 
-          city, state,
+          u.city, u.state,
           COUNT(*) as total_professionals,
           json_agg(
             json_build_object(
-              'category_name', COALESCE(category_name, 'Sem categoria'),
+              'category_name', COALESCE(sc.name, 'Sem categoria'),
               'count', 1
             )
           ) as categories
-        FROM users 
-        WHERE 'professional' = ANY(roles) AND city IS NOT NULL AND city != ''
-        GROUP BY city, state
+        FROM users u
+        LEFT JOIN service_categories sc ON u.category_id = sc.id
+        WHERE 'professional' = ANY(u.roles) AND u.city IS NOT NULL AND u.city != ''
+        GROUP BY u.city, u.state
         ORDER BY total_professionals DESC
       `);
 
@@ -2447,12 +2462,14 @@ app.get(
     try {
       const result = await pool.query(`
         SELECT 
-          u.id, u.name, u.email, u.phone, u.category_name,
+          u.id, u.name, u.email, u.phone,
+          sc.name as category_name,
           sa.has_access as has_scheduling_access,
           sa.expires_at as access_expires_at,
           granted_by.name as access_granted_by,
           sa.granted_at as access_granted_at
         FROM users u
+        LEFT JOIN service_categories sc ON u.category_id = sc.id
         LEFT JOIN scheduling_access sa ON u.id = sa.professional_id
         LEFT JOIN users granted_by ON sa.granted_by = granted_by.id
         WHERE 'professional' = ANY(u.roles)
