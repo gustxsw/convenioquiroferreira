@@ -1915,9 +1915,8 @@ app.post(
           .json({ message: "Nome e descrição são obrigatórios" });
       }
 
-        COALESCE(d.subscription_status, 'pending') as subscription_status,
-        d.subscription_expiry,
-        COALESCE(d.billing_amount, 50.00) as billing_amount
+      const result = await pool.query(
+        `INSERT INTO service_categories (name, description) 
          VALUES ($1, $2) 
          RETURNING *`,
         [name.trim(), description.trim()]
@@ -1938,15 +1937,17 @@ app.post(
 
 // Get all professionals
 app.get("/api/professionals", authenticate, async (req, res) => {
-        COALESCE(u.category_name, sc.name, 'Sem categoria') as category_name,
-        COALESCE(sa.has_access, false) as has_scheduling_access,
-        sa.expires_at as access_expires_at,
+  try {
+    const result = await pool.query(`
+      SELECT 
         u.id, u.name, u.email, u.phone, u.address, u.address_number, u.address_complement,
         u.neighborhood, u.city, u.state, u.photo_url,
-        sc.name as category_name
-      LEFT JOIN service_categories sc ON u.category_id = sc.id
+        COALESCE(u.category_name, sc.name, 'Sem categoria') as category_name,
+        COALESCE(sa.has_access, false) as has_scheduling_access,
+        sa.expires_at as access_expires_at
       FROM users u
       LEFT JOIN service_categories sc ON u.category_id = sc.id
+      LEFT JOIN scheduling_access sa ON u.id = sa.professional_id
       WHERE 'professional' = ANY(u.roles)
       ORDER BY u.name
     `);
@@ -1980,7 +1981,7 @@ app.get(
 
       // Get professional percentage
       const profResult = await pool.query(
-        COALESCE(u.category_name, sc.name) as category_name,
+        "SELECT percentage FROM users WHERE id = $1",
         [req.user.id]
       );
 
@@ -2677,8 +2678,7 @@ app.post("/api/create-subscription", authenticate, async (req, res) => {
 
     const preferenceData = {
       items: [
-      FROM users u
-      LEFT JOIN service_categories sc ON u.category_id = sc.id
+        {
           title: "Assinatura Convênio Quiro Ferreira - Titular",
           quantity: 1,
           unit_price: 250,
@@ -2697,30 +2697,6 @@ app.post("/api/create-subscription", authenticate, async (req, res) => {
       auto_return: "approved",
       external_reference: `subscription_${user_id}`,
       notification_url: `${req.protocol}://${req.get("host")}/api/webhooks/mercadopago`,
-    // Check if service is being used in consultations
-    const usageCheck = await pool.query(
-      'SELECT COUNT(*) as count FROM consultations WHERE service_id = $1',
-      [id]
-    );
-    
-    if (parseInt(usageCheck.rows[0].count) > 0) {
-      return res.status(400).json({ 
-        message: 'Não é possível excluir este serviço pois ele possui consultas registradas. Para manter a integridade dos dados, serviços com histórico não podem ser removidos.' 
-      });
-    }
-    
-    // Check if service is being used in appointments
-    const appointmentCheck = await pool.query(
-      'SELECT COUNT(*) as count FROM appointments WHERE service_id = $1',
-      [id]
-    );
-    
-    if (parseInt(appointmentCheck.rows[0].count) > 0) {
-      return res.status(400).json({ 
-        message: 'Não é possível excluir este serviço pois ele possui agendamentos. Para manter a integridade dos dados, serviços com histórico não podem ser removidos.' 
-      });
-    }
-    
     };
 
     const result = await preference.create({ body: preferenceData });
@@ -2741,6 +2717,10 @@ app.post("/api/dependents/:id/create-payment", authenticate, async (req, res) =>
     const { id } = req.params;
 
     // Get dependent data
+    const dependentResult = await pool.query(
+      `SELECT 
+        d.id, d.name, d.client_id,
+        u.name as client_name, u.email as client_email,
         COALESCE(d.subscription_status, 'pending') as subscription_status,
         d.subscription_expiry,
         COALESCE(d.billing_amount, 50.00) as billing_amount,
@@ -2777,7 +2757,7 @@ app.post("/api/dependents/:id/create-payment", authenticate, async (req, res) =>
     const preferenceData = {
       items: [
         {
-          title: `Ativação de Dependente - ${dependent.name}`,
+          title: \`Ativação de Dependente - ${dependent.name}`,
           quantity: 1,
           unit_price: dependent.billing_amount || 50,
           currency_id: "BRL",
@@ -2788,13 +2768,13 @@ app.post("/api/dependents/:id/create-payment", authenticate, async (req, res) =>
         email: dependent.client_email || "cliente@quiroferreira.com.br",
       },
       back_urls: {
-        success: `${req.protocol}://${req.get("host")}/client?payment=success&type=dependent`,
-        failure: `${req.protocol}://${req.get("host")}/client?payment=failure&type=dependent`,
-        pending: `${req.protocol}://${req.get("host")}/client?payment=pending&type=dependent`,
+        success: \`${req.protocol}://${req.get("host")}/client?payment=success&type=dependent`,
+        failure: \`${req.protocol}://${req.get("host")}/client?payment=failure&type=dependent`,
+        pending: \`${req.protocol}://${req.get("host")}/client?payment=pending&type=dependent`,
       },
       auto_return: "approved",
-      external_reference: `dependent_${id}`,
-      notification_url: `${req.protocol}://${req.get("host")}/api/webhooks/mercadopago`,
+      external_reference: \`dependent_${id}`,
+      notification_url: \`${req.protocol}://${req.get("host")}/api/webhooks/mercadopago`,
     };
 
     const result = await preference.create({ body: preferenceData });
@@ -2846,7 +2826,7 @@ app.post(
       const preferenceData = {
         items: [
           {
-            title: `Repasse ao Convênio - ${user.name}`,
+            title: \`Repasse ao Convênio - ${user.name}`,
             quantity: 1,
             unit_price: parseFloat(amount),
             currency_id: "BRL",
@@ -2857,13 +2837,13 @@ app.post(
           email: user.email || "profissional@quiroferreira.com.br",
         },
         back_urls: {
-          success: `${req.protocol}://${req.get("host")}/professional?payment=success&type=professional`,
-          failure: `${req.protocol}://${req.get("host")}/professional?payment=failure&type=professional`,
-          pending: `${req.protocol}://${req.get("host")}/professional?payment=pending&type=professional`,
+          success: \`${req.protocol}://${req.get("host")}/professional?payment=success&type=professional`,
+          failure: \`${req.protocol}://${req.get("host")}/professional?payment=failure&type=professional`,
+          pending: \`${req.protocol}://${req.get("host")}/professional?payment=pending&type=professional`,
         },
         auto_return: "approved",
-        external_reference: `professional_${req.user.id}`,
-        notification_url: `${req.protocol}://${req.get("host")}/api/webhooks/mercadopago`,
+        external_reference: \`professional_${req.user.id}`,
+        notification_url: \`${req.protocol}://${req.get("host")}/api/webhooks/mercadopago`,
       };
 
       const result = await preference.create({ body: preferenceData });
@@ -2912,7 +2892,7 @@ app.post("/api/agenda/create-payment", authenticate, async (req, res) => {
     const preferenceData = {
       items: [
         {
-          title: `Acesso à Agenda - ${user.name}`,
+          title: \`Acesso à Agenda - ${user.name}`,
           quantity: 1,
           unit_price: parseFloat(amount),
           currency_id: "BRL",
@@ -2923,13 +2903,13 @@ app.post("/api/agenda/create-payment", authenticate, async (req, res) => {
         email: user.email || "profissional@quiroferreira.com.br",
       },
       back_urls: {
-        success: `${req.protocol}://${req.get("host")}/professional?payment=success&type=agenda`,
-        failure: `${req.protocol}://${req.get("host")}/professional?payment=failure&type=agenda`,
-        pending: `${req.protocol}://${req.get("host")}/professional?payment=pending&type=agenda`,
+        success: \`${req.protocol}://${req.get("host")}/professional?payment=success&type=agenda`,
+        failure: \`${req.protocol}://${req.get("host")}/professional?payment=failure&type=agenda`,
+        pending: \`${req.protocol}://${req.get("host")}/professional?payment=pending&type=agenda`,
       },
       auto_return: "approved",
-      external_reference: `agenda_${req.user.id}`,
-      notification_url: `${req.protocol}://${req.get("host")}/api/webhooks/mercadopago`,
+      external_reference: \`agenda_${req.user.id}`,
+      notification_url: \`${req.protocol}://${req.get("host")}/api/webhooks/mercadopago`,
     };
 
     const result = await preference.create({ body: preferenceData });
@@ -2978,7 +2958,7 @@ app.post("/api/webhooks/mercadopago", async (req, res) => {
           expiryDate.setFullYear(expiryDate.getFullYear() + 1);
 
           await pool.query(
-            `UPDATE users 
+            \`UPDATE users 
              SET subscription_status = 'active', 
                  subscription_expiry = $1,
                  updated_at = NOW()
@@ -2997,7 +2977,7 @@ app.post("/api/webhooks/mercadopago", async (req, res) => {
           expiryDate.setFullYear(expiryDate.getFullYear() + 1);
 
           await pool.query(
-            `UPDATE dependents 
+            \`UPDATE dependents 
              SET subscription_status = 'active',
                  subscription_expiry = $1,
                  activated_at = NOW(),
@@ -3014,7 +2994,7 @@ app.post("/api/webhooks/mercadopago", async (req, res) => {
           const professionalId = externalReference.replace("professional_", "");
 
           await pool.query(
-            `UPDATE users 
+            \`UPDATE users 
              SET amount_to_pay = 0,
                  last_payment_date = NOW(),
                  updated_at = NOW()
@@ -3033,7 +3013,7 @@ app.post("/api/webhooks/mercadopago", async (req, res) => {
           expiryDate.setMonth(expiryDate.getMonth() + 1);
 
           await pool.query(
-            `INSERT INTO scheduling_access (professional_id, has_access, expires_at, granted_by, granted_at, reason)
+            \`INSERT INTO scheduling_access (professional_id, has_access, expires_at, granted_by, granted_at, reason)
              VALUES ($1, true, $2, $1, NOW(), 'Pagamento da agenda')
              ON CONFLICT (professional_id) 
              DO UPDATE SET 
@@ -3114,6 +3094,6 @@ app.get("*", (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
+  console.log(\`🚀 Server running on port ${PORT}`);
+  console.log(\`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
 });
