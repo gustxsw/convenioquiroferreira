@@ -633,7 +633,10 @@ app.get('/api/users/:id', authenticate, async (req, res) => {
       return res.status(404).json({ message: 'Usuário não encontrado' });
     }
 
-    res.json(result.rows[0]);
+    res
+  }
+}
+).json(result.rows[0]);
   } catch (error) {
     console.error('Error fetching user:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
