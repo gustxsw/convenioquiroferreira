@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
 import { pool } from "./db.js";
+import createUpload from "./middleware/upload.js";
 import { authenticate, authorize } from "./middleware/auth.js";
 import { generateDocumentPDF } from "./utils/documentGenerator.js";
 
@@ -30,6 +31,74 @@ app.use(cookieParser());
 
 // Serve static files from dist directory
 app.use(express.static("dist"));
+
+// 🔥 FUNÇÃO PARA ADICIONAR COLUNAS FALTANTES (SEM ALTERAR DADOS EXISTENTES)
+const ensureDatabaseColumns = async () => {
+  try {
+    console.log('🔄 Verificando e criando colunas faltantes...');
+    
+    // 1. Adicionar subscription_status e subscription_expiry na tabela dependents
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'dependents' AND column_name = 'subscription_status'
+        ) THEN
+          ALTER TABLE dependents ADD COLUMN subscription_status TEXT DEFAULT 'pending';
+          UPDATE dependents SET subscription_status = 'pending' WHERE subscription_status IS NULL;
+        END IF;
+      END $$;
+    `);
+    
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'dependents' AND column_name = 'subscription_expiry'
+        ) THEN
+          ALTER TABLE dependents ADD COLUMN subscription_expiry TIMESTAMPTZ;
+        END IF;
+      END $$;
+    `);
+    
+    // 2. Adicionar category_name na tabela users
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'users' AND column_name = 'category_name'
+        ) THEN
+          ALTER TABLE users ADD COLUMN category_name TEXT;
+        END IF;
+      END $$;
+    `);
+    
+    // 3. Criar tabela scheduling_access se não existir
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS scheduling_access (
+        id SERIAL PRIMARY KEY,
+        professional_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        has_access BOOLEAN DEFAULT false,
+        expires_at TIMESTAMPTZ,
+        granted_by INTEGER REFERENCES users(id),
+        granted_at TIMESTAMPTZ DEFAULT now(),
+        reason TEXT,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        UNIQUE(professional_id)
+      );
+    `);
+    
+    console.log('✅ Colunas verificadas e criadas com sucesso');
+  } catch (error) {
+    console.error('❌ Erro ao criar colunas:', error);
+  }
+};
+
+// Executar verificação de colunas na inicialização
+ensureDatabaseColumns();
 
 // Test database connection
 pool.connect((err, client, release) => {
@@ -322,12 +391,13 @@ app.get("/api/users/:id", authenticate, async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT 
-        id, name, cpf, email, phone, birth_date, address, address_number,
-        address_complement, neighborhood, city, state, roles, created_at,
-        subscription_status, subscription_expiry, photo_url, category_name, crm
-      FROM users 
-      WHERE id = $1`,
+      `SELECT u.id, u.name, u.cpf, u.email, u.phone, u.birth_date, u.address, u.address_number, 
+             u.address_complement, u.neighborhood, u.city, u.state, u.roles, 
+             u.subscription_status, u.subscription_expiry, u.photo_url, u.crm, u.category_name,
+             sc.name as category_name_from_table
+      FROM users u
+      LEFT JOIN service_categories sc ON u.category_id = sc.id
+      WHERE u.id = $1`,
       [id]
     );
 
@@ -335,7 +405,12 @@ app.get("/api/users/:id", authenticate, async (req, res) => {
       return res.status(404).json({ message: "Usuário não encontrado" });
     }
 
-    res.json(result.rows[0]);
+    const user = result.rows[0];
+    // Use category_name from user table or from service_categories table
+    user.category_name = user.category_name || user.category_name_from_table;
+    delete user.category_name_from_table;
+    
+    res.json(user);
   } catch (error) {
     console.error("Error fetching user:", error);
     res.status(500).json({ message: "Erro ao buscar usuário" });
@@ -1146,14 +1221,9 @@ app.get(
   async (req, res) => {
     try {
       const result = await pool.query(
-        `SELECT 
-          d.id, d.name, d.cpf, d.birth_date, d.created_at, 
-          d.subscription_status, d.client_id,
-          u.name as client_name, u.phone as client_phone,
-          u.subscription_status as client_subscription_status
+        `SELECT d.*, u.name as client_name, d.subscription_status, d.subscription_expiry
         FROM dependents d
         JOIN users u ON d.client_id = u.id
-        WHERE d.subscription_status = 'active'
         ORDER BY d.created_at DESC`
       );
 
@@ -1765,15 +1835,27 @@ app.delete(
     try {
       const { id } = req.params;
 
-      // Check if service is being used in consultations
-      const consultationCheck = await pool.query(
-        "SELECT COUNT(*) as count FROM consultations WHERE service_id = $1",
+      // Verificar se o serviço está sendo usado em consultas
+      const consultationsCheck = await pool.query(
+        'SELECT COUNT(*) as count FROM consultations WHERE service_id = $1',
         [id]
       );
-
-      if (parseInt(consultationCheck.rows[0].count) > 0) {
-        return res.status(400).json({
-          message: "Não é possível excluir este serviço pois ele possui consultas registradas",
+      
+      if (parseInt(consultationsCheck.rows[0].count) > 0) {
+        return res.status(400).json({ 
+          message: 'Não é possível excluir este serviço pois ele possui consultas registradas. Para manter a integridade dos dados, serviços com histórico não podem ser removidos.' 
+        });
+      }
+      
+      // Verificar se o serviço está sendo usado em agendamentos
+      const appointmentsCheck = await pool.query(
+        'SELECT COUNT(*) as count FROM appointments WHERE service_id = $1',
+        [id]
+      );
+      
+      if (parseInt(appointmentsCheck.rows[0].count) > 0) {
+        return res.status(400).json({ 
+          message: 'Não é possível excluir este serviço pois ele possui agendamentos. Para manter a integridade dos dados, serviços com histórico não podem ser removidos.' 
         });
       }
 
@@ -1789,7 +1871,13 @@ app.delete(
       res.json({ message: "Serviço excluído com sucesso" });
     } catch (error) {
       console.error("Error deleting service:", error);
-      res.status(500).json({ message: "Erro ao excluir serviço" });
+      if (error.code === '23503') {
+        res.status(400).json({ 
+          message: 'Não é possível excluir este serviço pois ele está sendo usado no sistema. Serviços com histórico de uso não podem ser removidos para manter a integridade dos dados.' 
+        });
+      } else {
+        res.status(500).json({ message: "Erro interno do servidor" });
+      }
     }
   }
 );
@@ -2461,18 +2549,17 @@ app.get(
   async (req, res) => {
     try {
       const result = await pool.query(`
-        SELECT 
-          u.id, u.name, u.email, u.phone,
-          sc.name as category_name,
-          sa.has_access as has_scheduling_access,
-          sa.expires_at as access_expires_at,
-          granted_by.name as access_granted_by,
-          sa.granted_at as access_granted_at
+        SELECT u.id, u.name, u.email, u.phone, 
+               COALESCE(u.category_name, sc.name) as category_name,
+               COALESCE(sa.has_access, false) as has_scheduling_access,
+               sa.expires_at as access_expires_at,
+               granted_by_user.name as access_granted_by,
+               sa.granted_at as access_granted_at
         FROM users u
         LEFT JOIN service_categories sc ON u.category_id = sc.id
         LEFT JOIN scheduling_access sa ON u.id = sa.professional_id
-        LEFT JOIN users granted_by ON sa.granted_by = granted_by.id
-        WHERE 'professional' = ANY(u.roles)
+        LEFT JOIN users granted_by_user ON sa.granted_by = granted_by_user.id
+        WHERE u.roles @> '["professional"]'
         ORDER BY u.name
       `);
 
@@ -2501,15 +2588,10 @@ app.post(
 
       // Upsert scheduling access
       await pool.query(
-        `INSERT INTO scheduling_access (professional_id, has_access, expires_at, granted_by, granted_at, reason)
-         VALUES ($1, true, $2, $3, NOW(), $4)
+        `INSERT INTO scheduling_access (professional_id, has_access, expires_at, granted_by, reason)
+         VALUES ($1, true, $2, $3, $4)
          ON CONFLICT (professional_id) 
-         DO UPDATE SET 
-           has_access = true,
-           expires_at = $2,
-           granted_by = $3,
-           granted_at = NOW(),
-           reason = $4`,
+         DO UPDATE SET has_access = true, expires_at = $2, granted_by = $3, reason = $4, granted_at = now()`,
         [professional_id, expires_at, req.user.id, reason]
       );
 
@@ -2537,7 +2619,9 @@ app.post(
       }
 
       await pool.query(
-        "UPDATE scheduling_access SET has_access = false WHERE professional_id = $1",
+        `UPDATE scheduling_access 
+        SET has_access = false, expires_at = now() 
+        WHERE professional_id = $1`,
         [professional_id]
       );
 
