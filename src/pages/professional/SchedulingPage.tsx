@@ -198,105 +198,121 @@ const SchedulingPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
 
-      // Helper function to safely fetch and parse JSON
-      const safeFetch = async (url: string, options: any) => {
-        try {
-          const response = await fetch(url, options);
-          
-          // Check if response is actually JSON
-          const contentType = response.headers.get('content-type');
-          if (!contentType || !contentType.includes('application/json')) {
-            console.warn(`Non-JSON response from ${url}:`, response.status);
-            return { ok: false, data: null };
+      console.log('🔄 Fetching scheduling data from:', apiUrl);
+
+      // Fetch appointments with proper error handling
+      try {
+        const appointmentsResponse = await fetch(`${apiUrl}/api/appointments`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (appointmentsResponse.ok) {
+          const contentType = appointmentsResponse.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const appointmentsData = await appointmentsResponse.json();
+            console.log('✅ Appointments loaded:', appointmentsData.length);
+            setAppointments(appointmentsData);
+          } else {
+            console.warn('⚠️ Appointments response is not JSON');
+            setAppointments([]);
           }
-          
-          if (!response.ok) {
-            return { ok: false, data: null };
-          }
-          
-          const data = await response.json();
-          return { ok: true, data };
-        } catch (error) {
-          console.warn(`Error fetching ${url}:`, error);
-          return { ok: false, data: null };
+        } else {
+          console.warn('⚠️ Appointments not available:', appointmentsResponse.status);
+          setAppointments([]);
         }
-      };
-
-      // Fetch appointments
-      const appointmentsResult = await safeFetch(`${apiUrl}/api/appointments`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (appointmentsResult.ok && appointmentsResult.data) {
-        setAppointments(appointmentsResult.data);
-      } else {
-        console.warn('Appointments not available, using empty array');
+      } catch (error) {
+        console.warn('⚠️ Error fetching appointments:', error);
         setAppointments([]);
       }
 
       // Fetch services
-      const servicesResult = await safeFetch(`${apiUrl}/api/services`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      try {
+        const servicesResponse = await fetch(`${apiUrl}/api/services`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
 
-      if (servicesResult.ok && servicesResult.data) {
-        setServices(servicesResult.data);
-      } else {
-        console.warn('Services not available, using empty array');
+        if (servicesResponse.ok) {
+          const servicesData = await servicesResponse.json();
+          setServices(servicesData);
+        } else {
+          setServices([]);
+        }
+      } catch (error) {
+        console.warn('Services not available:', error);
         setServices([]);
       }
 
       // Fetch clients
-      const clientsResult = await safeFetch(`${apiUrl}/api/clients`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      try {
+        const clientsResponse = await fetch(`${apiUrl}/api/clients`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
 
-      if (clientsResult.ok && clientsResult.data) {
-        setClients(clientsResult.data);
-      } else {
-        console.warn('Clients not available, using empty array');
+        if (clientsResponse.ok) {
+          const clientsData = await clientsResponse.json();
+          setClients(clientsData);
+        } else {
+          setClients([]);
+        }
+      } catch (error) {
+        console.warn('Clients not available:', error);
         setClients([]);
       }
 
       // Fetch dependents
-      const dependentsResult = await safeFetch(`${apiUrl}/api/admin/dependents`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      try {
+        const dependentsResponse = await fetch(`${apiUrl}/api/admin/dependents`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
 
-      if (dependentsResult.ok && dependentsResult.data) {
-        setDependents(dependentsResult.data);
-      } else {
-        console.warn('Dependents not available, using empty array');
+        if (dependentsResponse.ok) {
+          const dependentsData = await dependentsResponse.json();
+          setDependents(dependentsData);
+        } else {
+          setDependents([]);
+        }
+      } catch (error) {
+        console.warn('Dependents not available:', error);
         setDependents([]);
       }
 
       // Fetch private patients
-      const privatePatientsResult = await safeFetch(`${apiUrl}/api/private-patients`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      try {
+        const privatePatientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
 
-      if (privatePatientsResult.ok && privatePatientsResult.data) {
-        setPrivatePatients(privatePatientsResult.data);
-      } else {
-        console.warn('Private patients not available, using empty array');
+        if (privatePatientsResponse.ok) {
+          const privatePatientsData = await privatePatientsResponse.json();
+          setPrivatePatients(privatePatientsData);
+        } else {
+          setPrivatePatients([]);
+        }
+      } catch (error) {
+        console.warn('Private patients not available:', error);
         setPrivatePatients([]);
       }
 
       // Fetch attendance locations
-      const locationsResult = await safeFetch(`${apiUrl}/api/attendance-locations`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      try {
+        const locationsResponse = await fetch(`${apiUrl}/api/attendance-locations`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
 
-      if (locationsResult.ok && locationsResult.data) {
-        setAttendanceLocations(locationsResult.data);
-      } else {
-        console.warn('Attendance locations not available, using empty array');
+        if (locationsResponse.ok) {
+          const locationsData = await locationsResponse.json();
+          setAttendanceLocations(locationsData);
+        } else {
+          setAttendanceLocations([]);
+        }
+      } catch (error) {
+        console.warn('Attendance locations not available:', error);
         setAttendanceLocations([]);
       }
 
     } catch (error) {
       console.error('Error fetching data:', error);
-      setError('Alguns dados podem não estar disponíveis. A agenda funcionará com funcionalidade limitada.');
+      setError('Erro ao carregar dados da agenda. Tente novamente.');
     } finally {
       setIsLoading(false);
     }

@@ -100,7 +100,7 @@ const ProfessionalHomePage: React.FC = () => {
 
       // 🔥 LIBERADO: Sempre buscar dados de receita
       const revenueResponse = await fetch(
-        `${apiUrl}/api/reports/professional-revenue?start_date=${dateRange.start}&end_date=${dateRange.end}`,
+        `${apiUrl}/api/reports/professional-revenue-detailed?start_date=${dateRange.start}&end_date=${dateRange.end}`,
         {
           method: "GET",
           headers: {
@@ -113,22 +113,19 @@ const ProfessionalHomePage: React.FC = () => {
       console.log("📡 Revenue response status:", revenueResponse.status);
 
       if (!revenueResponse.ok) {
-        const errorData = await revenueResponse.json();
-        console.error("❌ Revenue response error:", errorData);
-        // Don't throw error, just log it and continue
         console.warn("Revenue data not available, continuing without it");
         setRevenueReport(null);
         return;
       }
 
-      const revenueData = await revenueResponse.json();
-      console.log("✅ Revenue data received:", revenueData);
-     
-     // Force refresh of data to ensure latest calculations
-     setTimeout(() => {
-       setRevenueReport(revenueData);
-     }, 100);
-      setRevenueReport(revenueData);
+      try {
+        const revenueData = await revenueResponse.json();
+        console.log("✅ Revenue data received:", revenueData);
+        setRevenueReport(revenueData);
+      } catch (error) {
+        console.warn("Error parsing revenue data:", error);
+        setRevenueReport(null);
+      }
     } catch (error) {
       console.error("❌ Error fetching data:", error);
       setError(

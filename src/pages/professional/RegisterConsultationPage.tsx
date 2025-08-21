@@ -410,16 +410,11 @@ const RegisterConsultationPage: React.FC = () => {
         body: JSON.stringify({
           client_id: selectedDependentId ? null : clientId,
           dependent_id: selectedDependentId,
-          private_patient_id: null,
           professional_id: user?.id,
           service_id: serviceId,
           location_id: locationId ? parseInt(locationId) : null,
           value: Number(value),
           date: dateTime.toISOString(),
-          // Add appointment data
-          appointment_date: date,
-          appointment_time: time,
-          create_appointment: true,
         }),
       });
 
@@ -433,6 +428,35 @@ const RegisterConsultationPage: React.FC = () => {
 
       const responseData = await response.json();
       console.log("✅ Consultation and appointment created:", responseData);
+
+      // Also create appointment for scheduling
+      try {
+        const appointmentResponse = await fetch(`${apiUrl}/api/appointments`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            patient_type: 'convenio',
+            client_id: selectedDependentId ? null : clientId,
+            dependent_id: selectedDependentId,
+            private_patient_id: null,
+            service_id: serviceId,
+            location_id: locationId ? parseInt(locationId) : null,
+            date: date,
+            time: time,
+            value: Number(value),
+            status: 'completed' // Mark as completed since consultation was registered
+          }),
+        });
+
+        if (appointmentResponse.ok) {
+          console.log("✅ Appointment also created for scheduling");
+        }
+      } catch (error) {
+        console.warn("Could not create appointment record:", error);
+      }
 
       // Reset form
       setCpf("");
@@ -450,11 +474,7 @@ const RegisterConsultationPage: React.FC = () => {
       setTime("");
 
       setSuccess(
-        `Consulta registrada e agendamento criado com sucesso! ${
-          responseData.appointment
-            ? "Agendamento ID: " + responseData.appointment.id
-            : ""
-        }`
+        "Consulta registrada com sucesso!"
       );
 
       // Redirect after a delay

@@ -215,7 +215,7 @@ const ReportsPage: React.FC = () => {
   const calculateTotalClinicRevenue = () => {
     if (!report) return 0;
     if (!report.revenue_by_professional || !Array.isArray(report.revenue_by_professional)) return 0;
-   console.log('🔄 Calculating clinic revenue from:', report.revenue_by_professional);
+    console.log('🔄 Calculating clinic revenue from:', report.revenue_by_professional);
     return report.revenue_by_professional.reduce(
       (total, prof) => total + (Number(prof.clinic_revenue) || 0),
       0
@@ -225,7 +225,7 @@ const ReportsPage: React.FC = () => {
   const calculateTotalProfessionalPayments = () => {
     if (!report) return 0;
     if (!report.revenue_by_professional || !Array.isArray(report.revenue_by_professional)) return 0;
-   console.log('🔄 Calculating professional payments from:', report.revenue_by_professional);
+    console.log('🔄 Calculating professional payments from:', report.revenue_by_professional);
     return report.revenue_by_professional.reduce(
       (total, prof) => total + (Number(prof.professional_payment) || 0),
       0
