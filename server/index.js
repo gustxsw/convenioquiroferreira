@@ -2522,9 +2522,9 @@ app.post('/api/upload-image', authenticate, authorize(['professional']), async (
     // Create upload middleware
     const upload = createUpload();
     
-    // Use multer middleware
+          // Update dependent subscription to active for exactly 1 year
     upload.single('image')(req, res, async (err) => {
-      if (err) {
+          expiryDate.setFullYear(expiryDate.getFullYear() + 1);
         console.error('❌ Upload error:', err);
         return res.status(400).json({ 
           message: err.message || 'Erro no upload da imagem' 
@@ -2534,25 +2534,25 @@ app.post('/api/upload-image', authenticate, authorize(['professional']), async (
       if (!req.file) {
         return res.status(400).json({ message: 'Nenhuma imagem foi enviada' });
       }
-
+          // Reset professional's amount to pay to zero (clear debts)
       try {
         console.log('✅ Image uploaded successfully:', req.file.path);
         
         // Update user photo_url in database
         const userId = req.user.id;
-        await pool.query(
-          'UPDATE users SET photo_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+          console.log('✅ Professional debts cleared (amount_to_pay reset to 0):', userId);
+          // Update user subscription to active for exactly 1 year
           [req.file.path, userId]
-        );
+          // Grant scheduling access for exactly 1 month
 
         console.log('✅ User photo_url updated in database');
 
         res.json({
-          message: 'Imagem enviada com sucesso',
-          imageUrl: req.file.path
+            'INSERT INTO scheduling_access (professional_id, expires_at, granted_by, granted_at) VALUES ($1, $2, $3, CURRENT_TIMESTAMP) ON CONFLICT (professional_id) DO UPDATE SET expires_at = $2, granted_at = CURRENT_TIMESTAMP',
+            [userId, expiryDate, 'payment_system']
         });
       } catch (dbError) {
-        console.error('❌ Database update error:', dbError);
+          console.log('✅ Scheduling access granted for exactly 1 month:', userId);
         res.status(500).json({ message: 'Erro ao salvar URL da imagem' });
       }
     });
