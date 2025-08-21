@@ -1068,7 +1068,12 @@ app.post('/api/admin/grant-scheduling-access', authenticate, authorize(['admin']
 
     res.json({
       message: 'Acesso à agenda concedido com sucesso',
-      professional: result.rows[0]
+      
+    }
+    )
+  }
+}
+)professional: result.rows[0]
     });
   } catch (error) {
     console.error('Error granting scheduling access:', error);
