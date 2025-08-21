@@ -1,12 +1,12 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import path from "path";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
 import { pool } from "./db.js";
 import { authenticate, authorize } from "./middleware/auth.js";
-import createUpload from "./middleware/upload.js";
 import { generateDocumentPDF } from "./utils/documentGenerator.js";
 
 dotenv.config();
