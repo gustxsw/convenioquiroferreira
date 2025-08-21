@@ -243,17 +243,48 @@ const SchedulingPage: React.FC = () => {
       patient_type: 'convenio',
       client_id: '',
       dependent_id: '',
+  // Private patient search state
+  const [privatePatientSearch, setPrivatePatientSearch] = useState('');
+  const [filteredPrivatePatients, setFilteredPrivatePatients] = useState<PrivatePatient[]>([]);
+
       private_patient_id: '',
       service_id: '',
       location_id: '',
+  // Filter private patients based on search
+  useEffect(() => {
+    if (privatePatientSearch.trim()) {
+      const filtered = privatePatients.filter(patient =>
+        patient.name.toLowerCase().includes(privatePatientSearch.toLowerCase()) ||
+        patient.cpf.includes(privatePatientSearch.replace(/\D/g, ''))
+      );
+      setFilteredPrivatePatients(filtered);
+    } else {
+      setFilteredPrivatePatients([]);
+    }
+  }, [privatePatientSearch, privatePatients]);
+
       date: '',
       time: '',
       value: '',
       is_recurring: false,
+  const selectPrivatePatient = (patient: PrivatePatient) => {
+    setFormData(prev => ({ ...prev, private_patient_id: patient.id.toString() }));
+    setPrivatePatientSearch(patient.name);
+    setFilteredPrivatePatients([]);
+  };
+
+  const clearPrivatePatientSelection = () => {
+    setFormData(prev => ({ ...prev, private_patient_id: '' }));
+    setPrivatePatientSearch('');
+    setFilteredPrivatePatients([]);
+  };
+
       recurring_days: [],
       total_sessions: ''
     });
     setSelectedAppointment(null);
+    setPrivatePatientSearch('');
+    setFilteredPrivatePatients([]);
     setIsModalOpen(true);
   };
 
@@ -887,22 +918,63 @@ const SchedulingPage: React.FC = () => {
                 ) : (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Paciente Particular
+                      Buscar Paciente Particular
                     </label>
-                    <select
-                      name="private_patient_id"
-                      value={formData.private_patient_id}
-                      onChange={handleInputChange}
-                      className="input"
-                      required={formData.patient_type === 'private'}
-                    >
-                      <option value="">Selecione um paciente</option>
-                      {privatePatients.map((patient) => (
-                        <option key={patient.id} value={patient.id}>
-                          {patient.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        placeholder="Digite o nome do paciente..."
+                        value={privatePatientSearch}
+                        onChange={(e) => setPrivatePatientSearch(e.target.value)}
+                        className="input"
+                      />
+                      
+                      {privatePatientSearch && filteredPrivatePatients.length > 0 && (
+                        <div className="border border-gray-200 rounded-lg max-h-40 overflow-y-auto">
+                          {filteredPrivatePatients.map((patient) => (
+                            <button
+                              key={patient.id}
+                              type="button"
+                              onClick={() => selectPrivatePatient(patient)}
+                              className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                            >
+                              <div className="font-medium">{patient.name}</div>
+                              {patient.cpf && (
+                                <div className="text-sm text-gray-500">
+                                  CPF: {patient.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}
+                                </div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {formData.private_patient_id && (
+                        <div className="bg-green-50 p-3 rounded-lg border border-green-200">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium text-green-800">
+                                {privatePatients.find(p => p.id.toString() === formData.private_patient_id)?.name}
+                              </p>
+                              <p className="text-sm text-green-600">Paciente selecionado</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={clearPrivatePatientSelection}
+                              className="text-green-600 hover:text-green-800"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {privatePatientSearch && filteredPrivatePatients.length === 0 && (
+                        <div className="text-center py-3 text-gray-500 text-sm">
+                          Nenhum paciente encontrado
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
