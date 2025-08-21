@@ -15,6 +15,7 @@ import {
   Upload,
   CheckCircle,
   Clock,
+  User,
 } from "lucide-react";
 import PaymentSection from "./PaymentSection";
 
@@ -25,12 +26,18 @@ type RevenueReport = {
     consultation_count: number;
     amount_to_pay: number;
   };
-  consultations: {
+  convenio_consultations: {
     date: string;
     client_name: string;
     service_name: string;
-    total_value: number;
+    value: number;
     amount_to_pay: number;
+  }[];
+  private_consultations: {
+    date: string;
+    patient_name: string;
+    service_name: string;
+    value: number;
   }[];
 };
 
@@ -100,7 +107,7 @@ const ProfessionalHomePage: React.FC = () => {
 
       // 🔥 LIBERADO: Sempre buscar dados de receita
       const revenueResponse = await fetch(
-        `${apiUrl}/api/reports/professional-revenue-detailed?start_date=${dateRange.start}&end_date=${dateRange.end}`,
+        `${apiUrl}/api/reports/professional-revenue?start_date=${dateRange.start}&end_date=${dateRange.end}`,
         {
           method: "GET",
           headers: {
@@ -115,16 +122,15 @@ const ProfessionalHomePage: React.FC = () => {
       if (!revenueResponse.ok) {
         console.warn("Revenue data not available, continuing without it");
         setRevenueReport(null);
-        return;
-      }
-
-      try {
-        const revenueData = await revenueResponse.json();
-        console.log("✅ Revenue data received:", revenueData);
-        setRevenueReport(revenueData);
-      } catch (error) {
-        console.warn("Error parsing revenue data:", error);
-        setRevenueReport(null);
+      } else {
+        try {
+          const revenueData = await revenueResponse.json();
+          console.log("✅ Revenue data received:", revenueData);
+          setRevenueReport(revenueData);
+        } catch (error) {
+          console.warn("Error parsing revenue data:", error);
+          setRevenueReport(null);
+        }
       }
     } catch (error) {
       console.error("❌ Error fetching data:", error);
@@ -452,25 +458,25 @@ const ProfessionalHomePage: React.FC = () => {
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
             <div className="flex items-center mb-6">
               <CalendarClock className="h-6 w-6 text-red-600 mr-2" />
-              <h2 className="text-xl font-semibold">Consultas Realizadas</h2>
+              <h2 className="text-xl font-semibold">Consultas do Convênio</h2>
             </div>
 
-            {!revenueReport.consultations ||
-            revenueReport.consultations.length === 0 ? (
+            {!revenueReport.convenio_consultations ||
+            revenueReport.convenio_consultations.length === 0 ? (
               <div className="text-center py-12 bg-gray-50 rounded-lg">
                 <CalendarClock className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Nenhuma consulta registrada
+                  Nenhuma consulta do convênio registrada
                 </h3>
                 <p className="text-gray-600 mb-4">
-                  Você ainda não registrou nenhuma consulta este mês.
+                  Você ainda não registrou nenhuma consulta do convênio este mês.
                 </p>
                 <Link
                   to="/professional/register-consultation"
                   className="btn btn-primary inline-flex items-center"
                 >
                   <PlusCircle className="h-5 w-5 mr-2" />
-                  Registrar Primeira Consulta
+                  Registrar Consulta do Convênio
                 </Link>
               </div>
             ) : (
@@ -491,18 +497,18 @@ const ProfessionalHomePage: React.FC = () => {
                         Valor Total
                       </th>
                       <th className="text-right py-3 px-4 font-medium text-gray-700">
-                        Valor a Pagar
+                        Repasse ao Convênio
                       </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {revenueReport.consultations.map((consultation, index) => (
+                    {revenueReport.convenio_consultations.map((consultation, index) => (
                       <tr
                         key={index}
                         className="border-b border-gray-100 hover:bg-gray-50"
                       >
                         <td className="py-3 px-4 text-sm text-gray-600">
-                          {formatDate(consultation.date)}
+                          {new Date(consultation.date).toLocaleDateString('pt-BR')}
                         </td>
                         <td className="py-3 px-4 text-sm text-gray-900">
                           {consultation.client_name || "N/A"}
@@ -511,7 +517,7 @@ const ProfessionalHomePage: React.FC = () => {
                           {consultation.service_name || "N/A"}
                         </td>
                         <td className="py-3 px-4 text-sm text-gray-900 text-right font-medium">
-                          {formatCurrency(consultation.total_value)}
+                          {formatCurrency(consultation.value)}
                         </td>
                         <td className="py-3 px-4 text-sm text-red-600 text-right font-medium">
                           {formatCurrency(consultation.amount_to_pay)}
@@ -523,6 +529,58 @@ const ProfessionalHomePage: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Private Consultations Section */}
+          {revenueReport.private_consultations && revenueReport.private_consultations.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mt-6">
+              <div className="flex items-center mb-6">
+                <User className="h-6 w-6 text-purple-600 mr-2" />
+                <h2 className="text-xl font-semibold">Consultas Particulares (Agenda)</h2>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left py-3 px-4 font-medium text-gray-700">
+                        Data
+                      </th>
+                      <th className="text-left py-3 px-4 font-medium text-gray-700">
+                        Paciente
+                      </th>
+                      <th className="text-left py-3 px-4 font-medium text-gray-700">
+                        Serviço
+                      </th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-700">
+                        Valor (100% seu)
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {revenueReport.private_consultations.map((consultation, index) => (
+                      <tr
+                        key={index}
+                        className="border-b border-gray-100 hover:bg-gray-50"
+                      >
+                        <td className="py-3 px-4 text-sm text-gray-600">
+                          {new Date(consultation.date).toLocaleDateString('pt-BR')}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-gray-900">
+                          {consultation.patient_name || "N/A"}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-gray-600">
+                          {consultation.service_name || "N/A"}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-purple-600 text-right font-medium">
+                          {formatCurrency(consultation.value)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <div className="text-center py-12 bg-gray-50 rounded-lg">

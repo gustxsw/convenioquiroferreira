@@ -219,7 +219,7 @@ const RegisterConsultationPage: React.FC = () => {
 
       // First, try to find a dependent with this CPF
       const dependentResponse = await fetch(
-        `${apiUrl}/api/dependents/lookup?cpf=${cleanCpf}`,
+        `${apiUrl}/api/dependents/search?cpf=${cleanCpf}`,
         {
           method: "GET",
           headers: {
@@ -254,7 +254,7 @@ const RegisterConsultationPage: React.FC = () => {
 
       // If not found as dependent, try to find as client
       const clientResponse = await fetch(
-        `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`,
+        `${apiUrl}/api/clients/search?cpf=${cleanCpf}`,
         {
           method: "GET",
           headers: {
