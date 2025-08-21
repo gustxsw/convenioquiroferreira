@@ -206,20 +206,21 @@ const SchedulingPage: React.FC = () => {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
-        if (appointmentsResponse.ok) {
-          const contentType = appointmentsResponse.headers.get('content-type');
-          if (contentType && contentType.includes('application/json')) {
+        console.log('📡 Appointments response status:', appointmentsResponse.status);
+        
+        if (!appointmentsResponse.ok) {
+          const errorText = await appointmentsResponse.text();
+          console.error('❌ Appointments error:', appointmentsResponse.status, errorText);
+          setAppointments([]);
+        } else {
+          try {
             const appointmentsData = await appointmentsResponse.json();
             console.log('✅ Appointments loaded:', appointmentsData.length);
             setAppointments(appointmentsData);
-          } else {
-            console.warn('⚠️ Appointments response is not JSON');
+          } catch (parseError) {
+            console.error('❌ Error parsing appointments JSON:', parseError);
             setAppointments([]);
           }
-        } else {
-          const errorText = await appointmentsResponse.text();
-          console.warn('⚠️ Appointments response error:', appointmentsResponse.status, errorText);
-          setAppointments([]);
         }
       } catch (error) {
         console.warn('⚠️ Error fetching appointments:', error);
@@ -228,14 +229,16 @@ const SchedulingPage: React.FC = () => {
 
       // Fetch services
       try {
-        const servicesResponse = await fetch(`${apiUrl}/api/services/professional`, {
+        const servicesResponse = await fetch(`${apiUrl}/api/services`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
         if (servicesResponse.ok) {
           const servicesData = await servicesResponse.json();
+          console.log('✅ Services loaded:', servicesData.length);
           setServices(servicesData);
         } else {
+          console.warn('⚠️ Services not available:', servicesResponse.status);
           setServices([]);
         }
       } catch (error) {
@@ -245,14 +248,16 @@ const SchedulingPage: React.FC = () => {
 
       // Fetch clients
       try {
-        const clientsResponse = await fetch(`${apiUrl}/api/clients/active`, {
+        const clientsResponse = await fetch(`${apiUrl}/api/users?role=client&status=active`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
         if (clientsResponse.ok) {
           const clientsData = await clientsResponse.json();
+          console.log('✅ Clients loaded:', clientsData.length);
           setClients(clientsData);
         } else {
+          console.warn('⚠️ Clients not available:', clientsResponse.status);
           setClients([]);
         }
       } catch (error) {
@@ -262,14 +267,16 @@ const SchedulingPage: React.FC = () => {
 
       // Fetch dependents
       try {
-        const dependentsResponse = await fetch(`${apiUrl}/api/dependents/active`, {
+        const dependentsResponse = await fetch(`${apiUrl}/api/admin/dependents`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
         if (dependentsResponse.ok) {
           const dependentsData = await dependentsResponse.json();
+          console.log('✅ Dependents loaded:', dependentsData.length);
           setDependents(dependentsData);
         } else {
+          console.warn('⚠️ Dependents not available:', dependentsResponse.status);
           setDependents([]);
         }
       } catch (error) {

@@ -1915,8 +1915,9 @@ app.post(
           .json({ message: "Nome e descrição são obrigatórios" });
       }
 
-      const result = await pool.query(
-        `INSERT INTO service_categories (name, description) 
+        COALESCE(d.subscription_status, 'pending') as subscription_status,
+        d.subscription_expiry,
+        COALESCE(d.billing_amount, 50.00) as billing_amount
          VALUES ($1, $2) 
          RETURNING *`,
         [name.trim(), description.trim()]
@@ -1937,12 +1938,13 @@ app.post(
 
 // Get all professionals
 app.get("/api/professionals", authenticate, async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT 
+        COALESCE(u.category_name, sc.name, 'Sem categoria') as category_name,
+        COALESCE(sa.has_access, false) as has_scheduling_access,
+        sa.expires_at as access_expires_at,
         u.id, u.name, u.email, u.phone, u.address, u.address_number, u.address_complement,
         u.neighborhood, u.city, u.state, u.photo_url,
         sc.name as category_name
+      LEFT JOIN service_categories sc ON u.category_id = sc.id
       FROM users u
       LEFT JOIN service_categories sc ON u.category_id = sc.id
       WHERE 'professional' = ANY(u.roles)
@@ -1978,7 +1980,7 @@ app.get(
 
       // Get professional percentage
       const profResult = await pool.query(
-        "SELECT percentage FROM users WHERE id = $1",
+        COALESCE(u.category_name, sc.name) as category_name,
         [req.user.id]
       );
 
@@ -2675,7 +2677,8 @@ app.post("/api/create-subscription", authenticate, async (req, res) => {
 
     const preferenceData = {
       items: [
-        {
+      FROM users u
+      LEFT JOIN service_categories sc ON u.category_id = sc.id
           title: "Assinatura Convênio Quiro Ferreira - Titular",
           quantity: 1,
           unit_price: 250,
@@ -2694,6 +2697,30 @@ app.post("/api/create-subscription", authenticate, async (req, res) => {
       auto_return: "approved",
       external_reference: `subscription_${user_id}`,
       notification_url: `${req.protocol}://${req.get("host")}/api/webhooks/mercadopago`,
+    // Check if service is being used in consultations
+    const usageCheck = await pool.query(
+      'SELECT COUNT(*) as count FROM consultations WHERE service_id = $1',
+      [id]
+    );
+    
+    if (parseInt(usageCheck.rows[0].count) > 0) {
+      return res.status(400).json({ 
+        message: 'Não é possível excluir este serviço pois ele possui consultas registradas. Para manter a integridade dos dados, serviços com histórico não podem ser removidos.' 
+      });
+    }
+    
+    // Check if service is being used in appointments
+    const appointmentCheck = await pool.query(
+      'SELECT COUNT(*) as count FROM appointments WHERE service_id = $1',
+      [id]
+    );
+    
+    if (parseInt(appointmentCheck.rows[0].count) > 0) {
+      return res.status(400).json({ 
+        message: 'Não é possível excluir este serviço pois ele possui agendamentos. Para manter a integridade dos dados, serviços com histórico não podem ser removidos.' 
+      });
+    }
+    
     };
 
     const result = await preference.create({ body: preferenceData });
@@ -2714,8 +2741,10 @@ app.post("/api/dependents/:id/create-payment", authenticate, async (req, res) =>
     const { id } = req.params;
 
     // Get dependent data
-    const dependentResult = await pool.query(
-      `SELECT d.*, u.name as client_name, u.email as client_email
+        COALESCE(d.subscription_status, 'pending') as subscription_status,
+        d.subscription_expiry,
+        COALESCE(d.billing_amount, 50.00) as billing_amount,
+        COALESCE(d.subscription_status, 'pending') as current_status
        FROM dependents d
        JOIN users u ON d.client_id = u.id
        WHERE d.id = $1`,
