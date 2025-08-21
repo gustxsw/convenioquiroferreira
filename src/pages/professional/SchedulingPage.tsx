@@ -131,6 +131,10 @@ const SchedulingPage: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [appointmentToDelete, setAppointmentToDelete] = useState<Appointment | null>(null);
 
+  // Private patient search state
+  const [privatePatientSearch, setPrivatePatientSearch] = useState('');
+  const [filteredPrivatePatients, setFilteredPrivatePatients] = useState<PrivatePatient[]>([]);
+
   // Get API URL
   const getApiUrl = () => {
     if (
@@ -162,6 +166,31 @@ const SchedulingPage: React.FC = () => {
 
     setFilteredAppointments(filtered);
   }, [appointments, searchTerm, statusFilter]);
+
+  // Filter private patients based on search
+  useEffect(() => {
+    if (privatePatientSearch.trim()) {
+      const filtered = privatePatients.filter(patient =>
+        patient.name.toLowerCase().includes(privatePatientSearch.toLowerCase()) ||
+        patient.cpf.includes(privatePatientSearch.replace(/\D/g, ''))
+      );
+      setFilteredPrivatePatients(filtered);
+    } else {
+      setFilteredPrivatePatients([]);
+    }
+  }, [privatePatientSearch, privatePatients]);
+
+  const selectPrivatePatient = (patient: PrivatePatient) => {
+    setFormData(prev => ({ ...prev, private_patient_id: patient.id.toString() }));
+    setPrivatePatientSearch(patient.name);
+    setFilteredPrivatePatients([]);
+  };
+
+  const clearPrivatePatientSelection = () => {
+    setFormData(prev => ({ ...prev, private_patient_id: '' }));
+    setPrivatePatientSearch('');
+    setFilteredPrivatePatients([]);
+  };
 
   const fetchData = async () => {
     try {
@@ -243,42 +272,13 @@ const SchedulingPage: React.FC = () => {
       patient_type: 'convenio',
       client_id: '',
       dependent_id: '',
-  // Private patient search state
-  const [privatePatientSearch, setPrivatePatientSearch] = useState('');
-  const [filteredPrivatePatients, setFilteredPrivatePatients] = useState<PrivatePatient[]>([]);
-
       private_patient_id: '',
       service_id: '',
       location_id: '',
-  // Filter private patients based on search
-  useEffect(() => {
-    if (privatePatientSearch.trim()) {
-      const filtered = privatePatients.filter(patient =>
-        patient.name.toLowerCase().includes(privatePatientSearch.toLowerCase()) ||
-        patient.cpf.includes(privatePatientSearch.replace(/\D/g, ''))
-      );
-      setFilteredPrivatePatients(filtered);
-    } else {
-      setFilteredPrivatePatients([]);
-    }
-  }, [privatePatientSearch, privatePatients]);
-
       date: '',
       time: '',
       value: '',
       is_recurring: false,
-  const selectPrivatePatient = (patient: PrivatePatient) => {
-    setFormData(prev => ({ ...prev, private_patient_id: patient.id.toString() }));
-    setPrivatePatientSearch(patient.name);
-    setFilteredPrivatePatients([]);
-  };
-
-  const clearPrivatePatientSelection = () => {
-    setFormData(prev => ({ ...prev, private_patient_id: '' }));
-    setPrivatePatientSearch('');
-    setFilteredPrivatePatients([]);
-  };
-
       recurring_days: [],
       total_sessions: ''
     });
