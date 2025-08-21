@@ -202,7 +202,7 @@ const SchedulingPage: React.FC = () => {
 
       // Fetch appointments with proper error handling
       try {
-        const appointmentsResponse = await fetch(`${apiUrl}/api/appointments`, {
+        const appointmentsResponse = await fetch(`${apiUrl}/api/appointments/professional`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
@@ -217,7 +217,8 @@ const SchedulingPage: React.FC = () => {
             setAppointments([]);
           }
         } else {
-          console.warn('⚠️ Appointments not available:', appointmentsResponse.status);
+          const errorText = await appointmentsResponse.text();
+          console.warn('⚠️ Appointments response error:', appointmentsResponse.status, errorText);
           setAppointments([]);
         }
       } catch (error) {
@@ -227,7 +228,7 @@ const SchedulingPage: React.FC = () => {
 
       // Fetch services
       try {
-        const servicesResponse = await fetch(`${apiUrl}/api/services`, {
+        const servicesResponse = await fetch(`${apiUrl}/api/services/professional`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
@@ -244,7 +245,7 @@ const SchedulingPage: React.FC = () => {
 
       // Fetch clients
       try {
-        const clientsResponse = await fetch(`${apiUrl}/api/clients`, {
+        const clientsResponse = await fetch(`${apiUrl}/api/clients/active`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
@@ -261,7 +262,7 @@ const SchedulingPage: React.FC = () => {
 
       // Fetch dependents
       try {
-        const dependentsResponse = await fetch(`${apiUrl}/api/admin/dependents`, {
+        const dependentsResponse = await fetch(`${apiUrl}/api/dependents/active`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
@@ -456,19 +457,18 @@ const SchedulingPage: React.FC = () => {
 
       console.log('📡 Appointment response status:', response.status);
       
-      // Check if response is JSON
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        console.error('❌ Non-JSON response received:', response.status);
-        const textResponse = await response.text();
-        console.error('❌ Response content:', textResponse.substring(0, 200));
-        throw new Error(`Erro no servidor: resposta inválida (${response.status})`);
-      }
-
       if (!response.ok) {
-        const errorData = await response.json();
+        let errorMessage = 'Erro ao salvar agendamento';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch (e) {
+          const textResponse = await response.text();
+          console.error('❌ Non-JSON error response:', textResponse.substring(0, 200));
+          errorMessage = `Erro no servidor (${response.status})`;
+        }
         console.error('❌ Appointment creation failed:', errorData);
-        throw new Error(errorData.message || 'Erro ao salvar agendamento');
+        throw new Error(errorMessage);
       }
 
       const responseData = await response.json();
@@ -510,8 +510,14 @@ const SchedulingPage: React.FC = () => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Erro ao reagendar');
+        let errorMessage = 'Erro ao reagendar';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch (e) {
+          console.error('Error parsing response:', e);
+        }
+        throw new Error(errorMessage);
       }
 
       setSuccess('Consulta reagendada com sucesso!');
@@ -532,7 +538,7 @@ const SchedulingPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
 
-      const response = await fetch(`${apiUrl}/api/appointments/${appointmentId}/status`, {
+      const response = await fetch(`${apiUrl}/api/appointments/${appointmentId}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -542,8 +548,14 @@ const SchedulingPage: React.FC = () => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Erro ao atualizar status');
+        let errorMessage = 'Erro ao atualizar status';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch (e) {
+          console.error('Error parsing response:', e);
+        }
+        throw new Error(errorMessage);
       }
 
       setSuccess(`Consulta ${status === 'completed' ? 'marcada como realizada' : 'cancelada'} com sucesso!`);
