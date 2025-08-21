@@ -427,6 +427,8 @@ const SchedulingPage: React.FC = () => {
 
       const method = modalMode === 'create' ? 'POST' : 'PUT';
 
+      console.log('🔄 Submitting appointment data:', appointmentData);
+      
       const response = await fetch(url, {
         method,
         headers: {
@@ -436,10 +438,25 @@ const SchedulingPage: React.FC = () => {
         body: JSON.stringify(appointmentData)
       });
 
+      console.log('📡 Appointment response status:', response.status);
+      
+      // Check if response is JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        console.error('❌ Non-JSON response received:', response.status);
+        const textResponse = await response.text();
+        console.error('❌ Response content:', textResponse.substring(0, 200));
+        throw new Error(`Erro no servidor: resposta inválida (${response.status})`);
+      }
+
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('❌ Appointment creation failed:', errorData);
         throw new Error(errorData.message || 'Erro ao salvar agendamento');
       }
+
+      const responseData = await response.json();
+      console.log('✅ Appointment saved successfully:', responseData);
 
       setSuccess(modalMode === 'create' ? 'Agendamento criado com sucesso!' : 'Agendamento atualizado com sucesso!');
       await fetchData();
