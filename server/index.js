@@ -2772,16 +2772,15 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
       }
     };
 
-    const response = await mercadopago.preferences.create(preference);
-    const response = await preference.create({ body: preferenceData });
+    const mpResponse = await preference.create({ body: preferenceData });
     
     // Update payment record with MP preference ID
     await pool.query(
       'UPDATE client_payments SET mp_preference_id = $1 WHERE id = $2',
-      [response.id, payment_id]
+      [mpResponse.id, payment_id]
     );
 
-    res.json({ init_point: response.init_point });
+    res.json({ init_point: mpResponse.init_point });
   } catch (error) {
     console.error('Error creating subscription payment:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
@@ -2840,15 +2839,15 @@ app.post('/api/dependents/:id/create-payment', authenticate, async (req, res) =>
       }
     };
 
-    const response = await preference.create({ body: preferenceData });
+    const mpResponse = await preference.create({ body: preferenceData });
     
     // Update payment record with MP preference ID
     await pool.query(
       'UPDATE dependent_payments SET mp_preference_id = $1 WHERE id = $2',
-      [response.id, payment_id]
+      [mpResponse.id, payment_id]
     );
 
-    res.json({ init_point: response.init_point });
+    res.json({ init_point: mpResponse.init_point });
   } catch (error) {
     console.error('Error creating dependent payment:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
@@ -2897,15 +2896,15 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
       }
     };
 
-    const response = await preference.create({ body: preferenceData });
+    const mpResponse = await preference.create({ body: preferenceData });
     
     // Update payment record with MP preference ID
     await pool.query(
       'UPDATE professional_payments SET mp_preference_id = $1 WHERE id = $2',
-      [response.id, payment_id]
+      [mpResponse.id, payment_id]
     );
 
-    res.json({ init_point: response.init_point });
+    res.json({ init_point: mpResponse.init_point });
   } catch (error) {
     console.error('Error creating professional payment:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
@@ -2951,15 +2950,15 @@ app.post('/api/professional/create-agenda-payment', authenticate, authorize(['pr
       }
     };
 
-    const response = await preference.create({ body: preferenceData });
+    const mpResponse = await preference.create({ body: preferenceData });
     
     // Update payment record with MP preference ID
     await pool.query(
       'UPDATE agenda_payments SET mp_preference_id = $1 WHERE id = $2',
-      [response.id, payment_id]
+      [mpResponse.id, payment_id]
     );
 
-    res.json({ init_point: response.init_point });
+    res.json({ init_point: mpResponse.init_point });
   } catch (error) {
     console.error('Error creating agenda payment:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
