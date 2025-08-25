@@ -1270,7 +1270,6 @@ app.get('/api/admin/professionals-scheduling-access', authenticate, authorize(['
       LEFT JOIN service_categories sc ON u.category_id = sc.id
       LEFT JOIN users granted_by ON u.access_granted_by = granted_by.id
       WHERE 'professional' = ANY(u.roles)
-     LEFT JOIN users granted_by ON u.scheduling_access_granted_by::integer = granted_by.id
     `);
 
     res.json(result.rows);
@@ -2768,18 +2767,18 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
           title: 'Assinatura Convênio Quiro Ferreira',
           quantity: 1,
           unit_price: 250,
-     back_urls: {
-       success: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/client?payment=success&type=subscription`,
-       failure: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/client?payment=failure&type=subscription`,
-       pending: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/client?payment=pending&type=subscription`
-     },
-     auto_return: 'all',
-      back_urls: {
-        success: `${req.protocol}://${req.get('host')}/client?payment=success`,
-        failure: `${req.protocol}://${req.get('host')}/client?payment=failure`,
-        pending: `${req.protocol}://${req.get('host')}/client?payment=pending`,
+          currency_id: 'BRL',
+        },
+      ],
+      payer: {
+        email: 'cliente@quiroferreira.com.br',
       },
-      auto_return: 'approved',
+      back_urls: {
+        success: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/client?payment=success&type=subscription`,
+        failure: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/client?payment=failure&type=subscription`,
+        pending: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/client?payment=pending&type=subscription`
+      },
+      auto_return: 'all',
       external_reference: `client_${user_id}_${Date.now()}`,
       notification_url: `${req.protocol}://${req.get('host')}/api/webhooks/mercadopago`,
     };
@@ -2840,12 +2839,12 @@ app.post('/api/dependents/:id/create-payment', authenticate, async (req, res) =>
       payer: {
         email: 'cliente@quiroferreira.com.br',
       },
-     back_urls: {
-       success: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/client?payment=success&type=dependent`,
-       failure: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/client?payment=failure&type=dependent`,
-       pending: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/client?payment=pending&type=dependent`
-     },
-     auto_return: 'all',
+      back_urls: {
+        success: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/client?payment=success&type=dependent`,
+        failure: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/client?payment=failure&type=dependent`,
+        pending: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/client?payment=pending&type=dependent`
+      },
+      auto_return: 'all',
       external_reference: `dependent_${id}_${Date.now()}`,
       notification_url: `${req.protocol}://${req.get('host')}/api/webhooks/mercadopago`,
     };
@@ -2893,11 +2892,11 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
         email: 'profissional@quiroferreira.com.br',
       },
       back_urls: {
-        success: `${req.protocol}://${req.get('host')}/professional?payment=success`,
-        failure: `${req.protocol}://${req.get('host')}/professional?payment=failure`,
-        pending: `${req.protocol}://${req.get('host')}/professional?payment=pending`,
+        success: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/professional?payment=success&type=clinic`,
+        failure: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/professional?payment=failure&type=clinic`,
+        pending: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/professional?payment=pending&type=clinic`
       },
-      auto_return: 'approved',
+      auto_return: 'all',
       external_reference: `professional_${req.user.id}_${Date.now()}`,
       notification_url: `${req.protocol}://${req.get('host')}/api/webhooks/mercadopago`,
     };
@@ -2905,12 +2904,12 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
     const response = await preference.create({ body: preferenceData });
 
     // Save payment record
-     back_urls: {
-       success: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/professional?payment=success&type=clinic`,
-       failure: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/professional?payment=failure&type=clinic`,
-       pending: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/professional?payment=pending&type=clinic`
-     },
-     auto_return: 'all',
+    await pool.query(`
+      INSERT INTO professional_payments (professional_id, amount, payment_reference, mp_preference_id)
+      VALUES ($1, $2, $3, $4)
+    `, [req.user.id, amount, preferenceData.external_reference, response.id]);
+
+    res.json({
       id: response.id,
       init_point: response.init_point,
       sandbox_init_point: response.sandbox_init_point,
@@ -2957,15 +2956,15 @@ app.post('/api/professional/create-agenda-payment', authenticate, authorize(['pr
           currency_id: 'BRL',
         },
       ],
-     back_urls: {
-       success: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/professional/scheduling?payment=success&type=agenda`,
-       failure: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/professional/scheduling?payment=failure&type=agenda`,
-       pending: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/professional/scheduling?payment=pending&type=agenda`
-     },
-     auto_return: 'all',
-        pending: `${req.protocol}://${req.get('host')}/professional/scheduling?payment=pending&type=agenda`,
+      payer: {
+        email: 'profissional@quiroferreira.com.br',
       },
-      auto_return: 'approved',
+      back_urls: {
+        success: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/professional/scheduling?payment=success&type=agenda`,
+        failure: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/professional/scheduling?payment=failure&type=agenda`,
+        pending: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/professional/scheduling?payment=pending&type=agenda`
+      },
+      auto_return: 'all',
       external_reference: `agenda_${req.user.id}_${Date.now()}`,
       notification_url: `${req.protocol}://${req.get('host')}/api/webhooks/mercadopago`,
     };
