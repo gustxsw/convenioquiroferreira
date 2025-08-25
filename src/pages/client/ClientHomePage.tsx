@@ -345,6 +345,26 @@ const ClientHomePage: React.FC = () => {
         </div>
       )}
 
+      {/* Subscription Status Display for Active Clients */}
+      {subscriptionStatus === "active" && subscriptionExpiry && (
+        <div className="bg-green-50 border-l-4 border-green-600 p-4 mb-6">
+          <div className="flex items-center">
+            <CheckCircle className="h-5 w-5 text-green-600 mr-2" />
+            <div>
+              <p className="text-green-700 font-medium">
+                Sua assinatura está ativa
+              </p>
+              <p className="text-green-600 text-sm">
+                Válida até: {new Date(subscriptionExpiry).toLocaleDateString('pt-BR', {
+                  day: '2-digit',
+                  month: 'long',
+                  year: 'numeric'
+                })}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {subscriptionStatus !== "active" && (
         <>
