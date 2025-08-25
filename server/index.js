@@ -37,6 +37,9 @@ const client = new MercadoPagoConfig({
 });
 
 // Middleware
+const preference = new Preference(client);
+const payment = new Payment(client);
+
 app.use(cors({
   origin: [
     'http://localhost:5173',
