@@ -2744,7 +2744,7 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
     const external_reference = `subscription_${user_id}_${Date.now()}`;
     
     const paymentResult = await pool.query(
-      'INSERT INTO client_payments (client_id, amount, status, external_reference, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING id',
+      'INSERT INTO client_payments (user_id, amount, status, external_reference, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING id',
       [user_id, 250, 'pending', external_reference]
     );
     
