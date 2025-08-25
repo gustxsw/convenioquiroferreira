@@ -29,7 +29,7 @@ cloudinary.config({
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
   secure: true,
-});
+import { MercadoPagoConfig, Preference } from 'mercadopago';
 
 // Configure MercadoPago
 const client = new MercadoPagoConfig({
@@ -38,7 +38,6 @@ const client = new MercadoPagoConfig({
 
 // Middleware
 const preference = new Preference(client);
-const payment = new Payment(client);
 
 app.use(cors({
   origin: [
