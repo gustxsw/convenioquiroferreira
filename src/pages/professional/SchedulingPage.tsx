@@ -517,7 +517,7 @@ const SchedulingPage: React.FC = () => {
                 <Gift className="h-5 w-5 text-green-600 mr-2" />
                 <span className="font-semibold text-green-900">Oferta Especial</span>
               </div>
-              <p className="text-2xl font-bold text-green-700 mb-1">R$ 100,00</p>
+              <p className="text-2xl font-bold text-green-700 mb-1">R$ 24,99</p>
               <p className="text-sm text-green-600">Acesso por 30 dias</p>
             </div>
 
