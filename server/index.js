@@ -3664,18 +3664,38 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
       paramCount++;
     }
     
+      birth_date || null,
+      address?.trim() || null,
+      address_number?.trim() || null,
+      address_complement?.trim() || null,
+      neighborhood?.trim() || null,
+      city?.trim() || null,
+      state || null,
+      zip_code?.replace(/\D/g, '') || null,
     if (newPassword) {
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      category_name?.trim() || null,
+      crm?.trim() || null,
+      professional_percentage ? Number(professional_percentage) : null,
+      subscription_status || null,
+      subscription_expiry || null,
+      emergency_contact_name?.trim() || null,
+      emergency_contact_phone?.replace(/\D/g, '') || null,
+      emergency_contact_relationship?.trim() || null,
+      medical_history?.trim() || null,
+      current_medications?.trim() || null,
+      known_allergies?.trim() || null,
+      insurance_info?.trim() || null,
+      notes?.trim() || null
       updateFields.push(`password = $${paramCount}`);
       values.push(hashedPassword);
       paramCount++;
     }
     
-    updateFields.push(`updated_at = NOW()`);
+      updateQuery += `, password = $${queryParams.length + 1}`;
     values.push(id);
     
     const query = `UPDATE users SET ${updateFields.join(', ')} WHERE id = $${paramCount} RETURNING *`;
-    const result = await pool.query(query, values);
+    updateQuery += ` WHERE id = $${queryParams.length + 1} RETURNING id, name, cpf, email, phone, birth_date, address, city, state, roles, category_name, subscription_status, subscription_expiry, created_at`;
     
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Usuário não encontrado' });
@@ -3857,7 +3877,14 @@ app.get('/api/dependents/:client_id', authenticate, async (req, res) => {
     console.error('Error fetching dependents:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
   }
-});
+    const { 
+      name, cpf, email, phone, birth_date, address, address_number, 
+      address_complement, neighborhood, city, state, zip_code, password, 
+      roles, category_name, crm, professional_percentage, subscription_status,
+      subscription_expiry, emergency_contact_name, emergency_contact_phone,
+      emergency_contact_relationship, medical_history, current_medications,
+      known_allergies, insurance_info, notes
+    } = req.body;
 
 // Create dependent
 app.post('/api/dependents', authenticate, async (req, res) => {
@@ -3936,18 +3963,44 @@ app.put('/api/dependents/:id', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Error updating dependent:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
-  }
-});
-
+      INSERT INTO users (
+        name, cpf, email, phone, birth_date, address, address_number, 
+        address_complement, neighborhood, city, state, zip_code, password, 
+        roles, category_name, crm, professional_percentage, subscription_status,
+        subscription_expiry, emergency_contact_name, emergency_contact_phone,
+        emergency_contact_relationship, medical_history, current_medications,
+        known_allergies, insurance_info, notes, created_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, NOW())
+      RETURNING id, name, cpf, email, phone, birth_date, address, city, state, roles, category_name, subscription_status, subscription_expiry, created_at
 // Delete dependent
 app.delete('/api/dependents/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     
+      birth_date || null,
+      address?.trim() || null,
+      address_number?.trim() || null,
+      address_complement?.trim() || null,
+      neighborhood?.trim() || null,
+      city?.trim() || null,
+      state || null,
+      zip_code?.replace(/\D/g, '') || null,
     // Check if user owns this dependent
     const dependentCheck = await pool.query(
       'SELECT client_id FROM dependents WHERE id = $1',
-      [id]
+      crm?.trim() || null,
+      professional_percentage ? Number(professional_percentage) : null,
+      subscription_status || (roles.includes('client') ? 'pending' : null),
+      subscription_expiry || null,
+      emergency_contact_name?.trim() || null,
+      emergency_contact_phone?.replace(/\D/g, '') || null,
+      emergency_contact_relationship?.trim() || null,
+      medical_history?.trim() || null,
+      current_medications?.trim() || null,
+      known_allergies?.trim() || null,
+      insurance_info?.trim() || null,
+      notes?.trim() || null
     );
     
     if (dependentCheck.rows.length === 0) {
@@ -3969,7 +4022,14 @@ app.delete('/api/dependents/:id', authenticate, async (req, res) => {
 
 // ===== CRUD CONSULTATIONS =====
 // Get all consultations (admin) or professional's consultations
-app.get('/api/consultations', authenticate, async (req, res) => {
+    const { 
+      name, email, phone, birth_date, address, address_number, 
+      address_complement, neighborhood, city, state, zip_code, password, 
+      roles, category_name, crm, professional_percentage, subscription_status,
+      subscription_expiry, emergency_contact_name, emergency_contact_phone,
+      emergency_contact_relationship, medical_history, current_medications,
+      known_allergies, insurance_info, notes
+    } = req.body;
   try {
     let query = `
       SELECT 
@@ -3988,7 +4048,14 @@ app.get('/api/consultations', authenticate, async (req, res) => {
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN users u2 ON c.professional_id = u2.id
       LEFT JOIN services s ON c.service_id = s.id
-      LEFT JOIN attendance_locations al ON c.location_id = al.id
+      SET name = $1, email = $2, phone = $3, birth_date = $4, address = $5, 
+          address_number = $6, address_complement = $7, neighborhood = $8, 
+          city = $9, state = $10, zip_code = $11, roles = $12, category_name = $13,
+          crm = $14, professional_percentage = $15, subscription_status = $16,
+          subscription_expiry = $17, emergency_contact_name = $18, 
+          emergency_contact_phone = $19, emergency_contact_relationship = $20,
+          medical_history = $21, current_medications = $22, known_allergies = $23,
+          insurance_info = $24, notes = $25, updated_at = NOW()
     `;
     
     const params = [];
