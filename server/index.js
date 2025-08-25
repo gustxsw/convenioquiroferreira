@@ -2953,7 +2953,7 @@ app.post('/api/professional/create-agenda-payment', authenticate, authorize(['pr
         {
           title: `Acesso à Agenda - ${duration_days} dias`,
           quantity: 1,
-          unit_price: 100, // Fixed price for agenda access
+          unit_price: 24.99, // Fixed price for agenda access
           currency_id: 'BRL',
         },
       ],
@@ -2976,7 +2976,7 @@ app.post('/api/professional/create-agenda-payment', authenticate, authorize(['pr
     await pool.query(`
       INSERT INTO agenda_payments (professional_id, amount, duration_days, payment_reference, mp_preference_id)
       VALUES ($1, $2, $3, $4, $5)
-    `, [req.user.id, 100, duration_days, preferenceData.external_reference, response.id]);
+    `, [req.user.id, 24.99, duration_days, preferenceData.external_reference, response.id]);
 
     res.json({
       id: response.id,
