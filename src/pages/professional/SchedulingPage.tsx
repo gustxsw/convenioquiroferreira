@@ -110,6 +110,36 @@ const SchedulingPage: React.FC = () => {
     return "http://localhost:3001";
   };
 
+  // Handle payment feedback from URL parameters
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const paymentStatus = urlParams.get("payment");
+    const paymentType = urlParams.get("type");
+
+    if (paymentStatus && paymentType === "agenda") {
+      if (paymentStatus === "success") {
+        setSuccess("Pagamento do acesso à agenda aprovado! Seu acesso foi ativado.");
+        // Refresh access status
+        setTimeout(() => {
+          checkSchedulingAccess();
+        }, 2000);
+      } else if (paymentStatus === "failure") {
+        setError("Falha no pagamento do acesso à agenda. Tente novamente.");
+      } else if (paymentStatus === "pending") {
+        setSuccess("Pagamento do acesso à agenda está sendo processado.");
+      }
+
+      // Clear URL parameters
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+
+      // Auto-hide feedback after 10 seconds
+      setTimeout(() => {
+        setError('');
+        setSuccess('');
+      }, 10000);
+    }
+  }, []);
   useEffect(() => {
     checkSchedulingAccess();
   }, []);
