@@ -29,8 +29,7 @@ cloudinary.config({
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
   secure: true,
-}
-)
+});
 
 // Configure MercadoPago
 const client = new MercadoPagoConfig({
@@ -1239,7 +1238,7 @@ app.delete('/api/services/:id', authenticate, authorize(['admin']), async (req, 
 // Professionals routes
 app.get('/api/professionals', authenticate, async (req, res) => {
   try {
-          WHEN sa.professional_id IS NOT NULL AND sa.expires_at > NOW() THEN true
+    const result = await pool.query(`
       SELECT 
         u.id, u.name, u.email, u.phone, u.roles,
         u.address, u.address_number, u.address_complement,
