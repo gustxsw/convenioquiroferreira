@@ -88,7 +88,7 @@ const initializeDatabase = async () => {
         has_scheduling_access BOOLEAN DEFAULT FALSE,
         access_expires_at TIMESTAMP,
         access_granted_by INTEGER,
-        scheduling_access_granted_at TIMESTAMP,
+        access_granted_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (category_id) REFERENCES service_categories(id),
@@ -1265,7 +1265,7 @@ app.get('/api/admin/professionals-scheduling-access', authenticate, authorize(['
         u.has_scheduling_access,
         u.access_expires_at,
         granted_by.name as access_granted_by,
-        u.scheduling_access_granted_at
+        u.access_granted_at
       FROM users u
       LEFT JOIN service_categories sc ON u.category_id = sc.id
       LEFT JOIN users granted_by ON u.access_granted_by = granted_by.id
@@ -1305,7 +1305,7 @@ app.post('/api/admin/grant-scheduling-access', authenticate, authorize(['admin']
         has_scheduling_access = TRUE,
         access_expires_at = $1,
         access_granted_by = $2,
-        scheduling_access_granted_at = CURRENT_TIMESTAMP,
+        access_granted_at = CURRENT_TIMESTAMP,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $3
     `, [expires_at, req.user.id, professional_id]);
