@@ -31,7 +31,6 @@ cloudinary.config({
   secure: true,
 }
 )
-import { MercadoPagoConfig, Preference } from 'mercadopago';
 
 // Configure MercadoPago
 const client = new MercadoPagoConfig({
