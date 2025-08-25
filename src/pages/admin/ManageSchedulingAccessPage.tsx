@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, UserCheck, Plus, Edit, Trash2, Search, Filter, Clock, Gift, AlertCircle, X, Check } from 'lucide-react';
 
 type Professional = {
-  id: string;
+  id: number;
   name: string;
   email: string;
   phone: string;

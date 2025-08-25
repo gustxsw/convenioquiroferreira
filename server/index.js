@@ -1253,31 +1253,21 @@ app.get('/api/professionals', authenticate, async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('❌ Error fetching professionals:', error);
-    res.status(500).json({ message: 'Erro interno do servidor' });
-  }
+        u.category_name,
+        CASE 
+          WHEN sa.professional_id IS NOT NULL AND sa.expires_at > NOW() THEN true
+          ELSE false
+        END as has_scheduling_access,
 });
-
+        sa.granted_by_name as access_granted_by,
 app.get('/api/admin/professionals-scheduling-access', authenticate, authorize(['admin']), async (req, res) => {
   try {
-    console.log('🔄 Fetching professionals with scheduling access status...');
-
     const result = await pool.query(`
-      SELECT 
-        u.id,
-        u.name,
-        COALESCE(sc.name, 'Sem categoria') as category_name,
-        u.has_scheduling_access,
-        u.access_expires_at,
-        granted_by.name as access_granted_by,
-        u.access_granted_at
-      FROM users u
-      LEFT JOIN service_categories sc ON u.category_id = sc.id
-      LEFT JOIN users granted_by ON u.access_granted_by = granted_by.id
-      WHERE 'professional' = ANY(u.roles)
+      LEFT JOIN scheduling_access sa ON sa.professional_id = u.id::text
+      WHERE u.roles::jsonb @> '["professional"]'
       ORDER BY u.name
     `);
 
-    console.log('✅ Found professionals:', result.rows.length);
 
     res.json(result.rows);
   } catch (error) {
@@ -1289,41 +1279,22 @@ app.get('/api/admin/professionals-scheduling-access', authenticate, authorize(['
 app.post('/api/admin/grant-scheduling-access', authenticate, authorize(['admin']), async (req, res) => {
   try {
     const { professional_id, expires_at, reason } = req.body;
-    
-    console.log('🔄 Granting scheduling access:', { professional_id, expires_at, reason });
 
     if (!professional_id || !expires_at) {
       return res.status(400).json({ message: 'ID do profissional e data de expiração são obrigatórios' });
     }
-
-    // Verify professional exists
-    const professionalResult = await pool.query(
-      'SELECT id, name FROM users WHERE id = $1 AND \'professional\' = ANY(roles)',
-      [professional_id]
-    );
-
-    if (professionalResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Profissional não encontrado' });
-    }
-
-    // Grant access
-    await pool.query(`
-      UPDATE users 
-      SET 
         has_scheduling_access = TRUE,
-        access_expires_at = $1,
-        access_granted_by = $2,
-        access_granted_at = CURRENT_TIMESTAMP,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3
-    `, [expires_at, req.user.id, professional_id]);
-
+    // Insert or update scheduling access
     // Log the action
     await pool.query(`
-      INSERT INTO audit_logs (user_id, action, table_name, record_id, new_values)
+      VALUES ($1, $2, $3, NOW(), $4)
+      ON CONFLICT (professional_id) 
+      DO UPDATE SET 
+        expires_at = EXCLUDED.expires_at,
+        granted_by_name = EXCLUDED.granted_by_name,
+        granted_at = NOW(),
+        reason = EXCLUDED.reason
       VALUES ($1, $2, $3, $4, $5)
-    `, [
-      req.user.id,
       'GRANT_SCHEDULING_ACCESS',
       'users',
       professional_id,
@@ -1357,19 +1328,15 @@ app.post('/api/admin/revoke-scheduling-access', authenticate, authorize(['admin'
       WHERE id = $1
     `, [professional_id]);
 
-    // Log the action
-    await pool.query(`
       INSERT INTO audit_logs (user_id, action, table_name, record_id, new_values)
       VALUES ($1, $2, $3, $4, $5)
     `, [
       req.user.id,
       'REVOKE_SCHEDULING_ACCESS',
       'users',
-      professional_id,
+      'DELETE FROM scheduling_access WHERE professional_id = $1',
       JSON.stringify({ revoked_by: req.user.name })
     ]);
-    
-    console.log('✅ Scheduling access revoked for professional:', professional_id);
 
     res.json({ message: 'Acesso à agenda revogado com sucesso' });
   } catch (error) {
@@ -1381,34 +1348,31 @@ app.post('/api/admin/revoke-scheduling-access', authenticate, authorize(['admin'
 // 🔥 NEW: Professional scheduling access status check
 app.get('/api/professional/scheduling-access-status', authenticate, authorize(['professional']), async (req, res) => {
   try {
-    const professionalId = req.user.id;
-    console.log('🔄 Checking scheduling access for professional:', professionalId);
-    
     const result = await pool.query(
       'SELECT has_scheduling_access, access_expires_at FROM users WHERE id = $1',
-      [professionalId]
-    );
+        CASE WHEN expires_at > NOW() THEN true ELSE false END as has_access,
+        CASE WHEN expires_at < NOW() THEN true ELSE false END as is_expired,
     
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Usuário não encontrado' });
-    }
-
-    const user = result.rows[0];
-    
-    let hasAccess = user.has_scheduling_access;
-    let isExpired = false;
-
-    // Check if access has expired
-    if (user.access_expires_at) {
-      const expiryDate = new Date(user.access_expires_at);
-      const now = new Date();
+        true as can_purchase
+      FROM scheduling_access 
+      WHERE professional_id = $1
+    `, [req.user.id]);
       
+    if (result.rows.length === 0) {
+      return res.json({
+        hasAccess: false,
+        isExpired: false,
+        expiresAt: null,
+        canPurchase: true
+      });
+    }
       if (expiryDate < now) {
+    const access = result.rows[0];
         hasAccess = false;
-        isExpired = true;
-        
-        // Revoke expired access
-        await pool.query(
+      hasAccess: access.has_access,
+      isExpired: access.is_expired,
+      expiresAt: access.expires_at,
+      canPurchase: access.can_purchase
           'UPDATE users SET has_scheduling_access = FALSE WHERE id = $1',
           [professionalId]
         );
@@ -3691,7 +3655,7 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
     
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Usuário não encontrado' });
-    }
+    `, [professional_id, expires_at, req.user.name, reason]);
     
     res.json({ 
       message: 'Usuário atualizado com sucesso',
