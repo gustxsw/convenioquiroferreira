@@ -480,7 +480,11 @@ const authenticate = async (req, res, next) => {
       name: user.name,
       cpf: user.cpf,
       roles: user.roles || [],
-      currentRole: decoded.currentRole || (user.roles && user.roles[0]),
+      currentRole: decoded.currentRole || (
+      )
+    }
+  }
+}user.roles && user.roles[0]),
       hasSchedulingAccess: user.has_scheduling_access,
       schedulingAccessExpiresAt: user.access_expires_at
     };
