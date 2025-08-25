@@ -2750,7 +2750,7 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
     
     const payment_id = paymentResult.rows[0].id;
 
-    const preference = {
+    const preferenceData = {
       items: [
         {
           title: 'Assinatura Convênio Quiro Ferreira',
