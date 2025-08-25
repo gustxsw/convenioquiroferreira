@@ -48,10 +48,20 @@ const ManageUsersPage: React.FC = () => {
     cpf: "",
     email: "",
     phone: "",
+    birth_date: "",
+    address: "",
+    address_number: "",
+    address_complement: "",
+    neighborhood: "",
+    city: "",
+    state: "",
+    zip_code: "",
     password: "",
     confirmPassword: "",
     roles: [] as string[],
     category_name: "",
+    crm: "",
+    professional_percentage: "",
   });
 
   // Password visibility
@@ -145,10 +155,20 @@ const ManageUsersPage: React.FC = () => {
       cpf: "",
       email: "",
       phone: "",
+      birth_date: "",
+      address: "",
+      address_number: "",
+      address_complement: "",
+      neighborhood: "",
+      city: "",
+      state: "",
+      zip_code: "",
       password: "",
       confirmPassword: "",
       roles: [],
       category_name: "",
+      crm: "",
+      professional_percentage: "",
     });
     setSelectedUser(null);
     setIsModalOpen(true);
@@ -161,10 +181,20 @@ const ManageUsersPage: React.FC = () => {
       cpf: user.cpf,
       email: user.email || "",
       phone: user.phone || "",
+      birth_date: user.birth_date || "",
+      address: user.address || "",
+      address_number: user.address_number || "",
+      address_complement: user.address_complement || "",
+      neighborhood: user.neighborhood || "",
+      city: user.city || "",
+      state: user.state || "",
+      zip_code: user.zip_code || "",
       password: "",
       confirmPassword: "",
       roles: user.roles || [],
       category_name: user.category_name || "",
+      crm: user.crm || "",
+      professional_percentage: user.professional_percentage?.toString() || "",
     });
     setSelectedUser(user);
     setIsModalOpen(true);
@@ -202,6 +232,28 @@ const ManageUsersPage: React.FC = () => {
     const numericValue = value.replace(/\D/g, "");
     const limitedValue = numericValue.slice(0, 11);
     setFormData((prev) => ({ ...prev, phone: limitedValue }));
+  };
+
+  const formatZipCode = (value: string) => {
+    const numericValue = value.replace(/\D/g, "");
+    const limitedValue = numericValue.slice(0, 8);
+    setFormData((prev) => ({ ...prev, zip_code: limitedValue }));
+  };
+
+  const formatPhoneDisplay = (phone: string) => {
+    if (!phone) return "";
+    const cleaned = phone.replace(/\D/g, "");
+    if (cleaned.length === 11) {
+      return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 7)}-${cleaned.slice(7)}`;
+    } else if (cleaned.length === 10) {
+      return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 6)}-${cleaned.slice(6)}`;
+    }
+    return phone;
+  };
+
+  const formatZipCodeDisplay = (zipCode: string) => {
+    if (!zipCode) return "";
+    return zipCode.replace(/(\d{5})(\d{3})/, "$1-$2");
   };
 
   const validateForm = () => {
@@ -257,6 +309,15 @@ const ManageUsersPage: React.FC = () => {
     if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       setError("Email inválido");
       return false;
+    }
+
+    // Validate professional percentage if professional role is selected
+    if (formData.roles.includes('professional') && formData.professional_percentage) {
+      const percentage = Number(formData.professional_percentage);
+      if (isNaN(percentage) || percentage < 0 || percentage > 100) {
+        setError("Porcentagem do profissional deve ser um número entre 0 e 100");
+        return false;
+      }
     }
 
     return true;
@@ -788,6 +849,19 @@ const ManageUsersPage: React.FC = () => {
                       />
                     </div>
 
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Data de Nascimento
+                      </label>
+                      <input
+                        type="date"
+                        name="birth_date"
+                        value={formData.birth_date}
+                        onChange={handleInputChange}
+                        className="input"
+                      />
+                    </div>
+
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Categoria/Especialidade
@@ -806,6 +880,182 @@ const ManageUsersPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* Address Information */}
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    Endereço
+                  </h3>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        CEP
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.zip_code ? formatZipCodeDisplay(formData.zip_code) : ""}
+                        onChange={(e) => formatZipCode(e.target.value)}
+                        className="input"
+                        placeholder="00000-000"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Endereço
+                      </label>
+                      <input
+                        type="text"
+                        name="address"
+                        value={formData.address}
+                        onChange={handleInputChange}
+                        className="input"
+                        placeholder="Rua, Avenida, etc."
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Número
+                      </label>
+                      <input
+                        type="text"
+                        name="address_number"
+                        value={formData.address_number}
+                        onChange={handleInputChange}
+                        className="input"
+                        placeholder="123"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Complemento
+                      </label>
+                      <input
+                        type="text"
+                        name="address_complement"
+                        value={formData.address_complement}
+                        onChange={handleInputChange}
+                        className="input"
+                        placeholder="Apto, Bloco, etc."
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Bairro
+                      </label>
+                      <input
+                        type="text"
+                        name="neighborhood"
+                        value={formData.neighborhood}
+                        onChange={handleInputChange}
+                        className="input"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Cidade
+                      </label>
+                      <input
+                        type="text"
+                        name="city"
+                        value={formData.city}
+                        onChange={handleInputChange}
+                        className="input"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Estado
+                      </label>
+                      <select
+                        name="state"
+                        value={formData.state}
+                        onChange={handleInputChange}
+                        className="input"
+                      >
+                        <option value="">Selecione...</option>
+                        <option value="AC">Acre</option>
+                        <option value="AL">Alagoas</option>
+                        <option value="AP">Amapá</option>
+                        <option value="AM">Amazonas</option>
+                        <option value="BA">Bahia</option>
+                        <option value="CE">Ceará</option>
+                        <option value="DF">Distrito Federal</option>
+                        <option value="ES">Espírito Santo</option>
+                        <option value="GO">Goiás</option>
+                        <option value="MA">Maranhão</option>
+                        <option value="MT">Mato Grosso</option>
+                        <option value="MS">Mato Grosso do Sul</option>
+                        <option value="MG">Minas Gerais</option>
+                        <option value="PA">Pará</option>
+                        <option value="PB">Paraíba</option>
+                        <option value="PR">Paraná</option>
+                        <option value="PE">Pernambuco</option>
+                        <option value="PI">Piauí</option>
+                        <option value="RJ">Rio de Janeiro</option>
+                        <option value="RN">Rio Grande do Norte</option>
+                        <option value="RS">Rio Grande do Sul</option>
+                        <option value="RO">Rondônia</option>
+                        <option value="RR">Roraima</option>
+                        <option value="SC">Santa Catarina</option>
+                        <option value="SP">São Paulo</option>
+                        <option value="SE">Sergipe</option>
+                        <option value="TO">Tocantins</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Professional Information (conditional) */}
+                {formData.roles.includes('professional') && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                      Informações Profissionais
+                    </h3>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          CRM/Registro Profissional
+                        </label>
+                        <input
+                          type="text"
+                          name="crm"
+                          value={formData.crm}
+                          onChange={handleInputChange}
+                          className="input"
+                          placeholder="Ex: 12345/GO"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Porcentagem do Profissional (%)
+                        </label>
+                        <input
+                          type="number"
+                          name="professional_percentage"
+                          value={formData.professional_percentage}
+                          onChange={handleInputChange}
+                          className="input"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          placeholder="Ex: 50"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Porcentagem que o profissional recebe das consultas do convênio
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Roles */}
                 <div>
