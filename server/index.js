@@ -124,7 +124,7 @@ const initializeDatabase = async () => {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS dependents (
         id SERIAL PRIMARY KEY,
-        client_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
         name VARCHAR(255) NOT NULL,
         cpf VARCHAR(11) UNIQUE NOT NULL,
         birth_date DATE,
@@ -135,7 +135,7 @@ const initializeDatabase = async () => {
         activated_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
 
@@ -187,7 +187,7 @@ const initializeDatabase = async () => {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS consultations (
         id SERIAL PRIMARY KEY,
-        client_id INTEGER,
+        user_id INTEGER,
         dependent_id INTEGER,
         private_patient_id INTEGER,
         professional_id INTEGER NOT NULL,
@@ -198,7 +198,7 @@ const initializeDatabase = async () => {
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (client_id) REFERENCES users(id),
+        FOREIGN KEY (user_id) REFERENCES users(id),
         FOREIGN KEY (dependent_id) REFERENCES dependents(id),
         FOREIGN KEY (private_patient_id) REFERENCES private_patients(id),
         FOREIGN KEY (professional_id) REFERENCES users(id),
@@ -271,7 +271,7 @@ const initializeDatabase = async () => {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS client_payments (
         id SERIAL PRIMARY KEY,
-        client_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
         amount DECIMAL(10,2) NOT NULL,
         payment_type VARCHAR(50) DEFAULT 'subscription',
         payment_status VARCHAR(20) DEFAULT 'pending',
@@ -280,7 +280,7 @@ const initializeDatabase = async () => {
         mp_preference_id VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
 
@@ -633,19 +633,19 @@ const calculateProfessionalRevenue = async (professionalId, startDate, endDate) 
         c.*,
         s.name as service_name,
         CASE 
-          WHEN c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN 'convenio'
+          WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN 'convenio'
           WHEN c.private_patient_id IS NOT NULL THEN 'private'
           ELSE 'unknown'
         END as patient_type,
         CASE 
-          WHEN c.client_id IS NOT NULL THEN u.name
+          WHEN c.user_id IS NOT NULL THEN u.name
           WHEN c.dependent_id IS NOT NULL THEN d.name
           WHEN c.private_patient_id IS NOT NULL THEN pp.name
           ELSE 'Desconhecido'
         END as patient_name
       FROM consultations c
       LEFT JOIN services s ON c.service_id = s.id
-      LEFT JOIN users u ON c.client_id = u.id
+      LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       WHERE c.professional_id = $1 
@@ -1428,7 +1428,7 @@ app.get('/api/dependents/:clientId', authenticate, async (req, res) => {
           ELSE d.subscription_status
         END as current_status
       FROM dependents d
-      WHERE d.client_id = $1
+      WHERE d.user_id = $1
       ORDER BY d.created_at DESC
     `, [clientId]);
 
@@ -1451,7 +1451,7 @@ app.get('/api/dependents/lookup', authenticate, authorize(['professional']), asy
 
     const result = await pool.query(`
       SELECT 
-        d.id, d.name, d.cpf, d.client_id,
+        d.id, d.name, d.cpf, d.user_id,
         u.name as client_name,
         CASE 
           WHEN d.subscription_expiry IS NULL THEN d.subscription_status
@@ -1459,7 +1459,7 @@ app.get('/api/dependents/lookup', authenticate, authorize(['professional']), asy
           ELSE d.subscription_status
         END as dependent_subscription_status
       FROM dependents d
-      JOIN users u ON d.client_id = u.id
+      JOIN users u ON d.user_id = u.id
       WHERE d.cpf = $1
     `, [cleanCpf]);
 
@@ -1476,10 +1476,10 @@ app.get('/api/dependents/lookup', authenticate, authorize(['professional']), asy
 
 app.post('/api/dependents', authenticate, async (req, res) => {
   try {
-    const { client_id, name, cpf, birth_date } = req.body;
+    const { user_id, name, cpf, birth_date } = req.body;
 
     // Verify access
-    if (req.user.currentRole !== 'admin' && req.user.id !== client_id) {
+    if (req.user.currentRole !== 'admin' && req.user.id !== user_id) {
       return res.status(403).json({ message: 'Acesso não autorizado' });
     }
 
@@ -1513,10 +1513,10 @@ app.post('/api/dependents', authenticate, async (req, res) => {
     }
 
     const result = await pool.query(`
-      INSERT INTO dependents (client_id, name, cpf, birth_date)
+      INSERT INTO dependents (user_id, name, cpf, birth_date)
       VALUES ($1, $2, $3, $4)
       RETURNING *
-    `, [client_id, name, cleanCpf, birth_date || null]);
+    `, [user_id, name, cleanCpf, birth_date || null]);
 
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -1532,7 +1532,7 @@ app.put('/api/dependents/:id', authenticate, async (req, res) => {
 
     // Verify dependent exists and user has access
     const dependentResult = await pool.query(
-      'SELECT client_id FROM dependents WHERE id = $1',
+      'SELECT user_id FROM dependents WHERE id = $1',
       [id]
     );
 
@@ -1542,7 +1542,7 @@ app.put('/api/dependents/:id', authenticate, async (req, res) => {
 
     const dependent = dependentResult.rows[0];
 
-    if (req.user.currentRole !== 'admin' && req.user.id !== dependent.client_id) {
+    if (req.user.currentRole !== 'admin' && req.user.id !== dependent.user_id) {
       return res.status(403).json({ message: 'Acesso não autorizado' });
     }
 
@@ -1566,7 +1566,7 @@ app.delete('/api/dependents/:id', authenticate, async (req, res) => {
 
     // Verify dependent exists and user has access
     const dependentResult = await pool.query(
-      'SELECT client_id FROM dependents WHERE id = $1',
+      'SELECT user_id FROM dependents WHERE id = $1',
       [id]
     );
 
@@ -1576,7 +1576,7 @@ app.delete('/api/dependents/:id', authenticate, async (req, res) => {
 
     const dependent = dependentResult.rows[0];
 
-    if (req.user.currentRole !== 'admin' && req.user.id !== dependent.client_id) {
+    if (req.user.currentRole !== 'admin' && req.user.id !== dependent.user_id) {
       return res.status(403).json({ message: 'Acesso não autorizado' });
     }
 
@@ -1899,7 +1899,7 @@ app.get('/api/consultations', authenticate, async (req, res) => {
         s.name as service_name,
         u_prof.name as professional_name,
         CASE 
-          WHEN c.client_id IS NOT NULL THEN u_client.name
+          WHEN c.user_id IS NOT NULL THEN u_client.name
           WHEN c.dependent_id IS NOT NULL THEN d.name
           WHEN c.private_patient_id IS NOT NULL THEN pp.name
           ELSE 'Desconhecido'
@@ -1915,7 +1915,7 @@ app.get('/api/consultations', authenticate, async (req, res) => {
       FROM consultations c
       LEFT JOIN services s ON c.service_id = s.id
       LEFT JOIN users u_prof ON c.professional_id = u_prof.id
-      LEFT JOIN users u_client ON c.client_id = u_client.id
+      LEFT JOIN users u_client ON c.user_id = u_client.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
     `;
@@ -1953,7 +1953,7 @@ app.get('/api/consultations/client/:clientId', authenticate, async (req, res) =>
         s.name as service_name,
         u_prof.name as professional_name,
         CASE 
-          WHEN c.client_id IS NOT NULL THEN u_client.name
+          WHEN c.user_id IS NOT NULL THEN u_client.name
           WHEN c.dependent_id IS NOT NULL THEN d.name
           ELSE 'Desconhecido'
         END as client_name,
@@ -1964,9 +1964,9 @@ app.get('/api/consultations/client/:clientId', authenticate, async (req, res) =>
       FROM consultations c
       LEFT JOIN services s ON c.service_id = s.id
       LEFT JOIN users u_prof ON c.professional_id = u_prof.id
-      LEFT JOIN users u_client ON c.client_id = u_client.id
+      LEFT JOIN users u_client ON c.user_id = u_client.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
-      WHERE (c.client_id = $1 OR d.client_id = $1)
+      WHERE (c.user_id = $1 OR d.user_id = $1)
       ORDER BY c.date DESC
     `, [clientId]);
 
@@ -1980,7 +1980,7 @@ app.get('/api/consultations/client/:clientId', authenticate, async (req, res) =>
 app.post('/api/consultations', authenticate, authorize(['professional']), async (req, res) => {
   try {
     const {
-      client_id,
+      user_id,
       dependent_id,
       private_patient_id,
       service_id,
@@ -1998,7 +1998,7 @@ app.post('/api/consultations', authenticate, authorize(['professional']), async 
       return res.status(400).json({ message: 'Serviço, valor e data são obrigatórios' });
     }
 
-    if (!client_id && !dependent_id && !private_patient_id) {
+    if (!user_id && !dependent_id && !private_patient_id) {
       return res.status(400).json({ message: 'É necessário especificar um cliente, dependente ou paciente particular' });
     }
 
@@ -2011,12 +2011,12 @@ app.post('/api/consultations', authenticate, authorize(['professional']), async 
     // Create consultation
     const consultationResult = await pool.query(`
       INSERT INTO consultations (
-        client_id, dependent_id, private_patient_id, professional_id, 
+        user_id, dependent_id, private_patient_id, professional_id, 
         service_id, location_id, value, date
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
     `, [
-      client_id || null,
+      user_id || null,
       dependent_id || null,
       private_patient_id || null,
       req.user.id,
@@ -2523,7 +2523,7 @@ app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, 
         u_prof.percentage as professional_percentage,
         s.name as service_name,
         CASE 
-          WHEN c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN 'convenio'
+          WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN 'convenio'
           WHEN c.private_patient_id IS NOT NULL THEN 'private'
           ELSE 'unknown'
         END as patient_type
@@ -2787,7 +2787,7 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
 
     // Save payment record
     await pool.query(`
-      INSERT INTO client_payments (client_id, amount, payment_reference, mp_preference_id)
+      INSERT INTO client_payments (user_id, amount, payment_reference, mp_preference_id)
       VALUES ($1, $2, $3, $4)
     `, [user_id, 250, preferenceData.external_reference, response.id]);
 
@@ -2811,7 +2811,7 @@ app.post('/api/dependents/:id/create-payment', authenticate, async (req, res) =>
     const dependentResult = await pool.query(`
       SELECT d.*, u.name as client_name 
       FROM dependents d
-      JOIN users u ON d.client_id = u.id
+      JOIN users u ON d.user_id = u.id
       WHERE d.id = $1
     `, [id]);
 
@@ -2821,7 +2821,7 @@ app.post('/api/dependents/:id/create-payment', authenticate, async (req, res) =>
 
     const dependent = dependentResult.rows[0];
 
-    if (req.user.currentRole !== 'admin' && req.user.id !== dependent.client_id) {
+    if (req.user.currentRole !== 'admin' && req.user.id !== dependent.user_id) {
       return res.status(403).json({ message: 'Acesso não autorizado' });
     }
 
@@ -3267,7 +3267,7 @@ app.get('/api/admin/dependents', authenticate, authorize(['admin']), async (req,
           ELSE d.subscription_status
         END as current_status
       FROM dependents d
-      JOIN users u ON d.client_id = u.id
+      JOIN users u ON d.user_id = u.id
       ORDER BY d.created_at DESC
     `);
 
