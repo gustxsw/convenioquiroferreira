@@ -3462,6 +3462,878 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
+// ===== CRUD USERS =====
+// Get all users (admin only)
+app.get('/api/users', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        id, name, cpf, email, phone, birth_date, address, address_number, 
+        address_complement, neighborhood, city, state, roles, subscription_status, 
+        subscription_expiry, photo_url, category_name, crm, professional_percentage,
+        created_at, updated_at
+      FROM users 
+      ORDER BY created_at DESC
+    `);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Get user by ID
+app.get('/api/users/:id', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Users can only access their own data unless they're admin
+    if (req.user.currentRole !== 'admin' && req.user.id !== parseInt(id)) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+    
+    const result = await pool.query(`
+      SELECT 
+        id, name, cpf, email, phone, birth_date, address, address_number, 
+        address_complement, neighborhood, city, state, roles, subscription_status, 
+        subscription_expiry, photo_url, category_name, crm, professional_percentage,
+        created_at, updated_at
+      FROM users 
+      WHERE id = $1
+    `, [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Get user subscription status
+app.get('/api/users/:id/subscription-status', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Users can only access their own data unless they're admin
+    if (req.user.currentRole !== 'admin' && req.user.id !== parseInt(id)) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+    
+    const result = await pool.query(
+      'SELECT subscription_status, subscription_expiry FROM users WHERE id = $1',
+      [id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching subscription status:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Update user
+app.put('/api/users/:id', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      name, email, phone, birth_date, address, address_number, 
+      address_complement, neighborhood, city, state, currentPassword, 
+      newPassword, category_name, crm, professional_percentage, roles
+    } = req.body;
+    
+    // Users can only update their own data unless they're admin
+    if (req.user.currentRole !== 'admin' && req.user.id !== parseInt(id)) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+    
+    // If changing password, verify current password
+    if (newPassword) {
+      if (!currentPassword) {
+        return res.status(400).json({ message: 'Senha atual é obrigatória' });
+      }
+      
+      const userResult = await pool.query('SELECT password FROM users WHERE id = $1', [id]);
+      if (userResult.rows.length === 0) {
+        return res.status(404).json({ message: 'Usuário não encontrado' });
+      }
+      
+      const isValidPassword = await bcrypt.compare(currentPassword, userResult.rows[0].password);
+      if (!isValidPassword) {
+        return res.status(400).json({ message: 'Senha atual incorreta' });
+      }
+    }
+    
+    // Build update query dynamically
+    const updateFields = [];
+    const values = [];
+    let paramCount = 1;
+    
+    if (name !== undefined) {
+      updateFields.push(`name = $${paramCount}`);
+      values.push(name);
+      paramCount++;
+    }
+    
+    if (email !== undefined) {
+      updateFields.push(`email = $${paramCount}`);
+      values.push(email);
+      paramCount++;
+    }
+    
+    if (phone !== undefined) {
+      updateFields.push(`phone = $${paramCount}`);
+      values.push(phone);
+      paramCount++;
+    }
+    
+    if (birth_date !== undefined) {
+      updateFields.push(`birth_date = $${paramCount}`);
+      values.push(birth_date);
+      paramCount++;
+    }
+    
+    if (address !== undefined) {
+      updateFields.push(`address = $${paramCount}`);
+      values.push(address);
+      paramCount++;
+    }
+    
+    if (address_number !== undefined) {
+      updateFields.push(`address_number = $${paramCount}`);
+      values.push(address_number);
+      paramCount++;
+    }
+    
+    if (address_complement !== undefined) {
+      updateFields.push(`address_complement = $${paramCount}`);
+      values.push(address_complement);
+      paramCount++;
+    }
+    
+    if (neighborhood !== undefined) {
+      updateFields.push(`neighborhood = $${paramCount}`);
+      values.push(neighborhood);
+      paramCount++;
+    }
+    
+    if (city !== undefined) {
+      updateFields.push(`city = $${paramCount}`);
+      values.push(city);
+      paramCount++;
+    }
+    
+    if (state !== undefined) {
+      updateFields.push(`state = $${paramCount}`);
+      values.push(state);
+      paramCount++;
+    }
+    
+    if (category_name !== undefined) {
+      updateFields.push(`category_name = $${paramCount}`);
+      values.push(category_name);
+      paramCount++;
+    }
+    
+    if (crm !== undefined) {
+      updateFields.push(`crm = $${paramCount}`);
+      values.push(crm);
+      paramCount++;
+    }
+    
+    if (professional_percentage !== undefined) {
+      updateFields.push(`professional_percentage = $${paramCount}`);
+      values.push(professional_percentage);
+      paramCount++;
+    }
+    
+    if (roles !== undefined && req.user.currentRole === 'admin') {
+      updateFields.push(`roles = $${paramCount}`);
+      values.push(JSON.stringify(roles));
+      paramCount++;
+    }
+    
+    if (newPassword) {
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      updateFields.push(`password = $${paramCount}`);
+      values.push(hashedPassword);
+      paramCount++;
+    }
+    
+    updateFields.push(`updated_at = NOW()`);
+    values.push(id);
+    
+    const query = `
+      UPDATE users 
+      SET ${updateFields.join(', ')}
+      WHERE id = $${paramCount}
+      RETURNING id, name, email, phone, roles, subscription_status, subscription_expiry
+    `;
+    
+    const result = await pool.query(query, values);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+    
+    res.json({ 
+      message: 'Usuário atualizado com sucesso',
+      user: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error updating user:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// ===== CRUD SERVICES =====
+// Get all services
+app.get('/api/services', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        s.id, s.name, s.description, s.base_price, s.category_id, s.is_base_service,
+        sc.name as category_name
+      FROM services s
+      LEFT JOIN service_categories sc ON s.category_id = sc.id
+      ORDER BY sc.name, s.name
+    `);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching services:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Create service (admin only)
+app.post('/api/services', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const { name, description, base_price, category_id, is_base_service } = req.body;
+    
+    if (!name || !description || base_price === undefined) {
+      return res.status(400).json({ message: 'Nome, descrição e preço base são obrigatórios' });
+    }
+    
+    const result = await pool.query(`
+      INSERT INTO services (name, description, base_price, category_id, is_base_service, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+      RETURNING *
+    `, [name, description, base_price, category_id, is_base_service || false]);
+    
+    res.status(201).json({
+      message: 'Serviço criado com sucesso',
+      service: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error creating service:', error);
+    if (error.code === '23505') {
+      res.status(400).json({ message: 'Já existe um serviço com este nome' });
+    } else {
+      res.status(500).json({ message: 'Erro interno do servidor' });
+    }
+  }
+});
+
+// Update service (admin only)
+app.put('/api/services/:id', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, base_price, category_id, is_base_service } = req.body;
+    
+    const result = await pool.query(`
+      UPDATE services 
+      SET name = $1, description = $2, base_price = $3, category_id = $4, 
+          is_base_service = $5, updated_at = NOW()
+      WHERE id = $6
+      RETURNING *
+    `, [name, description, base_price, category_id, is_base_service, id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Serviço não encontrado' });
+    }
+    
+    res.json({
+      message: 'Serviço atualizado com sucesso',
+      service: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error updating service:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Delete service (admin only)
+app.delete('/api/services/:id', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const result = await pool.query('DELETE FROM services WHERE id = $1 RETURNING *', [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Serviço não encontrado' });
+    }
+    
+    res.json({ message: 'Serviço excluído com sucesso' });
+  } catch (error) {
+    console.error('Error deleting service:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// ===== CRUD SERVICE CATEGORIES =====
+// Get all service categories
+app.get('/api/service-categories', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, name, description, created_at, updated_at
+      FROM service_categories
+      ORDER BY name
+    `);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching service categories:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Create service category (admin only)
+app.post('/api/service-categories', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    
+    if (!name || !description) {
+      return res.status(400).json({ message: 'Nome e descrição são obrigatórios' });
+    }
+    
+    const result = await pool.query(`
+      INSERT INTO service_categories (name, description, created_at, updated_at)
+      VALUES ($1, $2, NOW(), NOW())
+      RETURNING *
+    `, [name, description]);
+    
+    res.status(201).json({
+      message: 'Categoria criada com sucesso',
+      category: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error creating service category:', error);
+    if (error.code === '23505') {
+      res.status(400).json({ message: 'Já existe uma categoria com este nome' });
+    } else {
+      res.status(500).json({ message: 'Erro interno do servidor' });
+    }
+  }
+});
+
+// ===== CRUD DEPENDENTS =====
+// Get dependents by client ID
+app.get('/api/dependents/:client_id', authenticate, async (req, res) => {
+  try {
+    const { client_id } = req.params;
+    
+    // Check if user can access this client's dependents
+    if (req.user.currentRole !== 'admin' && req.user.id !== parseInt(client_id)) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+    
+    const result = await pool.query(`
+      SELECT 
+        id, name, cpf, birth_date, subscription_status, subscription_expiry,
+        billing_amount, payment_reference, activated_at, created_at, updated_at
+      FROM dependents 
+      WHERE client_id = $1 
+      ORDER BY created_at DESC
+    `, [client_id]);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching dependents:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Create dependent
+app.post('/api/dependents', authenticate, async (req, res) => {
+  try {
+    const { client_id, name, cpf, birth_date } = req.body;
+    
+    // Check if user can create dependents for this client
+    if (req.user.currentRole !== 'admin' && req.user.id !== parseInt(client_id)) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+    
+    if (!client_id || !name || !cpf) {
+      return res.status(400).json({ message: 'Client ID, nome e CPF são obrigatórios' });
+    }
+    
+    // Check if CPF already exists
+    const existingDependent = await pool.query(
+      'SELECT id FROM dependents WHERE cpf = $1',
+      [cpf]
+    );
+    
+    if (existingDependent.rows.length > 0) {
+      return res.status(400).json({ message: 'Já existe um dependente com este CPF' });
+    }
+    
+    const result = await pool.query(`
+      INSERT INTO dependents (
+        client_id, name, cpf, birth_date, subscription_status, 
+        billing_amount, created_at, updated_at
+      )
+      VALUES ($1, $2, $3, $4, 'pending', 50, NOW(), NOW())
+      RETURNING *
+    `, [client_id, name, cpf, birth_date]);
+    
+    res.status(201).json({
+      message: 'Dependente criado com sucesso',
+      dependent: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error creating dependent:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Update dependent
+app.put('/api/dependents/:id', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, birth_date } = req.body;
+    
+    // Check if user owns this dependent
+    const dependentCheck = await pool.query(
+      'SELECT client_id FROM dependents WHERE id = $1',
+      [id]
+    );
+    
+    if (dependentCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Dependente não encontrado' });
+    }
+    
+    if (req.user.currentRole !== 'admin' && req.user.id !== dependentCheck.rows[0].client_id) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+    
+    const result = await pool.query(`
+      UPDATE dependents 
+      SET name = $1, birth_date = $2, updated_at = NOW()
+      WHERE id = $3
+      RETURNING *
+    `, [name, birth_date, id]);
+    
+    res.json({
+      message: 'Dependente atualizado com sucesso',
+      dependent: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error updating dependent:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Delete dependent
+app.delete('/api/dependents/:id', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Check if user owns this dependent
+    const dependentCheck = await pool.query(
+      'SELECT client_id FROM dependents WHERE id = $1',
+      [id]
+    );
+    
+    if (dependentCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Dependente não encontrado' });
+    }
+    
+    if (req.user.currentRole !== 'admin' && req.user.id !== dependentCheck.rows[0].client_id) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+    
+    const result = await pool.query('DELETE FROM dependents WHERE id = $1 RETURNING *', [id]);
+    
+    res.json({ message: 'Dependente excluído com sucesso' });
+  } catch (error) {
+    console.error('Error deleting dependent:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// ===== CRUD CONSULTATIONS =====
+// Get all consultations (admin) or professional's consultations
+app.get('/api/consultations', authenticate, async (req, res) => {
+  try {
+    let query = `
+      SELECT 
+        c.id, c.date, c.value, c.created_at,
+        COALESCE(u.name, d.name, pp.name) as client_name,
+        u2.name as professional_name,
+        s.name as service_name,
+        al.name as location_name,
+        CASE 
+          WHEN c.dependent_id IS NOT NULL THEN true 
+          ELSE false 
+        END as is_dependent
+      FROM consultations c
+      LEFT JOIN users u ON c.client_id = u.id
+      LEFT JOIN dependents d ON c.dependent_id = d.id
+      LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
+      LEFT JOIN users u2 ON c.professional_id = u2.id
+      LEFT JOIN services s ON c.service_id = s.id
+      LEFT JOIN attendance_locations al ON c.location_id = al.id
+    `;
+    
+    const params = [];
+    
+    if (req.user.currentRole === 'professional') {
+      query += ' WHERE c.professional_id = $1';
+      params.push(req.user.id);
+    }
+    
+    query += ' ORDER BY c.date DESC';
+    
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching consultations:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Get consultations by client ID
+app.get('/api/consultations/client/:client_id', authenticate, async (req, res) => {
+  try {
+    const { client_id } = req.params;
+    
+    // Check if user can access this client's consultations
+    if (req.user.currentRole !== 'admin' && req.user.id !== parseInt(client_id)) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+    
+    const result = await pool.query(`
+      SELECT 
+        c.id, c.date, c.value, c.created_at,
+        COALESCE(u.name, d.name) as client_name,
+        u2.name as professional_name,
+        s.name as service_name,
+        al.name as location_name,
+        CASE 
+          WHEN c.dependent_id IS NOT NULL THEN true 
+          ELSE false 
+        END as is_dependent
+      FROM consultations c
+      LEFT JOIN users u ON c.client_id = u.id
+      LEFT JOIN dependents d ON c.dependent_id = d.id
+      LEFT JOIN users u2 ON c.professional_id = u2.id
+      LEFT JOIN services s ON c.service_id = s.id
+      LEFT JOIN attendance_locations al ON c.location_id = al.id
+      WHERE c.client_id = $1 OR c.dependent_id IN (
+        SELECT id FROM dependents WHERE client_id = $1
+      )
+      ORDER BY c.date DESC
+    `, [client_id]);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching client consultations:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// ===== CRUD PRIVATE PATIENTS =====
+// Get private patients for professional
+app.get('/api/private-patients', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        id, name, cpf, email, phone, birth_date, address, address_number,
+        address_complement, neighborhood, city, state, zip_code, created_at, updated_at
+      FROM private_patients 
+      WHERE professional_id = $1 
+      ORDER BY name
+    `, [req.user.id]);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching private patients:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Create private patient
+app.post('/api/private-patients', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { 
+      name, cpf, email, phone, birth_date, address, address_number,
+      address_complement, neighborhood, city, state, zip_code
+    } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ message: 'Nome é obrigatório' });
+    }
+    
+    // Check if CPF already exists for this professional (if CPF provided)
+    if (cpf) {
+      const existingPatient = await pool.query(
+        'SELECT id FROM private_patients WHERE cpf = $1 AND professional_id = $2',
+        [cpf, req.user.id]
+      );
+      
+      if (existingPatient.rows.length > 0) {
+        return res.status(400).json({ message: 'Já existe um paciente com este CPF' });
+      }
+    }
+    
+    const result = await pool.query(`
+      INSERT INTO private_patients (
+        professional_id, name, cpf, email, phone, birth_date, address, 
+        address_number, address_complement, neighborhood, city, state, 
+        zip_code, created_at, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
+      RETURNING *
+    `, [
+      req.user.id, name, cpf, email, phone, birth_date, address,
+      address_number, address_complement, neighborhood, city, state, zip_code
+    ]);
+    
+    res.status(201).json({
+      message: 'Paciente criado com sucesso',
+      patient: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error creating private patient:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Update private patient
+app.put('/api/private-patients/:id', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      name, email, phone, birth_date, address, address_number,
+      address_complement, neighborhood, city, state, zip_code
+    } = req.body;
+    
+    // Check if patient belongs to this professional
+    const patientCheck = await pool.query(
+      'SELECT professional_id FROM private_patients WHERE id = $1',
+      [id]
+    );
+    
+    if (patientCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Paciente não encontrado' });
+    }
+    
+    if (patientCheck.rows[0].professional_id !== req.user.id) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+    
+    const result = await pool.query(`
+      UPDATE private_patients 
+      SET name = $1, email = $2, phone = $3, birth_date = $4, address = $5,
+          address_number = $6, address_complement = $7, neighborhood = $8,
+          city = $9, state = $10, zip_code = $11, updated_at = NOW()
+      WHERE id = $12
+      RETURNING *
+    `, [
+      name, email, phone, birth_date, address, address_number,
+      address_complement, neighborhood, city, state, zip_code, id
+    ]);
+    
+    res.json({
+      message: 'Paciente atualizado com sucesso',
+      patient: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error updating private patient:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Delete private patient
+app.delete('/api/private-patients/:id', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Check if patient belongs to this professional
+    const patientCheck = await pool.query(
+      'SELECT professional_id FROM private_patients WHERE id = $1',
+      [id]
+    );
+    
+    if (patientCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Paciente não encontrado' });
+    }
+    
+    if (patientCheck.rows[0].professional_id !== req.user.id) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+    
+    await pool.query('DELETE FROM private_patients WHERE id = $1', [id]);
+    
+    res.json({ message: 'Paciente excluído com sucesso' });
+  } catch (error) {
+    console.error('Error deleting private patient:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// ===== CRUD ATTENDANCE LOCATIONS =====
+// Get attendance locations for professional
+app.get('/api/attendance-locations', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        id, name, address, address_number, address_complement, neighborhood,
+        city, state, zip_code, phone, is_default, created_at, updated_at
+      FROM attendance_locations 
+      WHERE professional_id = $1 
+      ORDER BY is_default DESC, name
+    `, [req.user.id]);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching attendance locations:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Create attendance location
+app.post('/api/attendance-locations', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { 
+      name, address, address_number, address_complement, neighborhood,
+      city, state, zip_code, phone, is_default
+    } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ message: 'Nome é obrigatório' });
+    }
+    
+    // If setting as default, remove default from other locations
+    if (is_default) {
+      await pool.query(
+        'UPDATE attendance_locations SET is_default = false WHERE professional_id = $1',
+        [req.user.id]
+      );
+    }
+    
+    const result = await pool.query(`
+      INSERT INTO attendance_locations (
+        professional_id, name, address, address_number, address_complement,
+        neighborhood, city, state, zip_code, phone, is_default, created_at, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+      RETURNING *
+    `, [
+      req.user.id, name, address, address_number, address_complement,
+      neighborhood, city, state, zip_code, phone, is_default || false
+    ]);
+    
+    res.status(201).json({
+      message: 'Local criado com sucesso',
+      location: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error creating attendance location:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Update attendance location
+app.put('/api/attendance-locations/:id', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      name, address, address_number, address_complement, neighborhood,
+      city, state, zip_code, phone, is_default
+    } = req.body;
+    
+    // Check if location belongs to this professional
+    const locationCheck = await pool.query(
+      'SELECT professional_id FROM attendance_locations WHERE id = $1',
+      [id]
+    );
+    
+    if (locationCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Local não encontrado' });
+    }
+    
+    if (locationCheck.rows[0].professional_id !== req.user.id) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+    
+    // If setting as default, remove default from other locations
+    if (is_default) {
+      await pool.query(
+        'UPDATE attendance_locations SET is_default = false WHERE professional_id = $1 AND id != $2',
+        [req.user.id, id]
+      );
+    }
+    
+    const result = await pool.query(`
+      UPDATE attendance_locations 
+      SET name = $1, address = $2, address_number = $3, address_complement = $4,
+          neighborhood = $5, city = $6, state = $7, zip_code = $8, phone = $9,
+          is_default = $10, updated_at = NOW()
+      WHERE id = $11
+      RETURNING *
+    `, [
+      name, address, address_number, address_complement, neighborhood,
+      city, state, zip_code, phone, is_default, id
+    ]);
+    
+    res.json({
+      message: 'Local atualizado com sucesso',
+      location: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error updating attendance location:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Delete attendance location
+app.delete('/api/attendance-locations/:id', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Check if location belongs to this professional
+    const locationCheck = await pool.query(
+      'SELECT professional_id FROM attendance_locations WHERE id = $1',
+      [id]
+    );
+    
+    if (locationCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Local não encontrado' });
+    }
+    
+    if (locationCheck.rows[0].professional_id !== req.user.id) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+    
+    await pool.query('DELETE FROM attendance_locations WHERE id = $1', [id]);
+    
+    res.json({ message: 'Local excluído com sucesso' });
+  } catch (error) {
+    console.error('Error deleting attendance location:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
 // Start server
 const startServer = async () => {
   try {
