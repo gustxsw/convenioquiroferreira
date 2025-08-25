@@ -1257,32 +1257,26 @@ app.get('/api/professionals', authenticate, async (req, res) => {
   }
 });
 
-        u.id::text as id,
 app.get('/api/admin/professionals-scheduling-access', authenticate, authorize(['admin']), async (req, res) => {
   try {
     console.log('🔄 Fetching professionals with scheduling access status...');
-        COALESCE(u.category_name, 'Sem categoria') as category_name,
-        COALESCE(sa.has_access, false) as has_scheduling_access,
-        sa.expires_at as access_expires_at,
-        sa.granted_by as access_granted_by,
-        sa.granted_at as access_granted_at,
-        sa.reason as access_reason
+
+    const result = await pool.query(`
+      SELECT 
+        u.id,
+        u.name,
+        COALESCE(sc.name, 'Sem categoria') as category_name,
+        u.has_scheduling_access,
+        u.access_expires_at,
+        granted_by.name as access_granted_by,
         u.access_granted_at
-      LEFT JOIN (
-        SELECT 
-          professional_id::text,
-          true as has_access,
-          expires_at,
-          granted_by,
-          granted_at,
-          reason
-        FROM scheduling_access 
-        WHERE expires_at > NOW()
-      ) sa ON sa.professional_id = u.id::text
-      WHERE u.roles::text LIKE '%professional%'
+      FROM users u
+      LEFT JOIN service_categories sc ON u.category_id = sc.id
       LEFT JOIN users granted_by ON u.access_granted_by = granted_by.id
       WHERE 'professional' = ANY(u.roles)
+      ORDER BY u.name
     `);
+
     console.log('✅ Found professionals:', result.rows.length);
 
     res.json(result.rows);
@@ -1347,6 +1341,8 @@ app.post('/api/admin/revoke-scheduling-access', authenticate, authorize(['admin'
   try {
     const { professional_id } = req.body;
 
+    console.log('🔄 Revoking scheduling access for professional:', professional_id);
+
     if (!professional_id) {
       return res.status(400).json({ message: 'ID do profissional é obrigatório' });
     }
@@ -1363,15 +1359,13 @@ app.post('/api/admin/revoke-scheduling-access', authenticate, authorize(['admin'
 
     // Log the action
     await pool.query(`
-    
-    console.log('🔄 Revoking scheduling access for professional:', professional_id);
       INSERT INTO audit_logs (user_id, action, table_name, record_id, new_values)
       VALUES ($1, $2, $3, $4, $5)
     `, [
       req.user.id,
       'REVOKE_SCHEDULING_ACCESS',
       'users',
-      'DELETE FROM scheduling_access WHERE professional_id = $1::text',
+      professional_id,
       JSON.stringify({ revoked_by: req.user.name })
     ]);
     
@@ -1387,33 +1381,36 @@ app.post('/api/admin/revoke-scheduling-access', authenticate, authorize(['admin'
 // 🔥 NEW: Professional scheduling access status check
 app.get('/api/professional/scheduling-access-status', authenticate, authorize(['professional']), async (req, res) => {
   try {
-    const professionalId = req.user.id.toString();
+    const professionalId = req.user.id;
     console.log('🔄 Checking scheduling access for professional:', professionalId);
     
     const result = await pool.query(
       'SELECT has_scheduling_access, access_expires_at FROM users WHERE id = $1',
-        CASE WHEN sa.expires_at > NOW() THEN true ELSE false END as has_access,
-        CASE WHEN sa.expires_at IS NOT NULL AND sa.expires_at < NOW() THEN true ELSE false END as is_expired,
+      [professionalId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
 
-        CASE WHEN sa.professional_id IS NULL THEN true ELSE false END as can_purchase
-      FROM (SELECT $1::text as prof_id) p
-      LEFT JOIN scheduling_access sa ON sa.professional_id = p.prof_id
-    `, [professionalId]);
-    
-    const accessData = result.rows[0] || {
-      has_access: false,
-      is_expired: false,
-      expires_at: null,
-      can_purchase: true
-    };
-    
-    console.log('✅ Scheduling access status:', accessData);
     const user = result.rows[0];
+    
+    let hasAccess = user.has_scheduling_access;
+    let isExpired = false;
+
+    // Check if access has expired
+    if (user.access_expires_at) {
+      const expiryDate = new Date(user.access_expires_at);
+      const now = new Date();
+      
+      if (expiryDate < now) {
+        hasAccess = false;
+        isExpired = true;
         
-      hasAccess: accessData.has_access,
-      isExpired: accessData.is_expired,
-      expiresAt: accessData.expires_at,
-      canPurchase: accessData.can_purchase
+        // Revoke expired access
+        await pool.query(
+          'UPDATE users SET has_scheduling_access = FALSE WHERE id = $1',
+          [professionalId]
         );
       }
     }
@@ -2765,7 +2762,7 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
     const external_reference = `subscription_${user_id}_${Date.now()}`;
     
     const paymentResult = await pool.query(
-      'INSERT INTO client_payments (user_id, amount, status, external_reference, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING id',
+      'INSERT INTO client_payments (user_id, amount, payment_status, payment_reference, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING id',
       [user_id, 250, 'pending', external_reference]
     );
     
@@ -2832,7 +2829,7 @@ app.post('/api/dependents/:id/create-payment', authenticate, async (req, res) =>
     
     // Create payment record first
     const paymentResult = await pool.query(
-      'INSERT INTO dependent_payments (dependent_id, amount, status, payment_reference, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING id',
+      'INSERT INTO dependent_payments (dependent_id, amount, payment_status, payment_reference, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING id',
       [dependentId, 50, 'pending', payment_reference]
     );
     
@@ -2889,7 +2886,7 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
     
     // Create payment record first
     const paymentResult = await pool.query(
-      'INSERT INTO professional_payments (professional_id, amount, status, external_reference, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING id',
+      'INSERT INTO professional_payments (professional_id, amount, payment_status, payment_reference, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING id',
       [professionalId, amount, 'pending', external_reference]
     );
     
@@ -2942,8 +2939,8 @@ app.post('/api/professional/create-agenda-payment', authenticate, authorize(['pr
     
     // Create payment record first
     const paymentResult = await pool.query(
-      'INSERT INTO agenda_payments (professional_id, amount, status, external_reference, duration_days, mp_preference_id, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING id',
-      [professionalId, 24.99, 'pending', external_reference, duration_days, null]
+      'INSERT INTO agenda_payments (professional_id, amount, payment_status, payment_reference, duration_days, created_at) VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING id',
+      [professionalId, 24.99, 'pending', external_reference, duration_days]
     );
     
     const payment_id = paymentResult.rows[0].id;
@@ -3689,35 +3686,12 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
     updateFields.push(`updated_at = NOW()`);
     values.push(id);
     
-    // Validate professional exists and has professional role
-    const professionalCheck = await pool.query(
-      'SELECT id, name, roles FROM users WHERE id = $1',
-      [professional_id]
-    );
+    const query = `UPDATE users SET ${updateFields.join(', ')} WHERE id = $${paramCount} RETURNING *`;
+    const result = await pool.query(query, values);
     
-    if (professionalCheck.rows.length === 0) {
-      return res.status(404).json({ message: 'Profissional não encontrado' });
-    }
-    
-    const professional = professionalCheck.rows[0];
-    if (!professional.roles || !professional.roles.includes('professional')) {
-      return res.status(400).json({ message: 'Usuário não é um profissional' });
-    }
-    
-    // Delete existing access first (to avoid duplicates)
-    await pool.query(
-      'DELETE FROM scheduling_access WHERE professional_id = $1',
-      [professional_id]
-    );
-    
-    // Insert new scheduling access
-      UPDATE users 
-      INSERT INTO scheduling_access (professional_id, expires_at, granted_by, granted_at, reason)
-      VALUES ($1::text, $2, $3, NOW(), $4)
+    if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Usuário não encontrado' });
-    `, [professional_id, expires_at, req.user.name, reason || null]);
-    
-    console.log('✅ Scheduling access granted:', result.rows[0]);
+    }
     
     res.json({ 
       message: 'Usuário atualizado com sucesso',
@@ -4375,12 +4349,12 @@ const startServer = async () => {
     await initializeDatabase();
     
     app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`📊 Database connected successfully`);
-      console.log(`💳 MercadoPago configured`);
-      console.log(`☁️ Cloudinary configured`);
-      console.log(`✅ All systems operational`);
+      console.log(\`🚀 Server running on port ${PORT}`);
+      console.log(\`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(\`📊 Database connected successfully`);
+      console.log(\`💳 MercadoPago configured`);
+      console.log(\`☁️ Cloudinary configured`);
+      console.log(\`✅ All systems operational`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
