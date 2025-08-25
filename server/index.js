@@ -1239,7 +1239,7 @@ app.delete('/api/services/:id', authenticate, authorize(['admin']), async (req, 
 // Professionals routes
 app.get('/api/professionals', authenticate, async (req, res) => {
   try {
-    const result = await pool.query(`
+          WHEN sa.professional_id IS NOT NULL AND sa.expires_at > NOW() THEN true
       SELECT 
         u.id, u.name, u.email, u.phone, u.roles,
         u.address, u.address_number, u.address_complement,
@@ -1247,7 +1247,7 @@ app.get('/api/professionals', authenticate, async (req, res) => {
         sc.name as category_name
       FROM users u
       LEFT JOIN service_categories sc ON u.category_id = sc.id
-      WHERE 'professional' = ANY(u.roles)
+      WHERE u.roles::jsonb @> '["professional"]'
       ORDER BY u.name
     `);
 
