@@ -2779,7 +2779,7 @@ app.post('/api/create-subscription', authenticate, async (req, res) => {
         pending: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/client?payment=pending&type=subscription`
       },
       auto_return: 'all',
-      external_reference: `client_${user_id}_${Date.now()}`,
+      external_reference: `subscription_${user_id}_${Date.now()}`,
       notification_url: `${req.protocol}://${req.get('host')}/api/webhooks/mercadopago`,
     };
 
@@ -3018,7 +3018,7 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
 
       if (status === 'approved') {
         // Parse external reference to determine payment type
-        if (externalReference.startsWith('client_')) {
+        if (externalReference.startsWith('subscription_')) {
           // Client subscription payment
           const userId = externalReference.split('_')[1];
           
@@ -3115,7 +3115,7 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
         }
       } else if (status === 'rejected' || status === 'cancelled') {
         // Update payment status to failed
-        if (externalReference.startsWith('client_')) {
+        if (externalReference.startsWith('subscription_')) {
           await pool.query(`
             UPDATE client_payments 
             SET payment_status = 'failed', mp_payment_id = $1, updated_at = CURRENT_TIMESTAMP
