@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, UserCheck, Plus, Edit, Trash2, Search, Filter, Clock, Gift, AlertCircle, X, Check } from 'lucide-react';
 
 type Professional = {
-  id: number;
+  id: string;
   name: string;
   email: string;
   phone: string;
@@ -11,6 +11,7 @@ type Professional = {
   access_expires_at: string | null;
   access_granted_by: string | null;
   access_granted_at: string | null;
+  access_reason: string | null;
 };
 
 const ManageSchedulingAccessPage: React.FC = () => {
@@ -80,23 +81,36 @@ const ManageSchedulingAccessPage: React.FC = () => {
   const fetchData = async () => {
     try {
       setIsLoading(true);
+      setError('');
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
 
+      console.log('🔄 Fetching professionals scheduling access from:', `${apiUrl}/api/admin/professionals-scheduling-access`);
+
       // Fetch professionals with their scheduling access status
       const response = await fetch(`${apiUrl}/api/admin/professionals-scheduling-access`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        method: 'GET',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
 
+      console.log('📡 Response status:', response.status);
+
       if (!response.ok) {
-        throw new Error('Falha ao carregar profissionais');
+        const errorText = await response.text();
+        console.error('❌ Response error:', errorText);
+        throw new Error(`Falha ao carregar profissionais: ${response.status}`);
       }
 
       const data = await response.json();
+      console.log('✅ Professionals data loaded:', data.length);
       setProfessionals(data);
     } catch (error) {
       console.error('Error fetching data:', error);
-      setError('Não foi possível carregar os dados');
+      setError(error instanceof Error ? error.message : 'Não foi possível carregar os dados');
+      setProfessionals([]);
     } finally {
       setIsLoading(false);
     }
@@ -146,8 +160,15 @@ const ManageSchedulingAccessPage: React.FC = () => {
     if (!selectedProfessional || !expiryDate) return;
 
     try {
+      setIsLoading(true);
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
+
+      console.log('🔄 Granting/extending access:', {
+        professional_id: selectedProfessional.id,
+        expires_at: expiryDate,
+        reason: reason
+      });
 
       const response = await fetch(`${apiUrl}/api/admin/grant-scheduling-access`, {
         method: 'POST',
@@ -162,10 +183,16 @@ const ManageSchedulingAccessPage: React.FC = () => {
         })
       });
 
+      console.log('📡 Grant access response status:', response.status);
+
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('❌ Grant access error:', errorData);
         throw new Error(errorData.message || 'Erro ao conceder acesso');
       }
+
+      const responseData = await response.json();
+      console.log('✅ Access granted successfully:', responseData);
 
       await fetchData();
       setSuccess(
@@ -178,7 +205,10 @@ const ManageSchedulingAccessPage: React.FC = () => {
         closeModal();
       }, 1500);
     } catch (error) {
+      console.error('Error in handleSubmit:', error);
       setError(error instanceof Error ? error.message : 'Erro ao processar solicitação');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -196,8 +226,11 @@ const ManageSchedulingAccessPage: React.FC = () => {
     if (!professionalToRevoke) return;
 
     try {
+      setIsLoading(true);
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
+
+      console.log('🔄 Revoking access for professional:', professionalToRevoke.id);
 
       const response = await fetch(`${apiUrl}/api/admin/revoke-scheduling-access`, {
         method: 'POST',
@@ -210,16 +243,22 @@ const ManageSchedulingAccessPage: React.FC = () => {
         })
       });
 
+      console.log('📡 Revoke access response status:', response.status);
+
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('❌ Revoke access error:', errorData);
         throw new Error(errorData.message || 'Erro ao revogar acesso');
       }
 
+      console.log('✅ Access revoked successfully');
       await fetchData();
       setSuccess('Acesso à agenda revogado com sucesso!');
     } catch (error) {
+      console.error('Error in revokeAccess:', error);
       setError(error instanceof Error ? error.message : 'Erro ao revogar acesso');
     } finally {
+      setIsLoading(false);
       setProfessionalToRevoke(null);
       setShowRevokeConfirm(false);
     }
@@ -462,15 +501,17 @@ const ManageSchedulingAccessPage: React.FC = () => {
                             <div className="text-sm font-medium text-gray-900">
                               {professional.name}
                             </div>
-                            <div className="text-sm text-gray-500">
-                              {professional.email}
-                            </div>
+                            {professional.email && (
+                              <div className="text-sm text-gray-500">
+                                {professional.email}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-sm text-gray-900">
-                          {professional.category_name}
+                          {professional.category_name || 'Sem categoria'}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -487,6 +528,11 @@ const ManageSchedulingAccessPage: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {professional.access_granted_by || '-'}
+                        {professional.access_reason && (
+                          <div className="text-xs text-gray-400 mt-1">
+                            {professional.access_reason}
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end space-x-2">
@@ -616,12 +662,28 @@ const ManageSchedulingAccessPage: React.FC = () => {
                   type="button"
                   onClick={closeModal}
                   className="btn btn-secondary"
+                  disabled={isLoading}
                 >
                   Cancelar
                 </button>
-                <button type="submit" className="btn btn-primary flex items-center">
-                  <Gift className="h-5 w-5 mr-2" />
-                  {modalMode === 'grant' ? 'Conceder Acesso' : 'Estender Acesso'}
+                <button 
+                  type="submit" 
+                  className={`btn btn-primary flex items-center ${
+                    isLoading ? 'opacity-70 cursor-not-allowed' : ''
+                  }`}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                      Processando...
+                    </>
+                  ) : (
+                    <>
+                      <Gift className="h-5 w-5 mr-2" />
+                      {modalMode === 'grant' ? 'Conceder Acesso' : 'Estender Acesso'}
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -654,16 +716,29 @@ const ManageSchedulingAccessPage: React.FC = () => {
               <button
                 onClick={cancelRevoke}
                 className="btn btn-secondary flex items-center"
+                disabled={isLoading}
               >
                 <X className="h-4 w-4 mr-2" />
                 Cancelar
               </button>
               <button
                 onClick={revokeAccess}
-                className="btn bg-red-600 text-white hover:bg-red-700 flex items-center"
+                className={`btn bg-red-600 text-white hover:bg-red-700 flex items-center ${
+                  isLoading ? 'opacity-70 cursor-not-allowed' : ''
+                }`}
+                disabled={isLoading}
               >
-                <Check className="h-4 w-4 mr-2" />
-                Revogar Acesso
+                {isLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Processando...
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-4 w-4 mr-2" />
+                    Revogar Acesso
+                  </>
+                )}
               </button>
             </div>
           </div>
