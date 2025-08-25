@@ -1253,21 +1253,28 @@ app.get('/api/professionals', authenticate, async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('❌ Error fetching professionals:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/admin/professionals-scheduling-access', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        u.id, u.name, u.email, u.phone,
         u.category_name,
         CASE 
           WHEN sa.professional_id IS NOT NULL AND sa.expires_at > NOW() THEN true
           ELSE false
         END as has_scheduling_access,
-});
+        sa.expires_at,
         sa.granted_by_name as access_granted_by,
-app.get('/api/admin/professionals-scheduling-access', authenticate, authorize(['admin']), async (req, res) => {
-  try {
-    const result = await pool.query(`
+        sa.granted_at
+      FROM users u
       LEFT JOIN scheduling_access sa ON sa.professional_id = u.id::text
       WHERE u.roles::jsonb @> '["professional"]'
       ORDER BY u.name
     `);
-
 
     res.json(result.rows);
   } catch (error) {
@@ -1283,10 +1290,22 @@ app.post('/api/admin/grant-scheduling-access', authenticate, authorize(['admin']
     if (!professional_id || !expires_at) {
       return res.status(400).json({ message: 'ID do profissional e data de expiração são obrigatórios' });
     }
-        has_scheduling_access = TRUE,
-    // Insert or update scheduling access
-    // Log the action
+
+    // Grant access
     await pool.query(`
+      UPDATE users 
+      SET 
+        has_scheduling_access = TRUE,
+        access_expires_at = $1,
+        access_granted_by = $2,
+        access_granted_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+    `, [expires_at, req.user.id, professional_id]);
+
+    // Insert or update scheduling access
+    await pool.query(`
+      INSERT INTO scheduling_access (professional_id, expires_at, granted_by_name, granted_at, reason)
       VALUES ($1, $2, $3, NOW(), $4)
       ON CONFLICT (professional_id) 
       DO UPDATE SET 
@@ -1294,7 +1313,14 @@ app.post('/api/admin/grant-scheduling-access', authenticate, authorize(['admin']
         granted_by_name = EXCLUDED.granted_by_name,
         granted_at = NOW(),
         reason = EXCLUDED.reason
+    `, [professional_id, expires_at, req.user.name, reason]);
+
+    // Log the action
+    await pool.query(`
+      INSERT INTO audit_logs (user_id, action, table_name, record_id, new_values)
       VALUES ($1, $2, $3, $4, $5)
+    `, [
+      req.user.id,
       'GRANT_SCHEDULING_ACCESS',
       'users',
       professional_id,
@@ -1328,15 +1354,22 @@ app.post('/api/admin/revoke-scheduling-access', authenticate, authorize(['admin'
       WHERE id = $1
     `, [professional_id]);
 
+    // Log the action
+    await pool.query(`
       INSERT INTO audit_logs (user_id, action, table_name, record_id, new_values)
       VALUES ($1, $2, $3, $4, $5)
     `, [
       req.user.id,
       'REVOKE_SCHEDULING_ACCESS',
       'users',
-      'DELETE FROM scheduling_access WHERE professional_id = $1',
+      professional_id,
       JSON.stringify({ revoked_by: req.user.name })
     ]);
+
+    // Remove from scheduling access table
+    await pool.query(`
+      DELETE FROM scheduling_access WHERE professional_id = $1
+    `, [professional_id]);
 
     res.json({ message: 'Acesso à agenda revogado com sucesso' });
   } catch (error) {
@@ -1348,11 +1381,13 @@ app.post('/api/admin/revoke-scheduling-access', authenticate, authorize(['admin'
 // 🔥 NEW: Professional scheduling access status check
 app.get('/api/professional/scheduling-access-status', authenticate, authorize(['professional']), async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT has_scheduling_access, access_expires_at FROM users WHERE id = $1',
+    const result = await pool.query(`
+      SELECT 
+        expires_at,
         CASE WHEN expires_at > NOW() THEN true ELSE false END as has_access,
         CASE WHEN expires_at < NOW() THEN true ELSE false END as is_expired,
-    
+        granted_by_name,
+        granted_at,
         true as can_purchase
       FROM scheduling_access 
       WHERE professional_id = $1
@@ -1366,24 +1401,13 @@ app.get('/api/professional/scheduling-access-status', authenticate, authorize(['
         canPurchase: true
       });
     }
-      if (expiryDate < now) {
+
     const access = result.rows[0];
-        hasAccess = false;
+    res.json({
       hasAccess: access.has_access,
       isExpired: access.is_expired,
       expiresAt: access.expires_at,
       canPurchase: access.can_purchase
-          'UPDATE users SET has_scheduling_access = FALSE WHERE id = $1',
-          [professionalId]
-        );
-      }
-    }
-
-    res.json({
-      hasAccess,
-      isExpired,
-      expiresAt: user.access_expires_at,
-      canPurchase: true // Always allow purchase
     });
   } catch (error) {
     console.error('❌ Error checking scheduling access status:', error);
@@ -3655,7 +3679,7 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
     
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Usuário não encontrado' });
-    `, [professional_id, expires_at, req.user.name, reason]);
+    }
     
     res.json({ 
       message: 'Usuário atualizado com sucesso',
@@ -4312,14 +4336,14 @@ const startServer = async () => {
   try {
     await initializeDatabase();
     
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📊 Database connected successfully`);
-  console.log(`💳 MercadoPago configured`);
-  console.log(`☁️ Cloudinary configured`);
-  console.log(`✅ All systems operational`);
-});
+    app.listen(PORT, () => {
+      console.log(\`🚀 Server running on port ${PORT}`);
+      console.log(\`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(\`📊 Database connected successfully`);
+      console.log(\`💳 MercadoPago configured`);
+      console.log(\`☁️ Cloudinary configured`);
+      console.log(\`✅ All systems operational`);
+    });
 
   } catch (error) {
     console.error('❌ Failed to start server:', error);
