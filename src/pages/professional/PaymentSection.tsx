@@ -78,7 +78,7 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({ amount }) => {
       console.log("Creating professional payment for amount:", numericAmount);
 
       const response = await fetch(
-        `${apiUrl}/api/payments/create-professional-payment`,
+        `${apiUrl}/api/professional/create-payment`,
         {
           method: "POST",
           headers: {

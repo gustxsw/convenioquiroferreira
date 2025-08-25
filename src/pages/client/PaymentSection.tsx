@@ -156,7 +156,7 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          user_id: userId
+          user_id: userId,
         }),
       });
 

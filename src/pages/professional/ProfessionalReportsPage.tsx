@@ -56,10 +56,10 @@ const ProfessionalReportsPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
       
-      console.log('🔄 Fetching detailed report with dates:', { startDate, endDate });
+     console.log('🔄 Fetching detailed report with dates:', { startDate, endDate });
      
       const response = await fetch(
-        `${apiUrl}/api/reports/professional-revenue?start_date=${startDate}&end_date=${endDate}`,
+        `${apiUrl}/api/reports/professional-detailed?start_date=${startDate}&end_date=${endDate}`,
         {
           method: 'GET',
           headers: {
@@ -68,21 +68,17 @@ const ProfessionalReportsPage: React.FC = () => {
         }
       );
       
-      console.log('📡 Detailed report response status:', response.status);
+     console.log('📡 Detailed report response status:', response.status);
      
       if (!response.ok) {
-        console.error('❌ Detailed report error:', response.status);
+       const errorData = await response.json();
+       console.error('❌ Detailed report error:', errorData);
         throw new Error('Falha ao carregar relatório');
       }
       
-      try {
-        const data = await response.json();
-        console.log('✅ Detailed report data received:', data);
-        setReport(data);
-      } catch (error) {
-        console.error('Error parsing report data:', error);
-        throw new Error('Erro ao processar dados do relatório');
-      }
+      const data = await response.json();
+     console.log('✅ Detailed report data received:', data);
+      setReport(data);
     } catch (error) {
       console.error('Error fetching report:', error);
       setError('Não foi possível carregar o relatório');
@@ -177,8 +173,21 @@ const ProfessionalReportsPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-medium text-gray-600">Consultas do Convênio</h3>
+                <h3 className="text-sm font-medium text-gray-600">Total de Consultas</h3>
                 <Users className="h-5 w-5 text-blue-600" />
+              </div>
+              <p className="text-2xl font-bold text-gray-900">
+                {report.summary.total_consultations}
+              </p>
+              <p className="text-sm text-gray-500 mt-1">
+                Todas as consultas realizadas
+              </p>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-gray-600">Consultas Convênio</h3>
+                <FileText className="h-5 w-5 text-green-600" />
               </div>
               <p className="text-2xl font-bold text-gray-900">
                 {report.summary.convenio_consultations}
@@ -191,39 +200,26 @@ const ProfessionalReportsPage: React.FC = () => {
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-medium text-gray-600">Consultas Particulares</h3>
-                <FileText className="h-5 w-5 text-purple-600" />
+                <Users className="h-5 w-5 text-purple-600" />
               </div>
               <p className="text-2xl font-bold text-gray-900">
                 {report.summary.private_consultations}
               </p>
               <p className="text-sm text-gray-500 mt-1">
-                Atendimentos particulares (agenda)
+                Atendimentos particulares
               </p>
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-medium text-gray-600">Receita do Convênio</h3>
+                <h3 className="text-sm font-medium text-gray-600">Faturamento Total</h3>
                 <TrendingUp className="h-5 w-5 text-green-600" />
               </div>
               <p className="text-2xl font-bold text-gray-900">
-                {formatCurrency(report.summary.convenio_revenue)}
+                {formatCurrency(report.summary.total_revenue)}
               </p>
               <p className="text-sm text-gray-500 mt-1">
-                Faturamento do convênio
-              </p>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-medium text-gray-600">Receita Particular</h3>
-                <DollarSign className="h-5 w-5 text-purple-600" />
-              </div>
-              <p className="text-2xl font-bold text-gray-900">
-                {formatCurrency(report.summary.private_revenue)}
-              </p>
-              <p className="text-sm text-gray-500 mt-1">
-                100% para o profissional
+                Receita bruta do período
               </p>
             </div>
           </div>
@@ -243,7 +239,7 @@ const ProfessionalReportsPage: React.FC = () => {
                     {formatCurrency(report.summary.convenio_revenue)}
                   </p>
                   <p className="text-sm text-gray-500">
-                    {report.summary.professional_percentage}% é seu
+                    Atendimentos pelo convênio
                   </p>
                 </div>
               </div>
@@ -262,15 +258,12 @@ const ProfessionalReportsPage: React.FC = () => {
               
               <div className="p-4 bg-green-50 rounded-lg">
                 <div className="text-center">
-                  <p className="text-gray-600 mb-1">Sua Receita Líquida</p>
+                  <p className="text-gray-600 mb-1">Sua Porcentagem</p>
                   <p className="text-2xl font-bold text-green-600">
-                    {formatCurrency(
-                      (report.summary.convenio_revenue * (report.summary.professional_percentage / 100)) + 
-                      report.summary.private_revenue
-                    )}
+                    {report.summary.professional_percentage}%
                   </p>
                   <p className="text-sm text-gray-500">
-                    Convênio + Particular
+                    Do faturamento do convênio
                   </p>
                 </div>
               </div>
@@ -293,13 +286,13 @@ const ProfessionalReportsPage: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div>
                   <p><strong>Período:</strong> {formatDate(startDate)} a {formatDate(endDate)}</p>
-                  <p><strong>Consultas do Convênio:</strong> {report.summary.convenio_consultations}</p>
-                  <p><strong>Consultas Particulares:</strong> {report.summary.private_consultations}</p>
+                  <p><strong>Total de Consultas:</strong> {report.summary.total_consultations}</p>
+                  <p><strong>Faturamento Bruto:</strong> {formatCurrency(report.summary.total_revenue)}</p>
                 </div>
                 <div>
-                  <p><strong>Faturamento Total:</strong> {formatCurrency(report.summary.total_revenue)}</p>
+                  <p><strong>Receita Líquida:</strong> {formatCurrency(report.summary.private_revenue + (report.summary.convenio_revenue * (report.summary.professional_percentage / 100)))}</p>
                   <p><strong>Repasse ao Convênio:</strong> {formatCurrency(report.summary.amount_to_pay)}</p>
-                  <p><strong>Sua Porcentagem:</strong> {report.summary.professional_percentage}%</p>
+                  <p><strong>Porcentagem do Convênio:</strong> {100 - report.summary.professional_percentage}%</p>
                 </div>
               </div>
             </div>
@@ -312,9 +305,9 @@ const ProfessionalReportsPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="text-center">
                 <div className="w-32 h-32 mx-auto mb-4 relative">
-                  <div className="w-full h-full rounded-full border-8 border-blue-200 border-t-blue-600 flex items-center justify-center">
+                  <div className="w-full h-full rounded-full border-8 border-green-200 border-t-green-600 flex items-center justify-center">
                     <div className="text-center">
-                      <div className="text-2xl font-bold text-blue-600">
+                      <div className="text-2xl font-bold text-green-600">
                         {report.summary.convenio_consultations}
                       </div>
                       <div className="text-xs text-gray-500">Convênio</div>
@@ -322,8 +315,8 @@ const ProfessionalReportsPage: React.FC = () => {
                   </div>
                 </div>
                 <p className="text-sm text-gray-600">
-                  {(report.summary.convenio_consultations + report.summary.private_consultations) > 0 
-                    ? Math.round((report.summary.convenio_consultations / (report.summary.convenio_consultations + report.summary.private_consultations)) * 100)
+                  {report.summary.total_consultations > 0 
+                    ? Math.round((report.summary.convenio_consultations / report.summary.total_consultations) * 100)
                     : 0
                   }% do total
                 </p>
@@ -341,8 +334,8 @@ const ProfessionalReportsPage: React.FC = () => {
                   </div>
                 </div>
                 <p className="text-sm text-gray-600">
-                  {(report.summary.convenio_consultations + report.summary.private_consultations) > 0 
-                    ? Math.round((report.summary.private_consultations / (report.summary.convenio_consultations + report.summary.private_consultations)) * 100)
+                  {report.summary.total_consultations > 0 
+                    ? Math.round((report.summary.private_consultations / report.summary.total_consultations) * 100)
                     : 0
                   }% do total
                 </p>

@@ -235,7 +235,15 @@ const AdminHomePage: React.FC = () => {
   // Calculate total clinic revenue (what admin will receive)
   const calculateClinicRevenue = () => {
     if (!monthlyRevenue) return 0;
-    return Number(monthlyRevenue.total_clinic_revenue) || 0;
+    if (
+      !monthlyRevenue.revenue_by_professional ||
+      !Array.isArray(monthlyRevenue.revenue_by_professional)
+    )
+      return 0;
+    return monthlyRevenue.revenue_by_professional.reduce(
+      (total, prof) => total + (Number(prof.clinic_revenue) || 0),
+      0
+    );
   };
 
   const statCards = [
@@ -356,7 +364,7 @@ const AdminHomePage: React.FC = () => {
                     Receita do Convênio
                   </p>
                   <p className="text-2xl font-bold text-green-700">
-                    {formatCurrency(calculateClinicRevenue())}
+                    {formatCurrency(Number(calculateClinicRevenue()) || 0)}
                   </p>
                 </div>
                 <div className="bg-orange-50 p-4 rounded-lg">
@@ -364,7 +372,13 @@ const AdminHomePage: React.FC = () => {
                     Faturamento dos Profissionais
                   </p>
                   <p className="text-2xl font-bold text-orange-700">
-                    {formatCurrency(Number(monthlyRevenue.total_professional_payments) || 0)}
+                    {formatCurrency(
+                      monthlyRevenue.revenue_by_professional?.reduce(
+                        (total, prof) =>
+                          total + (Number(prof.professional_payment) || 0),
+                        0
+                      ) || 0
+                    )}
                   </p>
                 </div>
               </div>

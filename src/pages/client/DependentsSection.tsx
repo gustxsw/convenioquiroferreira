@@ -231,16 +231,13 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
       const apiUrl = getApiUrl();
 
       const response = await fetch(
-        `${apiUrl}/api/payments/create-dependent-payment`,
+        `${apiUrl}/api/dependents/${dependentId}/create-payment`,
         {
           method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            dependent_id: dependentId
-          }),
         }
       );
 
