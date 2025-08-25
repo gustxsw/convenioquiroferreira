@@ -86,7 +86,7 @@ const initializeDatabase = async () => {
         crm VARCHAR(50),
         photo_url TEXT,
         has_scheduling_access BOOLEAN DEFAULT FALSE,
-        scheduling_access_expires_at TIMESTAMP,
+        access_expires_at TIMESTAMP,
         scheduling_access_granted_by INTEGER,
         scheduling_access_granted_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -463,7 +463,7 @@ const authenticate = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
 
     const result = await pool.query(
-      'SELECT id, name, cpf, roles, has_scheduling_access, scheduling_access_expires_at FROM users WHERE id = $1',
+      'SELECT id, name, cpf, roles, has_scheduling_access, access_expires_at FROM users WHERE id = $1',
       [decoded.id]
     );
 
@@ -480,7 +480,7 @@ const authenticate = async (req, res, next) => {
       roles: user.roles || [],
       currentRole: decoded.currentRole || (user.roles && user.roles[0]),
       hasSchedulingAccess: user.has_scheduling_access,
-      schedulingAccessExpiresAt: user.scheduling_access_expires_at
+      schedulingAccessExpiresAt: user.access_expires_at
     };
 
     next();
@@ -514,7 +514,7 @@ const requireSchedulingAccess = async (req, res, next) => {
 
     // Check if user has scheduling access
     const result = await pool.query(
-      'SELECT has_scheduling_access, scheduling_access_expires_at FROM users WHERE id = $1',
+      'SELECT has_scheduling_access, access_expires_at FROM users WHERE id = $1',
       [req.user.id]
     );
 
@@ -532,8 +532,8 @@ const requireSchedulingAccess = async (req, res, next) => {
     }
 
     // Check if access has expired
-    if (user.scheduling_access_expires_at) {
-      const expiryDate = new Date(user.scheduling_access_expires_at);
+    if (user.access_expires_at) {
+      const expiryDate = new Date(user.access_expires_at);
       const now = new Date();
       
       if (expiryDate < now) {
@@ -950,7 +950,7 @@ app.get('/api/users', authenticate, authorize(['admin']), async (req, res) => {
       SELECT 
         u.id, u.name, u.cpf, u.email, u.phone, u.roles, 
         u.subscription_status, u.subscription_expiry, u.percentage,
-        u.has_scheduling_access, u.scheduling_access_expires_at,
+        u.has_scheduling_access, u.access_expires_at,
         sc.name as category_name,
         u.created_at
       FROM users u
@@ -980,7 +980,7 @@ app.get('/api/users/:id', authenticate, async (req, res) => {
         u.address, u.address_number, u.address_complement, 
         u.neighborhood, u.city, u.state, u.roles,
         u.subscription_status, u.subscription_expiry, u.percentage,
-        u.crm, u.photo_url, u.has_scheduling_access, u.scheduling_access_expires_at,
+        u.crm, u.photo_url, u.has_scheduling_access, u.access_expires_at,
         sc.name as category_name,
         u.created_at, u.updated_at
       FROM users u
@@ -1263,7 +1263,7 @@ app.get('/api/admin/professionals-scheduling-access', authenticate, authorize(['
         u.id, u.name, u.email, u.phone,
         sc.name as category_name,
         u.has_scheduling_access,
-        u.scheduling_access_expires_at,
+        u.access_expires_at,
         granted_by.name as access_granted_by,
         u.scheduling_access_granted_at
       FROM users u
@@ -1303,7 +1303,7 @@ app.post('/api/admin/grant-scheduling-access', authenticate, authorize(['admin']
       UPDATE users 
       SET 
         has_scheduling_access = TRUE,
-        scheduling_access_expires_at = $1,
+        access_expires_at = $1,
         scheduling_access_granted_by = $2,
         scheduling_access_granted_at = CURRENT_TIMESTAMP,
         updated_at = CURRENT_TIMESTAMP
@@ -1342,7 +1342,7 @@ app.post('/api/admin/revoke-scheduling-access', authenticate, authorize(['admin'
       UPDATE users 
       SET 
         has_scheduling_access = FALSE,
-        scheduling_access_expires_at = NULL,
+        access_expires_at = NULL,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
     `, [professional_id]);
@@ -1370,7 +1370,7 @@ app.post('/api/admin/revoke-scheduling-access', authenticate, authorize(['admin'
 app.get('/api/professional/scheduling-access-status', authenticate, authorize(['professional']), async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT has_scheduling_access, scheduling_access_expires_at FROM users WHERE id = $1',
+      'SELECT has_scheduling_access, access_expires_at FROM users WHERE id = $1',
       [req.user.id]
     );
 
@@ -1384,8 +1384,8 @@ app.get('/api/professional/scheduling-access-status', authenticate, authorize(['
     let isExpired = false;
 
     // Check if access has expired
-    if (user.scheduling_access_expires_at) {
-      const expiryDate = new Date(user.scheduling_access_expires_at);
+    if (user.access_expires_at) {
+      const expiryDate = new Date(user.access_expires_at);
       if (expiryDate < now) {
         isExpired = true;
         hasAccess = false;
@@ -1401,7 +1401,7 @@ app.get('/api/professional/scheduling-access-status', authenticate, authorize(['
     res.json({
       hasAccess,
       isExpired,
-      expiresAt: user.scheduling_access_expires_at,
+      expiresAt: user.access_expires_at,
       canPurchase: true // Always allow purchase
     });
   } catch (error) {
@@ -2928,7 +2928,7 @@ app.post('/api/professional/create-agenda-payment', authenticate, authorize(['pr
 
     // Check if user already has active scheduling access
     const userResult = await pool.query(
-      'SELECT has_scheduling_access, scheduling_access_expires_at FROM users WHERE id = $1',
+      'SELECT has_scheduling_access, access_expires_at FROM users WHERE id = $1',
       [req.user.id]
     );
 
@@ -2939,8 +2939,8 @@ app.post('/api/professional/create-agenda-payment', authenticate, authorize(['pr
     const user = userResult.rows[0];
     
     // Check if access is already active and not expired
-    if (user.has_scheduling_access && user.scheduling_access_expires_at) {
-      const expiryDate = new Date(user.scheduling_access_expires_at);
+    if (user.has_scheduling_access && user.access_expires_at) {
+      const expiryDate = new Date(user.access_expires_at);
       if (expiryDate > new Date()) {
         return res.status(400).json({ message: 'Você já possui acesso ativo à agenda' });
       }
@@ -3095,7 +3095,7 @@ app.post('/api/webhooks/mercadopago', async (req, res) => {
             UPDATE users 
             SET 
               has_scheduling_access = TRUE,
-              scheduling_access_expires_at = $1,
+              access_expires_at = $1,
               updated_at = CURRENT_TIMESTAMP
             WHERE id = $2
           `, [expiryDate, professionalId]);
