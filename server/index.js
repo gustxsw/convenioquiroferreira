@@ -1272,7 +1272,7 @@ app.get('/api/admin/professionals-scheduling-access', authenticate, authorize(['
       WHERE 'professional' = ANY(u.roles)
       ORDER BY u.name
     `);
-
+      WHERE u.roles::jsonb ? 'professional'
     res.json(result.rows);
   } catch (error) {
     console.error('❌ Error fetching professionals scheduling access:', error);
