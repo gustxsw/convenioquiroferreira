@@ -2735,70 +2735,233 @@ app.post('/api/upload-image', authenticate, upload.single('image'), async (req, 
 app.post('/api/create-subscription', authenticate, async (req, res) => {
   try {
     const { user_id } = req.body;
-
-    // Verify access
-    if (req.user.currentRole !== 'admin' && req.user.id !== user_id) {
-      return res.status(403).json({ message: 'Acesso não autorizado' });
-    }
-
-    // Check if user already has active subscription
-    const userResult = await pool.query(
-      'SELECT subscription_status, subscription_expiry FROM users WHERE id = $1',
-      [user_id]
-    );
-
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Usuário não encontrado' });
-    }
-
-    const user = userResult.rows[0];
     
-    // Check if subscription is already active
-    if (user.subscription_status === 'active' && 
-        (!user.subscription_expiry || new Date(user.subscription_expiry) > new Date())) {
-      return res.status(400).json({ message: 'Usuário já possui assinatura ativa' });
+    if (!user_id) {
+      return res.status(400).json({ message: 'user_id é obrigatório' });
     }
 
-    const preference = new Preference(client);
+    // Create payment record first
+    const external_reference = `subscription_${user_id}_${Date.now()}`;
+    
+    const paymentResult = await pool.query(
+      'INSERT INTO client_payments (client_id, amount, status, external_reference, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING id',
+      [user_id, 250, 'pending', external_reference]
+    );
+    
+    const payment_id = paymentResult.rows[0].id;
 
-    const preferenceData = {
+    const preference = {
       items: [
         {
           title: 'Assinatura Convênio Quiro Ferreira',
           quantity: 1,
           unit_price: 250,
-          currency_id: 'BRL',
         },
       ],
-      payer: {
-        email: 'cliente@quiroferreira.com.br',
-      },
+      external_reference: external_reference,
       back_urls: {
-        success: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/client?payment=success&type=subscription`,
-        failure: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/client?payment=failure&type=subscription`,
-        pending: `${process.env.NODE_ENV === 'production' ? 'https://www.cartaoquiroferreira.com.br' : 'http://localhost:5173'}/client?payment=pending&type=subscription`
+        success: `${req.protocol}://${req.get('host')}/client?payment=success&type=subscription`,
+        failure: `${req.protocol}://${req.get('host')}/client?payment=failure&type=subscription`,
+        pending: `${req.protocol}://${req.get('host')}/client?payment=pending&type=subscription`,
       },
-      auto_return: 'all',
-      external_reference: `subscription_${user_id}_${Date.now()}`,
-      notification_url: `${req.protocol}://${req.get('host')}/api/webhooks/mercadopago`,
+      auto_return: 'approved',
+      metadata: {
+        payment_type: 'subscription',
+        user_id: user_id,
+        payment_id: payment_id
+      }
     };
 
-    const response = await preference.create({ body: preferenceData });
+    const response = await mercadopago.preferences.create(preference);
+    
+    // Update payment record with MP preference ID
+    await pool.query(
+      'UPDATE client_payments SET mp_preference_id = $1 WHERE id = $2',
+      [response.body.id, payment_id]
+    );
 
-    // Save payment record
-    await pool.query(`
-      INSERT INTO client_payments (user_id, amount, payment_reference, mp_preference_id)
-      VALUES ($1, $2, $3, $4)
-    `, [user_id, 250, preferenceData.external_reference, response.id]);
-
-    res.json({
-      id: response.id,
-      init_point: response.init_point,
-      sandbox_init_point: response.sandbox_init_point,
-    });
+    res.json({ init_point: response.body.init_point });
   } catch (error) {
-    console.error('❌ Error creating subscription payment:', error);
-    res.status(500).json({ message: 'Erro ao criar pagamento' });
+    console.error('Error creating subscription payment:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Create dependent payment
+app.post('/api/dependents/:id/create-payment', authenticate, async (req, res) => {
+  try {
+    const dependentId = parseInt(req.params.id);
+    
+    if (!dependentId) {
+      return res.status(400).json({ message: 'ID do dependente é obrigatório' });
+    }
+
+    // Get dependent info
+    const dependentResult = await pool.query(
+      'SELECT * FROM dependents WHERE id = $1',
+      [dependentId]
+    );
+
+    if (dependentResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Dependente não encontrado' });
+    }
+
+    const dependent = dependentResult.rows[0];
+    const payment_reference = `dependent_${dependentId}_${Date.now()}`;
+    
+    // Create payment record first
+    const paymentResult = await pool.query(
+      'INSERT INTO dependent_payments (dependent_id, amount, status, payment_reference, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING id',
+      [dependentId, 50, 'pending', payment_reference]
+    );
+    
+    const payment_id = paymentResult.rows[0].id;
+
+    const preference = {
+      items: [
+        {
+          title: `Ativação de Dependente - ${dependent.name}`,
+          quantity: 1,
+          unit_price: 50,
+        },
+      ],
+      external_reference: payment_reference,
+      back_urls: {
+        success: `${req.protocol}://${req.get('host')}/client?payment=success&type=dependent`,
+        failure: `${req.protocol}://${req.get('host')}/client?payment=failure&type=dependent`,
+        pending: `${req.protocol}://${req.get('host')}/client?payment=pending&type=dependent`,
+      },
+      auto_return: 'approved',
+      metadata: {
+        payment_type: 'dependent',
+        dependent_id: dependentId,
+        payment_id: payment_id
+      }
+    };
+
+    const response = await mercadopago.preferences.create(preference);
+    
+    // Update payment record with MP preference ID
+    await pool.query(
+      'UPDATE dependent_payments SET mp_preference_id = $1 WHERE id = $2',
+      [response.body.id, payment_id]
+    );
+
+    res.json({ init_point: response.body.init_point });
+  } catch (error) {
+    console.error('Error creating dependent payment:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Create professional payment
+app.post('/api/professional/create-payment', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { amount } = req.body;
+    const professionalId = req.user.id;
+    
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ message: 'Valor deve ser maior que zero' });
+    }
+
+    const external_reference = `professional_${professionalId}_${Date.now()}`;
+    
+    // Create payment record first
+    const paymentResult = await pool.query(
+      'INSERT INTO professional_payments (professional_id, amount, status, external_reference, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING id',
+      [professionalId, amount, 'pending', external_reference]
+    );
+    
+    const payment_id = paymentResult.rows[0].id;
+
+    const preference = {
+      items: [
+        {
+          title: 'Repasse ao Convênio Quiro Ferreira',
+          quantity: 1,
+          unit_price: parseFloat(amount),
+        },
+      ],
+      external_reference: external_reference,
+      back_urls: {
+        success: `${req.protocol}://${req.get('host')}/professional?payment=success&type=professional`,
+        failure: `${req.protocol}://${req.get('host')}/professional?payment=failure&type=professional`,
+        pending: `${req.protocol}://${req.get('host')}/professional?payment=pending&type=professional`,
+      },
+      auto_return: 'approved',
+      metadata: {
+        payment_type: 'professional',
+        professional_id: professionalId,
+        payment_id: payment_id
+      }
+    };
+
+    const response = await mercadopago.preferences.create(preference);
+    
+    // Update payment record with MP preference ID
+    await pool.query(
+      'UPDATE professional_payments SET mp_preference_id = $1 WHERE id = $2',
+      [response.body.id, payment_id]
+    );
+
+    res.json({ init_point: response.body.init_point });
+  } catch (error) {
+    console.error('Error creating professional payment:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Create agenda payment
+app.post('/api/professional/create-agenda-payment', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { duration_days = 30 } = req.body;
+    const professionalId = req.user.id;
+    
+    const external_reference = `agenda_${professionalId}_${Date.now()}`;
+    
+    // Create payment record first
+    const paymentResult = await pool.query(
+      'INSERT INTO agenda_payments (professional_id, amount, status, external_reference, duration_days, mp_preference_id, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING id',
+      [professionalId, 24.99, 'pending', external_reference, duration_days, null]
+    );
+    
+    const payment_id = paymentResult.rows[0].id;
+
+    const preference = {
+      items: [
+        {
+          title: 'Acesso à Agenda - Convênio Quiro Ferreira',
+          quantity: 1,
+          unit_price: 24.99,
+        },
+      ],
+      external_reference: external_reference,
+      back_urls: {
+        success: `${req.protocol}://${req.get('host')}/professional/scheduling?payment=success&type=agenda`,
+        failure: `${req.protocol}://${req.get('host')}/professional/scheduling?payment=failure&type=agenda`,
+        pending: `${req.protocol}://${req.get('host')}/professional/scheduling?payment=pending&type=agenda`,
+      },
+      auto_return: 'approved',
+      metadata: {
+        payment_type: 'agenda',
+        professional_id: professionalId,
+        payment_id: payment_id,
+        duration_days: duration_days
+      }
+    };
+
+    const response = await mercadopago.preferences.create(preference);
+    
+    // Update payment record with MP preference ID
+    await pool.query(
+      'UPDATE agenda_payments SET mp_preference_id = $1 WHERE id = $2',
+      [response.body.id, payment_id]
+    );
+
+    res.json({ init_point: response.body.init_point });
+  } catch (error) {
+    console.error('Error creating agenda payment:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
