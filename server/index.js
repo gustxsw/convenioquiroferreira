@@ -4336,14 +4336,15 @@ const startServer = async () => {
   try {
     await initializeDatabase();
     
-    app.listen(PORT, () => {
-      console.log(\`🚀 Server running on port ${PORT}`);
-      console.log(\`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(\`📊 Database connected successfully`);
-      console.log(\`💳 MercadoPago configured`);
-      console.log(\`☁️ Cloudinary configured`);
-      console.log(\`✅ All systems operational`);
-    });
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📊 Database connected successfully`);
+  console.log(`💳 MercadoPago configured`);
+  console.log(`☁️ Cloudinary configured`);
+  console.log(`✅ All systems operational`);
+});
+
 
   } catch (error) {
     console.error('❌ Failed to start server:', error);
