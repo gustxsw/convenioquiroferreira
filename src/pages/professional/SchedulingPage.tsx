@@ -297,6 +297,20 @@ const SchedulingPage: React.FC = () => {
 
       setSuccess("Agendamento criado com sucesso!");
       setShowNewModal(false);
+      setFormData({
+        patient_type: "convenio",
+        client_cpf: "",
+        private_patient_id: "",
+        date: format(new Date(), "yyyy-MM-dd"),
+        time: "",
+        service_id: "",
+        value: "",
+        location_id: "",
+        notes: "",
+        is_recurring: false,
+        total_sessions: 1,
+        recurring_days: [],
+      });
       await fetchData();
       setTimeout(() => setSuccess(""), 3000);
     } catch (error) {
@@ -350,7 +364,7 @@ const SchedulingPage: React.FC = () => {
       const apiUrl = getApiUrl();
 
       const response = await fetch(
-        `${apiUrl}/api/appointments/${selectedAppointment.id}`,
+        `${apiUrl}/api/consultations/${selectedAppointment.id}/reschedule`,
         {
           method: "PUT",
           headers: {
@@ -358,8 +372,8 @@ const SchedulingPage: React.FC = () => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            appointment_date: rescheduleData.date,
-            appointment_time: rescheduleData.time,
+            new_date: rescheduleData.date,
+            new_time: rescheduleData.time,
           }),
         }
       );
@@ -375,7 +389,7 @@ const SchedulingPage: React.FC = () => {
       setSuccess("Consulta reagendada com sucesso!");
       setTimeout(() => setSuccess(""), 3000);
     } catch (error) {
-      console.error("❌ Error in handleReschedule:", error);
+      console.error("❌ Error in createAppointment:", error);
       setError(
         error instanceof Error ? error.message : "Erro ao reagendar consulta"
       );
