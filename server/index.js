@@ -5,11 +5,11 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { pool } from './db.js';
 import { MercadoPagoConfig, Preference } from 'mercadopago';
-import { MercadoPagoConfig, Preference } from 'mercadopago';
 import { v2 as cloudinary } from 'cloudinary';
 import multer from 'multer';
 import { CloudinaryStorage } from 'multer-storage-cloudinary';
 import puppeteer from 'puppeteer';
+import dotenv from 'dotenv';
 
 // Load environment variables
 dotenv.config();
@@ -41,12 +41,9 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 // ============================================================================
 
-const client = new MercadoPagoConfig({
-  accessToken: process.env.MP_ACCESS_TOKEN,
-  options: {
-    timeout: 5000,
-    idempotencyKey: 'your-idempotency-key'
-  }
+let mercadoPago = null;
+
+try {
   if (!process.env.MP_ACCESS_TOKEN) {
     console.warn('⚠️ MP_ACCESS_TOKEN not found in environment variables');
   } else {
@@ -502,7 +499,7 @@ const authenticate = async (req, res, next) => {
       currentRole: decoded.currentRole || (user.roles && user.roles[0])
     };
 
-    const subscriptionResult = await mercadopago.preferences.create(preference);
+    next();
   } catch (error) {
     console.error('Authentication error:', error);
     return res.status(401).json({ message: 'Token inválido' });
@@ -2674,11 +2671,11 @@ app.post('/api/create-subscription', authenticate, authorize(['client']), async 
     `, [user_id, response.id, 250.00]);
     
     console.log('✅ Subscription payment preference created:', response.id);
-    console.log('✅ Subscription preference created:', subscriptionResult.id);
+    
     res.json({
       preference_id: response.id,
-      preference_id: subscriptionResult.id,
-      init_point: subscriptionResult.init_point
+      init_point: response.init_point,
+      sandbox_init_point: response.sandbox_init_point
     });
   } catch (error) {
     console.error('Error creating subscription payment:', error);
@@ -2692,7 +2689,7 @@ app.post('/api/dependents/:id/create-payment', authenticate, async (req, res) =>
     const { id } = req.params;
     
     // Check if dependent exists and belongs to user
-    const dependentResult = await pool.query(`
+    const dependentCheck = await pool.query(`
       SELECT d.*, u.name as client_name 
       FROM dependents d
       JOIN users u ON d.client_id = u.id
@@ -2756,13 +2753,13 @@ app.post('/api/dependents/:id/create-payment', authenticate, async (req, res) =>
       preference_id: response.id,
       init_point: response.init_point,
       sandbox_init_point: response.sandbox_init_point
-    const dependentPaymentResult = await mercadopago.preferences.create(preference);
+    });
   } catch (error) {
-    console.log('✅ Dependent preference created:', dependentPaymentResult.id);
+    console.error('Error creating dependent payment:', error);
     res.status(500).json({ message: 'Erro ao criar pagamento' });
   }
-      preference_id: dependentPaymentResult.id,
-      init_point: dependentPaymentResult.init_point
+});
+
 // Create professional payment (clinic fee)
 app.post('/api/professional/create-payment', authenticate, authorize(['professional']), async (req, res) => {
   try {
@@ -2778,9 +2775,8 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
     
     const preference = new Preference(mercadoPago);
     
-    const preference = new Preference(client);
-    
     const preferenceData = {
+      items: [
         {
           id: 'clinic_fee',
           title: 'Repasse ao Convênio Quiro Ferreira',
@@ -2807,13 +2803,13 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
     };
     
     const response = await preference.create({ body: preferenceData });
-    const professionalResult = await mercadopago.preferences.create(preference);
+    
     // Save payment record
-    console.log('✅ Professional preference created:', professionalResult.id);
+    await pool.query(`
       INSERT INTO professional_payments (professional_id, mp_preference_id, amount, status, payment_type, created_at)
       VALUES ($1, $2, $3, 'pending', 'clinic_fee', NOW())
-      preference_id: professionalResult.id,
-      init_point: professionalResult.init_point
+    `, [req.user.id, response.id, parseFloat(amount)]);
+    
     console.log('✅ Professional payment preference created:', response.id);
     
     res.json({
@@ -2828,9 +2824,7 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
 });
 
 // Create agenda access payment
-    const preference = new Preference(client);
-    
-    const preferenceData = {
+app.post('/api/professional/create-agenda-payment', authenticate, authorize(['professional']), async (req, res) => {
   try {
     const { duration_days } = req.body;
     const days = duration_days || 30;
@@ -2854,13 +2848,13 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
       ],
       payer: {
         email: 'profissional@example.com'
-    const agendaResult = await preference.create({ body: preferenceData });
+      },
       back_urls: {
-    console.log('✅ Agenda preference created:', agendaResult.id);
+        success: "https://cartaoquiroferreira.com.br/professional/scheduling?payment=success&type=agenda",
         failure: "https://cartaoquiroferreira.com.br/professional/scheduling?payment=failure&type=agenda",
         pending: "https://cartaoquiroferreira.com.br/professional/scheduling?payment=pending&type=agenda"
-      preference_id: agendaResult.id,
-      init_point: agendaResult.init_point
+      },
+      auto_return: "approved",
       notification_url: "https://cartaoquiroferreira.com.br/api/webhook/mercadopago",
       external_reference: `agenda_${req.user.id}_${Date.now()}`,
       expires: true,
@@ -2869,7 +2863,7 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
     };
     
     const response = await preference.create({ body: preferenceData });
-    const subscriptionResult = await preference.create({ body: preferenceData });
+    
     // Save payment record
     await pool.query(`
       INSERT INTO agenda_payments (professional_id, mp_preference_id, amount, duration_days, status, created_at)
@@ -3117,9 +3111,7 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
     const totalRevenue = consultations.rows.reduce((sum, c) => sum + parseFloat(c.total_value), 0);
     const convenioRevenue = consultations.rows
       .filter(c => parseFloat(c.amount_to_pay) > 0)
-    const preference = new Preference(client);
-    
-    const preferenceData = {
+      .reduce((sum, c) => sum + parseFloat(c.total_value), 0);
     const privateRevenue = consultations.rows
       .filter(c => parseFloat(c.amount_to_pay) === 0)
       .reduce((sum, c) => sum + parseFloat(c.total_value), 0);
@@ -3192,7 +3184,7 @@ app.get('/api/reports/professional-detailed', authenticate, authorize(['professi
       }
     });
   } catch (error) {
-    const dependentPaymentResult = await preference.create({ body: preferenceData });
+    console.error('Error generating detailed professional report:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
@@ -3259,9 +3251,7 @@ app.get('/api/reports/professionals-by-city', authenticate, authorize(['admin'])
       };
     });
     
-    const preference = new Preference(client);
-    
-    const preferenceData = {
+    res.json(processedResult);
   } catch (error) {
     console.error('Error generating professionals by city report:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
@@ -3285,7 +3275,7 @@ app.post('/api/upload-image', authenticate, upload.single('image'), async (req, 
     await pool.query(
       'UPDATE users SET photo_url = $1 WHERE id = $2',
       [req.file.path, req.user.id]
-    const professionalResult = await preference.create({ body: preferenceData });
+    );
     
     console.log('✅ User photo updated successfully');
     
@@ -4062,11 +4052,11 @@ app.put('/api/system-settings/:key', authenticate, authorize(['admin']), async (
       RETURNING *
     `, [value.toString(), req.user.id, key]);
     
-    if (dependentResult.rows.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Configuração não encontrada' });
     }
     
-    const dependent = dependentResult.rows[0];
+    res.json({
       message: 'Configuração atualizada com sucesso',
       setting: result.rows[0]
     });
