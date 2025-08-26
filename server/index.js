@@ -850,7 +850,7 @@ app.get('/api/users', authenticate, authorize(['admin']), async (req, res) => {
         id, name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, roles, subscription_status,
         subscription_expiry, created_at, updated_at, photo_url, category_name,
-        professional_percentage, crm
+        percentage, crm
       FROM users 
       ORDER BY created_at DESC
     `);
@@ -874,7 +874,7 @@ app.get('/api/users/:id', authenticate, async (req, res) => {
         id, name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, roles, subscription_status,
         subscription_expiry, created_at, updated_at, photo_url, category_name,
-        professional_percentage, crm
+        percentage, crm
       FROM users 
       WHERE id = $1
     `, [id]);
@@ -914,7 +914,7 @@ app.post('/api/users', authenticate, authorize(['admin']), async (req, res) => {
       subscription_status,
       subscription_expiry,
       category_name,
-      professional_percentage,
+      percentage,
       crm
     } = req.body;
 
@@ -969,7 +969,7 @@ app.post('/api/users', authenticate, authorize(['admin']), async (req, res) => {
         name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, password, roles,
         subscription_status, subscription_expiry, category_name, 
-        professional_percentage, crm, created_at, updated_at
+        percentage, crm, created_at, updated_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW())
       RETURNING id, name, cpf, email, roles
     `, [
@@ -989,7 +989,7 @@ app.post('/api/users', authenticate, authorize(['admin']), async (req, res) => {
       subscription_status || 'pending',
       subscription_expiry || null,
       category_name?.trim() || null,
-      professional_percentage || null,
+      percentage || null,
       crm?.trim() || null
     ]);
 
@@ -1037,7 +1037,7 @@ app.put('/api/users/:id', authenticate, authorize(['admin']), async (req, res) =
       subscription_status,
       subscription_expiry,
       category_name,
-      professional_percentage,
+      percentage,
       crm
     } = req.body;
 
@@ -1104,8 +1104,8 @@ app.put('/api/users/:id', authenticate, authorize(['admin']), async (req, res) =
     updateFields.push(`category_name = $${paramCount++}`);
     updateValues.push(category_name?.trim() || null);
 
-    updateFields.push(`professional_percentage = $${paramCount++}`);
-    updateValues.push(professional_percentage || null);
+    updateFields.push(`percentage = $${paramCount++}`);
+    updateValues.push(percentage || null);
 
     updateFields.push(`crm = $${paramCount++}`);
     updateValues.push(crm?.trim() || null);
@@ -3731,7 +3731,7 @@ app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, 
     const revenueByProfessionalResult = await pool.query(`
       SELECT 
         u.name as professional_name,
-        u.percentage as professional_percentage,
+        u.percentage as percentage,
         COALESCE(SUM(c.value), 0) as revenue,
         COUNT(c.id) as consultation_count,
         COALESCE(SUM(c.value * (100 - u.percentage) / 100), 0) as clinic_revenue,
@@ -3827,7 +3827,7 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
 
     const report = {
       summary: {
-        professional_percentage: professionalPercentage,
+        percentage: professionalPercentage,
         total_revenue: totalRevenue,
         consultation_count: consultationCount,
         amount_to_pay: totalAmountToPay
@@ -3885,7 +3885,7 @@ app.get('/api/reports/professional-detailed', authenticate, authorize(['professi
         total_revenue: parseFloat(stats.total_revenue),
         convenio_revenue: parseFloat(stats.convenio_revenue),
         private_revenue: parseFloat(stats.private_revenue),
-        professional_percentage: professionalPercentage,
+        percentage: professionalPercentage,
         amount_to_pay: parseFloat(stats.amount_to_pay)
       }
     };
