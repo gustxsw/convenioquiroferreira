@@ -498,7 +498,7 @@ const authenticate = async (req, res, next) => {
       currentRole: decoded.currentRole || (user.roles && user.roles[0])
     };
 
-    const result = await mercadopago.preferences.create(preference);
+    const subscriptionResult = await mercadopago.preferences.create(preference);
   } catch (error) {
     console.error('Authentication error:', error);
     return res.status(401).json({ message: 'Token inválido' });
@@ -2670,11 +2670,11 @@ app.post('/api/create-subscription', authenticate, authorize(['client']), async 
     `, [user_id, response.id, 250.00]);
     
     console.log('✅ Subscription payment preference created:', response.id);
-    
+    console.log('✅ Subscription preference created:', subscriptionResult.id);
     res.json({
       preference_id: response.id,
-      init_point: response.init_point,
-      sandbox_init_point: response.sandbox_init_point
+      preference_id: subscriptionResult.id,
+      init_point: subscriptionResult.init_point
     });
   } catch (error) {
     console.error('Error creating subscription payment:', error);
@@ -2688,7 +2688,7 @@ app.post('/api/dependents/:id/create-payment', authenticate, async (req, res) =>
     const { id } = req.params;
     
     // Check if dependent exists and belongs to user
-    const dependentCheck = await pool.query(`
+    const dependentResult = await pool.query(`
       SELECT d.*, u.name as client_name 
       FROM dependents d
       JOIN users u ON d.client_id = u.id
@@ -2752,13 +2752,13 @@ app.post('/api/dependents/:id/create-payment', authenticate, async (req, res) =>
       preference_id: response.id,
       init_point: response.init_point,
       sandbox_init_point: response.sandbox_init_point
-    });
+    const dependentPaymentResult = await mercadopago.preferences.create(preference);
   } catch (error) {
-    console.error('Error creating dependent payment:', error);
+    console.log('✅ Dependent preference created:', dependentPaymentResult.id);
     res.status(500).json({ message: 'Erro ao criar pagamento' });
   }
-});
-
+      preference_id: dependentPaymentResult.id,
+      init_point: dependentPaymentResult.init_point
 // Create professional payment (clinic fee)
 app.post('/api/professional/create-payment', authenticate, authorize(['professional']), async (req, res) => {
   try {
@@ -2801,13 +2801,13 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
     };
     
     const response = await preference.create({ body: preferenceData });
-    
+    const professionalResult = await mercadopago.preferences.create(preference);
     // Save payment record
-    await pool.query(`
+    console.log('✅ Professional preference created:', professionalResult.id);
       INSERT INTO professional_payments (professional_id, mp_preference_id, amount, status, payment_type, created_at)
       VALUES ($1, $2, $3, 'pending', 'clinic_fee', NOW())
-    `, [req.user.id, response.id, parseFloat(amount)]);
-    
+      preference_id: professionalResult.id,
+      init_point: professionalResult.init_point
     console.log('✅ Professional payment preference created:', response.id);
     
     res.json({
@@ -2846,13 +2846,13 @@ app.post('/api/professional/create-agenda-payment', authenticate, authorize(['pr
       ],
       payer: {
         email: 'profissional@example.com'
-      },
+    const agendaResult = await mercadopago.preferences.create(preference);
       back_urls: {
-        success: "https://cartaoquiroferreira.com.br/professional/scheduling?payment=success&type=agenda",
+    console.log('✅ Agenda preference created:', agendaResult.id);
         failure: "https://cartaoquiroferreira.com.br/professional/scheduling?payment=failure&type=agenda",
         pending: "https://cartaoquiroferreira.com.br/professional/scheduling?payment=pending&type=agenda"
-      },
-      auto_return: "approved",
+      preference_id: agendaResult.id,
+      init_point: agendaResult.init_point
       notification_url: "https://cartaoquiroferreira.com.br/api/webhook/mercadopago",
       external_reference: `agenda_${req.user.id}_${Date.now()}`,
       expires: true,
@@ -4050,11 +4050,11 @@ app.put('/api/system-settings/:key', authenticate, authorize(['admin']), async (
       RETURNING *
     `, [value.toString(), req.user.id, key]);
     
-    if (result.rows.length === 0) {
+    if (dependentResult.rows.length === 0) {
       return res.status(404).json({ message: 'Configuração não encontrada' });
     }
     
-    res.json({
+    const dependent = dependentResult.rows[0];
       message: 'Configuração atualizada com sucesso',
       setting: result.rows[0]
     });
