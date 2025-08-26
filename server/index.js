@@ -178,55 +178,26 @@ const initializeDatabase = async () => {
         user_id INTEGER REFERENCES users(id),
         dependent_id INTEGER REFERENCES dependents(id),
         private_patient_id INTEGER REFERENCES private_patients(id),
+        private_patient_id INTEGER REFERENCES private_patients(id),
         professional_id INTEGER REFERENCES users(id) NOT NULL,
         service_id INTEGER REFERENCES services(id) NOT NULL,
         location_id INTEGER REFERENCES attendance_locations(id),
+        location_id INTEGER REFERENCES attendance_locations(id),
         value DECIMAL(10,2) NOT NULL,
         date TIMESTAMP NOT NULL,
+        status VARCHAR(20) DEFAULT 'scheduled',
+        notes TEXT,
         status VARCHAR(20) DEFAULT 'completed',
         session_number INTEGER,
         total_sessions INTEGER,
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT check_patient_type CHECK (
           (user_id IS NOT NULL AND dependent_id IS NULL AND private_patient_id IS NULL) OR
           (user_id IS NULL AND dependent_id IS NOT NULL AND private_patient_id IS NULL) OR
           (user_id IS NULL AND dependent_id IS NULL AND private_patient_id IS NOT NULL)
         )
-      )
-    `);
-
-    // Appointments table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS appointments (
-        id SERIAL PRIMARY KEY,
-        professional_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        private_patient_id INTEGER REFERENCES private_patients(id),
-        service_id INTEGER REFERENCES services(id),
-        location_id INTEGER REFERENCES attendance_locations(id),
-        appointment_date DATE NOT NULL,
-        appointment_time TIME NOT NULL,
-        status VARCHAR(20) DEFAULT 'scheduled',
-        notes TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Create scheduling_appointments table (separate from consultations)
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS scheduling_appointments (
-        id SERIAL PRIMARY KEY,
-        professional_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        private_patient_id INTEGER REFERENCES private_patients(id) ON DELETE CASCADE,
-        service_id INTEGER REFERENCES services(id) ON DELETE SET NULL,
-        location_id INTEGER REFERENCES attendance_locations(id) ON DELETE SET NULL,
-        appointment_date DATE NOT NULL,
-        appointment_time TIME NOT NULL,
-        status VARCHAR(20) DEFAULT 'scheduled',
-        notes TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
@@ -2363,16 +2334,15 @@ app.post(
   async (req, res) => {
     try {
       const {
-        user_id,
+        client_id,
         dependent_id,
         private_patient_id,
         service_id,
         location_id,
         value,
         date,
-        appointment_date,
-        appointment_time,
-        create_appointment,
+        status,
+        notes,
       } = req.body;
 
       console.log("🔄 Creating consultation with data:", req.body);
@@ -2391,7 +2361,7 @@ app.post(
       }
 
       // Validate patient type (exactly one must be provided)
-      const patientCount = [user_id, dependent_id, private_patient_id].filter(
+      const patientCount = [client_id, dependent_id, private_patient_id].filter(
         Boolean
       ).length;
       if (patientCount !== 1) {
@@ -2410,15 +2380,15 @@ app.post(
       }
 
       // If it's a convenio patient, validate subscription status
-      if (user_id || dependent_id) {
+      if (client_id || dependent_id) {
         let subscriptionValid = false;
 
-        if (user_id) {
+        if (client_id) {
           const clientResult = await pool.query(
             `
           SELECT subscription_status FROM users WHERE id = $1 AND 'client' = ANY(roles)
         `,
-            [user_id]
+            [client_id]
           );
 
           if (
@@ -2455,13 +2425,13 @@ app.post(
         `
       INSERT INTO consultations (
         user_id, dependent_id, private_patient_id, professional_id, 
-        service_id, location_id, value, date
+        service_id, location_id, value, date, status, notes
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *
     `,
         [
-          user_id || null,
+          client_id || null,
           dependent_id || null,
           private_patient_id || null,
           req.user.id,
@@ -2469,43 +2439,14 @@ app.post(
           location_id || null,
           parseFloat(value),
           new Date(date),
+          status || "scheduled",
+          notes?.trim() || null,
         ]
       );
 
       const consultation = consultationResult.rows[0];
 
       console.log("✅ Consultation created:", consultation.id);
-
-      // Create appointment if requested
-      let appointment = null;
-      if (
-        create_appointment &&
-        appointment_date &&
-        appointment_time &&
-        private_patient_id
-      ) {
-        const appointmentResult = await pool.query(
-          `
-        INSERT INTO appointments (
-          professional_id, private_patient_id, service_id, location_id,
-          appointment_date, appointment_time, status
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, 'scheduled')
-        RETURNING *
-      `,
-          [
-            req.user.id,
-            private_patient_id,
-            service_id,
-            location_id || null,
-            appointment_date,
-            appointment_time,
-          ]
-        );
-
-        appointment = appointmentResult.rows[0];
-        console.log("✅ Appointment created:", appointment.id);
-      }
 
       // Log audit action
       await logAuditAction(
@@ -2521,7 +2462,6 @@ app.post(
       res.status(201).json({
         message: "Consulta registrada com sucesso",
         consultation,
-        appointment,
       });
     } catch (error) {
       console.error("❌ Error creating consultation:", error);
@@ -2594,196 +2534,7 @@ app.post(
         address_complement,
         neighborhood,
         city,
-        state,
-        zip_code,
-      } = req.body;
-
-      if (!name) {
-        return res.status(400).json({ message: "Nome é obrigatório" });
-      }
-
-      // Validate CPF if provided
-      if (cpf && !validateCPF(cpf)) {
-        return res.status(400).json({ message: "CPF inválido" });
-      }
-
-      // Validate email if provided
-      if (email && !validateEmail(email)) {
-        return res.status(400).json({ message: "Email inválido" });
-      }
-
-      const cleanCPF = cpf ? cpf.replace(/\D/g, "") : null;
-
-      // Check if CPF already exists (if provided)
-      if (cleanCPF) {
-        const existingPatient = await pool.query(
-          `
-        SELECT id FROM private_patients WHERE cpf = $1 AND professional_id = $2
-      `,
-          [cleanCPF, req.user.id]
-        );
-
-        if (existingPatient.rows.length > 0) {
-          return res
-            .status(409)
-            .json({ message: "CPF já cadastrado para este profissional" });
-        }
-      }
-
-      const patientResult = await pool.query(
-        `
-      INSERT INTO private_patients (
-        professional_id, name, cpf, email, phone, birth_date, address,
-        address_number, address_complement, neighborhood, city, state, zip_code
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-      RETURNING *
-    `,
-        [
-          req.user.id,
-          name.trim(),
-          cleanCPF,
-          email?.trim() || null,
-          phone?.replace(/\D/g, "") || null,
-          birth_date || null,
-          address?.trim() || null,
-          address_number?.trim() || null,
-          address_complement?.trim() || null,
-          neighborhood?.trim() || null,
-          city?.trim() || null,
-          state || null,
-          zip_code?.replace(/\D/g, "") || null,
-        ]
-      );
-
-      const patient = patientResult.rows[0];
-
-      console.log("✅ Private patient created:", patient.id);
-
-      // Log audit action
-      await logAuditAction(
-        req.user.id,
-        "CREATE",
-        "private_patients",
-        patient.id,
-        null,
-        patient,
-        req
-      );
-
-      res.status(201).json({
-        message: "Paciente criado com sucesso",
-        patient,
-      });
-    } catch (error) {
-      console.error("❌ Error creating private patient:", error);
-      res.status(500).json({ message: "Erro ao criar paciente particular" });
-    }
-  }
-);
-
-app.put(
-  "/api/private-patients/:id",
-  authenticate,
-  authorize(["professional"]),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-      const {
-        name,
-        email,
-        phone,
-        birth_date,
-        address,
-        address_number,
-        address_complement,
-        neighborhood,
-        city,
-        state,
-        zip_code,
-      } = req.body;
-
-      // Get current patient data
-      const currentPatientResult = await pool.query(
-        `
-      SELECT * FROM private_patients WHERE id = $1 AND professional_id = $2
-    `,
-        [id, req.user.id]
-      );
-
-      if (currentPatientResult.rows.length === 0) {
-        return res.status(404).json({ message: "Paciente não encontrado" });
-      }
-
-      const currentPatient = currentPatientResult.rows[0];
-
-      if (!name) {
-        return res.status(400).json({ message: "Nome é obrigatório" });
-      }
-
-      // Validate email if provided
-      if (email && !validateEmail(email)) {
-        return res.status(400).json({ message: "Email inválido" });
-      }
-
-      const updatedPatientResult = await pool.query(
-        `
-      UPDATE private_patients 
-      SET 
-        name = $1, email = $2, phone = $3, birth_date = $4, address = $5,
-        address_number = $6, address_complement = $7, neighborhood = $8,
-        city = $9, state = $10, zip_code = $11, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $12 AND professional_id = $13
-      RETURNING *
-    `,
-        [
-          name.trim(),
-          email?.trim() || null,
-          phone?.replace(/\D/g, "") || null,
-          birth_date || null,
-          address?.trim() || null,
-          address_number?.trim() || null,
-          address_complement?.trim() || null,
-          neighborhood?.trim() || null,
-          city?.trim() || null,
-          state || null,
-          zip_code?.replace(/\D/g, "") || null,
-          id,
-          req.user.id,
-        ]
-      );
-
-      const updatedPatient = updatedPatientResult.rows[0];
-
-      console.log("✅ Private patient updated:", id);
-
-      // Log audit action
-      await logAuditAction(
-        req.user.id,
-        "UPDATE",
-        "private_patients",
-        parseInt(id),
-        currentPatient,
-        updatedPatient,
-        req
-      );
-
-      res.json({
-        message: "Paciente atualizado com sucesso",
-        patient: updatedPatient,
-      });
-    } catch (error) {
-      console.error("❌ Error updating private patient:", error);
-      res
-        .status(500)
-        .json({ message: "Erro ao atualizar paciente particular" });
-    }
-  }
-);
-
-app.delete(
-)
-// Get consultations for professional (filtered by date if provided)
+// Get consultations for professional (agenda view)
 app.get(
   "/api/consultations/professional",
   authenticate,
@@ -2795,10 +2546,30 @@ app.get(
 
       console.log("🔄 Fetching consultations for professional:", professionalId, "date:", date);
 
+      // Get professional percentage for calculations
+      const professionalResult = await pool.query(
+        "SELECT percentage FROM users WHERE id = $1",
+        [professionalId]
+      );
+      const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
+
       let query = `
         SELECT 
-          c.id, c.value, c.date, c.status, c.notes, c.session_number, c.total_sessions,
+          c.id,
+          c.user_id,
+          c.dependent_id,
+          c.private_patient_id,
+          c.professional_id,
+          c.service_id,
+          c.location_id,
+          c.date,
+          c.value,
+          c.status,
+          c.notes,
+          c.created_at,
+          c.updated_at,
           s.name as service_name,
+          al.name as location_name,
           CASE 
             WHEN c.user_id IS NOT NULL THEN u.name
             WHEN c.dependent_id IS NOT NULL THEN d.name
@@ -2809,20 +2580,28 @@ app.get(
             WHEN c.dependent_id IS NOT NULL THEN true
             ELSE false
           END as is_dependent,
-          al.name as location_name
+          CASE 
+            WHEN c.private_patient_id IS NOT NULL THEN 'private'
+            ELSE 'convenio'
+          END as patient_type,
+          $2 as professional_percentage,
+          CASE 
+            WHEN c.private_patient_id IS NOT NULL THEN 0
+            ELSE ROUND(c.value * (100 - $2) / 100, 2)
+          END as amount_to_pay
         FROM consultations c
-        JOIN services s ON c.service_id = s.id
+        LEFT JOIN services s ON c.service_id = s.id
+        LEFT JOIN attendance_locations al ON c.location_id = al.id
         LEFT JOIN users u ON c.user_id = u.id
         LEFT JOIN dependents d ON c.dependent_id = d.id
         LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
-        LEFT JOIN attendance_locations al ON c.location_id = al.id
         WHERE c.professional_id = $1
       `;
 
-      const params = [professionalId];
+      const params = [professionalId, professionalPercentage];
 
       if (date) {
-        query += " AND DATE(c.date) = $2";
+        query += " AND DATE(c.date) = $3";
         params.push(date);
       }
 
@@ -2830,10 +2609,10 @@ app.get(
 
       const result = await pool.query(query, params);
 
-      console.log("✅ Consultations loaded:", result.rows.length);
+      console.log("✅ Professional consultations loaded:", result.rows.length);
       res.json(result.rows);
     } catch (error) {
-      console.error("❌ Error fetching consultations:", error);
+      console.error("❌ Error fetching professional consultations:", error);
       res.status(500).json({ message: "Erro ao carregar consultas" });
     }
   }
@@ -2849,32 +2628,11 @@ app.put(
       const { id } = req.params;
       const { status } = req.body;
 
-      console.log("🔄 Updating consultation status:", { id, status });
-
-      if (!status) {
-        return res.status(400).json({ message: "Status é obrigatório" });
-      }
-
-      // Validate status
-      const validStatuses = ["scheduled", "confirmed", "completed", "cancelled"];
-      if (!validStatuses.includes(status)) {
+      if (!status || !["scheduled", "confirmed", "completed", "cancelled"].includes(status)) {
         return res.status(400).json({ message: "Status inválido" });
       }
 
-      // Get current consultation data
-      const currentConsultationResult = await pool.query(
-        "SELECT * FROM consultations WHERE id = $1 AND professional_id = $2",
-        [id, req.user.id]
-      );
-
-      if (currentConsultationResult.rows.length === 0) {
-        return res.status(404).json({ message: "Consulta não encontrada" });
-      }
-
-      const currentConsultation = currentConsultationResult.rows[0];
-
-      // Update consultation status
-      const updatedConsultationResult = await pool.query(
+      const result = await pool.query(
         `
         UPDATE consultations 
         SET status = $1, updated_at = CURRENT_TIMESTAMP
@@ -2884,404 +2642,95 @@ app.put(
         [status, id, req.user.id]
       );
 
-      const updatedConsultation = updatedConsultationResult.rows[0];
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Consulta não encontrada" });
+      }
 
-      console.log("✅ Consultation status updated:", id);
-
-      // Log audit action
-      await logAuditAction(
-        req.user.id,
-        "UPDATE_STATUS",
-        "consultations",
-        parseInt(id),
-        { status: currentConsultation.status },
-        { status: updatedConsultation.status },
-        req
-      );
-
-      res.json({
-        message: "Status da consulta atualizado com sucesso",
-        consultation: updatedConsultation,
-      });
+      console.log("✅ Consultation status updated:", id, "to", status);
+      res.json({ message: "Status atualizado com sucesso", consultation: result.rows[0] });
     } catch (error) {
       console.error("❌ Error updating consultation status:", error);
-      res.status(500).json({ message: "Erro ao atualizar status da consulta" });
+      res.status(500).json({ message: "Erro ao atualizar status" });
     }
   }
 );
 
-// Reschedule consultation
+// Update consultation
 app.put(
-  "/api/consultations/:id/reschedule",
+  "/api/consultations/:id",
   authenticate,
   authorize(["professional"]),
   async (req, res) => {
     try {
       const { id } = req.params;
-      const { new_date, new_time } = req.body;
+      const { service_id, location_id, value, date, notes } = req.body;
 
-      console.log("🔄 Rescheduling consultation:", { id, new_date, new_time });
-
-      if (!new_date || !new_time) {
-        return res.status(400).json({ message: "Nova data e hora são obrigatórias" });
-      }
-
-      // Get current consultation data
-      const currentConsultationResult = await pool.query(
+      // Get current consultation
+      const currentResult = await pool.query(
         "SELECT * FROM consultations WHERE id = $1 AND professional_id = $2",
         [id, req.user.id]
       );
 
-      if (currentConsultationResult.rows.length === 0) {
+      if (currentResult.rows.length === 0) {
         return res.status(404).json({ message: "Consulta não encontrada" });
       }
 
-      const currentConsultation = currentConsultationResult.rows[0];
-
-      // Combine new date and time
-      const newDateTime = new Date(`${new_date}T${new_time}`);
-
-      // Check for time conflicts
-      const conflictResult = await pool.query(
-        `
-        SELECT id FROM consultations 
-        WHERE professional_id = $1 AND DATE(date) = $2 AND TIME(date) = $3 AND id != $4
-      `,
-        [req.user.id, new_date, new_time, id]
-      );
-
-      if (conflictResult.rows.length > 0) {
-        return res.status(409).json({ 
-          message: "Já existe uma consulta agendada para este horário" 
-        });
-      }
-
-      // Update consultation date
-      const updatedConsultationResult = await pool.query(
+      const result = await pool.query(
         `
         UPDATE consultations 
-        SET date = $1, updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2 AND professional_id = $3
+        SET 
+          service_id = COALESCE($1, service_id),
+          location_id = $2,
+          value = COALESCE($3, value),
+          date = COALESCE($4, date),
+          notes = $5,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $6 AND professional_id = $7
         RETURNING *
       `,
-        [newDateTime.toISOString(), id, req.user.id]
-      );
-
-      const updatedConsultation = updatedConsultationResult.rows[0];
-
-      console.log("✅ Consultation rescheduled:", id);
-
-      // Log audit action
-      await logAuditAction(
-        req.user.id,
-        "RESCHEDULE",
-        "consultations",
-        parseInt(id),
-        { date: currentConsultation.date },
-        { date: updatedConsultation.date },
-        req
-      );
-
-      res.json({
-        message: "Consulta reagendada com sucesso",
-        consultation: updatedConsultation,
-      });
-    } catch (error) {
-      console.error("❌ Error rescheduling consultation:", error);
-      res.status(500).json({ message: "Erro ao reagendar consulta" });
-    }
-  }
-);
-
-// Appointments routes (with scheduling access control)
-app.get(
-  "/api/appointments",
-  authenticate,
-  authorize(["professional"]),
-  checkSchedulingAccess,
-  async (req, res) => {
-    try {
-      const { date } = req.query;
-
-      let query = `
-      SELECT 
-        a.*, pp.name as patient_name, pp.phone as patient_phone,
-        s.name as service_name, al.name as location_name,
-        'private' as patient_type
-      FROM appointments a
-      LEFT JOIN private_patients pp ON a.private_patient_id = pp.id
-      LEFT JOIN services s ON a.service_id = s.id
-      LEFT JOIN attendance_locations al ON a.location_id = al.id
-      WHERE a.professional_id = $1
-    `;
-
-      const params = [req.user.id];
-
-      if (date) {
-        query += " AND a.appointment_date = $2";
-        params.push(date);
-      }
-
-      query += " ORDER BY a.appointment_date, a.appointment_time";
-
-      const appointmentsResult = await pool.query(query, params);
-
-      res.json(appointmentsResult.rows);
-    } catch (error) {
-      console.error("❌ Error fetching appointments:", error);
-      res.status(500).json({ message: "Erro ao carregar agendamentos" });
-    }
-  }
-);
-
-app.post(
-  "/api/appointments",
-  authenticate,
-  authorize(["professional"]),
-  checkSchedulingAccess,
-  async (req, res) => {
-    try {
-      const {
-        private_patient_id,
-        service_id,
-        location_id,
-        appointment_date,
-        appointment_time,
-        notes,
-      } = req.body;
-
-      if (
-        !private_patient_id ||
-        !service_id ||
-        !appointment_date ||
-        !appointment_time
-      ) {
-        return res.status(400).json({
-          message: "Paciente, serviço, data e horário são obrigatórios",
-        });
-      }
-
-      // Validate patient belongs to professional
-      const patientResult = await pool.query(
-        `
-      SELECT id FROM private_patients WHERE id = $1 AND professional_id = $2
-    `,
-        [private_patient_id, req.user.id]
-      );
-
-      if (patientResult.rows.length === 0) {
-        return res.status(404).json({ message: "Paciente não encontrado" });
-      }
-
-      // Check for time conflicts
-      const conflictResult = await pool.query(
-        `
-      SELECT id FROM appointments 
-      WHERE professional_id = $1 AND appointment_date = $2 AND appointment_time = $3
-    `,
-        [req.user.id, appointment_date, appointment_time]
-      );
-
-      if (conflictResult.rows.length > 0) {
-        return res
-          .status(409)
-          .json({ message: "Já existe um agendamento para este horário" });
-      }
-
-      const appointmentResult = await pool.query(
-        `
-      INSERT INTO appointments (
-        professional_id, private_patient_id, service_id, location_id,
-        appointment_date, appointment_time, notes
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      RETURNING *
-    `,
         [
-          req.user.id,
-          private_patient_id,
-          service_id,
-          location_id || null,
-          appointment_date,
-          appointment_time,
-          notes?.trim() || null,
-        ]
-      );
-
-      const appointment = appointmentResult.rows[0];
-
-      console.log("✅ Appointment created:", appointment.id);
-
-      // Log audit action
-      await logAuditAction(
-        req.user.id,
-        "CREATE",
-        "appointments",
-        appointment.id,
-        null,
-        appointment,
-        req
-      );
-
-      res.status(201).json({
-        message: "Agendamento criado com sucesso",
-        appointment,
-      });
-    } catch (error) {
-      console.error("❌ Error creating appointment:", error);
-      res.status(500).json({ message: "Erro ao criar agendamento" });
-    }
-  }
-);
-
-app.put(
-  "/api/appointments/:id",
-  authenticate,
-  authorize(["professional"]),
-  checkSchedulingAccess,
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-      const {
-        private_patient_id,
-        service_id,
-        location_id,
-        appointment_date,
-        appointment_time,
-        status,
-        notes,
-      } = req.body;
-
-      // Get current appointment data
-      const currentAppointmentResult = await pool.query(
-        `
-      SELECT * FROM appointments WHERE id = $1 AND professional_id = $2
-    `,
-        [id, req.user.id]
-      );
-
-      if (currentAppointmentResult.rows.length === 0) {
-        return res.status(404).json({ message: "Agendamento não encontrado" });
-      }
-
-      const currentAppointment = currentAppointmentResult.rows[0];
-
-      // Check for time conflicts (excluding current appointment)
-      if (appointment_date && appointment_time) {
-        const conflictResult = await pool.query(
-          `
-        SELECT id FROM appointments 
-        WHERE professional_id = $1 AND appointment_date = $2 AND appointment_time = $3 AND id != $4
-      `,
-          [req.user.id, appointment_date, appointment_time, id]
-        );
-
-        if (conflictResult.rows.length > 0) {
-          return res
-            .status(409)
-            .json({ message: "Já existe um agendamento para este horário" });
-        }
-      }
-
-      const updatedAppointmentResult = await pool.query(
-        `
-      UPDATE appointments 
-      SET 
-        private_patient_id = COALESCE($1, private_patient_id),
-        service_id = COALESCE($2, service_id),
-        location_id = $3,
-        appointment_date = COALESCE($4, appointment_date),
-        appointment_time = COALESCE($5, appointment_time),
-        status = COALESCE($6, status),
-        notes = $7,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $8 AND professional_id = $9
-      RETURNING *
-    `,
-        [
-          private_patient_id || null,
           service_id || null,
           location_id || null,
-          appointment_date || null,
-          appointment_time || null,
-          status || null,
+          value || null,
+          date || null,
           notes?.trim() || null,
           id,
           req.user.id,
         ]
       );
 
-      const updatedAppointment = updatedAppointmentResult.rows[0];
-
-      console.log("✅ Appointment updated:", id);
-
-      // Log audit action
-      await logAuditAction(
-        req.user.id,
-        "UPDATE",
-        "appointments",
-        parseInt(id),
-        currentAppointment,
-        updatedAppointment,
-        req
-      );
-
-      res.json({
-        message: "Agendamento atualizado com sucesso",
-        appointment: updatedAppointment,
-      });
+      console.log("✅ Consultation updated:", id);
+      res.json({ message: "Consulta atualizada com sucesso", consultation: result.rows[0] });
     } catch (error) {
-      console.error("❌ Error updating appointment:", error);
-      res.status(500).json({ message: "Erro ao atualizar agendamento" });
+      console.error("❌ Error updating consultation:", error);
+      res.status(500).json({ message: "Erro ao atualizar consulta" });
     }
   }
 );
 
+// Delete consultation
 app.delete(
-  "/api/appointments/:id",
+  "/api/consultations/:id",
   authenticate,
   authorize(["professional"]),
-  checkSchedulingAccess,
   async (req, res) => {
     try {
       const { id } = req.params;
 
-      // Get appointment data before deletion
-      const appointmentResult = await pool.query(
-        `
-      SELECT * FROM appointments WHERE id = $1 AND professional_id = $2
-    `,
+      const result = await pool.query(
+        "DELETE FROM consultations WHERE id = $1 AND professional_id = $2 RETURNING *",
         [id, req.user.id]
       );
 
-      if (appointmentResult.rows.length === 0) {
-        return res.status(404).json({ message: "Agendamento não encontrado" });
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Consulta não encontrada" });
       }
 
-      const appointment = appointmentResult.rows[0];
-
-      await pool.query(
-        "DELETE FROM appointments WHERE id = $1 AND professional_id = $2",
-        [id, req.user.id]
-      );
-
-      console.log("✅ Appointment deleted:", id);
-
-      // Log audit action
-      await logAuditAction(
-        req.user.id,
-        "DELETE",
-        "appointments",
-        parseInt(id),
-        appointment,
-        null,
-        req
-      );
-
-      res.json({ message: "Agendamento excluído com sucesso" });
+      console.log("✅ Consultation deleted:", id);
+      res.json({ message: "Consulta excluída com sucesso" });
     } catch (error) {
-      console.error("❌ Error deleting appointment:", error);
-      res.status(500).json({ message: "Erro ao excluir agendamento" });
+      console.error("❌ Error deleting consultation:", error);
+      res.status(500).json({ message: "Erro ao excluir consulta" });
     }
   }
 );
