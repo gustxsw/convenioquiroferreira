@@ -3628,7 +3628,7 @@ app.post(
         [
           req.user.id,
           record.private_patient_id,
-          `Prontuário - ${record.patient_name}`,
+          \`Prontuário - ${record.patient_name}`,
           "medical_record",
           documentData.url,
           JSON.stringify(template_data),
@@ -3672,7 +3672,7 @@ app.get(
       );
 
       const result = await pool.query(
-        `SELECT 
+        \`SELECT 
         md.id,
         md.title,
         md.document_type,
@@ -3772,7 +3772,7 @@ app.post(
 
         // Save document record to database
         const result = await pool.query(
-          `INSERT INTO medical_documents (
+          \`INSERT INTO medical_documents (
           professional_id, private_patient_id, title, document_type, 
           document_url, created_at
         ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP) 
@@ -4242,7 +4242,7 @@ app.post(
         [
           professional_id,
           "Acesso à Agenda Concedido",
-          `Você recebeu acesso à agenda até ${new Date(
+          \`Você recebeu acesso à agenda até ${new Date(
             expires_at
           ).toLocaleDateString("pt-BR")}. ${reason ? `Motivo: ${reason}` : ""}`,
           "success",
@@ -4396,15 +4396,15 @@ app.post(
           pending: "https://cartaoquiroferreira.com.br/client?payment=pending",
         },
         auto_return: "approved",
-        notification_url: `${
+        notification_url: \`${
           process.env.NODE_ENV === "production"
             ? "https://cartaoquiroferreira.com.br"
             : "http://localhost:3001"
         }/api/webhook/mercadopago`,
-        payment_reference: `subscription_${user_id}_${Date.now()}`,
+        payment_reference: \`subscription_${user_id}_${Date.now()}`,
         payer: {
           name: user.name,
-          email: user.email || `user${user_id}@temp.com`,
+          email: user.email || \`user${user_id}@temp.com`,
           identification: {
             type: "CPF",
             number: user.cpf,
@@ -4429,7 +4429,7 @@ app.post(
           250.0,
           "pending",
           subscriptionResult.id,
-          `subscription_${user_id}_${Date.now()}`,
+          \`subscription_${user_id}_${Date.now()}`,
         ]
       );
 
@@ -4486,7 +4486,7 @@ app.post(
       const preferenceData = {
         items: [
           {
-            title: `Ativação de Dependente - ${dependent.name}`,
+            title: \`Ativação de Dependente - ${dependent.name}`,
             description: "Ativação de dependente no cartão de convênio",
             quantity: 1,
             unit_price: 50.0,
@@ -4502,16 +4502,16 @@ app.post(
             "https://cartaoquiroferreira.com.br/client?payment=pending&type=dependent",
         },
         auto_return: "approved",
-        notification_url: `${
+        notification_url: \`${
           process.env.NODE_ENV === "production"
             ? "https://cartaoquiroferreira.com.br"
             : "http://localhost:3001"
         }/api/webhook/mercadopago`,
-        payment_reference: `dependent_${dependent_id}_${Date.now()}`,
+        payment_reference: \`dependent_${dependent_id}_${Date.now()}`,
         payer: {
           name: dependent.client_name,
           email:
-            dependent.client_email || `client${dependent.user_id}@temp.com`,
+            dependent.client_email || \`client${dependent.user_id}@temp.com`,
           identification: {
             type: "CPF",
             number: dependent.client_cpf,
@@ -4539,7 +4539,7 @@ app.post(
           50.0,
           "pending",
           dependentPaymentResult.id,
-          `dependent_${dependent_id}_${Date.now()}`,
+          \`dependent_${dependent_id}_${Date.now()}`,
         ]
       );
 
@@ -4594,15 +4594,15 @@ app.post(
             "https://cartaoquiroferreira.com.br/professional?payment=pending",
         },
         auto_return: "approved",
-        notification_url: `${
+        notification_url: \`${
           process.env.NODE_ENV === "production"
             ? "https://cartaoquiroferreira.com.br"
             : "http://localhost:3001"
         }/api/webhook/mercadopago`,
-        payment_reference: `professional_${req.user.id}_${Date.now()}`,
+        payment_reference: \`professional_${req.user.id}_${Date.now()}`,
         payer: {
           name: req.user.name,
-          email: req.user.email || `professional${req.user.id}@temp.com`,
+          email: req.user.email || \`professional${req.user.id}@temp.com`,
         },
       };
 
@@ -4623,7 +4623,7 @@ app.post(
           parseFloat(amount),
           "pending",
           professionalResult.id,
-          `professional_${req.user.id}_${Date.now()}`,
+          \`professional_${req.user.id}_${Date.now()}`,
         ]
       );
 
@@ -4657,7 +4657,7 @@ app.post(
         items: [
           {
             title: "Acesso à Agenda - Quiro Ferreira",
-            description: `Acesso ao sistema de agendamentos por ${duration_days} dias`,
+            description: \`Acesso ao sistema de agendamentos por ${duration_days} dias`,
             quantity: 1,
             unit_price: 24.99,
             currency_id: "BRL",
@@ -4672,17 +4672,17 @@ app.post(
             "https://cartaoquiroferreira.com.br/professional?payment=pending&type=agenda",
         },
         auto_return: "approved",
-        notification_url: `${
+        notification_url: \`${
           process.env.NODE_ENV === "production"
             ? "https://cartaoquiroferreira.com.br"
             : "http://localhost:3001"
         }/api/webhook/mercadopago`,
-        payment_reference: `agenda_${
+        payment_reference: \`agenda_${
           req.user.id
         }_${duration_days}_${Date.now()}`,
         payer: {
           name: req.user.name,
-          email: req.user.email || `professional${req.user.id}@temp.com`,
+          email: req.user.email || \`professional${req.user.id}@temp.com`,
         },
       };
 
@@ -4702,7 +4702,7 @@ app.post(
           24.99,
           "pending",
           agendaResult.id,
-          `agenda_${req.user.id}_${duration_days}_${Date.now()}`,
+          \`agenda_${req.user.id}_${duration_days}_${Date.now()}`,
         ]
       );
 
@@ -4735,10 +4735,10 @@ app.post(
 
         // Get payment details from MercadoPago
         const paymentResponse = await fetch(
-          `https://api.mercadopago.com/v1/payments/${paymentId}`,
+          \`https://api.mercadopago.com/v1/payments/${paymentId}`,
           {
             headers: {
-              Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`,
+              Authorization: \`Bearer ${process.env.MP_ACCESS_TOKEN}`,
             },
           }
         );
@@ -4892,7 +4892,7 @@ const processDependentPayment = async (payment) => {
         [
           info.user_id,
           "Dependente Ativado",
-          `O dependente ${info.dependent_name} foi ativado com sucesso!`,
+          \`O dependente ${info.dependent_name} foi ativado com sucesso!`,
           "success",
         ]
       );
@@ -4937,7 +4937,7 @@ const processProfessionalPayment = async (payment) => {
       [
         professionalId,
         "Pagamento Processado",
-        `Seu pagamento de repasse ao convênio foi processado com sucesso.`,
+        \`Seu pagamento de repasse ao convênio foi processado com sucesso.`,
         "success",
       ]
     );
@@ -5005,7 +5005,7 @@ const processAgendaPayment = async (payment) => {
       [
         professionalId,
         "Acesso à Agenda Ativado",
-        `Seu acesso à agenda foi ativado por ${durationDays} dias!`,
+        \`Seu acesso à agenda foi ativado por ${durationDays} dias!`,
         "success",
       ]
     );
@@ -5286,9 +5286,9 @@ app.get(
         city,
         state,
         COUNT(*) as client_count,
-        COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
-        COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
-        COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
+        COUNT(CASE WHEN subscription_status = 'active\' THEN 1 END) as active_clients,
+        COUNT(CASE WHEN subscription_status = 'pending\' THEN 1 END) as pending_clients,
+        COUNT(CASE WHEN subscription_status = 'expired\' THEN 1 END) as expired_clients
       FROM users 
       WHERE 'client' = ANY(roles) AND city IS NOT NULL AND city != ''
       GROUP BY city, state
@@ -5536,23 +5536,23 @@ app.get(
 
       if (user_id) {
         paramCount++;
-        query += ` AND al.user_id = $${paramCount}`;
+        query += \` AND al.user_id = $${paramCount}`;
         params.push(user_id);
       }
 
       if (action) {
         paramCount++;
-        query += ` AND al.action = $${paramCount}`;
+        query += \` AND al.action = $${paramCount}`;
         params.push(action);
       }
 
       if (table_name) {
         paramCount++;
-        query += ` AND al.table_name = $${paramCount}`;
+        query += \` AND al.table_name = $${paramCount}`;
         params.push(table_name);
       }
 
-      query += ` ORDER BY al.created_at DESC LIMIT $${paramCount + 1} OFFSET $${
+      query += \` ORDER BY al.created_at DESC LIMIT $${paramCount + 1} OFFSET $${
         paramCount + 2
       }`;
       params.push(limit, offset);
@@ -5568,19 +5568,19 @@ app.get(
 
       if (user_id) {
         countParamCount++;
-        countQuery += ` AND al.user_id = $${countParamCount}`;
+        countQuery += \` AND al.user_id = $${countParamCount}`;
         countParams.push(user_id);
       }
 
       if (action) {
         countParamCount++;
-        countQuery += ` AND al.action = $${countParamCount}`;
+        countQuery += \` AND al.action = $${countParamCount}`;
         countParams.push(action);
       }
 
       if (table_name) {
         countParamCount++;
-        countQuery += ` AND al.table_name = $${countParamCount}`;
+        countQuery += \` AND al.table_name = $${countParamCount}`;
         countParams.push(table_name);
       }
 
@@ -5713,11 +5713,11 @@ const startServer = async () => {
 
     // Start listening
     app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(`📊 Database: Connected`);
-      console.log(`💳 MercadoPago: Configured`);
-      console.log(`✅ All systems operational`);
+      console.log(\`🚀 Server running on port ${PORT}`);
+      console.log(\`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log(\`📊 Database: Connected`);
+      console.log(\`💳 MercadoPago: Configured`);
+      console.log(\`✅ All systems operational`);
     });
   } catch (error) {
     console.error("❌ Failed to start server:", error);
