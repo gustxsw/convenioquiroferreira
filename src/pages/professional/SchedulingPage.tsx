@@ -127,7 +127,7 @@ const SchedulingPage: React.FC = () => {
       console.log("🔄 Fetching appointments for date:", dateStr);
 
       // Fetch appointments for the specific professional
-      const appointmentsResponse = await fetch(`${apiUrl}/api/consultations`, {
+      const appointmentsResponse = await fetch(`${apiUrl}/api/consultations/professional?date=${dateStr}`, {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -206,26 +206,21 @@ const SchedulingPage: React.FC = () => {
         {
           headers: {
             Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (locationsResponse.ok) {
-        const locationsData = await locationsResponse.json();
-        console.log("Attendance locations loaded:", locationsData.length);
-        setAttendanceLocations(locationsData);
-
-        // Set default location if exists
-        const defaultLocation = locationsData.find(
-          (loc: AttendanceLocation) => loc.is_default
-        );
-        if (defaultLocation) {
-          setFormData((prev) => ({
-            ...prev,
-            location_id: defaultLocation.id.toString(),
-          }));
-        }
+        // Convert consultations to appointment format
+        const processedAppointments = appointmentsData.map((consultation: any) => ({
+          id: consultation.id,
+          date: consultation.date,
+          time: format(new Date(consultation.date), "HH:mm"),
+          client_name: consultation.client_name,
+          service_name: consultation.service_name,
+          status: consultation.status || "scheduled",
+          value: consultation.value,
+          notes: consultation.notes || "",
+          is_dependent: consultation.is_dependent || false,
+          session_number: consultation.session_number || null,
+          total_sessions: consultation.total_sessions || null,
+        console.log("✅ Processed appointments:", processedAppointments);
+        setAppointments(processedAppointments);
       } else {
         console.error(
           "Attendance locations response error:",
