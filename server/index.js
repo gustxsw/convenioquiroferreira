@@ -4509,3 +4509,970 @@ app.post(
       );
 
       // Save document reference
+      const documentResult2 = await pool.query(
+        `
+      INSERT INTO medical_documents (
+        professional_id, private_patient_id, title, document_type, document_url, template_data
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `,
+        [
+          req.user.id,
+          private_patient_id || null,
+          title,
+          document_type,
+          documentResult.url,
+          JSON.stringify(template_data),
+        ]
+      );
+
+      const document = documentResult2.rows[0];
+
+      console.log("✅ Medical document created:", document.id);
+
+      // Log audit action
+      await logAuditAction(
+        req.user.id,
+        "CREATE",
+        "medical_documents",
+        document.id,
+        null,
+        document,
+        req
+      );
+
+      res.status(201).json({
+        message: "Documento criado com sucesso",
+        document,
+        documentUrl: documentResult.url,
+      });
+    } catch (error) {
+      console.error("❌ Error creating medical document:", error);
+      res.status(500).json({ message: "Erro ao criar documento médico" });
+    }
+  }
+);
+
+app.delete(
+  "/api/medical-documents/:id",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      // Get document data before deletion
+      const documentResult = await pool.query(
+        `
+      SELECT * FROM medical_documents WHERE id = $1 AND professional_id = $2
+    `,
+        [id, req.user.id]
+      );
+
+      if (documentResult.rows.length === 0) {
+        return res.status(404).json({ message: "Documento não encontrado" });
+      }
+
+      const document = documentResult.rows[0];
+
+      await pool.query(
+        "DELETE FROM medical_documents WHERE id = $1 AND professional_id = $2",
+        [id, req.user.id]
+      );
+
+      console.log("✅ Medical document deleted:", id);
+
+      // Log audit action
+      await logAuditAction(
+        req.user.id,
+        "DELETE",
+        "medical_documents",
+        parseInt(id),
+        document,
+        null,
+        req
+      );
+
+      res.json({ message: "Documento excluído com sucesso" });
+    } catch (error) {
+      console.error("❌ Error deleting medical document:", error);
+      res.status(500).json({ message: "Erro ao excluir documento médico" });
+    }
+  }
+);
+
+// Reports routes
+app.get(
+  "/api/reports/revenue",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const { start_date, end_date } = req.query;
+
+      if (!start_date || !end_date) {
+        return res.status(400).json({
+          message: "Data inicial e final são obrigatórias",
+        });
+      }
+
+      console.log("🔄 Generating revenue report:", { start_date, end_date });
+
+      // Get total revenue
+      const totalRevenueResult = await pool.query(
+        `
+      SELECT COALESCE(SUM(value), 0) as total_revenue
+      FROM consultations 
+      WHERE date >= $1 AND date <= $2
+    `,
+        [start_date, end_date]
+      );
+
+      const totalRevenue = parseFloat(
+        totalRevenueResult.rows[0].total_revenue
+      );
+
+      // Get revenue by professional
+      const revenueByProfessionalResult = await pool.query(
+        `
+      SELECT 
+        u.name as professional_name,
+        COALESCE(u.percentage, 50) as professional_percentage,
+        COALESCE(SUM(c.value), 0) as revenue,
+        COUNT(c.id) as consultation_count,
+        COALESCE(SUM(c.value * (COALESCE(u.percentage, 50) / 100)), 0) as professional_payment,
+        COALESCE(SUM(c.value * ((100 - COALESCE(u.percentage, 50)) / 100)), 0) as clinic_revenue
+      FROM users u
+      LEFT JOIN consultations c ON u.id = c.professional_id 
+        AND c.date >= $1 AND c.date <= $2
+      WHERE 'professional' = ANY(u.roles)
+      GROUP BY u.id, u.name, u.percentage
+      ORDER BY revenue DESC
+    `,
+        [start_date, end_date]
+      );
+
+      // Get revenue by service
+      const revenueByServiceResult = await pool.query(
+        `
+      SELECT 
+        s.name as service_name,
+        COALESCE(SUM(c.value), 0) as revenue,
+        COUNT(c.id) as consultation_count
+      FROM services s
+      LEFT JOIN consultations c ON s.id = c.service_id 
+        AND c.date >= $1 AND c.date <= $2
+      GROUP BY s.id, s.name
+      HAVING COUNT(c.id) > 0
+      ORDER BY revenue DESC
+    `,
+        [start_date, end_date]
+      );
+
+      const report = {
+        total_revenue: totalRevenue,
+        revenue_by_professional: revenueByProfessionalResult.rows,
+        revenue_by_service: revenueByServiceResult.rows,
+      };
+
+      console.log("✅ Revenue report generated");
+
+      res.json(report);
+    } catch (error) {
+      console.error("❌ Error generating revenue report:", error);
+      res.status(500).json({ message: "Erro ao gerar relatório de receita" });
+    }
+  }
+);
+
+app.get(
+  "/api/reports/professional-revenue",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const { start_date, end_date } = req.query;
+      const professionalId = req.user.id;
+
+      if (!start_date || !end_date) {
+        return res.status(400).json({
+          message: "Data inicial e final são obrigatórias",
+        });
+      }
+
+      console.log("🔄 Generating professional revenue report:", {
+        professionalId,
+        start_date,
+        end_date,
+      });
+
+      // Get professional percentage
+      const professionalResult = await pool.query(
+        "SELECT percentage FROM users WHERE id = $1",
+        [professionalId]
+      );
+
+      const professionalPercentage =
+        professionalResult.rows[0]?.percentage || 50;
+
+      // Get consultations for the professional in the date range
+      const consultationsResult = await pool.query(
+        `
+      SELECT 
+        c.date, c.value,
+        s.name as service_name,
+        CASE 
+          WHEN c.user_id IS NOT NULL THEN u.name
+          WHEN c.dependent_id IS NOT NULL THEN d.name
+          WHEN c.private_patient_id IS NOT NULL THEN pp.name
+        END as client_name,
+        CASE 
+          WHEN c.private_patient_id IS NOT NULL THEN c.value
+          ELSE c.value * ((100 - $3) / 100)
+        END as amount_to_pay
+      FROM consultations c
+      LEFT JOIN services s ON c.service_id = s.id
+      LEFT JOIN users u ON c.user_id = u.id
+      LEFT JOIN dependents d ON c.dependent_id = d.id
+      LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
+      WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4
+      ORDER BY c.date DESC
+    `,
+        [professionalId, start_date, professionalPercentage, end_date]
+      );
+
+      // Calculate summary
+      const totalRevenue = consultationsResult.rows.reduce(
+        (sum, c) => sum + parseFloat(c.value),
+        0
+      );
+      const totalAmountToPay = consultationsResult.rows.reduce(
+        (sum, c) => sum + parseFloat(c.amount_to_pay),
+        0
+      );
+
+      const report = {
+        summary: {
+          professional_percentage: professionalPercentage,
+          total_revenue: totalRevenue,
+          consultation_count: consultationsResult.rows.length,
+          amount_to_pay: totalAmountToPay,
+        },
+        consultations: consultationsResult.rows.map((c) => ({
+          date: c.date,
+          client_name: c.client_name,
+          service_name: c.service_name,
+          total_value: parseFloat(c.value),
+          amount_to_pay: parseFloat(c.amount_to_pay),
+        })),
+      };
+
+      console.log("✅ Professional revenue report generated");
+
+      res.json(report);
+    } catch (error) {
+      console.error("❌ Error generating professional revenue report:", error);
+      res
+        .status(500)
+        .json({ message: "Erro ao gerar relatório de receita profissional" });
+    }
+  }
+);
+
+app.get(
+  "/api/reports/professional-detailed",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const { start_date, end_date } = req.query;
+      const professionalId = req.user.id;
+
+      if (!start_date || !end_date) {
+        return res.status(400).json({
+          message: "Data inicial e final são obrigatórias",
+        });
+      }
+
+      console.log("🔄 Generating detailed professional report:", {
+        professionalId,
+        start_date,
+        end_date,
+      });
+
+      // Get professional percentage
+      const professionalResult = await pool.query(
+        "SELECT percentage FROM users WHERE id = $1",
+        [professionalId]
+      );
+
+      const professionalPercentage =
+        professionalResult.rows[0]?.percentage || 50;
+
+      // Get all consultations
+      const consultationsResult = await pool.query(
+        `
+      SELECT 
+        c.*,
+        CASE 
+          WHEN c.private_patient_id IS NOT NULL THEN 'private'
+          ELSE 'convenio'
+        END as consultation_type
+      FROM consultations c
+      WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $3
+    `,
+        [professionalId, start_date, end_date]
+      );
+
+      // Calculate statistics
+      const totalConsultations = consultationsResult.rows.length;
+      const convenioConsultations = consultationsResult.rows.filter(
+        (c) => c.consultation_type === "convenio"
+      ).length;
+      const privateConsultations = consultationsResult.rows.filter(
+        (c) => c.consultation_type === "private"
+      ).length;
+
+      const totalRevenue = consultationsResult.rows.reduce(
+        (sum, c) => sum + parseFloat(c.value),
+        0
+      );
+      const convenioRevenue = consultationsResult.rows
+        .filter((c) => c.consultation_type === "convenio")
+        .reduce((sum, c) => sum + parseFloat(c.value), 0);
+      const privateRevenue = consultationsResult.rows
+        .filter((c) => c.consultation_type === "private")
+        .reduce((sum, c) => sum + parseFloat(c.value), 0);
+
+      // Calculate amount to pay (only for convenio consultations)
+      const amountToPay =
+        convenioRevenue * ((100 - professionalPercentage) / 100);
+
+      const report = {
+        summary: {
+          total_consultations: totalConsultations,
+          convenio_consultations: convenioConsultations,
+          private_consultations: privateConsultations,
+          total_revenue: totalRevenue,
+          convenio_revenue: convenioRevenue,
+          private_revenue: privateRevenue,
+          professional_percentage: professionalPercentage,
+          amount_to_pay: amountToPay,
+        },
+      };
+
+      console.log("✅ Detailed professional report generated");
+
+      res.json(report);
+    } catch (error) {
+      console.error("❌ Error generating detailed professional report:", error);
+      res
+        .status(500)
+        .json({ message: "Erro ao gerar relatório detalhado profissional" });
+    }
+  }
+);
+
+app.get(
+  "/api/reports/clients-by-city",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const result = await pool.query(`
+      SELECT 
+        city,
+        state,
+        COUNT(*) as client_count,
+        COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
+        COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
+        COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
+      FROM users 
+      WHERE 'client' = ANY(roles) AND city IS NOT NULL AND city != ''
+      GROUP BY city, state
+      ORDER BY client_count DESC
+    `);
+
+      res.json(result.rows);
+    } catch (error) {
+      console.error("❌ Error generating clients by city report:", error);
+      res
+        .status(500)
+        .json({ message: "Erro ao gerar relatório de clientes por cidade" });
+    }
+  }
+);
+
+app.get(
+  "/api/reports/professionals-by-city",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const result = await pool.query(`
+      SELECT 
+        city,
+        state,
+        COUNT(*) as total_professionals,
+        json_agg(
+          json_build_object(
+            'category_name', COALESCE(category_name, 'Sem categoria'),
+            'count', 1
+          )
+        ) as categories
+      FROM users 
+      WHERE 'professional' = ANY(roles) AND city IS NOT NULL AND city != ''
+      GROUP BY city, state
+      ORDER BY total_professionals DESC
+    `);
+
+      // Process categories to group by category name
+      const processedResult = result.rows.map((row) => {
+        const categoryMap = new Map();
+
+        row.categories.forEach((cat) => {
+          const categoryName = cat.category_name;
+          if (categoryMap.has(categoryName)) {
+            categoryMap.set(
+              categoryName,
+              categoryMap.get(categoryName) + cat.count
+            );
+          } else {
+            categoryMap.set(categoryName, cat.count);
+          }
+        });
+
+        return {
+          ...row,
+          categories: Array.from(categoryMap.entries()).map(
+            ([category_name, count]) => ({
+              category_name,
+              count,
+            })
+          ),
+        };
+      });
+
+      res.json(processedResult);
+    } catch (error) {
+      console.error("❌ Error generating professionals by city report:", error);
+      res.status(500).json({
+        message: "Erro ao gerar relatório de profissionais por cidade",
+      });
+    }
+  }
+);
+
+// Image upload route
+app.post("/api/upload-image", authenticate, async (req, res) => {
+  try {
+    console.log("🔄 Processing image upload...");
+
+    // Create upload middleware instance
+    const upload = createUpload();
+
+    // Use multer middleware
+    upload.single("image")(req, res, async (err) => {
+      if (err) {
+        console.error("❌ Multer error:", err);
+        return res.status(400).json({
+          message: err.message || "Erro no upload da imagem",
+        });
+      }
+
+      if (!req.file) {
+        console.log("❌ No file uploaded");
+        return res.status(400).json({ message: "Nenhuma imagem enviada" });
+      }
+
+      console.log("✅ Image uploaded to Cloudinary:", req.file.path);
+
+      // Update user photo URL in database
+      await pool.query("UPDATE users SET photo_url = $1 WHERE id = $2", [
+        req.file.path,
+        req.user.id,
+      ]);
+
+      console.log("✅ User photo URL updated in database");
+
+      res.json({
+        message: "Imagem enviada com sucesso",
+        imageUrl: req.file.path,
+      });
+    });
+  } catch (error) {
+    console.error("❌ Error in image upload route:", error);
+    res.status(500).json({ message: "Erro interno do servidor" });
+  }
+});
+
+// Payment routes
+app.post("/api/create-subscription", authenticate, async (req, res) => {
+  try {
+    const { user_id } = req.body;
+    const userId = user_id || req.user.id;
+
+    console.log("🔄 Creating subscription payment for user:", userId);
+
+    // Verify user exists and is a client
+    const userResult = await pool.query(
+      `
+      SELECT id, name, cpf, subscription_status 
+      FROM users 
+      WHERE id = $1 AND 'client' = ANY(roles)
+    `,
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ message: "Cliente não encontrado" });
+    }
+
+    const user = userResult.rows[0];
+
+    // Check if user already has active subscription
+    if (user.subscription_status === "active") {
+      return res.status(400).json({
+        message: "Usuário já possui assinatura ativa",
+      });
+    }
+
+    // Create MercadoPago preference
+    const preference = new Preference(client);
+
+    const preferenceData = {
+      items: [
+        {
+          title: "Assinatura Convênio Quiro Ferreira",
+          description: "Assinatura mensal do convênio de saúde",
+          quantity: 1,
+          unit_price: 250.0,
+          currency_id: "BRL",
+        },
+      ],
+      payer: {
+        name: user.name,
+        identification: {
+          type: "CPF",
+          number: user.cpf,
+        },
+      },
+      back_urls: {
+        success: `${req.protocol}://${req.get(
+          "host"
+        )}/client?payment=success`,
+        failure: `${req.protocol}://${req.get(
+          "host"
+        )}/client?payment=failure`,
+        pending: `${req.protocol}://${req.get(
+          "host"
+        )}/client?payment=pending`,
+      },
+      auto_return: "approved",
+      external_reference: `subscription_${userId}_${Date.now()}`,
+      notification_url: `${req.protocol}://${req.get(
+        "host"
+      )}/api/webhooks/mercadopago`,
+    };
+
+    const result = await preference.create({ body: preferenceData });
+
+    // Save payment record
+    await pool.query(
+      `
+      INSERT INTO client_payments (user_id, amount, payment_method, payment_reference, mp_preference_id)
+      VALUES ($1, $2, 'mercadopago', $3, $4)
+    `,
+      [userId, 250.0, result.external_reference, result.id]
+    );
+
+    console.log("✅ Subscription payment created:", result.id);
+
+    res.json({
+      id: result.id,
+      init_point: result.init_point,
+      sandbox_init_point: result.sandbox_init_point,
+    });
+  } catch (error) {
+    console.error("❌ Error creating subscription payment:", error);
+    res.status(500).json({ message: "Erro ao criar pagamento da assinatura" });
+  }
+});
+
+app.post(
+  "/api/dependents/:id/create-payment",
+  authenticate,
+  authorize(["client"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      console.log("🔄 Creating dependent payment for dependent:", id);
+
+      // Get dependent data
+      const dependentResult = await pool.query(
+        `
+      SELECT d.*, u.name as client_name, u.cpf as client_cpf
+      FROM dependents d
+      JOIN users u ON d.user_id = u.id
+      WHERE d.id = $1 AND d.user_id = $2
+    `,
+        [id, req.user.id]
+      );
+
+      if (dependentResult.rows.length === 0) {
+        return res.status(404).json({ message: "Dependente não encontrado" });
+      }
+
+      const dependent = dependentResult.rows[0];
+
+      // Check if dependent already has active subscription
+      if (dependent.subscription_status === "active") {
+        return res.status(400).json({
+          message: "Dependente já possui assinatura ativa",
+        });
+      }
+
+      // Create MercadoPago preference
+      const preference = new Preference(client);
+
+      const preferenceData = {
+        items: [
+          {
+            title: `Ativação de Dependente - ${dependent.name}`,
+            description: "Ativação de dependente no convênio de saúde",
+            quantity: 1,
+            unit_price: 50.0,
+            currency_id: "BRL",
+          },
+        ],
+        payer: {
+          name: dependent.client_name,
+          identification: {
+            type: "CPF",
+            number: dependent.client_cpf,
+          },
+        },
+        back_urls: {
+          success: `${req.protocol}://${req.get(
+            "host"
+          )}/client?payment=success&type=dependent`,
+          failure: `${req.protocol}://${req.get(
+            "host"
+          )}/client?payment=failure&type=dependent`,
+          pending: `${req.protocol}://${req.get(
+            "host"
+          )}/client?payment=pending&type=dependent`,
+        },
+        auto_return: "approved",
+        external_reference: `dependent_${id}_${Date.now()}`,
+        notification_url: `${req.protocol}://${req.get(
+          "host"
+        )}/api/webhooks/mercadopago`,
+      };
+
+      const result = await preference.create({ body: preferenceData });
+
+      // Save payment record
+      await pool.query(
+        `
+      INSERT INTO dependent_payments (dependent_id, amount, payment_method, payment_reference, mp_preference_id)
+      VALUES ($1, $2, 'mercadopago', $3, $4)
+    `,
+        [id, 50.0, result.external_reference, result.id]
+      );
+
+      console.log("✅ Dependent payment created:", result.id);
+
+      res.json({
+        id: result.id,
+        init_point: result.init_point,
+        sandbox_init_point: result.sandbox_init_point,
+      });
+    } catch (error) {
+      console.error("❌ Error creating dependent payment:", error);
+      res
+        .status(500)
+        .json({ message: "Erro ao criar pagamento do dependente" });
+    }
+  }
+);
+
+app.post(
+  "/api/professional/create-payment",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const { amount } = req.body;
+      const professionalId = req.user.id;
+
+      console.log("🔄 Creating professional payment:", { professionalId, amount });
+
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ message: "Valor inválido" });
+      }
+
+      // Get professional data
+      const professionalResult = await pool.query(
+        "SELECT name, cpf FROM users WHERE id = $1",
+        [professionalId]
+      );
+
+      if (professionalResult.rows.length === 0) {
+        return res.status(404).json({ message: "Profissional não encontrado" });
+      }
+
+      const professional = professionalResult.rows[0];
+
+      // Create MercadoPago preference
+      const preference = new Preference(client);
+
+      const preferenceData = {
+        items: [
+          {
+            title: "Repasse ao Convênio Quiro Ferreira",
+            description: "Pagamento de repasse ao convênio",
+            quantity: 1,
+            unit_price: parseFloat(amount),
+            currency_id: "BRL",
+          },
+        ],
+        payer: {
+          name: professional.name,
+          identification: {
+            type: "CPF",
+            number: professional.cpf,
+          },
+        },
+        back_urls: {
+          success: `${req.protocol}://${req.get(
+            "host"
+          )}/professional?payment=success`,
+          failure: `${req.protocol}://${req.get(
+            "host"
+          )}/professional?payment=failure`,
+          pending: `${req.protocol}://${req.get(
+            "host"
+          )}/professional?payment=pending`,
+        },
+        auto_return: "approved",
+        external_reference: `professional_${professionalId}_${Date.now()}`,
+        notification_url: `${req.protocol}://${req.get(
+          "host"
+        )}/api/webhooks/mercadopago`,
+      };
+
+      const result = await preference.create({ body: preferenceData });
+
+      // Save payment record
+      await pool.query(
+        `
+      INSERT INTO professional_payments (professional_id, amount, payment_method, payment_reference, mp_preference_id)
+      VALUES ($1, $2, 'mercadopago', $3, $4)
+    `,
+        [professionalId, parseFloat(amount), result.external_reference, result.id]
+      );
+
+      console.log("✅ Professional payment created:", result.id);
+
+      res.json({
+        id: result.id,
+        init_point: result.init_point,
+        sandbox_init_point: result.sandbox_init_point,
+      });
+    } catch (error) {
+      console.error("❌ Error creating professional payment:", error);
+      res
+        .status(500)
+        .json({ message: "Erro ao criar pagamento profissional" });
+    }
+  }
+);
+
+// Admin scheduling access routes
+app.get(
+  "/api/admin/professionals-scheduling-access",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const result = await pool.query(`
+      SELECT 
+        u.id, u.name, u.email, u.phone, u.category_name,
+        CASE 
+          WHEN sa.id IS NOT NULL AND sa.expires_at > CURRENT_TIMESTAMP THEN true
+          ELSE false
+        END as has_scheduling_access,
+        sa.expires_at as access_expires_at,
+        granted_by_user.name as access_granted_by,
+        sa.created_at as access_granted_at,
+        sa.reason as access_reason
+      FROM users u
+      LEFT JOIN scheduling_access sa ON u.id = sa.professional_id AND sa.is_active = true
+      LEFT JOIN users granted_by_user ON sa.granted_by = granted_by_user.id
+      WHERE 'professional' = ANY(u.roles)
+      ORDER BY u.name
+    `);
+
+      res.json(result.rows);
+    } catch (error) {
+      console.error("❌ Error fetching professionals scheduling access:", error);
+      res.status(500).json({
+        message: "Erro ao carregar acesso à agenda dos profissionais",
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/admin/grant-scheduling-access",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const { professional_id, expires_at, reason } = req.body;
+
+      if (!professional_id || !expires_at) {
+        return res.status(400).json({
+          message: "ID do profissional e data de expiração são obrigatórios",
+        });
+      }
+
+      // Verify professional exists
+      const professionalResult = await pool.query(
+        `
+      SELECT id, name FROM users WHERE id = $1 AND 'professional' = ANY(roles)
+    `,
+        [professional_id]
+      );
+
+      if (professionalResult.rows.length === 0) {
+        return res.status(404).json({ message: "Profissional não encontrado" });
+      }
+
+      // Deactivate any existing access
+      await pool.query(
+        `
+      UPDATE scheduling_access SET is_active = false WHERE professional_id = $1
+    `,
+        [professional_id]
+      );
+
+      // Grant new access
+      const accessResult = await pool.query(
+        `
+      INSERT INTO scheduling_access (professional_id, granted_by, expires_at, reason)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `,
+        [professional_id, req.user.id, expires_at, reason?.trim() || null]
+      );
+
+      console.log("✅ Scheduling access granted:", accessResult.rows[0].id);
+
+      res.json({
+        message: "Acesso à agenda concedido com sucesso",
+        access: accessResult.rows[0],
+      });
+    } catch (error) {
+      console.error("❌ Error granting scheduling access:", error);
+      res.status(500).json({ message: "Erro ao conceder acesso à agenda" });
+    }
+  }
+);
+
+app.post(
+  "/api/admin/revoke-scheduling-access",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const { professional_id } = req.body;
+
+      if (!professional_id) {
+        return res
+          .status(400)
+          .json({ message: "ID do profissional é obrigatório" });
+      }
+
+      // Deactivate access
+      const result = await pool.query(
+        `
+      UPDATE scheduling_access 
+      SET is_active = false 
+      WHERE professional_id = $1 AND is_active = true
+      RETURNING *
+    `,
+        [professional_id]
+      );
+
+      console.log("✅ Scheduling access revoked for professional:", professional_id);
+
+      res.json({
+        message: "Acesso à agenda revogado com sucesso",
+        revoked_count: result.rows.length,
+      });
+    } catch (error) {
+      console.error("❌ Error revoking scheduling access:", error);
+      res.status(500).json({ message: "Erro ao revogar acesso à agenda" });
+    }
+  }
+);
+
+// MercadoPago webhook
+app.post("/api/webhooks/mercadopago", async (req, res) => {
+  try {
+    console.log("🔄 MercadoPago webhook received:", req.body);
+
+    const { type, data } = req.body;
+
+    if (type === "payment") {
+      const paymentId = data.id;
+
+      // Here you would typically verify the payment with MercadoPago API
+      // For now, we'll just acknowledge the webhook
+      console.log("💰 Payment notification received:", paymentId);
+
+      // You can implement payment verification logic here
+      // Example: Update subscription status based on payment confirmation
+    }
+
+    res.status(200).json({ message: "Webhook processed" });
+  } catch (error) {
+    console.error("❌ Error processing webhook:", error);
+    res.status(500).json({ message: "Erro ao processar webhook" });
+  }
+});
+
+// Serve React app in production
+if (process.env.NODE_ENV === "production") {
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "../dist/index.html"));
+  });
+}
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error("❌ Unhandled error:", err);
+  res.status(500).json({ message: "Erro interno do servidor" });
+});
+
+// Start server
+const startServer = async () => {
+  try {
+    await initializeDatabase();
+    
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log(`📊 Database connected successfully`);
+    });
+  } catch (error) {
+    console.error("❌ Failed to start server:", error);
+    process.exit(1);
+  }
+};
+
+startServer();
