@@ -15,7 +15,7 @@ import {
   Search,
   DollarSign,
 } from "lucide-react";
-import { format, addDays, subDays, isSameDay } from "date-fns";
+import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 type Consultation = {
@@ -310,7 +310,7 @@ const SchedulingPage: React.FC = () => {
         throw new Error(errorData.message || "Falha ao criar consulta");
       }
 
-      setSuccess("Consulta agendada com sucesso!");
+      setSuccess("Consulta criada com sucesso!");
       await fetchData();
       setShowNewModal(false);
       resetForm();
@@ -999,7 +999,7 @@ const SchedulingPage: React.FC = () => {
                   }`}
                   disabled={isCreating}
                 >
-                  {isCreating ? "Criando..." : "Agendar Consulta"}
+                  {isCreating ? "Criando..." : "Criar Consulta"}
                 </button>
               </div>
             </form>
