@@ -3089,6 +3089,9 @@ app.delete(
 
       res.json({ message: "Local de atendimento excluído com sucesso" });
     } catch (error) {
+    }
+  }
+)
 // ===== CONSULTATIONS ROUTES (USED BY FRONTEND) =====
 
 // Get consultations (appointments) for professional - MAIN ROUTE USED BY FRONTEND
@@ -3738,6 +3741,9 @@ app.get(
     } catch (error) {
       console.error("❌ Error fetching client consultations:", error);
       res.status(500).json({ message: "Erro ao carregar consultas do cliente" });
+    }
+  }
+)
 
 // Medical records routes
 app.get(
