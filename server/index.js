@@ -2782,6 +2782,7 @@ app.put(
 );
 
 app.delete(
+)
 // Get consultations for professional (filtered by date if provided)
 app.get(
   "/api/consultations/professional",
