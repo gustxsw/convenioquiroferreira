@@ -199,14 +199,14 @@ const initializeDatabase = async () => {
     BEGIN
       IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'consultations' AND column_name = 'status'
+        WHERE table_name = 'consultations\' AND column_name = 'status'
       ) THEN
         ALTER TABLE consultations ADD COLUMN status VARCHAR(20) DEFAULT 'scheduled';
       END IF;
       
       IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'consultations' AND column_name = 'updated_at'
+        WHERE table_name = 'consultations\' AND column_name = 'updated_at'
       ) THEN
         ALTER TABLE consultations ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
       END IF;
