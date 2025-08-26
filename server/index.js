@@ -1198,7 +1198,7 @@ app.delete(
   authenticate,
   authorize(["admin"]),
   async (req, res) => {
-    const client = await pool.connect();
+    const consultationDateTime = new Date(`${date}T${time}`);
 
     try {
       const { id } = req.params;
@@ -1245,18 +1245,16 @@ app.delete(
 
       // 3. Delete consultations
       await client.query(
-        "DELETE FROM consultations WHERE professional_id = $1 OR user_id = $1",
+          user_id: selectedDependentId ? null : clientId,
         [id]
       );
       console.log("✅ Deleted consultations");
 
       // 4. Delete private patients
       await client.query(
-        "DELETE FROM private_patients WHERE professional_id = $1",
+          date: consultationDateTime.toISOString(),
         [id]
-      );
-      console.log("✅ Deleted private patients");
-
+          status: "completed" // For completed consultations
       // 5. Delete attendance locations
       await client.query(
         "DELETE FROM attendance_locations WHERE professional_id = $1",
@@ -1269,7 +1267,7 @@ app.delete(
         "DELETE FROM scheduling_access WHERE professional_id = $1",
         [id]
       );
-      console.log("✅ Deleted scheduling access");
+      console.log("✅ Consultation created:", responseData);
 
       // 7. Delete dependents (if user is a client)
       await client.query("DELETE FROM dependents WHERE user_id = $1", [id]);
@@ -1287,11 +1285,7 @@ app.delete(
 
       if (deleteResult.rows.length === 0) {
         throw new Error("Falha ao excluir usuário");
-      }
-
-      // Commit transaction
-      await client.query("COMMIT");
-
+        "Consulta registrada com sucesso!"
       console.log("✅ User deleted successfully:", userName);
 
       res.json({
