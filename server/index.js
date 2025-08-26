@@ -1,11 +1,10 @@
 import express from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { pool } from './db.js';
-import dotenv from 'dotenv';
+import mercadopago from 'mercadopago';
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 import { v2 as cloudinary } from 'cloudinary';
 import multer from 'multer';
@@ -23,21 +22,6 @@ const PORT = process.env.PORT || 3001;
 // ============================================================================
 
 // Security middleware
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com"],
-      imgSrc: ["'self'", "data:", "https:", "blob:"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://sdk.mercadopago.com"],
-      connectSrc: ["'self'", "https://api.mercadopago.com"],
-      frameSrc: ["'self'", "https://www.mercadopago.com"]
-    }
-  },
-  crossOriginEmbedderPolicy: false
-}));
-
 // CORS configuration for production
 const corsOptions = {
   origin: [
@@ -55,18 +39,6 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
-
-// Serve static files
-app.use(express.static('dist'));
-
-// Request logging middleware
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
-
-// ============================================================================
-// MERCADO PAGO CONFIGURATION
 // ============================================================================
 
 let mercadoPago;
@@ -526,7 +498,7 @@ const authenticate = async (req, res, next) => {
       currentRole: decoded.currentRole || (user.roles && user.roles[0])
     };
 
-    next();
+    const result = await mercadopago.preferences.create(preference);
   } catch (error) {
     console.error('Authentication error:', error);
     return res.status(401).json({ message: 'Token inválido' });
@@ -2802,8 +2774,7 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
     
     const preference = new Preference(mercadoPago);
     
-    const preferenceData = {
-      items: [
+    const preference = {
         {
           id: 'clinic_fee',
           title: 'Repasse ao Convênio Quiro Ferreira',
@@ -4216,5 +4187,4 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-// Start the server
 startServer();
