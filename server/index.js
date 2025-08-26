@@ -1766,11 +1766,9 @@ app.post(
 
       // Validate client can only create dependents for themselves
       if (req.user.id !== user_id) {
-        return res
-          .status(403)
-          .json({
-            message: "Você só pode criar dependentes para sua própria conta",
-          });
+        return res.status(403).json({
+          message: "Você só pode criar dependentes para sua própria conta",
+        });
       }
 
       if (!name || !cpf) {
@@ -2222,12 +2220,10 @@ app.delete(
         [id]
       );
       if (parseInt(consultationCount.rows[0].count) > 0) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "Não é possível excluir serviço que possui consultas registradas",
-          });
+        return res.status(400).json({
+          message:
+            "Não é possível excluir serviço que possui consultas registradas",
+        });
       }
 
       await pool.query("DELETE FROM services WHERE id = $1", [id]);
@@ -2396,11 +2392,9 @@ app.post(
         Boolean
       ).length;
       if (patientCount !== 1) {
-        return res
-          .status(400)
-          .json({
-            message: "Exatamente um tipo de paciente deve ser especificado",
-          });
+        return res.status(400).json({
+          message: "Exatamente um tipo de paciente deve ser especificado",
+        });
       }
 
       // Validate service exists
@@ -3164,12 +3158,10 @@ app.get(
       res.json(result.rows);
     } catch (error) {
       console.error("❌ [SCHEDULING] Error fetching appointments:", error);
-      res
-        .status(500)
-        .json({
-          message: "Erro ao carregar agendamentos",
-          error: error.message,
-        });
+      res.status(500).json({
+        message: "Erro ao carregar agendamentos",
+        error: error.message,
+      });
     }
   }
 );
@@ -3208,11 +3200,9 @@ app.post(
         !appointment_time
       ) {
         console.log("❌ [SCHEDULING] Missing required fields");
-        return res
-          .status(400)
-          .json({
-            message: "Campos obrigatórios: paciente, serviço, data e horário",
-          });
+        return res.status(400).json({
+          message: "Campos obrigatórios: paciente, serviço, data e horário",
+        });
       }
 
       // Check if patient exists
@@ -3316,12 +3306,10 @@ app.put(
       res.json(result.rows[0]);
     } catch (error) {
       console.error("❌ [SCHEDULING] Error updating appointment:", error);
-      res
-        .status(500)
-        .json({
-          message: "Erro ao atualizar agendamento",
-          error: error.message,
-        });
+      res.status(500).json({
+        message: "Erro ao atualizar agendamento",
+        error: error.message,
+      });
     }
   }
 );
@@ -3645,11 +3633,9 @@ app.post(
         !appointment_date ||
         !appointment_time
       ) {
-        return res
-          .status(400)
-          .json({
-            message: "Paciente, serviço, data e horário são obrigatórios",
-          });
+        return res.status(400).json({
+          message: "Paciente, serviço, data e horário são obrigatórios",
+        });
       }
 
       // Validate patient belongs to professional
@@ -4137,11 +4123,9 @@ app.post(
       const { record_id, template_data } = req.body;
 
       if (!record_id || !template_data) {
-        return res
-          .status(400)
-          .json({
-            message: "ID do prontuário e dados do template são obrigatórios",
-          });
+        return res.status(400).json({
+          message: "ID do prontuário e dados do template são obrigatórios",
+        });
       }
 
       // Validate record belongs to professional
@@ -4247,12 +4231,10 @@ app.get(
       res.json(result.rows);
     } catch (error) {
       console.error("❌ [DOCUMENTS] Error fetching medical documents:", error);
-      res
-        .status(500)
-        .json({
-          message: "Erro ao carregar documentos médicos",
-          error: error.message,
-        });
+      res.status(500).json({
+        message: "Erro ao carregar documentos médicos",
+        error: error.message,
+      });
     }
   }
 );
@@ -4352,21 +4334,17 @@ app.post(
         });
       } catch (docError) {
         console.error("❌ [DOCUMENTS] Error generating document:", docError);
-        res
-          .status(500)
-          .json({
-            message: "Erro ao gerar documento",
-            error: docError.message,
-          });
+        res.status(500).json({
+          message: "Erro ao gerar documento",
+          error: docError.message,
+        });
       }
     } catch (error) {
       console.error("❌ [DOCUMENTS] Error creating medical document:", error);
-      res
-        .status(500)
-        .json({
-          message: "Erro ao criar documento médico",
-          error: error.message,
-        });
+      res.status(500).json({
+        message: "Erro ao criar documento médico",
+        error: error.message,
+      });
     }
   }
 );
@@ -4568,12 +4546,10 @@ app.post(
         req.body;
 
       if (!title || !document_type || !template_data) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "Título, tipo de documento e dados do template são obrigatórios",
-          });
+        return res.status(400).json({
+          message:
+            "Título, tipo de documento e dados do template são obrigatórios",
+        });
       }
 
       // Validate patient if provided
@@ -4728,11 +4704,9 @@ app.get(
         "❌ Error fetching professionals scheduling access:",
         error
       );
-      res
-        .status(500)
-        .json({
-          message: "Erro ao carregar acesso à agenda dos profissionais",
-        });
+      res.status(500).json({
+        message: "Erro ao carregar acesso à agenda dos profissionais",
+      });
     }
   }
 );
@@ -4746,11 +4720,9 @@ app.post(
       const { professional_id, expires_at, reason } = req.body;
 
       if (!professional_id || !expires_at) {
-        return res
-          .status(400)
-          .json({
-            message: "ID do profissional e data de expiração são obrigatórios",
-          });
+        return res.status(400).json({
+          message: "ID do profissional e data de expiração são obrigatórios",
+        });
       }
 
       // Validate professional exists
@@ -4859,11 +4831,9 @@ app.post(
       );
 
       if (revokeResult.rows.length === 0) {
-        return res
-          .status(404)
-          .json({
-            message: "Acesso ativo não encontrado para este profissional",
-          });
+        return res.status(404).json({
+          message: "Acesso ativo não encontrado para este profissional",
+        });
       }
 
       console.log(
@@ -4917,11 +4887,9 @@ app.post(
 
       // Validate user can only create subscription for themselves
       if (req.user.id !== user_id) {
-        return res
-          .status(403)
-          .json({
-            message: "Você só pode criar assinatura para sua própria conta",
-          });
+        return res.status(403).json({
+          message: "Você só pode criar assinatura para sua própria conta",
+        });
       }
 
       // Get user data
@@ -4970,7 +4938,7 @@ app.post(
             ? "https://cartaoquiroferreira.com.br"
             : "http://localhost:3001"
         }/api/webhook/mercadopago`,
-        external_reference: `subscription_${user_id}_${Date.now()}`,
+        payment_reference: `subscription_${user_id}_${Date.now()}`,
         payer: {
           name: user.name,
           email: user.email || `user${user_id}@temp.com`,
@@ -5076,7 +5044,7 @@ app.post(
             ? "https://cartaoquiroferreira.com.br"
             : "http://localhost:3001"
         }/api/webhook/mercadopago`,
-        external_reference: `dependent_${dependent_id}_${Date.now()}`,
+        payment_reference: `dependent_${dependent_id}_${Date.now()}`,
         payer: {
           name: dependent.client_name,
           email:
@@ -5168,7 +5136,7 @@ app.post(
             ? "https://cartaoquiroferreira.com.br"
             : "http://localhost:3001"
         }/api/webhook/mercadopago`,
-        external_reference: `professional_${req.user.id}_${Date.now()}`,
+        payment_reference: `professional_${req.user.id}_${Date.now()}`,
         payer: {
           name: req.user.name,
           email: req.user.email || `professional${req.user.id}@temp.com`,
@@ -5246,7 +5214,7 @@ app.post(
             ? "https://cartaoquiroferreira.com.br"
             : "http://localhost:3001"
         }/api/webhook/mercadopago`,
-        external_reference: `agenda_${
+        payment_reference: `agenda_${
           req.user.id
         }_${duration_days}_${Date.now()}`,
         payer: {
@@ -5322,7 +5290,7 @@ app.post(
         const payment = await paymentResponse.json();
         console.log("💰 Payment details:", payment);
 
-        const externalReference = payment.external_reference;
+        const externalReference = payment.payment_reference;
         const status = payment.status;
 
         if (status === "approved") {
@@ -5354,7 +5322,7 @@ app.post(
 // Process subscription payment
 const processSubscriptionPayment = async (payment) => {
   try {
-    const externalReference = payment.external_reference;
+    const externalReference = payment.payment_reference;
     const userId = externalReference.split("_")[1];
 
     console.log("🔄 Processing subscription payment for user:", userId);
@@ -5407,7 +5375,7 @@ const processSubscriptionPayment = async (payment) => {
 // Process dependent payment
 const processDependentPayment = async (payment) => {
   try {
-    const externalReference = payment.external_reference;
+    const externalReference = payment.payment_reference;
     const dependentId = externalReference.split("_")[1];
 
     console.log("🔄 Processing dependent payment for dependent:", dependentId);
@@ -5476,7 +5444,7 @@ const processDependentPayment = async (payment) => {
 // Process professional payment
 const processProfessionalPayment = async (payment) => {
   try {
-    const externalReference = payment.external_reference;
+    const externalReference = payment.payment_reference;
     const professionalId = externalReference.split("_")[1];
 
     console.log(
@@ -5520,7 +5488,7 @@ const processProfessionalPayment = async (payment) => {
 // Process agenda payment
 const processAgendaPayment = async (payment) => {
   try {
-    const externalReference = payment.external_reference;
+    const externalReference = payment.payment_reference;
     const parts = externalReference.split("_");
     const professionalId = parts[1];
     const durationDays = parseInt(parts[2]);
@@ -5763,11 +5731,9 @@ app.get(
       res.json(report);
     } catch (error) {
       console.error("❌ Error generating professional revenue report:", error);
-      res
-        .status(500)
-        .json({
-          message: "Erro ao gerar relatório de receita do profissional",
-        });
+      res.status(500).json({
+        message: "Erro ao gerar relatório de receita do profissional",
+      });
     }
   }
 );
@@ -5931,11 +5897,9 @@ app.get(
       res.json(processedData);
     } catch (error) {
       console.error("❌ Error generating professionals by city report:", error);
-      res
-        .status(500)
-        .json({
-          message: "Erro ao gerar relatório de profissionais por cidade",
-        });
+      res.status(500).json({
+        message: "Erro ao gerar relatório de profissionais por cidade",
+      });
     }
   }
 );
