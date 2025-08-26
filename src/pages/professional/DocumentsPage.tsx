@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from "react";
+import { useAuth } from "../../contexts/AuthContext";
 import {
-  FileImage,
   FileText,
-  Upload,
-  Download,
-  Eye,
   Plus,
   Search,
   Calendar,
   X,
-  Check,
   User,
+  Download,
+  Eye,
+  Trash2,
+  Check,
+  AlertCircle,
 } from "lucide-react";
 
 type DocumentType =
@@ -27,6 +28,7 @@ type MedicalDocument = {
   title: string;
   document_type: DocumentType;
   patient_name: string;
+  patient_cpf: string;
   document_url: string;
   created_at: string;
 };
@@ -38,6 +40,7 @@ type PrivatePatient = {
 };
 
 const DocumentsPage: React.FC = () => {
+  const { user } = useAuth();
   const [documents, setDocuments] = useState<MedicalDocument[]>([]);
   const [patients, setPatients] = useState<PrivatePatient[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -48,11 +51,14 @@ const DocumentsPage: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
+  // Delete confirmation state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [documentToDelete, setDocumentToDelete] = useState<MedicalDocument | null>(null);
+
   // Form state
   const [formData, setFormData] = useState({
     document_type: "certificate" as DocumentType,
     patient_id: "",
-    patient_type: "private",
     title: "",
     patientName: "",
     patientCpf: "",
@@ -63,7 +69,7 @@ const DocumentsPage: React.FC = () => {
     risks: "",
     prescription: "",
     content: "",
-    professionalName: "",
+    professionalName: user?.name || "",
     professionalSpecialty: "",
     crm: "",
   });
@@ -100,24 +106,30 @@ const DocumentsPage: React.FC = () => {
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      console.log('🔄 Fetching medical documents from:', `${apiUrl}/api/medical-documents`);
+      console.log('🔄 [DOCUMENTS] Fetching medical documents from:', `${apiUrl}/api/documents/medical`);
 
       // Fetch documents
-      const documentsResponse = await fetch(`${apiUrl}/api/medical-documents`, {
+      const documentsResponse = await fetch(`${apiUrl}/api/documents/medical`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      console.log('📡 Documents response status:', documentsResponse.status);
+      console.log('📡 [DOCUMENTS] Documents response status:', documentsResponse.status);
 
       if (documentsResponse.ok) {
         const documentsData = await documentsResponse.json();
-        console.log('✅ Medical documents loaded:', documentsData.length);
+        console.log('✅ [DOCUMENTS] Medical documents loaded:', documentsData.length);
         setDocuments(documentsData);
       } else {
         const errorText = await documentsResponse.text();
-        console.error('❌ Documents error:', errorText);
-        setError('Não foi possível carregar os documentos médicos');
-        setDocuments([]);
+        console.error('❌ [DOCUMENTS] Documents error:', errorText);
+        
+        if (documentsResponse.status === 404) {
+          console.log('ℹ️ [DOCUMENTS] No documents found, starting with empty list');
+          setDocuments([]);
+        } else {
+          setError('Não foi possível carregar os documentos médicos');
+          setDocuments([]);
+        }
       }
 
       // Fetch private patients
@@ -125,19 +137,19 @@ const DocumentsPage: React.FC = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      console.log('📡 Patients response status:', patientsResponse.status);
+      console.log('📡 [DOCUMENTS] Patients response status:', patientsResponse.status);
 
       if (patientsResponse.ok) {
         const patientsData = await patientsResponse.json();
-        console.log('✅ Private patients loaded:', patientsData.length);
+        console.log('✅ [DOCUMENTS] Private patients loaded:', patientsData.length);
         setPatients(patientsData);
       } else {
-        console.warn('⚠️ Private patients not available:', patientsResponse.status);
+        console.warn('⚠️ [DOCUMENTS] Private patients not available:', patientsResponse.status);
         setPatients([]);
       }
     } catch (error) {
-      console.error("Error fetching data:", error);
-      setError("Não foi possível carregar os dados");
+      console.error("❌ [DOCUMENTS] Error fetching data:", error);
+      setError("Não foi possível carregar os dados dos documentos");
     } finally {
       setIsLoading(false);
     }
@@ -194,7 +206,6 @@ const DocumentsPage: React.FC = () => {
     setFormData({
       document_type: "certificate",
       patient_id: "",
-      patient_type: "private",
       title: "",
       patientName: "",
       patientCpf: "",
@@ -205,15 +216,19 @@ const DocumentsPage: React.FC = () => {
       risks: "",
       prescription: "",
       content: "",
-      professionalName: "",
+      professionalName: user?.name || "",
       professionalSpecialty: "",
       crm: "",
     });
+    setError('');
+    setSuccess('');
     setShowCreateModal(true);
   };
 
   const closeModal = () => {
     setShowCreateModal(false);
+    setError('');
+    setSuccess('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -222,17 +237,64 @@ const DocumentsPage: React.FC = () => {
     setError("");
     setSuccess("");
 
+    console.log('🔄 [DOCUMENTS] Submitting document form:', formData);
+
+    // Validate required fields
+    if (!formData.title.trim()) {
+      setError('Título é obrigatório');
+      setIsCreating(false);
+      return;
+    }
+
+    if (!formData.patient_id) {
+      setError('Selecione um paciente');
+      setIsCreating(false);
+      return;
+    }
+
+    if (!formData.professionalName.trim()) {
+      setError('Nome do profissional é obrigatório');
+      setIsCreating(false);
+      return;
+    }
+
+    // Validate specific fields based on document type
+    if (formData.document_type === 'certificate') {
+      if (!formData.description.trim()) {
+        setError('Descrição do atestado é obrigatória');
+        setIsCreating(false);
+        return;
+      }
+      if (!formData.days) {
+        setError('Número de dias é obrigatório');
+        setIsCreating(false);
+        return;
+      }
+    } else if (formData.document_type === 'prescription') {
+      if (!formData.prescription.trim()) {
+        setError('Prescrição médica é obrigatória');
+        setIsCreating(false);
+        return;
+      }
+    } else if (formData.document_type === 'consent_form') {
+      if (!formData.procedure.trim() || !formData.description.trim() || !formData.risks.trim()) {
+        setError('Todos os campos do termo de consentimento são obrigatórios');
+        setIsCreating(false);
+        return;
+      }
+    } else if (!formData.content.trim()) {
+      setError('Conteúdo do documento é obrigatório');
+      setIsCreating(false);
+      return;
+    }
+
     try {
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      console.log('🔄 Creating medical document:', {
-        title: formData.title,
-        document_type: formData.document_type,
-        patient_id: formData.patient_id
-      });
+      console.log('🔄 [DOCUMENTS] Creating medical document via API...');
 
-      const response = await fetch(`${apiUrl}/api/medical-documents`, {
+      const response = await fetch(`${apiUrl}/api/documents/medical`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -241,38 +303,37 @@ const DocumentsPage: React.FC = () => {
         body: JSON.stringify({
           title: formData.title,
           document_type: formData.document_type,
-          private_patient_id:
-            formData.patient_type === "private"
-              ? parseInt(formData.patient_id)
-              : null,
+          private_patient_id: parseInt(formData.patient_id),
           template_data: formData,
         }),
       });
 
-      console.log('📡 Document creation response status:', response.status);
+      console.log('📡 [DOCUMENTS] Document creation response status:', response.status);
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('❌ Document creation error:', errorText);
+        console.error('❌ [DOCUMENTS] Document creation error:', errorText);
+        
         let errorData;
         try {
           errorData = JSON.parse(errorText);
         } catch (e) {
-          throw new Error('Erro de comunicação com o servidor');
+          throw new Error(`Erro de comunicação com o servidor: ${response.status}`);
         }
         throw new Error(errorData.message || "Erro ao criar documento");
       }
 
       const result = await response.json();
-      console.log('✅ Document created successfully:', result);
+      console.log('✅ [DOCUMENTS] Document created successfully:', result);
+      
       const { title, documentUrl } = result;
 
-      // Clean filename
+      // Clean filename for download
       const fileName = title
         .replace(/[^a-zA-Z0-9\s]/g, "")
         .replace(/\s+/g, "_");
 
-      // Create download link that opens in new tab for mobile compatibility
+      // Create download link that opens in new tab
       const link = document.createElement("a");
       link.href = documentUrl;
       link.target = "_blank";
@@ -288,20 +349,65 @@ const DocumentsPage: React.FC = () => {
       document.body.removeChild(link);
 
       setSuccess(
-        "Documento aberto em nova aba. Use Ctrl+S (ou Cmd+S no Mac) para salvar ou imprimir."
+        "Documento criado e aberto em nova aba. Use Ctrl+S (ou Cmd+S no Mac) para salvar ou imprimir."
       );
+      
+      // Refresh documents list
       await fetchData();
 
       setTimeout(() => {
         closeModal();
-      }, 1500);
+      }, 2000);
     } catch (error) {
-      console.error('❌ Error in handleSubmit:', error);
+      console.error('❌ [DOCUMENTS] Error in handleSubmit:', error);
       setError(
         error instanceof Error ? error.message : "Erro ao criar documento"
       );
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const confirmDelete = (document: MedicalDocument) => {
+    setDocumentToDelete(document);
+    setShowDeleteConfirm(true);
+  };
+
+  const cancelDelete = () => {
+    setDocumentToDelete(null);
+    setShowDeleteConfirm(false);
+  };
+
+  const deleteDocument = async () => {
+    if (!documentToDelete) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const apiUrl = getApiUrl();
+
+      console.log('🔄 [DOCUMENTS] Deleting document:', documentToDelete.id);
+
+      const response = await fetch(`${apiUrl}/api/documents/medical/${documentToDelete.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      console.log('📡 [DOCUMENTS] Delete response:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erro ao excluir documento');
+      }
+
+      console.log('✅ [DOCUMENTS] Document deleted successfully');
+      await fetchData();
+      setSuccess('Documento excluído com sucesso!');
+    } catch (error) {
+      console.error('❌ [DOCUMENTS] Error deleting document:', error);
+      setError(error instanceof Error ? error.message : 'Erro ao excluir documento');
+    } finally {
+      setDocumentToDelete(null);
+      setShowDeleteConfirm(false);
     }
   };
 
@@ -418,6 +524,23 @@ const DocumentsPage: React.FC = () => {
           </>
         );
 
+      case "exam_request":
+        return (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Exames Solicitados *
+            </label>
+            <textarea
+              name="content"
+              value={formData.content}
+              onChange={handleInputChange}
+              className="input min-h-[200px]"
+              placeholder="Liste os exames solicitados..."
+              required
+            />
+          </div>
+        );
+
       default:
         return (
           <div>
@@ -436,6 +559,7 @@ const DocumentsPage: React.FC = () => {
         );
     }
   };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -443,17 +567,30 @@ const DocumentsPage: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">
             Documentos Médicos
           </h1>
-          <p className="text-gray-600">Gere e gerencie documentos médicos</p>
+          <p className="text-gray-600">Gere e gerencie documentos médicos para seus pacientes</p>
         </div>
 
         <button
           onClick={openCreateModal}
           className="btn btn-primary flex items-center"
+          disabled={patients.length === 0}
         >
           <Plus className="h-5 w-5 mr-2" />
           Novo Documento
         </button>
       </div>
+
+      {/* Info about patients requirement */}
+      {patients.length === 0 && (
+        <div className="bg-yellow-50 border-l-4 border-yellow-600 p-4 mb-6">
+          <div className="flex items-center">
+            <AlertCircle className="h-5 w-5 text-yellow-600 mr-2" />
+            <p className="text-yellow-700">
+              Você precisa cadastrar pacientes particulares antes de criar documentos médicos.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -483,7 +620,8 @@ const DocumentsPage: React.FC = () => {
       </div>
 
       {error && (
-        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6">
+        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 flex items-center">
+          <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
           {error}
         </div>
       )}
@@ -513,7 +651,7 @@ const DocumentsPage: React.FC = () => {
                 ? "Tente ajustar os filtros de busca."
                 : "Comece criando seu primeiro documento médico."}
             </p>
-            {!searchTerm && !selectedType && (
+            {!searchTerm && !selectedType && patients.length > 0 && (
               <button
                 onClick={openCreateModal}
                 className="btn btn-primary inline-flex items-center"
@@ -567,9 +705,16 @@ const DocumentsPage: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <User className="h-4 w-4 text-gray-400 mr-2" />
-                          <span className="text-sm text-gray-900">
-                            {document.patient_name}
-                          </span>
+                          <div>
+                            <div className="text-sm text-gray-900">
+                              {document.patient_name}
+                            </div>
+                            {document.patient_cpf && (
+                              <div className="text-xs text-gray-500">
+                                CPF: {document.patient_cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -602,6 +747,13 @@ const DocumentsPage: React.FC = () => {
                           >
                             <Download className="h-4 w-4" />
                           </a>
+                          <button
+                            onClick={() => confirmDelete(document)}
+                            className="text-red-600 hover:text-red-900"
+                            title="Excluir"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -618,11 +770,21 @@ const DocumentsPage: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200">
-              <h2 className="text-xl font-bold">Criar Novo Documento</h2>
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-bold">Criar Novo Documento Médico</h2>
+                <button
+                  onClick={closeModal}
+                  className="text-gray-500 hover:text-gray-700"
+                  disabled={isCreating}
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
             </div>
 
             {error && (
-              <div className="mx-6 mt-4 bg-red-50 text-red-600 p-3 rounded-lg">
+              <div className="mx-6 mt-4 bg-red-50 text-red-600 p-3 rounded-lg flex items-center">
+                <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
                 {error}
               </div>
             )}
@@ -685,11 +847,8 @@ const DocumentsPage: React.FC = () => {
                     <option value="">Selecione um paciente</option>
                     {patients.map((patient) => (
                       <option key={patient.id} value={patient.id}>
-                        {patient.name} - CPF:{" "}
-                        {patient.cpf.replace(
-                          /(\d{3})(\d{3})(\d{3})(\d{2})/,
-                          "$1.$2.$3-$4"
-                        )}
+                        {patient.name}
+                        {patient.cpf && ` - CPF: ${patient.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")}`}
                       </option>
                     ))}
                   </select>
@@ -720,11 +879,12 @@ const DocumentsPage: React.FC = () => {
                       value={formData.professionalSpecialty}
                       onChange={handleInputChange}
                       className="input"
+                      placeholder="Ex: Fisioterapeuta"
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      CRM *
+                      CRM/Registro *
                     </label>
                     <input
                       type="text"
@@ -758,10 +918,51 @@ const DocumentsPage: React.FC = () => {
                   }`}
                   disabled={isCreating}
                 >
-                  {isCreating ? "Criando..." : "Criar Documento"}
+                  {isCreating ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                      Criando Documento...
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="h-5 w-5 mr-2" />
+                      Criar Documento
+                    </>
+                  )}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation modal */}
+      {showDeleteConfirm && documentToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md p-6">
+            <h2 className="text-xl font-bold mb-4">Confirmar Exclusão</h2>
+            
+            <p className="mb-6">
+              Tem certeza que deseja excluir o documento <strong>{documentToDelete.title}</strong>?
+              Esta ação não pode ser desfeita.
+            </p>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={cancelDelete}
+                className="btn btn-secondary flex items-center"
+              >
+                <X className="h-4 w-4 mr-2" />
+                Cancelar
+              </button>
+              <button
+                onClick={deleteDocument}
+                className="btn bg-red-600 text-white hover:bg-red-700 flex items-center"
+              >
+                <Check className="h-4 w-4 mr-2" />
+                Confirmar
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -210,6 +210,23 @@ const initializeDatabase = async () => {
       )
     `);
 
+    // Create scheduling_appointments table (separate from consultations)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS scheduling_appointments (
+        id SERIAL PRIMARY KEY,
+        professional_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        private_patient_id INTEGER REFERENCES private_patients(id) ON DELETE CASCADE,
+        service_id INTEGER REFERENCES services(id) ON DELETE SET NULL,
+        location_id INTEGER REFERENCES attendance_locations(id) ON DELETE SET NULL,
+        appointment_date DATE NOT NULL,
+        appointment_time TIME NOT NULL,
+        status VARCHAR(20) DEFAULT 'scheduled',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Medical records table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS medical_records (
@@ -2490,7 +2507,169 @@ app.delete('/api/attendance-locations/:id', authenticate, authorize(['profession
   }
 });
 
-// ===== APPOINTMENTS ROUTES =====
+// ===== SCHEDULING SYSTEM ROUTES =====
+console.log('🔧 Setting up scheduling system routes...');
+
+// Get all appointments for a professional
+app.get('/api/scheduling/appointments', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { date } = req.query;
+    const professionalId = req.user.id;
+
+    console.log('🔄 [SCHEDULING] Fetching appointments for professional:', professionalId, 'date:', date);
+
+    let query = `
+      SELECT 
+        a.id,
+        a.appointment_date,
+        a.appointment_time,
+        a.status,
+        a.notes,
+        a.created_at,
+        pp.name as patient_name,
+        pp.phone as patient_phone,
+        s.name as service_name,
+        s.base_price as service_price,
+        al.name as location_name,
+        'private' as patient_type
+      FROM scheduling_appointments a
+      LEFT JOIN private_patients pp ON a.private_patient_id = pp.id
+      LEFT JOIN services s ON a.service_id = s.id
+      LEFT JOIN attendance_locations al ON a.location_id = al.id
+      WHERE a.professional_id = $1
+    `;
+    
+    const params = [professionalId];
+    
+    if (date) {
+      query += ' AND a.appointment_date = $2';
+      params.push(date);
+    }
+    
+    query += ' ORDER BY a.appointment_date, a.appointment_time';
+
+    const result = await pool.query(query, params);
+    console.log('✅ [SCHEDULING] Appointments loaded:', result.rows.length);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('❌ [SCHEDULING] Error fetching appointments:', error);
+    res.status(500).json({ message: 'Erro ao carregar agendamentos', error: error.message });
+  }
+});
+
+// Create new appointment
+app.post('/api/scheduling/appointments', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { private_patient_id, service_id, location_id, appointment_date, appointment_time, notes } = req.body;
+    const professionalId = req.user.id;
+
+    console.log('🔄 [SCHEDULING] Creating appointment:', {
+      professional_id: professionalId,
+      private_patient_id,
+      service_id,
+      location_id,
+      appointment_date,
+      appointment_time
+    });
+
+    // Validate required fields
+    if (!private_patient_id || !service_id || !appointment_date || !appointment_time) {
+      console.log('❌ [SCHEDULING] Missing required fields');
+      return res.status(400).json({ message: 'Campos obrigatórios: paciente, serviço, data e horário' });
+    }
+
+    // Check if patient exists
+    const patientCheck = await pool.query(
+      'SELECT id FROM private_patients WHERE id = $1 AND professional_id = $2',
+      [private_patient_id, professionalId]
+    );
+
+    if (patientCheck.rows.length === 0) {
+      console.log('❌ [SCHEDULING] Patient not found or not owned by professional');
+      return res.status(404).json({ message: 'Paciente não encontrado' });
+    }
+
+    // Check if service exists
+    const serviceCheck = await pool.query('SELECT id FROM services WHERE id = $1', [service_id]);
+    if (serviceCheck.rows.length === 0) {
+      console.log('❌ [SCHEDULING] Service not found');
+      return res.status(404).json({ message: 'Serviço não encontrado' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO scheduling_appointments (
+        professional_id, private_patient_id, service_id, location_id,
+        appointment_date, appointment_time, notes, status, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'scheduled', CURRENT_TIMESTAMP) 
+      RETURNING *`,
+      [professionalId, private_patient_id, service_id, location_id || null, appointment_date, appointment_time, notes || null]
+    );
+
+    console.log('✅ [SCHEDULING] Appointment created:', result.rows[0]);
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('❌ [SCHEDULING] Error creating appointment:', error);
+    res.status(500).json({ message: 'Erro ao criar agendamento', error: error.message });
+  }
+});
+
+// Update appointment
+app.put('/api/scheduling/appointments/:id', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { private_patient_id, service_id, location_id, appointment_date, appointment_time, notes, status } = req.body;
+    const professionalId = req.user.id;
+
+    console.log('🔄 [SCHEDULING] Updating appointment:', id);
+
+    const result = await pool.query(
+      `UPDATE scheduling_appointments SET 
+        private_patient_id = $1, service_id = $2, location_id = $3,
+        appointment_date = $4, appointment_time = $5, notes = $6, status = $7,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $8 AND professional_id = $9
+      RETURNING *`,
+      [private_patient_id, service_id, location_id, appointment_date, appointment_time, notes, status || 'scheduled', id, professionalId]
+    );
+
+    if (result.rows.length === 0) {
+      console.log('❌ [SCHEDULING] Appointment not found');
+      return res.status(404).json({ message: 'Agendamento não encontrado' });
+    }
+
+    console.log('✅ [SCHEDULING] Appointment updated:', result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('❌ [SCHEDULING] Error updating appointment:', error);
+    res.status(500).json({ message: 'Erro ao atualizar agendamento', error: error.message });
+  }
+});
+
+// Delete appointment
+app.delete('/api/scheduling/appointments/:id', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const professionalId = req.user.id;
+
+    console.log('🔄 [SCHEDULING] Deleting appointment:', id);
+
+    const result = await pool.query(
+      'DELETE FROM scheduling_appointments WHERE id = $1 AND professional_id = $2 RETURNING *',
+      [id, professionalId]
+    );
+
+    if (result.rows.length === 0) {
+      console.log('❌ [SCHEDULING] Appointment not found for deletion');
+      return res.status(404).json({ message: 'Agendamento não encontrado' });
+    }
+
+    console.log('✅ [SCHEDULING] Appointment deleted:', result.rows[0]);
+    res.json({ message: 'Agendamento excluído com sucesso' });
+  } catch (error) {
+    console.error('❌ [SCHEDULING] Error deleting appointment:', error);
+    res.status(500).json({ message: 'Erro ao excluir agendamento', error: error.message });
+  }
+});
 
 // Get appointments for professional
 app.get('/api/appointments', authenticate, authorize(['professional']), async (req, res) => {
@@ -3139,7 +3318,142 @@ app.post('/api/medical-records/generate-document', authenticate, authorize(['pro
   }
 });
 
-// ===== MEDICAL DOCUMENTS ROUTES (SEPARATE FROM MEDICAL RECORDS) =====
+// ===== MEDICAL DOCUMENTS SYSTEM =====
+console.log('🔧 Setting up medical documents system...');
+
+// Get all medical documents for a professional
+app.get('/api/documents/medical', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const professionalId = req.user.id;
+
+    console.log('🔄 [DOCUMENTS] Fetching medical documents for professional:', professionalId);
+
+    const result = await pool.query(
+      `SELECT 
+        md.id,
+        md.title,
+        md.document_type,
+        md.document_url,
+        md.created_at,
+        pp.name as patient_name,
+        pp.cpf as patient_cpf
+      FROM medical_documents md
+      LEFT JOIN private_patients pp ON md.private_patient_id = pp.id
+      WHERE md.professional_id = $1
+      ORDER BY md.created_at DESC`,
+      [professionalId]
+    );
+
+    console.log('✅ [DOCUMENTS] Medical documents loaded:', result.rows.length);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('❌ [DOCUMENTS] Error fetching medical documents:', error);
+    res.status(500).json({ message: 'Erro ao carregar documentos médicos', error: error.message });
+  }
+});
+
+// Create new medical document
+app.post('/api/documents/medical', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { title, document_type, private_patient_id, template_data } = req.body;
+    const professionalId = req.user.id;
+
+    console.log('🔄 [DOCUMENTS] Creating medical document:', {
+      title,
+      document_type,
+      private_patient_id,
+      professional_id: professionalId
+    });
+
+    // Validate required fields
+    if (!title || !document_type || !private_patient_id) {
+      console.log('❌ [DOCUMENTS] Missing required fields');
+      return res.status(400).json({ message: 'Título, tipo e paciente são obrigatórios' });
+    }
+
+    // Verify patient belongs to professional
+    const patientCheck = await pool.query(
+      'SELECT id, name, cpf FROM private_patients WHERE id = $1 AND professional_id = $2',
+      [private_patient_id, professionalId]
+    );
+
+    if (patientCheck.rows.length === 0) {
+      console.log('❌ [DOCUMENTS] Patient not found or not owned by professional');
+      return res.status(404).json({ message: 'Paciente não encontrado' });
+    }
+
+    const patient = patientCheck.rows[0];
+    console.log('✅ [DOCUMENTS] Patient verified:', patient.name);
+
+    // Generate document using the document generator
+    try {
+      const { generateDocumentPDF } = await import('./utils/documentGenerator.js');
+      
+      // Prepare complete template data
+      const completeTemplateData = {
+        ...template_data,
+        patientName: patient.name,
+        patientCpf: patient.cpf || '',
+        professionalName: template_data.professionalName || req.user.name,
+        professionalSpecialty: template_data.professionalSpecialty || '',
+        crm: template_data.crm || ''
+      };
+
+      console.log('🔄 [DOCUMENTS] Generating document with data:', completeTemplateData);
+      const documentResult = await generateDocumentPDF(document_type, completeTemplateData);
+      console.log('✅ [DOCUMENTS] Document generated:', documentResult.url);
+
+      // Save document record to database
+      const result = await pool.query(
+        `INSERT INTO medical_documents (
+          professional_id, private_patient_id, title, document_type, 
+          document_url, created_at
+        ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP) 
+        RETURNING *`,
+        [professionalId, private_patient_id, title, document_type, documentResult.url]
+      );
+
+      console.log('✅ [DOCUMENTS] Medical document saved to database:', result.rows[0]);
+      res.status(201).json({
+        document: result.rows[0],
+        title,
+        documentUrl: documentResult.url
+      });
+    } catch (docError) {
+      console.error('❌ [DOCUMENTS] Error generating document:', docError);
+      res.status(500).json({ message: 'Erro ao gerar documento', error: docError.message });
+    }
+  } catch (error) {
+    console.error('❌ [DOCUMENTS] Error creating medical document:', error);
+    res.status(500).json({ message: 'Erro ao criar documento médico', error: error.message });
+  }
+});
+
+// Delete medical document
+app.delete('/api/documents/medical/:id', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const professionalId = req.user.id;
+
+    console.log('🔄 [DOCUMENTS] Deleting medical document:', id);
+
+    const result = await pool.query(
+      'DELETE FROM medical_documents WHERE id = $1 AND professional_id = $2 RETURNING *',
+      [id, professionalId]
+    );
+
+    if (result.rows.length === 0) {
+      console.log('❌ [DOCUMENTS] Medical document not found');
+      return res.status(404).json({ message: 'Documento não encontrado' });
+    }
+
+    console.log('✅ [DOCUMENTS] Medical document deleted:', result.rows[0]);
+    res.json({ message: 'Documento excluído com sucesso' });
+  } catch (error) {
+    console.error('❌ [DOCUMENTS] Error deleting medical document:', error);
+    res.status(500).json({ message: 'Erro ao excluir documento', error: error.message });
+  }
+});
 
 // Get medical documents for professional
 app.get('/api/medical-documents', authenticate, authorize(['professional']), async (req, res) => {

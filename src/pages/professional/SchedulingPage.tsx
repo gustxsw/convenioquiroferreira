@@ -7,7 +7,6 @@ import {
   Trash2, 
   Clock, 
   User, 
-  Users, 
   MapPin, 
   Phone,
   AlertCircle,
@@ -26,6 +25,7 @@ type Appointment = {
   notes: string;
   patient_type: string;
   service_name: string;
+  service_price: number;
   location_name: string;
   patient_name: string;
   patient_phone: string;
@@ -86,7 +86,6 @@ const SchedulingPage: React.FC = () => {
   
   // Form state
   const [formData, setFormData] = useState({
-    patient_type: 'private',
     private_patient_id: '',
     service_id: '',
     location_id: '',
@@ -119,7 +118,6 @@ const SchedulingPage: React.FC = () => {
     if (paymentStatus && paymentType === "agenda") {
       if (paymentStatus === "success") {
         setSuccess("Pagamento do acesso à agenda aprovado! Seu acesso foi ativado.");
-        // Refresh access status
         setTimeout(() => {
           checkSchedulingAccess();
         }, 2000);
@@ -129,17 +127,16 @@ const SchedulingPage: React.FC = () => {
         setSuccess("Pagamento do acesso à agenda está sendo processado.");
       }
 
-      // Clear URL parameters
       const newUrl = window.location.pathname;
       window.history.replaceState({}, document.title, newUrl);
 
-      // Auto-hide feedback after 10 seconds
       setTimeout(() => {
         setError('');
         setSuccess('');
       }, 10000);
     }
   }, []);
+
   useEffect(() => {
     checkSchedulingAccess();
   }, []);
@@ -156,12 +153,17 @@ const SchedulingPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
 
+      console.log('🔄 [SCHEDULING] Checking access status...');
+
       const response = await fetch(`${apiUrl}/api/professional/scheduling-access-status`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
+      console.log('📡 [SCHEDULING] Access check response:', response.status);
+
       if (response.ok) {
         const data = await response.json();
+        console.log('✅ [SCHEDULING] Access status:', data);
         setAccessStatus(data);
         
         if (!data.hasAccess) {
@@ -171,10 +173,11 @@ const SchedulingPage: React.FC = () => {
           );
         }
       } else {
+        console.warn('⚠️ [SCHEDULING] Could not verify access status');
         setError('Não foi possível verificar o status de acesso à agenda');
       }
     } catch (error) {
-      console.error('Error checking scheduling access:', error);
+      console.error('❌ [SCHEDULING] Error checking access:', error);
       setError('Erro ao verificar acesso à agenda');
     } finally {
       setIsCheckingAccess(false);
@@ -189,24 +192,28 @@ const SchedulingPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
 
+      console.log('🔄 [SCHEDULING] Fetching scheduling data...');
+
       // Fetch appointments for selected date
       const appointmentsResponse = await fetch(
-        `${apiUrl}/api/appointments?date=${selectedDate}`,
+        `${apiUrl}/api/scheduling/appointments?date=${selectedDate}`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }
       );
 
+      console.log('📡 [SCHEDULING] Appointments response:', appointmentsResponse.status);
+
       if (appointmentsResponse.ok) {
         const appointmentsData = await appointmentsResponse.json();
-        console.log('✅ Appointments loaded:', appointmentsData.length);
+        console.log('✅ [SCHEDULING] Appointments loaded:', appointmentsData.length);
         setAppointments(appointmentsData);
       } else if (appointmentsResponse.status === 403) {
-        // Access denied - refresh access status
+        console.warn('⚠️ [SCHEDULING] Access denied - refreshing access status');
         await checkSchedulingAccess();
         return;
       } else {
-        console.warn('⚠️ Appointments not available:', appointmentsResponse.status);
+        console.warn('⚠️ [SCHEDULING] Appointments not available:', appointmentsResponse.status);
         setAppointments([]);
       }
 
@@ -215,12 +222,14 @@ const SchedulingPage: React.FC = () => {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
+      console.log('📡 [SCHEDULING] Services response:', servicesResponse.status);
+
       if (servicesResponse.ok) {
         const servicesData = await servicesResponse.json();
-        console.log('✅ Services loaded:', servicesData.length);
+        console.log('✅ [SCHEDULING] Services loaded:', servicesData.length);
         setServices(servicesData);
       } else {
-        console.warn('⚠️ Services not available:', servicesResponse.status);
+        console.warn('⚠️ [SCHEDULING] Services not available');
         setServices([]);
       }
 
@@ -229,18 +238,19 @@ const SchedulingPage: React.FC = () => {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
+      console.log('📡 [SCHEDULING] Locations response:', locationsResponse.status);
+
       if (locationsResponse.ok) {
         const locationsData = await locationsResponse.json();
-        console.log('✅ Locations loaded:', locationsData.length);
+        console.log('✅ [SCHEDULING] Locations loaded:', locationsData.length);
         setLocations(locationsData);
         
-        // Set default location
         const defaultLocation = locationsData.find(loc => loc.is_default);
         if (defaultLocation && !formData.location_id) {
           setFormData(prev => ({ ...prev, location_id: defaultLocation.id.toString() }));
         }
       } else {
-        console.warn('⚠️ Locations not available:', locationsResponse.status);
+        console.warn('⚠️ [SCHEDULING] Locations not available');
         setLocations([]);
       }
 
@@ -249,18 +259,20 @@ const SchedulingPage: React.FC = () => {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
+      console.log('📡 [SCHEDULING] Patients response:', patientsResponse.status);
+
       if (patientsResponse.ok) {
         const patientsData = await patientsResponse.json();
-        console.log('✅ Private patients loaded:', patientsData.length);
+        console.log('✅ [SCHEDULING] Private patients loaded:', patientsData.length);
         setPrivatePatients(patientsData);
       } else {
-        console.warn('⚠️ Private patients not available:', patientsResponse.status);
+        console.warn('⚠️ [SCHEDULING] Private patients not available');
         setPrivatePatients([]);
       }
 
     } catch (error) {
-      console.error('Error fetching data:', error);
-      setError('Não foi possível carregar os dados');
+      console.error('❌ [SCHEDULING] Error fetching data:', error);
+      setError('Não foi possível carregar os dados da agenda');
     } finally {
       setIsLoading(false);
     }
@@ -274,6 +286,8 @@ const SchedulingPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
 
+      console.log('🔄 [SCHEDULING] Creating agenda payment...');
+
       const response = await fetch(`${apiUrl}/api/professional/create-agenda-payment`, {
         method: 'POST',
         headers: {
@@ -281,7 +295,7 @@ const SchedulingPage: React.FC = () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          duration_days: 30 // Default 30 days
+          duration_days: 30
         })
       });
 
@@ -291,10 +305,7 @@ const SchedulingPage: React.FC = () => {
       }
 
       const data = await response.json();
-      
-      // Redirect to MercadoPago
       window.open(data.init_point, '_blank');
-      
       setSuccess('Redirecionando para o pagamento...');
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Erro ao processar pagamento');
@@ -306,7 +317,6 @@ const SchedulingPage: React.FC = () => {
   const openCreateModal = () => {
     setModalMode('create');
     setFormData({
-      patient_type: 'private',
       private_patient_id: '',
       service_id: '',
       location_id: locations.find(l => l.is_default)?.id.toString() || '',
@@ -315,21 +325,24 @@ const SchedulingPage: React.FC = () => {
       notes: ''
     });
     setSelectedAppointment(null);
+    setError('');
+    setSuccess('');
     setIsModalOpen(true);
   };
 
   const openEditModal = (appointment: Appointment) => {
     setModalMode('edit');
     setFormData({
-      patient_type: appointment.patient_type,
-      private_patient_id: '', // Would need to be determined from appointment data
-      service_id: '', // Would need to be determined from appointment data
-      location_id: '', // Would need to be determined from appointment data
+      private_patient_id: '', // Would need patient ID from appointment
+      service_id: '', // Would need service ID from appointment
+      location_id: '', // Would need location ID from appointment
       appointment_date: appointment.appointment_date,
       appointment_time: appointment.appointment_time,
       notes: appointment.notes || ''
     });
     setSelectedAppointment(appointment);
+    setError('');
+    setSuccess('');
     setIsModalOpen(true);
   };
 
@@ -349,12 +362,32 @@ const SchedulingPage: React.FC = () => {
     setError('');
     setSuccess('');
 
+    console.log('🔄 [SCHEDULING] Submitting appointment form:', formData);
+
+    // Validate required fields
+    if (!formData.private_patient_id) {
+      setError('Selecione um paciente');
+      return;
+    }
+    if (!formData.service_id) {
+      setError('Selecione um serviço');
+      return;
+    }
+    if (!formData.appointment_date) {
+      setError('Selecione uma data');
+      return;
+    }
+    if (!formData.appointment_time) {
+      setError('Selecione um horário');
+      return;
+    }
+
     try {
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
 
       const appointmentData = {
-        private_patient_id: formData.patient_type === 'private' ? parseInt(formData.private_patient_id) : null,
+        private_patient_id: parseInt(formData.private_patient_id),
         service_id: parseInt(formData.service_id),
         location_id: formData.location_id ? parseInt(formData.location_id) : null,
         appointment_date: formData.appointment_date,
@@ -362,9 +395,11 @@ const SchedulingPage: React.FC = () => {
         notes: formData.notes || null
       };
 
+      console.log('🔄 [SCHEDULING] Sending appointment data:', appointmentData);
+
       const url = modalMode === 'create' 
-        ? `${apiUrl}/api/appointments`
-        : `${apiUrl}/api/appointments/${selectedAppointment?.id}`;
+        ? `${apiUrl}/api/scheduling/appointments`
+        : `${apiUrl}/api/scheduling/appointments/${selectedAppointment?.id}`;
 
       const method = modalMode === 'create' ? 'POST' : 'PUT';
 
@@ -377,17 +412,29 @@ const SchedulingPage: React.FC = () => {
         body: JSON.stringify(appointmentData)
       });
 
+      console.log('📡 [SCHEDULING] Appointment submission response:', response.status);
+
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorText = await response.text();
+        console.error('❌ [SCHEDULING] Appointment submission error:', errorText);
+        
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (e) {
+          throw new Error(`Erro de comunicação: ${response.status}`);
+        }
         
         if (response.status === 403) {
-          // Access denied - refresh access status
           await checkSchedulingAccess();
           return;
         }
         
         throw new Error(errorData.message || 'Erro ao salvar agendamento');
       }
+
+      const responseData = await response.json();
+      console.log('✅ [SCHEDULING] Appointment saved:', responseData);
 
       setSuccess(modalMode === 'create' ? 'Agendamento criado com sucesso!' : 'Agendamento atualizado com sucesso!');
       await fetchData();
@@ -396,6 +443,7 @@ const SchedulingPage: React.FC = () => {
         closeModal();
       }, 1500);
     } catch (error) {
+      console.error('❌ [SCHEDULING] Error in handleSubmit:', error);
       setError(error instanceof Error ? error.message : 'Erro ao salvar agendamento');
     }
   };
@@ -417,19 +465,25 @@ const SchedulingPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
 
-      const response = await fetch(`${apiUrl}/api/appointments/${appointmentToDelete.id}`, {
+      console.log('🔄 [SCHEDULING] Deleting appointment:', appointmentToDelete.id);
+
+      const response = await fetch(`${apiUrl}/api/scheduling/appointments/${appointmentToDelete.id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
+
+      console.log('📡 [SCHEDULING] Delete response:', response.status);
 
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Erro ao excluir agendamento');
       }
 
+      console.log('✅ [SCHEDULING] Appointment deleted successfully');
       await fetchData();
       setSuccess('Agendamento excluído com sucesso!');
     } catch (error) {
+      console.error('❌ [SCHEDULING] Error deleting appointment:', error);
       setError(error instanceof Error ? error.message : 'Erro ao excluir agendamento');
     } finally {
       setAppointmentToDelete(null);
@@ -438,7 +492,7 @@ const SchedulingPage: React.FC = () => {
   };
 
   const formatTime = (timeString: string) => {
-    return timeString.slice(0, 5); // Remove seconds
+    return timeString.slice(0, 5);
   };
 
   const formatDate = (dateString: string) => {
@@ -520,10 +574,6 @@ const SchedulingPage: React.FC = () => {
                 <CheckCircle className="h-4 w-4 mr-2 flex-shrink-0" />
                 Relatórios detalhados
               </li>
-              <li className="flex items-center">
-                <CheckCircle className="h-4 w-4 mr-2 flex-shrink-0" />
-                Suporte técnico prioritário
-              </li>
             </ul>
           </div>
 
@@ -604,7 +654,7 @@ const SchedulingPage: React.FC = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center">
             <Calendar className="h-6 w-6 text-red-600 mr-2" />
-            <h2 className="text-xl font-semibold">Selecionar Data</h2>
+            <h2 className="text-xl font-semibold">Agendamentos para {formatDate(selectedDate)}</h2>
           </div>
           
           <input
@@ -693,11 +743,7 @@ const SchedulingPage: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
-                          {appointment.patient_type === 'private' ? (
-                            <User className="h-4 w-4 text-purple-600 mr-2" />
-                          ) : (
-                            <Users className="h-4 w-4 text-green-600 mr-2" />
-                          )}
+                          <User className="h-4 w-4 text-purple-600 mr-2" />
                           <div>
                             <div className="text-sm font-medium text-gray-900">
                               {appointment.patient_name}
@@ -759,13 +805,22 @@ const SchedulingPage: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200">
-              <h2 className="text-xl font-bold">
-                {modalMode === 'create' ? 'Novo Agendamento' : 'Editar Agendamento'}
-              </h2>
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-bold">
+                  {modalMode === 'create' ? 'Novo Agendamento' : 'Editar Agendamento'}
+                </h2>
+                <button
+                  onClick={closeModal}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
             </div>
 
             {error && (
-              <div className="mx-6 mt-4 bg-red-50 text-red-600 p-3 rounded-lg">
+              <div className="mx-6 mt-4 bg-red-50 text-red-600 p-3 rounded-lg flex items-center">
+                <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
                 {error}
               </div>
             )}
@@ -778,29 +833,10 @@ const SchedulingPage: React.FC = () => {
 
             <form onSubmit={handleSubmit} className="p-6">
               <div className="space-y-6">
-                {/* Patient Type - Only private for scheduling */}
+                {/* Patient Selection */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tipo de Paciente
-                  </label>
-                  <select
-                    name="patient_type"
-                    value={formData.patient_type}
-                    onChange={handleInputChange}
-                    className="input"
-                    disabled
-                  >
-                    <option value="private">Paciente Particular</option>
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Agendamentos são apenas para pacientes particulares
-                  </p>
-                </div>
-
-                {/* Private Patient Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Paciente *
+                    Paciente Particular *
                   </label>
                   <select
                     name="private_patient_id"
@@ -817,6 +853,11 @@ const SchedulingPage: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                  {privatePatients.length === 0 && (
+                    <p className="text-sm text-red-600 mt-1">
+                      Você precisa cadastrar pacientes particulares primeiro.
+                    </p>
+                  )}
                 </div>
 
                 {/* Service Selection */}
@@ -858,6 +899,11 @@ const SchedulingPage: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                  {locations.length === 0 && (
+                    <p className="text-sm text-gray-500 mt-1">
+                      Configure seus locais de atendimento no perfil.
+                    </p>
+                  )}
                 </div>
 
                 {/* Date and Time */}
@@ -915,7 +961,11 @@ const SchedulingPage: React.FC = () => {
                 >
                   Cancelar
                 </button>
-                <button type="submit" className="btn btn-primary">
+                <button 
+                  type="submit" 
+                  className="btn btn-primary"
+                  disabled={!formData.private_patient_id || !formData.service_id || !formData.appointment_date || !formData.appointment_time}
+                >
                   {modalMode === 'create' ? 'Criar Agendamento' : 'Salvar Alterações'}
                 </button>
               </div>
