@@ -250,160 +250,52 @@ const SchedulingPage: React.FC = () => {
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      let clientData = null;
-
-      // Se for convênio, buscar cliente por CPF
-      if (formData.patient_type === "convenio") {
-        const clientResponse = await fetch(
-          `${apiUrl}/api/clients/lookup?cpf=${formData.client_cpf.replace(
-            /\D/g,
-            ""
-          )}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-
-        if (!clientResponse.ok) {
-          throw new Error("Cliente não encontrado");
-        }
-
-        clientData = await clientResponse.json();
-
-        if (clientData.subscription_status !== "active") {
-          throw new Error("Cliente não possui assinatura ativa");
-        }
+      // Validar campos obrigatórios
+      if (!formData.service_id || !formData.date || !formData.time) {
+        throw new Error("Serviço, data e horário são obrigatórios");
       }
 
-      if (formData.is_recurring) {
-        // Criar consultas recorrentes
-        const recurringData = {
-          client_id:
-            formData.patient_type === "convenio" ? clientData.id : null,
-          private_patient_id:
-            formData.patient_type === "private"
-              ? parseInt(formData.private_patient_id)
-              : null,
-          service_id: parseInt(formData.service_id),
-          location_id: formData.location_id
-            ? parseInt(formData.location_id)
-            : null,
-          value: parseFloat(formData.value),
-          start_date: formData.date,
-          start_time: formData.time,
-          total_sessions: parseInt(formData.total_sessions.toString()),
-          recurring_days: formData.recurring_days,
-          notes: formData.notes,
-        };
-
-        const response = await fetch(`${apiUrl}/api/consultations/recurring`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(recurringData),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(
-            errorData.message || "Falha ao criar consultas recorrentes"
-          );
-        }
-
-        setSuccess(
-          `${formData.total_sessions} consultas recorrentes criadas com sucesso!`
-        );
-      } else {
-        // Criar consulta única
-        const consultationData = {
-          client_id:
-            formData.patient_type === "convenio" ? clientData.id : null,
-          private_patient_id:
-            formData.patient_type === "private"
-              ? parseInt(formData.private_patient_id)
-              : null,
-          service_id: parseInt(formData.service_id),
-          location_id: formData.location_id
-            ? parseInt(formData.location_id)
-            : null,
-          value: parseFloat(formData.value),
-          date: new Date(`${formData.date}T${formData.time}`).toISOString(),
-          status: "scheduled",
-          notes: formData.notes,
-        };
-
-        const response = await fetch(`${apiUrl}/api/consultations`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(consultationData),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || "Falha ao criar agendamento");
-        }
-
-        setSuccess("Agendamento criado com sucesso!");
+      if (formData.patient_type === "private" && !formData.private_patient_id) {
+        throw new Error("Selecione um paciente particular");
       }
 
-      await fetchData();
-      setShowNewModal(false);
-      resetForm();
-      setTimeout(() => setSuccess(""), 3000);
-    } catch (error) {
-      setError(
-        error instanceof Error ? error.message : "Erro ao criar agendamento"
-      );
-    } finally {
-      setIsCreating(false);
-    }
-  };
+      if (formData.patient_type === "convenio" && !formData.client_cpf) {
+        throw new Error("CPF do cliente é obrigatório");
+      }
 
-  const resetForm = () => {
-    setFormData({
-      patient_type: "convenio",
-      client_cpf: "",
-      private_patient_id: "",
-      date: format(selectedDate, "yyyy-MM-dd"),
-      time: "",
-      service_id: "",
-      value: "",
-      location_id: "",
-      notes: "",
-      is_recurring: false,
-      total_sessions: 1,
-      recurring_days: [],
-    });
-  };
+      // Criar agendamento usando a rota correta
+      const appointmentData = {
+        private_patient_id: formData.patient_type === "private" 
+          ? parseInt(formData.private_patient_id) 
+          : null,
+        service_id: parseInt(formData.service_id),
+        location_id: formData.location_id ? parseInt(formData.location_id) : null,
+        appointment_date: formData.date,
+        appointment_time: formData.time,
+        notes: formData.notes || null,
+      };
 
-  const openStatusModal = (appointment: Appointment) => {
-    console.log("🔄 Opening status modal for appointment:", appointment);
-    setSelectedAppointment(appointment);
-    setNewStatus(appointment.status);
-    setShowStatusModal(true);
-  };
+      console.log("🔄 Creating appointment with data:", appointmentData);
 
-  const closeStatusModal = () => {
-    setShowStatusModal(false);
-    setSelectedAppointment(null);
-    setError("");
-  };
+      const response = await fetch(`${apiUrl}/api/appointments`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(appointmentData),
+      });
 
-  const openRescheduleModal = (appointment: Appointment) => {
-    setSelectedAppointment(appointment);
-    setRescheduleData({
-      date: format(new Date(appointment.date), "yyyy-MM-dd"),
-      time: appointment.time,
-    });
-    setShowRescheduleModal(true);
-  };
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("❌ Appointment creation error:", errorData);
+        throw new Error(errorData.message || "Falha ao criar agendamento");
+      }
 
-  const closeRescheduleModal = () => {
+      const responseData = await response.json();
+      console.log("✅ Appointment created successfully:", responseData);
+
+      setSuccess("Agendamento criado com sucesso!");
     setShowRescheduleModal(false);
     setSelectedAppointment(null);
     setRescheduleData({ date: "", time: "" });
@@ -421,7 +313,7 @@ const SchedulingPage: React.FC = () => {
       const apiUrl = getApiUrl();
 
       const response = await fetch(
-        `${apiUrl}/api/consultations/${selectedAppointment.id}/reschedule`,
+        `${apiUrl}/api/appointments/${selectedAppointment.id}`,
         {
           method: "PUT",
           headers: {
@@ -429,8 +321,8 @@ const SchedulingPage: React.FC = () => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            new_date: rescheduleData.date,
-            new_time: rescheduleData.time,
+            appointment_date: rescheduleData.date,
+            appointment_time: rescheduleData.time,
           }),
         }
       );
@@ -446,6 +338,7 @@ const SchedulingPage: React.FC = () => {
       setSuccess("Consulta reagendada com sucesso!");
       setTimeout(() => setSuccess(""), 3000);
     } catch (error) {
+      console.error("❌ Error in createAppointment:", error);
       setError(
         error instanceof Error ? error.message : "Erro ao reagendar consulta"
       );
@@ -471,7 +364,7 @@ const SchedulingPage: React.FC = () => {
       });
 
       const response = await fetch(
-        `${apiUrl}/api/consultations/${selectedAppointment.id}/status`,
+        `${apiUrl}/api/appointments/${selectedAppointment.id}`,
         {
           method: "PUT",
           headers: {
@@ -988,6 +881,7 @@ const SchedulingPage: React.FC = () => {
                         }))
                       }
                       className="input"
+                      min={new Date().toISOString().split('T')[0]}
                       required
                     />
                   </div>
@@ -1017,95 +911,8 @@ const SchedulingPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Consulta Recorrente */}
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center mb-4">
-                    <input
-                      type="checkbox"
-                      id="is_recurring"
-                      checked={formData.is_recurring}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          is_recurring: e.target.checked,
-                          total_sessions: e.target.checked ? 2 : 1,
-                          recurring_days: e.target.checked ? [] : [],
-                        }))
-                      }
-                      className="rounded border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50"
-                    />
-                    <label
-                      htmlFor="is_recurring"
-                      className="ml-2 text-sm font-medium text-gray-700"
-                    >
-                      Consulta Recorrente
-                    </label>
-                  </div>
-
-                  {formData.is_recurring && (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Número de Sessões *
-                        </label>
-                        <input
-                          type="number"
-                          min="2"
-                          max="52"
-                          value={formData.total_sessions}
-                          onChange={(e) =>
-                            setFormData((prev) => ({
-                              ...prev,
-                              total_sessions: parseInt(e.target.value) || 1,
-                            }))
-                          }
-                          className="input"
-                          required
-                        />
-                        <p className="text-xs text-gray-500 mt-1">
-                          Quantas sessões serão realizadas no total
-                        </p>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Dias da Semana *
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {daysOfWeek.map((day) => (
-                            <label
-                              key={day.value}
-                              className="flex items-center"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={formData.recurring_days.includes(
-                                  day.value
-                                )}
-                                onChange={(e) =>
-                                  handleRecurringDayChange(
-                                    day.value,
-                                    e.target.checked
-                                  )
-                                }
-                                className="rounded border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50"
-                              />
-                              <span className="ml-2 text-sm text-gray-700">
-                                {day.label}
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                          Selecione os dias da semana para repetir a consulta
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Serviço e Valor */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Serviço */}
+                <div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Serviço *
@@ -1123,26 +930,6 @@ const SchedulingPage: React.FC = () => {
                         </option>
                       ))}
                     </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Valor (R$) *
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={formData.value}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          value: e.target.value,
-                        }))
-                      }
-                      className="input"
-                      required
-                    />
                   </div>
                 </div>
 
