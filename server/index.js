@@ -4487,9 +4487,25 @@ app.post(
 
       // Validate patient if provided
       if (private_patient_id) {
-        const patientResult
+        const patientResult = await pool.query(
+          `
+        SELECT id FROM private_patients WHERE id = $1 AND professional_id = $2
+      `,
+          [private_patient_id, req.user.id]
+        );
 
+        if (patientResult.rows.length === 0) {
+          return res.status(404).json({ message: "Paciente não encontrado" });
+        }
       }
-    }
-  }
-)
+
+      // Generate document using the document generator
+      const { generateDocumentPDF } = await import(
+        "./utils/documentGenerator.js"
+      );
+      const documentResult = await generateDocumentPDF(
+        document_type,
+        template_data
+      );
+
+      // Save document reference
