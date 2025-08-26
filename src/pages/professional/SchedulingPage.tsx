@@ -1258,7 +1258,7 @@ const SchedulingPage: React.FC = () => {
                   <strong>Serviço:</strong> {selectedConsultation.service_name}
                 </p>
                 <p className="text-sm text-gray-600 mb-1">
-                  <strong>Data/Hora:</strong> {format(new Date(selectedConsultation.date), "dd/MM/yyyy 'às' HH:mm")}
+                  <strong>Data/Hora:</strong> {format(new Date(selectedConsultation.date), "dd/MM/yyyy 'às\' HH:mm")}
                 </p>
                 <p className="text-sm text-gray-600">
                   <strong>Valor:</strong> {formatCurrency(selectedConsultation.value)}

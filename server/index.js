@@ -2534,6 +2534,10 @@ app.post(
         address_complement,
         neighborhood,
         city,
+      }
+    }
+  }
+)
 // Get consultations for professional (agenda view)
 app.get(
   "/api/consultations/professional",
