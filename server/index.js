@@ -840,6 +840,410 @@ app.get('/api/users/:id', authenticate, async (req, res) => {
     res.status(500).json({ message: 'Erro ao carregar usuário' });
   }
 });
+// Get all users (Admin only)
+app.get('/api/users', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    console.log('🔄 GET /api/users - Fetching all users');
+    
+    const result = await pool.query(`
+      SELECT 
+        id, name, cpf, email, phone, birth_date, address, address_number,
+        address_complement, neighborhood, city, state, roles, subscription_status,
+        subscription_expiry, created_at, updated_at, photo_url, category_name,
+        professional_percentage, crm
+      FROM users 
+      ORDER BY created_at DESC
+    `);
+    
+    console.log('✅ Users fetched successfully:', result.rows.length);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('❌ Error fetching users:', error);
+    res.status(500).json({ message: 'Erro ao carregar usuários' });
+  }
+});
+
+// Get user by ID
+app.get('/api/users/:id', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log('🔄 GET /api/users/:id - Fetching user:', id);
+    
+    const result = await pool.query(`
+      SELECT 
+        id, name, cpf, email, phone, birth_date, address, address_number,
+        address_complement, neighborhood, city, state, roles, subscription_status,
+        subscription_expiry, created_at, updated_at, photo_url, category_name,
+        professional_percentage, crm
+      FROM users 
+      WHERE id = $1
+    `, [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+    
+    console.log('✅ User fetched successfully:', result.rows[0].name);
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('❌ Error fetching user:', error);
+    res.status(500).json({ message: 'Erro ao carregar usuário' });
+  }
+});
+
+// Create new user (Admin only)
+app.post('/api/users', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    console.log('🔄 POST /api/users - Creating new user');
+    console.log('📝 Request body:', req.body);
+    
+    const {
+      name,
+      cpf,
+      email,
+      phone,
+      birth_date,
+      address,
+      address_number,
+      address_complement,
+      neighborhood,
+      city,
+      state,
+      roles,
+      password,
+      subscription_status,
+      subscription_expiry,
+      category_name,
+      professional_percentage,
+      crm
+    } = req.body;
+
+    // Validate required fields
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'Nome é obrigatório' });
+    }
+
+    if (!cpf) {
+      return res.status(400).json({ message: 'CPF é obrigatório' });
+    }
+
+    if (!roles || !Array.isArray(roles) || roles.length === 0) {
+      return res.status(400).json({ message: 'Pelo menos uma role deve ser selecionada' });
+    }
+
+    // Validate CPF format
+    const cleanCpf = cpf.replace(/\D/g, '');
+    if (!/^\d{11}$/.test(cleanCpf)) {
+      return res.status(400).json({ message: 'CPF deve conter 11 dígitos numéricos' });
+    }
+
+    // Check if CPF already exists
+    const existingUser = await pool.query('SELECT id FROM users WHERE cpf = $1', [cleanCpf]);
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({ message: 'CPF já cadastrado no sistema' });
+    }
+
+    // Generate password if not provided
+    let finalPassword = password;
+    let temporaryPassword = null;
+    
+    if (!finalPassword) {
+      temporaryPassword = Math.random().toString(36).slice(-8);
+      finalPassword = temporaryPassword;
+    }
+
+    // Validate password length
+    if (finalPassword.length < 6) {
+      return res.status(400).json({ message: 'Senha deve ter pelo menos 6 caracteres' });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(finalPassword, 12);
+
+    // Clean phone
+    const cleanPhone = phone ? phone.replace(/\D/g, '') : null;
+
+    // Insert user
+    const userResult = await pool.query(`
+      INSERT INTO users (
+        name, cpf, email, phone, birth_date, address, address_number,
+        address_complement, neighborhood, city, state, password_hash, roles,
+        subscription_status, subscription_expiry, category_name, 
+        professional_percentage, crm, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW())
+      RETURNING id, name, cpf, email, roles
+    `, [
+      name.trim(),
+      cleanCpf,
+      email?.trim() || null,
+      cleanPhone,
+      birth_date || null,
+      address?.trim() || null,
+      address_number?.trim() || null,
+      address_complement?.trim() || null,
+      neighborhood?.trim() || null,
+      city?.trim() || null,
+      state || null,
+      hashedPassword,
+      JSON.stringify(roles),
+      subscription_status || 'pending',
+      subscription_expiry || null,
+      category_name?.trim() || null,
+      professional_percentage || null,
+      crm?.trim() || null
+    ]);
+
+    const user = userResult.rows[0];
+    console.log('✅ User created successfully:', user.id);
+
+    res.status(201).json({
+      message: 'Usuário criado com sucesso',
+      user: {
+        ...user,
+        temporaryPassword
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error creating user:', error);
+    
+    if (error.code === '23505') {
+      return res.status(409).json({ message: 'CPF já cadastrado no sistema' });
+    }
+    
+    res.status(500).json({ message: 'Erro interno do servidor ao criar usuário' });
+  }
+});
+
+// Update user (Admin only)
+app.put('/api/users/:id', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log('🔄 PUT /api/users/:id - Updating user:', id);
+    console.log('📝 Request body:', req.body);
+    
+    const {
+      name,
+      email,
+      phone,
+      birth_date,
+      address,
+      address_number,
+      address_complement,
+      neighborhood,
+      city,
+      state,
+      roles,
+      password,
+      subscription_status,
+      subscription_expiry,
+      category_name,
+      professional_percentage,
+      crm
+    } = req.body;
+
+    // Validate required fields
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'Nome é obrigatório' });
+    }
+
+    if (!roles || !Array.isArray(roles) || roles.length === 0) {
+      return res.status(400).json({ message: 'Pelo menos uma role deve ser selecionada' });
+    }
+
+    // Check if user exists
+    const existingUser = await pool.query('SELECT id FROM users WHERE id = $1', [id]);
+    if (existingUser.rows.length === 0) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+
+    // Build update query dynamically
+    const updateFields = [];
+    const updateValues = [];
+    let paramCount = 1;
+
+    // Always update these fields
+    updateFields.push(`name = $${paramCount++}`);
+    updateValues.push(name.trim());
+
+    updateFields.push(`email = $${paramCount++}`);
+    updateValues.push(email?.trim() || null);
+
+    updateFields.push(`phone = $${paramCount++}`);
+    updateValues.push(phone ? phone.replace(/\D/g, '') : null);
+
+    updateFields.push(`birth_date = $${paramCount++}`);
+    updateValues.push(birth_date || null);
+
+    updateFields.push(`address = $${paramCount++}`);
+    updateValues.push(address?.trim() || null);
+
+    updateFields.push(`address_number = $${paramCount++}`);
+    updateValues.push(address_number?.trim() || null);
+
+    updateFields.push(`address_complement = $${paramCount++}`);
+    updateValues.push(address_complement?.trim() || null);
+
+    updateFields.push(`neighborhood = $${paramCount++}`);
+    updateValues.push(neighborhood?.trim() || null);
+
+    updateFields.push(`city = $${paramCount++}`);
+    updateValues.push(city?.trim() || null);
+
+    updateFields.push(`state = $${paramCount++}`);
+    updateValues.push(state || null);
+
+    updateFields.push(`roles = $${paramCount++}`);
+    updateValues.push(JSON.stringify(roles));
+
+    updateFields.push(`subscription_status = $${paramCount++}`);
+    updateValues.push(subscription_status || 'pending');
+
+    updateFields.push(`subscription_expiry = $${paramCount++}`);
+    updateValues.push(subscription_expiry || null);
+
+    updateFields.push(`category_name = $${paramCount++}`);
+    updateValues.push(category_name?.trim() || null);
+
+    updateFields.push(`professional_percentage = $${paramCount++}`);
+    updateValues.push(professional_percentage || null);
+
+    updateFields.push(`crm = $${paramCount++}`);
+    updateValues.push(crm?.trim() || null);
+
+    updateFields.push(`updated_at = $${paramCount++}`);
+    updateValues.push(new Date());
+
+    // Handle password update if provided
+    if (password && password.trim()) {
+      if (password.length < 6) {
+        return res.status(400).json({ message: 'Senha deve ter pelo menos 6 caracteres' });
+      }
+      
+      const hashedPassword = await bcrypt.hash(password, 12);
+      updateFields.push(`password_hash = $${paramCount++}`);
+      updateValues.push(hashedPassword);
+    }
+
+    // Add user ID for WHERE clause
+    updateValues.push(id);
+
+    const updateQuery = `
+      UPDATE users 
+      SET ${updateFields.join(', ')}
+      WHERE id = $${paramCount}
+      RETURNING id, name, cpf, email, roles
+    `;
+
+    console.log('🔄 Executing update query with', updateFields.length, 'fields');
+    
+    const result = await pool.query(updateQuery, updateValues);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+
+    console.log('✅ User updated successfully:', result.rows[0].name);
+    
+    res.json({
+      message: 'Usuário atualizado com sucesso',
+      user: result.rows[0]
+    });
+  } catch (error) {
+    console.error('❌ Error updating user:', error);
+    res.status(500).json({ message: 'Erro interno do servidor ao atualizar usuário' });
+  }
+});
+
+// Delete user (Admin only)
+app.delete('/api/users/:id', authenticate, authorize(['admin']), async (req, res) => {
+  const client = await pool.connect();
+  
+  try {
+    const { id } = req.params;
+    console.log('🔄 DELETE /api/users/:id - Deleting user:', id);
+    
+    // Prevent admin from deleting themselves
+    if (parseInt(id) === req.user.id) {
+      return res.status(403).json({ message: 'Você não pode excluir sua própria conta' });
+    }
+
+    // Check if user exists
+    const userCheck = await client.query('SELECT id, name FROM users WHERE id = $1', [id]);
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+
+    const userName = userCheck.rows[0].name;
+    
+    // Start transaction
+    await client.query('BEGIN');
+    
+    console.log('🔄 Starting user deletion transaction for:', userName);
+
+    // Delete in correct order to respect foreign key constraints
+    
+    // 1. Delete medical documents
+    await client.query('DELETE FROM medical_documents WHERE professional_id = $1', [id]);
+    console.log('✅ Deleted medical documents');
+
+    // 2. Delete medical records
+    await client.query('DELETE FROM medical_records WHERE professional_id = $1', [id]);
+    console.log('✅ Deleted medical records');
+
+    // 3. Delete appointments
+    await client.query('DELETE FROM appointments WHERE professional_id = $1', [id]);
+    console.log('✅ Deleted appointments');
+
+    // 4. Delete consultations
+    await client.query('DELETE FROM consultations WHERE professional_id = $1 OR client_id = $1', [id]);
+    console.log('✅ Deleted consultations');
+
+    // 5. Delete private patients
+    await client.query('DELETE FROM private_patients WHERE professional_id = $1', [id]);
+    console.log('✅ Deleted private patients');
+
+    // 6. Delete attendance locations
+    await client.query('DELETE FROM attendance_locations WHERE professional_id = $1', [id]);
+    console.log('✅ Deleted attendance locations');
+
+    // 7. Delete scheduling access
+    await client.query('DELETE FROM scheduling_access WHERE professional_id = $1', [id]);
+    console.log('✅ Deleted scheduling access');
+
+    // 8. Delete dependents (if user is a client)
+    await client.query('DELETE FROM dependents WHERE client_id = $1', [id]);
+    console.log('✅ Deleted dependents');
+
+    // 9. Delete notifications
+    await client.query('DELETE FROM notifications WHERE user_id = $1', [id]);
+    console.log('✅ Deleted notifications');
+
+    // 10. Finally delete the user
+    const deleteResult = await client.query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
+    
+    if (deleteResult.rows.length === 0) {
+      throw new Error('Falha ao excluir usuário');
+    }
+
+    // Commit transaction
+    await client.query('COMMIT');
+    
+    console.log('✅ User deleted successfully:', userName);
+    
+    res.json({ 
+      message: 'Usuário excluído com sucesso',
+      deletedUser: { id: parseInt(id), name: userName }
+    });
+  } catch (error) {
+    // Rollback transaction on error
+    await client.query('ROLLBACK');
+    console.error('❌ Error deleting user:', error);
+    res.status(500).json({ message: 'Erro interno do servidor ao excluir usuário' });
+  } finally {
+    client.release();
+  }
+});
+
 
 app.get('/api/users/:id/subscription-status', authenticate, async (req, res) => {
   try {
