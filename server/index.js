@@ -183,7 +183,7 @@ const initializeDatabase = async () => {
         location_id INTEGER REFERENCES attendance_locations(id),
         value DECIMAL(10,2) NOT NULL,
         date TIMESTAMP NOT NULL,
-        appointment_date DATE,
+        date DATE,
         appointment_time TIME,
         status VARCHAR(20) DEFAULT 'scheduled',
         notes TEXT,
@@ -360,7 +360,7 @@ const initializeDatabase = async () => {
       CREATE INDEX IF NOT EXISTS idx_consultations_professional_id ON consultations(professional_id);
       CREATE INDEX IF NOT EXISTS idx_consultations_user_id ON consultations(user_id);
       CREATE INDEX IF NOT EXISTS idx_consultations_date ON consultations(date);
-      CREATE INDEX IF NOT EXISTS idx_consultations_appointment_date ON consultations(appointment_date);
+      CREATE INDEX IF NOT EXISTS idx_consultations_date ON consultations(date);
       CREATE INDEX IF NOT EXISTS idx_scheduling_access_professional_id ON scheduling_access(professional_id);
       CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
       CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
@@ -1980,7 +1980,7 @@ app.get(
       let query = `
       SELECT 
         c.id,
-        c.appointment_date,
+        c.date,
         c.appointment_time,
         c.status,
         c.notes,
@@ -2017,11 +2017,11 @@ app.get(
       const params = [professionalId];
 
       if (date) {
-        query += " AND c.appointment_date = $2";
+        query += " AND c.date = $2";
         params.push(date);
       }
 
-      query += " ORDER BY c.appointment_date DESC, c.appointment_time DESC";
+      query += " ORDER BY c.date DESC, c.appointment_time DESC";
 
       const result = await pool.query(query, params);
 
@@ -2107,7 +2107,7 @@ app.post(
         location_id,
         value,
         date,
-        appointment_date,
+        date,
         appointment_time,
         create_appointment,
         status = 'scheduled'
@@ -2190,15 +2190,15 @@ app.post(
 
       // Determine final date and appointment fields
       let finalDate = date ? new Date(date) : new Date();
-      let finalAppointmentDate = appointment_date;
+      let finalAppointmentDate = date;
       let finalAppointmentTime = appointment_time;
 
       // If creating appointment, use appointment date/time
-      if (create_appointment && appointment_date && appointment_time) {
-        finalAppointmentDate = appointment_date;
+      if (create_appointment && date && appointment_time) {
+        finalAppointmentDate = date;
         finalAppointmentTime = appointment_time;
         // For appointments, set date to the appointment datetime
-        finalDate = new Date(`${appointment_date}T${appointment_time}`);
+        finalDate = new Date(`${date}T${appointment_time}`);
       }
 
       // Create consultation
@@ -2206,7 +2206,7 @@ app.post(
         `
       INSERT INTO consultations (
         user_id, dependent_id, private_patient_id, professional_id, 
-        service_id, location_id, value, date, appointment_date, appointment_time, status
+        service_id, location_id, value, date, date, appointment_time, status
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *
@@ -2321,9 +2321,9 @@ app.put(
   async (req, res) => {
     try {
       const { id } = req.params;
-      const { appointment_date, appointment_time } = req.body;
+      const { date, appointment_time } = req.body;
 
-      if (!appointment_date || !appointment_time) {
+      if (!date || !appointment_time) {
         return res.status(400).json({ message: "Data e hora são obrigatórias" });
       }
 
@@ -2344,7 +2344,7 @@ app.put(
         `
         UPDATE consultations 
         SET 
-          appointment_date = $1, 
+          date = $1, 
           appointment_time = $2,
           date = $3,
           updated_at = CURRENT_TIMESTAMP
@@ -2352,9 +2352,9 @@ app.put(
         RETURNING *
       `,
         [
-          appointment_date,
+          date,
           appointment_time,
-          new Date(`${appointment_date}T${appointment_time}`),
+          new Date(`${date}T${appointment_time}`),
           id,
           req.user.id
         ]
@@ -2369,10 +2369,10 @@ app.put(
         "consultations",
         parseInt(id),
         { 
-          appointment_date: current.appointment_date, 
+          date: current.date, 
           appointment_time: current.appointment_time 
         },
-        { appointment_date, appointment_time },
+        { date, appointment_time },
         req
       );
 
