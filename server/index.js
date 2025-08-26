@@ -4,7 +4,7 @@ import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { pool } from './db.js';
-import mercadopago from 'mercadopago';
+import { MercadoPagoConfig, Preference } from 'mercadopago';
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 import { v2 as cloudinary } from 'cloudinary';
 import multer from 'multer';
@@ -41,8 +41,12 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 // ============================================================================
 
-let mercadoPago;
-try {
+const client = new MercadoPagoConfig({
+  accessToken: process.env.MP_ACCESS_TOKEN,
+  options: {
+    timeout: 5000,
+    idempotencyKey: 'your-idempotency-key'
+  }
   if (!process.env.MP_ACCESS_TOKEN) {
     console.warn('⚠️ MP_ACCESS_TOKEN not found in environment variables');
   } else {
@@ -2774,7 +2778,9 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
     
     const preference = new Preference(mercadoPago);
     
-    const preference = {
+    const preference = new Preference(client);
+    
+    const preferenceData = {
         {
           id: 'clinic_fee',
           title: 'Repasse ao Convênio Quiro Ferreira',
@@ -2822,7 +2828,9 @@ app.post('/api/professional/create-payment', authenticate, authorize(['professio
 });
 
 // Create agenda access payment
-app.post('/api/professional/create-agenda-payment', authenticate, authorize(['professional']), async (req, res) => {
+    const preference = new Preference(client);
+    
+    const preferenceData = {
   try {
     const { duration_days } = req.body;
     const days = duration_days || 30;
@@ -2846,7 +2854,7 @@ app.post('/api/professional/create-agenda-payment', authenticate, authorize(['pr
       ],
       payer: {
         email: 'profissional@example.com'
-    const agendaResult = await mercadopago.preferences.create(preference);
+    const agendaResult = await preference.create({ body: preferenceData });
       back_urls: {
     console.log('✅ Agenda preference created:', agendaResult.id);
         failure: "https://cartaoquiroferreira.com.br/professional/scheduling?payment=failure&type=agenda",
@@ -2861,7 +2869,7 @@ app.post('/api/professional/create-agenda-payment', authenticate, authorize(['pr
     };
     
     const response = await preference.create({ body: preferenceData });
-    
+    const subscriptionResult = await preference.create({ body: preferenceData });
     // Save payment record
     await pool.query(`
       INSERT INTO agenda_payments (professional_id, mp_preference_id, amount, duration_days, status, created_at)
@@ -3109,7 +3117,9 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
     const totalRevenue = consultations.rows.reduce((sum, c) => sum + parseFloat(c.total_value), 0);
     const convenioRevenue = consultations.rows
       .filter(c => parseFloat(c.amount_to_pay) > 0)
-      .reduce((sum, c) => sum + parseFloat(c.total_value), 0);
+    const preference = new Preference(client);
+    
+    const preferenceData = {
     const privateRevenue = consultations.rows
       .filter(c => parseFloat(c.amount_to_pay) === 0)
       .reduce((sum, c) => sum + parseFloat(c.total_value), 0);
@@ -3182,7 +3192,7 @@ app.get('/api/reports/professional-detailed', authenticate, authorize(['professi
       }
     });
   } catch (error) {
-    console.error('Error generating detailed professional report:', error);
+    const dependentPaymentResult = await preference.create({ body: preferenceData });
     res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
@@ -3249,7 +3259,9 @@ app.get('/api/reports/professionals-by-city', authenticate, authorize(['admin'])
       };
     });
     
-    res.json(processedResult);
+    const preference = new Preference(client);
+    
+    const preferenceData = {
   } catch (error) {
     console.error('Error generating professionals by city report:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
@@ -3273,7 +3285,7 @@ app.post('/api/upload-image', authenticate, upload.single('image'), async (req, 
     await pool.query(
       'UPDATE users SET photo_url = $1 WHERE id = $2',
       [req.file.path, req.user.id]
-    );
+    const professionalResult = await preference.create({ body: preferenceData });
     
     console.log('✅ User photo updated successfully');
     
