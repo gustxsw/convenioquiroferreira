@@ -1195,7 +1195,7 @@ app.delete('/api/users/:id', authenticate, authorize(['admin']), async (req, res
     console.log('✅ Deleted appointments');
 
     // 4. Delete consultations
-    await client.query('DELETE FROM consultations WHERE professional_id = $1 OR client_id = $1', [id]);
+    await client.query('DELETE FROM consultations WHERE professional_id = $1 OR user_id = $1', [id]);
     console.log('✅ Deleted consultations');
 
     // 5. Delete private patients
@@ -1211,7 +1211,7 @@ app.delete('/api/users/:id', authenticate, authorize(['admin']), async (req, res
     console.log('✅ Deleted scheduling access');
 
     // 8. Delete dependents (if user is a client)
-    await client.query('DELETE FROM dependents WHERE client_id = $1', [id]);
+    await client.query('DELETE FROM dependents WHERE user_id = $1', [id]);
     console.log('✅ Deleted dependents');
 
     // 9. Delete notifications
