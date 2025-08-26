@@ -210,23 +210,6 @@ const initializeDatabase = async () => {
       )
     `);
 
-    // Create scheduling_appointments table (separate from consultations)
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS scheduling_appointments (
-        id SERIAL PRIMARY KEY,
-        professional_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        private_patient_id INTEGER REFERENCES private_patients(id) ON DELETE CASCADE,
-        service_id INTEGER REFERENCES services(id) ON DELETE SET NULL,
-        location_id INTEGER REFERENCES attendance_locations(id) ON DELETE SET NULL,
-        appointment_date DATE NOT NULL,
-        appointment_time TIME NOT NULL,
-        status VARCHAR(20) DEFAULT 'scheduled',
-        notes TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
     // Medical records table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS medical_records (
@@ -3137,7 +3120,7 @@ app.get(
         s.base_price as service_price,
         al.name as location_name,
         'private' as patient_type
-      FROM scheduling_appointments a
+      FROM consultations a
       LEFT JOIN private_patients pp ON a.private_patient_id = pp.id
       LEFT JOIN services s ON a.service_id = s.id
       LEFT JOIN attendance_locations al ON a.location_id = al.id
@@ -3229,7 +3212,7 @@ app.post(
       }
 
       const result = await pool.query(
-        `INSERT INTO scheduling_appointments (
+        `INSERT INTO consultations (
         professional_id, private_patient_id, service_id, location_id,
         appointment_date, appointment_time, notes, status, created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'scheduled', CURRENT_TIMESTAMP) 
@@ -3278,7 +3261,7 @@ app.put(
       console.log("🔄 [SCHEDULING] Updating appointment:", id);
 
       const result = await pool.query(
-        `UPDATE scheduling_appointments SET 
+        `UPDATE consultations SET 
         private_patient_id = $1, service_id = $2, location_id = $3,
         appointment_date = $4, appointment_time = $5, notes = $6, status = $7,
         updated_at = CURRENT_TIMESTAMP
@@ -3327,7 +3310,7 @@ app.delete(
       console.log("🔄 [SCHEDULING] Deleting appointment:", id);
 
       const result = await pool.query(
-        "DELETE FROM scheduling_appointments WHERE id = $1 AND professional_id = $2 RETURNING *",
+        "DELETE FROM consultations WHERE id = $1 AND professional_id = $2 RETURNING *",
         [id, professionalId]
       );
 
