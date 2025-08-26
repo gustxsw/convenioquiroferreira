@@ -364,7 +364,7 @@ const SchedulingPage: React.FC = () => {
       const apiUrl = getApiUrl();
 
       const response = await fetch(
-        `${apiUrl}/api/appointments/${selectedAppointment.id}`,
+        `${apiUrl}/api/consultations/${selectedAppointment.id}/reschedule`,
         {
           method: "PUT",
           headers: {
@@ -372,8 +372,8 @@ const SchedulingPage: React.FC = () => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            appointment_date: rescheduleData.date,
-            appointment_time: rescheduleData.time,
+            new_date: rescheduleData.date,
+            new_time: rescheduleData.time,
           }),
         }
       );
@@ -415,7 +415,7 @@ const SchedulingPage: React.FC = () => {
       });
 
       const response = await fetch(
-        `${apiUrl}/api/appointments/${selectedAppointment.id}`,
+        `${apiUrl}/api/consultations/${selectedAppointment.id}/status`,
         {
           method: "PUT",
           headers: {
@@ -932,7 +932,6 @@ const SchedulingPage: React.FC = () => {
                         }))
                       }
                       className="input"
-                      min={new Date().toISOString().split('T')[0]}
                       required
                     />
                   </div>
@@ -962,8 +961,95 @@ const SchedulingPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Serviço */}
-                <div>
+                {/* Consulta Recorrente */}
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center mb-4">
+                    <input
+                      type="checkbox"
+                      id="is_recurring"
+                      checked={formData.is_recurring}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          is_recurring: e.target.checked,
+                          total_sessions: e.target.checked ? 2 : 1,
+                          recurring_days: e.target.checked ? [] : [],
+                        }))
+                      }
+                      className="rounded border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50"
+                    />
+                    <label
+                      htmlFor="is_recurring"
+                      className="ml-2 text-sm font-medium text-gray-700"
+                    >
+                      Consulta Recorrente
+                    </label>
+                  </div>
+
+                  {formData.is_recurring && (
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Número de Sessões *
+                        </label>
+                        <input
+                          type="number"
+                          min="2"
+                          max="52"
+                          value={formData.total_sessions}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              total_sessions: parseInt(e.target.value) || 1,
+                            }))
+                          }
+                          className="input"
+                          required
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Quantas sessões serão realizadas no total
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Dias da Semana *
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {daysOfWeek.map((day) => (
+                            <label
+                              key={day.value}
+                              className="flex items-center"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={formData.recurring_days.includes(
+                                  day.value
+                                )}
+                                onChange={(e) =>
+                                  handleRecurringDayChange(
+                                    day.value,
+                                    e.target.checked
+                                  )
+                                }
+                                className="rounded border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50"
+                              />
+                              <span className="ml-2 text-sm text-gray-700">
+                                {day.label}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Selecione os dias da semana para repetir a consulta
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Serviço e Valor */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Serviço *
@@ -981,6 +1067,26 @@ const SchedulingPage: React.FC = () => {
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Valor (R$) *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.value}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          value: e.target.value,
+                        }))
+                      }
+                      className="input"
+                      required
+                    />
                   </div>
                 </div>
 
