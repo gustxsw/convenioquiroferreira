@@ -1,6 +1,3 @@
-Looking at your script file, I can see it's missing several closing brackets. Here's the corrected version with all the missing brackets added:
-
-```javascript
 import express from "express";
 import cors from "cors";
 import bcrypt from "bcryptjs";
