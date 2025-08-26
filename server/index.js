@@ -175,7 +175,7 @@ const initializeDatabase = async () => {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS consultations (
         id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id),
+        client_id INTEGER REFERENCES users(id),
         dependent_id INTEGER REFERENCES dependents(id),
         private_patient_id INTEGER REFERENCES private_patients(id),
         professional_id INTEGER REFERENCES users(id) NOT NULL,
@@ -186,9 +186,9 @@ const initializeDatabase = async () => {
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT check_patient_type CHECK (
-          (user_id IS NOT NULL AND dependent_id IS NULL AND private_patient_id IS NULL) OR
-          (user_id IS NULL AND dependent_id IS NOT NULL AND private_patient_id IS NULL) OR
-          (user_id IS NULL AND dependent_id IS NULL AND private_patient_id IS NOT NULL)
+          (client_id IS NOT NULL AND dependent_id IS NULL AND private_patient_id IS NULL) OR
+          (client_id IS NULL AND dependent_id IS NOT NULL AND private_patient_id IS NULL) OR
+          (client_id IS NULL AND dependent_id IS NULL AND private_patient_id IS NOT NULL)
         )
       )
     `);
@@ -198,6 +198,8 @@ const initializeDatabase = async () => {
       CREATE TABLE IF NOT EXISTS appointments (
         id SERIAL PRIMARY KEY,
         professional_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        client_id INTEGER REFERENCES users(id),
+        dependent_id INTEGER REFERENCES dependents(id),
         private_patient_id INTEGER REFERENCES private_patients(id),
         service_id INTEGER REFERENCES services(id),
         location_id INTEGER REFERENCES attendance_locations(id),
@@ -206,7 +208,12 @@ const initializeDatabase = async () => {
         status VARCHAR(20) DEFAULT 'scheduled',
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT check_appointment_patient_type CHECK (
+          (client_id IS NOT NULL AND dependent_id IS NULL AND private_patient_id IS NULL) OR
+          (client_id IS NULL AND dependent_id IS NOT NULL AND private_patient_id IS NULL) OR
+          (client_id IS NULL AND dependent_id IS NULL AND private_patient_id IS NOT NULL)
+        )
       )
     `);
 
@@ -1318,7 +1325,7 @@ app.delete(
 
       // 4. Delete consultations
       await client.query(
-        "DELETE FROM consultations WHERE professional_id = $1 OR user_id = $1",
+        "DELETE FROM consultations WHERE professional_id = $1 OR client_id = $1",
         [id]
       );
       console.log("✅ Deleted consultations");
@@ -2245,7 +2252,7 @@ app.get(
         s.name as service_name,
         u.name as professional_name,
         CASE 
-          WHEN c.user_id IS NOT NULL THEN u2.name
+          WHEN c.client_id IS NOT NULL THEN u2.name
           WHEN c.dependent_id IS NOT NULL THEN d.name
           WHEN c.private_patient_id IS NOT NULL THEN pp.name
         END as client_name,
@@ -2257,7 +2264,7 @@ app.get(
       FROM consultations c
       JOIN services s ON c.service_id = s.id
       JOIN users u ON c.professional_id = u.id
-      LEFT JOIN users u2 ON c.user_id = u2.id
+      LEFT JOIN users u2 ON c.client_id = u2.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
@@ -2299,7 +2306,7 @@ app.get(
         s.name as service_name,
         u.name as professional_name,
         CASE 
-          WHEN c.user_id IS NOT NULL THEN u2.name
+          WHEN c.client_id IS NOT NULL THEN u2.name
           WHEN c.dependent_id IS NOT NULL THEN d.name
         END as client_name,
         CASE 
@@ -2310,10 +2317,10 @@ app.get(
       FROM consultations c
       JOIN services s ON c.service_id = s.id
       JOIN users u ON c.professional_id = u.id
-      LEFT JOIN users u2 ON c.user_id = u2.id
+      LEFT JOIN users u2 ON c.client_id = u2.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
-      WHERE (c.user_id = $1 OR c.dependent_id IN (
+      WHERE (c.client_id = $1 OR c.dependent_id IN (
         SELECT id FROM dependents WHERE user_id = $1
       ))
       ORDER BY c.date DESC
@@ -2343,7 +2350,7 @@ app.post(
   async (req, res) => {
     try {
       const {
-        user_id,
+        client_id,
         dependent_id,
         private_patient_id,
         service_id,
@@ -2371,7 +2378,7 @@ app.post(
       }
 
       // Validate patient type (exactly one must be provided)
-      const patientCount = [user_id, dependent_id, private_patient_id].filter(
+      const patientCount = [client_id, dependent_id, private_patient_id].filter(
         Boolean
       ).length;
       if (patientCount !== 1) {
@@ -2390,15 +2397,15 @@ app.post(
       }
 
       // If it's a convenio patient, validate subscription status
-      if (user_id || dependent_id) {
+      if (client_id || dependent_id) {
         let subscriptionValid = false;
 
-        if (user_id) {
+        if (client_id) {
           const clientResult = await pool.query(
             `
           SELECT subscription_status FROM users WHERE id = $1 AND 'client' = ANY(roles)
         `,
-            [user_id]
+            [client_id]
           );
 
           if (
@@ -2434,14 +2441,14 @@ app.post(
       const consultationResult = await pool.query(
         `
       INSERT INTO consultations (
-        user_id, dependent_id, private_patient_id, professional_id, 
+        client_id, dependent_id, private_patient_id, professional_id, 
         service_id, location_id, value, date
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
     `,
         [
-          user_id || null,
+          client_id || null,
           dependent_id || null,
           private_patient_id || null,
           req.user.id,
@@ -2467,14 +2474,16 @@ app.post(
         const appointmentResult = await pool.query(
           `
         INSERT INTO appointments (
-          professional_id, private_patient_id, service_id, location_id,
+          professional_id, client_id, dependent_id, private_patient_id, service_id, location_id,
           appointment_date, appointment_time, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, 'scheduled')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'scheduled')
         RETURNING *
       `,
           [
             req.user.id,
+            client_id || null,
+            dependent_id || null,
             private_patient_id,
             service_id,
             location_id || null,
@@ -3114,14 +3123,30 @@ app.get(
         a.status,
         a.notes,
         a.created_at,
-        pp.name as patient_name,
-        pp.phone as patient_phone,
+        CASE 
+          WHEN a.private_patient_id IS NOT NULL THEN pp.name
+          WHEN a.client_id IS NOT NULL THEN u.name
+          WHEN a.dependent_id IS NOT NULL THEN d.name
+          ELSE 'Paciente não identificado'
+        END as patient_name,
+        CASE 
+          WHEN a.private_patient_id IS NOT NULL THEN pp.phone
+          WHEN a.client_id IS NOT NULL THEN u.phone
+          ELSE NULL
+        END as patient_phone,
         s.name as service_name,
         s.base_price as service_price,
         al.name as location_name,
-        'private' as patient_type
-      FROM consultations a
+        CASE 
+          WHEN a.private_patient_id IS NOT NULL THEN 'private'
+          WHEN a.client_id IS NOT NULL THEN 'client'
+          WHEN a.dependent_id IS NOT NULL THEN 'dependent'
+          ELSE 'unknown'
+        END as patient_type
+      FROM appointments a
       LEFT JOIN private_patients pp ON a.private_patient_id = pp.id
+      LEFT JOIN users u ON a.client_id = u.id
+      LEFT JOIN dependents d ON a.dependent_id = d.id
       LEFT JOIN services s ON a.service_id = s.id
       LEFT JOIN attendance_locations al ON a.location_id = al.id
       WHERE a.professional_id = $1
@@ -3158,6 +3183,8 @@ app.post(
     try {
       const {
         private_patient_id,
+        client_id,
+        dependent_id,
         service_id,
         location_id,
         appointment_date,
@@ -3169,6 +3196,8 @@ app.post(
       console.log("🔄 [SCHEDULING] Creating appointment:", {
         professional_id: professionalId,
         private_patient_id,
+        client_id,
+        dependent_id,
         service_id,
         location_id,
         appointment_date,
@@ -3177,28 +3206,45 @@ app.post(
 
       // Validate required fields
       if (
-        !private_patient_id ||
+        (!private_patient_id && !client_id && !dependent_id) ||
         !service_id ||
         !appointment_date ||
         !appointment_time
       ) {
         console.log("❌ [SCHEDULING] Missing required fields");
         return res.status(400).json({
-          message: "Campos obrigatórios: paciente, serviço, data e horário",
+          message: "Campos obrigatórios: um tipo de paciente, serviço, data e horário",
         });
       }
 
-      // Check if patient exists
-      const patientCheck = await pool.query(
-        "SELECT id FROM private_patients WHERE id = $1 AND professional_id = $2",
-        [private_patient_id, professionalId]
-      );
-
-      if (patientCheck.rows.length === 0) {
-        console.log(
-          "❌ [SCHEDULING] Patient not found or not owned by professional"
+      // Check if patient exists based on type
+      if (private_patient_id) {
+        const patientCheck = await pool.query(
+          "SELECT id FROM private_patients WHERE id = $1 AND professional_id = $2",
+          [private_patient_id, professionalId]
         );
-        return res.status(404).json({ message: "Paciente não encontrado" });
+
+        if (patientCheck.rows.length === 0) {
+          return res.status(404).json({ message: "Paciente particular não encontrado" });
+        }
+      } else if (client_id) {
+        const clientCheck = await pool.query(
+          "SELECT id FROM users WHERE id = $1 AND 'client' = ANY(roles)",
+          [client_id]
+        );
+
+        if (clientCheck.rows.length === 0) {
+          return res.status(404).json({ message: "Cliente não encontrado" });
+        }
+      } else if (dependent_id) {
+        const dependentCheck = await pool.query(
+          "SELECT id FROM dependents WHERE id = $1",
+          [dependent_id]
+        );
+
+        if (dependentCheck.rows.length === 0) {
+          return res.status(404).json({ message: "Dependente não encontrado" });
+        }
       }
 
       // Check if service exists
@@ -3212,13 +3258,15 @@ app.post(
       }
 
       const result = await pool.query(
-        `INSERT INTO consultations (
-        professional_id, private_patient_id, service_id, location_id,
+        `INSERT INTO appointments (
+        professional_id, client_id, dependent_id, private_patient_id, service_id, location_id,
         appointment_date, appointment_time, notes, status, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'scheduled', CURRENT_TIMESTAMP) 
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'scheduled', CURRENT_TIMESTAMP) 
       RETURNING *`,
         [
           professionalId,
+          client_id || null,
+          dependent_id || null,
           private_patient_id,
           service_id,
           location_id || null,
@@ -3248,6 +3296,8 @@ app.put(
     try {
       const { id } = req.params;
       const {
+        client_id,
+        dependent_id,
         private_patient_id,
         service_id,
         location_id,
@@ -3261,13 +3311,15 @@ app.put(
       console.log("🔄 [SCHEDULING] Updating appointment:", id);
 
       const result = await pool.query(
-        `UPDATE consultations SET 
-        private_patient_id = $1, service_id = $2, location_id = $3,
-        appointment_date = $4, appointment_time = $5, notes = $6, status = $7,
+        `UPDATE appointments SET 
+        client_id = $1, dependent_id = $2, private_patient_id = $3, service_id = $4, location_id = $5,
+        appointment_date = $6, appointment_time = $7, notes = $8, status = $9,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $8 AND professional_id = $9
+      WHERE id = $10 AND professional_id = $11
       RETURNING *`,
         [
+          client_id || null,
+          dependent_id || null,
           private_patient_id,
           service_id,
           location_id,
@@ -3310,7 +3362,7 @@ app.delete(
       console.log("🔄 [SCHEDULING] Deleting appointment:", id);
 
       const result = await pool.query(
-        "DELETE FROM consultations WHERE id = $1 AND professional_id = $2 RETURNING *",
+        "DELETE FROM appointments WHERE id = $1 AND professional_id = $2 RETURNING *",
         [id, professionalId]
       );
 
@@ -3354,25 +3406,30 @@ app.get(
         a.appointment_time,
         a.status,
         a.notes,
-        a.patient_type,
         s.name as service_name,
         al.name as location_name,
         CASE 
           WHEN a.private_patient_id IS NOT NULL THEN pp.name
-          WHEN a.user_id IS NOT NULL THEN u.name
+          WHEN a.client_id IS NOT NULL THEN u.name
           WHEN a.dependent_id IS NOT NULL THEN d.name
           ELSE 'Paciente não identificado'
         END as patient_name,
         CASE 
           WHEN a.private_patient_id IS NOT NULL THEN pp.phone
-          WHEN a.user_id IS NOT NULL THEN u.phone
+          WHEN a.client_id IS NOT NULL THEN u.phone
           ELSE NULL
-        END as patient_phone
+        END as patient_phone,
+        CASE 
+          WHEN a.private_patient_id IS NOT NULL THEN 'private'
+          WHEN a.client_id IS NOT NULL THEN 'client'
+          WHEN a.dependent_id IS NOT NULL THEN 'dependent'
+          ELSE 'unknown'
+        END as patient_type
       FROM appointments a
       LEFT JOIN services s ON a.service_id = s.id
       LEFT JOIN attendance_locations al ON a.location_id = al.id
       LEFT JOIN private_patients pp ON a.private_patient_id = pp.id
-      LEFT JOIN users u ON a.user_id = u.id
+      LEFT JOIN users u ON a.client_id = u.id
       LEFT JOIN dependents d ON a.dependent_id = d.id
       WHERE a.professional_id = $1
     `;
@@ -3406,7 +3463,7 @@ app.post(
     try {
       const {
         private_patient_id,
-        user_id,
+        client_id,
         dependent_id,
         service_id,
         location_id,
@@ -3427,7 +3484,7 @@ app.post(
       }
 
       // Validate patient selection
-      if (!private_patient_id && !user_id && !dependent_id) {
+      if (!private_patient_id && !client_id && !dependent_id) {
         return res.status(400).json({
           message: "É necessário selecionar um paciente",
         });
@@ -3436,7 +3493,7 @@ app.post(
       const result = await pool.query(
         `
       INSERT INTO appointments (
-        professional_id, private_patient_id, user_id, dependent_id,
+        professional_id, client_id, dependent_id, private_patient_id,
         service_id, location_id, appointment_date, appointment_time,
         notes, status, created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'scheduled', NOW())
@@ -3444,9 +3501,9 @@ app.post(
     `,
         [
           professionalId,
-          private_patient_id || null,
-          user_id || null,
+          client_id || null,
           dependent_id || null,
+          private_patient_id || null,
           service_id,
           location_id || null,
           appointment_date,
@@ -3703,6 +3760,8 @@ app.put(
     try {
       const { id } = req.params;
       const {
+        client_id,
+        dependent_id,
         private_patient_id,
         service_id,
         location_id,
@@ -3747,18 +3806,22 @@ app.put(
         `
       UPDATE appointments 
       SET 
-        private_patient_id = COALESCE($1, private_patient_id),
-        service_id = COALESCE($2, service_id),
-        location_id = $3,
-        appointment_date = COALESCE($4, appointment_date),
-        appointment_time = COALESCE($5, appointment_time),
-        status = COALESCE($6, status),
-        notes = $7,
+        client_id = COALESCE($1, client_id),
+        dependent_id = COALESCE($2, dependent_id),
+        private_patient_id = COALESCE($3, private_patient_id),
+        service_id = COALESCE($4, service_id),
+        location_id = $5,
+        appointment_date = COALESCE($6, appointment_date),
+        appointment_time = COALESCE($7, appointment_time),
+        status = COALESCE($8, status),
+        notes = $9,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $8 AND professional_id = $9
+      WHERE id = $10 AND professional_id = $11
       RETURNING *
     `,
         [
+          client_id || null,
+          dependent_id || null,
           private_patient_id || null,
           service_id || null,
           location_id || null,
@@ -5564,7 +5627,7 @@ app.get(
       SELECT COALESCE(SUM(c.value), 0) as total_revenue
       FROM consultations c
       WHERE c.date >= $1 AND c.date <= $2
-        AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
+        AND (c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL)
     `,
         [start_date, end_date]
       );
@@ -5585,7 +5648,7 @@ app.get(
       FROM users u
       LEFT JOIN consultations c ON u.id = c.professional_id 
         AND c.date >= $1 AND c.date <= $2
-        AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
+        AND (c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL)
       WHERE 'professional' = ANY(u.roles)
       GROUP BY u.id, u.name, u.percentage
       HAVING COUNT(c.id) > 0
@@ -5604,7 +5667,7 @@ app.get(
       FROM services s
       LEFT JOIN consultations c ON s.id = c.service_id 
         AND c.date >= $1 AND c.date <= $2
-        AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
+        AND (c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL)
       GROUP BY s.id, s.name
       HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
@@ -5665,12 +5728,12 @@ app.get(
         c.date, c.value,
         s.name as service_name,
         CASE 
-          WHEN c.user_id IS NOT NULL THEN u.name
+          WHEN c.client_id IS NOT NULL THEN u.name
           WHEN c.dependent_id IS NOT NULL THEN d.name
           WHEN c.private_patient_id IS NOT NULL THEN pp.name
         END as client_name,
         CASE 
-          WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0)
+          WHEN c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0)
           ELSE 0
         END as amount_to_pay,
         CASE 
@@ -5679,7 +5742,7 @@ app.get(
         END as professional_earnings
       FROM consultations c
       JOIN services s ON c.service_id = s.id
-      LEFT JOIN users u ON c.user_id = u.id
+      LEFT JOIN users u ON c.client_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4
@@ -5756,12 +5819,12 @@ app.get(
         `
       SELECT 
         COUNT(*) as total_consultations,
-        COUNT(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN 1 END) as convenio_consultations,
+        COUNT(CASE WHEN c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN 1 END) as convenio_consultations,
         COUNT(CASE WHEN c.private_patient_id IS NOT NULL THEN 1 END) as private_consultations,
         COALESCE(SUM(c.value), 0) as total_revenue,
-        COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value ELSE 0 END), 0) as convenio_revenue,
+        COALESCE(SUM(CASE WHEN c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value ELSE 0 END), 0) as convenio_revenue,
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
-        COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
+        COALESCE(SUM(CASE WHEN c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
       WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4
     `,
