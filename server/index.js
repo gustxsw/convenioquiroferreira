@@ -183,6 +183,9 @@ const initializeDatabase = async () => {
         location_id INTEGER REFERENCES attendance_locations(id),
         value DECIMAL(10,2) NOT NULL,
         date TIMESTAMP NOT NULL,
+        status VARCHAR(20) DEFAULT 'completed',
+        session_number INTEGER,
+        total_sessions INTEGER,
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT check_patient_type CHECK (
@@ -2253,12 +2256,22 @@ app.delete(
 app.get(
   "/api/consultations",
   authenticate,
-  authorize(["admin"]),
+  authorize(["admin", "professional"]),
   async (req, res) => {
     try {
+      // If professional, filter by their consultations only
+      let whereClause = "";
+      let params = [];
+      
+      if (req.user.currentRole === "professional") {
+        whereClause = "WHERE c.professional_id = $1";
+        params = [req.user.id];
+      }
+
       const consultationsResult = await pool.query(`
       SELECT 
         c.id, c.value, c.date, c.notes, c.created_at,
+        c.status, c.session_number, c.total_sessions,
         s.name as service_name,
         u.name as professional_name,
         CASE 
@@ -2278,11 +2291,12 @@ app.get(
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
+      ${whereClause}
       ORDER BY c.date DESC
-    `);
+    `, params);
 
       console.log(
-        "✅ All consultations fetched:",
+        "✅ Consultations fetched:",
         consultationsResult.rows.length
       );
 
@@ -2367,6 +2381,10 @@ app.post(
         location_id,
         value,
         date,
+        status,
+        notes,
+        session_number,
+        total_sessions,
         appointment_date,
         appointment_time,
         create_appointment,
@@ -2452,9 +2470,9 @@ app.post(
         `
       INSERT INTO consultations (
         user_id, dependent_id, private_patient_id, professional_id, 
-        service_id, location_id, value, date
+        service_id, location_id, value, date, status, notes, session_number, total_sessions
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING *
     `,
         [
@@ -2466,6 +2484,10 @@ app.post(
           location_id || null,
           parseFloat(value),
           new Date(date),
+          status || 'scheduled',
+          notes?.trim() || null,
+          session_number || null,
+          total_sessions || null,
         ]
       );
 
@@ -2523,6 +2545,247 @@ app.post(
     } catch (error) {
       console.error("❌ Error creating consultation:", error);
       res.status(500).json({ message: "Erro ao registrar consulta" });
+    }
+  }
+);
+
+// Add consultation status update route
+app.put(
+  "/api/consultations/:id/status",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      console.log("🔄 Updating consultation status:", { id, status });
+
+      if (!status) {
+        return res.status(400).json({ message: "Status é obrigatório" });
+      }
+
+      // Validate status value
+      const validStatuses = ['scheduled', 'confirmed', 'completed', 'cancelled'];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ message: "Status inválido" });
+      }
+
+      // Get current consultation data
+      const currentResult = await pool.query(
+        "SELECT * FROM consultations WHERE id = $1 AND professional_id = $2",
+        [id, req.user.id]
+      );
+
+      if (currentResult.rows.length === 0) {
+        return res.status(404).json({ message: "Consulta não encontrada" });
+      }
+
+      const currentConsultation = currentResult.rows[0];
+
+      // Update consultation status
+      const updatedResult = await pool.query(
+        `
+        UPDATE consultations 
+        SET status = $1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2 AND professional_id = $3
+        RETURNING *
+      `,
+        [status, id, req.user.id]
+      );
+
+      const updatedConsultation = updatedResult.rows[0];
+
+      console.log("✅ Consultation status updated:", id);
+
+      // Log audit action
+      await logAuditAction(
+        req.user.id,
+        "UPDATE_STATUS",
+        "consultations",
+        parseInt(id),
+        currentConsultation,
+        updatedConsultation,
+        req
+      );
+
+      res.json({
+        message: "Status atualizado com sucesso",
+        consultation: updatedConsultation,
+      });
+    } catch (error) {
+      console.error("❌ Error updating consultation status:", error);
+      res.status(500).json({ message: "Erro ao atualizar status da consulta" });
+    }
+  }
+);
+
+// Add consultation reschedule route
+app.put(
+  "/api/consultations/:id/reschedule",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { new_date, new_time } = req.body;
+
+      console.log("🔄 Rescheduling consultation:", { id, new_date, new_time });
+
+      if (!new_date || !new_time) {
+        return res.status(400).json({ message: "Nova data e hora são obrigatórias" });
+      }
+
+      // Get current consultation data
+      const currentResult = await pool.query(
+        "SELECT * FROM consultations WHERE id = $1 AND professional_id = $2",
+        [id, req.user.id]
+      );
+
+      if (currentResult.rows.length === 0) {
+        return res.status(404).json({ message: "Consulta não encontrada" });
+      }
+
+      const currentConsultation = currentResult.rows[0];
+
+      // Create new datetime
+      const newDateTime = new Date(`${new_date}T${new_time}`);
+
+      // Update consultation date
+      const updatedResult = await pool.query(
+        `
+        UPDATE consultations 
+        SET date = $1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2 AND professional_id = $3
+        RETURNING *
+      `,
+        [newDateTime, id, req.user.id]
+      );
+
+      const updatedConsultation = updatedResult.rows[0];
+
+      console.log("✅ Consultation rescheduled:", id);
+
+      // Log audit action
+      await logAuditAction(
+        req.user.id,
+        "RESCHEDULE",
+        "consultations",
+        parseInt(id),
+        currentConsultation,
+        updatedConsultation,
+        req
+      );
+
+      res.json({
+        message: "Consulta reagendada com sucesso",
+        consultation: updatedConsultation,
+      });
+    } catch (error) {
+      console.error("❌ Error rescheduling consultation:", error);
+      res.status(500).json({ message: "Erro ao reagendar consulta" });
+    }
+  }
+);
+
+// Add recurring consultations route
+app.post(
+  "/api/consultations/recurring",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const {
+        client_id,
+        private_patient_id,
+        service_id,
+        location_id,
+        value,
+        start_date,
+        start_time,
+        total_sessions,
+        recurring_days,
+        notes,
+      } = req.body;
+
+      console.log("🔄 Creating recurring consultations:", req.body);
+
+      // Validate required fields
+      if (!service_id || !value || !start_date || !start_time || !total_sessions || !recurring_days?.length) {
+        return res.status(400).json({ 
+          message: "Todos os campos são obrigatórios para consultas recorrentes" 
+        });
+      }
+
+      // Validate patient type
+      if (!client_id && !private_patient_id) {
+        return res.status(400).json({ message: "Cliente ou paciente particular é obrigatório" });
+      }
+
+      const consultations = [];
+      const dayMap = {
+        'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4,
+        'friday': 5, 'saturday': 6, 'sunday': 0
+      };
+
+      let currentDate = new Date(start_date);
+      let sessionCount = 0;
+
+      // Generate consultations for the specified days
+      while (sessionCount < total_sessions) {
+        const dayOfWeek = currentDate.getDay();
+        const dayName = Object.keys(dayMap).find(key => dayMap[key] === dayOfWeek);
+
+        if (recurring_days.includes(dayName)) {
+          sessionCount++;
+          
+          // Create consultation datetime
+          const consultationDateTime = new Date(`${currentDate.toISOString().split('T')[0]}T${start_time}`);
+
+          const consultationResult = await pool.query(
+            `
+            INSERT INTO consultations (
+              user_id, private_patient_id, professional_id, service_id, location_id,
+              value, date, status, notes, session_number, total_sessions
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'scheduled', $8, $9, $10)
+            RETURNING *
+          `,
+            [
+              client_id || null,
+              private_patient_id || null,
+              req.user.id,
+              service_id,
+              location_id || null,
+              parseFloat(value),
+              consultationDateTime,
+              notes?.trim() || null,
+              sessionCount,
+              total_sessions,
+            ]
+          );
+
+          consultations.push(consultationResult.rows[0]);
+        }
+
+        // Move to next day
+        currentDate.setDate(currentDate.getDate() + 1);
+
+        // Safety check to prevent infinite loop
+        if (currentDate > new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)) {
+          break;
+        }
+      }
+
+      console.log("✅ Recurring consultations created:", consultations.length);
+
+      res.status(201).json({
+        message: `${consultations.length} consultas recorrentes criadas com sucesso`,
+        consultations,
+      });
+    } catch (error) {
+      console.error("❌ Error creating recurring consultations:", error);
+      res.status(500).json({ message: "Erro ao criar consultas recorrentes" });
     }
   }
 );
@@ -2994,358 +3257,6 @@ app.put(
       if (is_default) {
         await pool.query(
           `
-        UPDATE attendance_locations SET is_default = false WHERE professional_id = $1 AND id != $2
-      `,
-          [req.user.id, id]
-        );
-      }
-
-      const updatedLocationResult = await pool.query(
-        `
-      UPDATE attendance_locations 
-      SET 
-        name = $1, address = $2, address_number = $3, address_complement = $4,
-        neighborhood = $5, city = $6, state = $7, zip_code = $8, phone = $9, is_default = $10
-      WHERE id = $11 AND professional_id = $12
-      RETURNING *
-    `,
-        [
-          name.trim(),
-          address?.trim() || null,
-          address_number?.trim() || null,
-          address_complement?.trim() || null,
-          neighborhood?.trim() || null,
-          city?.trim() || null,
-          state || null,
-          zip_code?.replace(/\D/g, "") || null,
-          phone?.replace(/\D/g, "") || null,
-          is_default || false,
-          id,
-          req.user.id,
-        ]
-      );
-
-      const updatedLocation = updatedLocationResult.rows[0];
-
-      console.log("✅ Attendance location updated:", id);
-
-      // Log audit action
-      await logAuditAction(
-        req.user.id,
-        "UPDATE",
-        "attendance_locations",
-        parseInt(id),
-        currentLocation,
-        updatedLocation,
-        req
-      );
-
-      res.json({
-        message: "Local de atendimento atualizado com sucesso",
-        location: updatedLocation,
-      });
-    } catch (error) {
-      console.error("❌ Error updating attendance location:", error);
-      res
-        .status(500)
-        .json({ message: "Erro ao atualizar local de atendimento" });
-    }
-  }
-);
-
-app.delete(
-  "/api/attendance-locations/:id",
-  authenticate,
-  authorize(["professional"]),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-
-      // Get location data before deletion
-      const locationResult = await pool.query(
-        `
-      SELECT * FROM attendance_locations WHERE id = $1 AND professional_id = $2
-    `,
-        [id, req.user.id]
-      );
-
-      if (locationResult.rows.length === 0) {
-        return res
-          .status(404)
-          .json({ message: "Local de atendimento não encontrado" });
-      }
-
-      const location = locationResult.rows[0];
-
-      await pool.query(
-        "DELETE FROM attendance_locations WHERE id = $1 AND professional_id = $2",
-        [id, req.user.id]
-      );
-
-      console.log("✅ Attendance location deleted:", id);
-
-      // Log audit action
-      await logAuditAction(
-        req.user.id,
-        "DELETE",
-        "attendance_locations",
-        parseInt(id),
-        location,
-        null,
-        req
-      );
-
-      res.json({ message: "Local de atendimento excluído com sucesso" });
-    } catch (error) {
-      console.error("❌ Error deleting attendance location:", error);
-      res.status(500).json({ message: "Erro ao excluir local de atendimento" });
-    }
-  }
-);
-
-// ===== SCHEDULING SYSTEM ROUTES =====
-console.log("🔧 Setting up scheduling system routes...");
-
-// Get all appointments for a professional
-app.get(
-  "/api/scheduling/appointments",
-  authenticate,
-  authorize(["professional"]),
-  async (req, res) => {
-    try {
-      const { date } = req.query;
-      const professionalId = req.user.id;
-
-      console.log(
-        "🔄 [SCHEDULING] Fetching appointments for professional:",
-        professionalId,
-        "date:",
-        date
-      );
-
-      let query = `
-      SELECT 
-        a.id,
-        a.appointment_date,
-        a.appointment_time,
-        a.status,
-        a.notes,
-        a.created_at,
-        pp.name as patient_name,
-        pp.phone as patient_phone,
-        s.name as service_name,
-        s.base_price as service_price,
-        al.name as location_name,
-        'private' as patient_type
-      FROM scheduling_appointments a
-      LEFT JOIN private_patients pp ON a.private_patient_id = pp.id
-      LEFT JOIN services s ON a.service_id = s.id
-      LEFT JOIN attendance_locations al ON a.location_id = al.id
-      WHERE a.professional_id = $1
-    `;
-
-      const params = [professionalId];
-
-      if (date) {
-        query += " AND a.appointment_date = $2";
-        params.push(date);
-      }
-
-      query += " ORDER BY a.appointment_date, a.appointment_time";
-
-      const result = await pool.query(query, params);
-      console.log("✅ [SCHEDULING] Appointments loaded:", result.rows.length);
-      res.json(result.rows);
-    } catch (error) {
-      console.error("❌ [SCHEDULING] Error fetching appointments:", error);
-      res.status(500).json({
-        message: "Erro ao carregar agendamentos",
-        error: error.message,
-      });
-    }
-  }
-);
-
-// Create new appointment
-app.post(
-  "/api/scheduling/appointments",
-  authenticate,
-  authorize(["professional"]),
-  async (req, res) => {
-    try {
-      const {
-        private_patient_id,
-        service_id,
-        location_id,
-        appointment_date,
-        appointment_time,
-        notes,
-      } = req.body;
-      const professionalId = req.user.id;
-
-      console.log("🔄 [SCHEDULING] Creating appointment:", {
-        professional_id: professionalId,
-        private_patient_id,
-        service_id,
-        location_id,
-        appointment_date,
-        appointment_time,
-      });
-
-      // Validate required fields
-      if (
-        !private_patient_id ||
-        !service_id ||
-        !appointment_date ||
-        !appointment_time
-      ) {
-        console.log("❌ [SCHEDULING] Missing required fields");
-        return res.status(400).json({
-          message: "Campos obrigatórios: paciente, serviço, data e horário",
-        });
-      }
-
-      // Check if patient exists
-      const patientCheck = await pool.query(
-        "SELECT id FROM private_patients WHERE id = $1 AND professional_id = $2",
-        [private_patient_id, professionalId]
-      );
-
-      if (patientCheck.rows.length === 0) {
-        console.log(
-          "❌ [SCHEDULING] Patient not found or not owned by professional"
-        );
-        return res.status(404).json({ message: "Paciente não encontrado" });
-      }
-
-      // Check if service exists
-      const serviceCheck = await pool.query(
-        "SELECT id FROM services WHERE id = $1",
-        [service_id]
-      );
-      if (serviceCheck.rows.length === 0) {
-        console.log("❌ [SCHEDULING] Service not found");
-        return res.status(404).json({ message: "Serviço não encontrado" });
-      }
-
-      const result = await pool.query(
-        `INSERT INTO scheduling_appointments (
-        professional_id, private_patient_id, service_id, location_id,
-        appointment_date, appointment_time, notes, status, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'scheduled', CURRENT_TIMESTAMP) 
-      RETURNING *`,
-        [
-          professionalId,
-          private_patient_id,
-          service_id,
-          location_id || null,
-          appointment_date,
-          appointment_time,
-          notes || null,
-        ]
-      );
-
-      console.log("✅ [SCHEDULING] Appointment created:", result.rows[0]);
-      res.status(201).json(result.rows[0]);
-    } catch (error) {
-      console.error("❌ [SCHEDULING] Error creating appointment:", error);
-      res
-        .status(500)
-        .json({ message: "Erro ao criar agendamento", error: error.message });
-    }
-  }
-);
-
-// Update appointment
-app.put(
-  "/api/scheduling/appointments/:id",
-  authenticate,
-  authorize(["professional"]),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-      const {
-        private_patient_id,
-        service_id,
-        location_id,
-        appointment_date,
-        appointment_time,
-        notes,
-        status,
-      } = req.body;
-      const professionalId = req.user.id;
-
-      console.log("🔄 [SCHEDULING] Updating appointment:", id);
-
-      const result = await pool.query(
-        `UPDATE scheduling_appointments SET 
-        private_patient_id = $1, service_id = $2, location_id = $3,
-        appointment_date = $4, appointment_time = $5, notes = $6, status = $7,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $8 AND professional_id = $9
-      RETURNING *`,
-        [
-          private_patient_id,
-          service_id,
-          location_id,
-          appointment_date,
-          appointment_time,
-          notes,
-          status || "scheduled",
-          id,
-          professionalId,
-        ]
-      );
-
-      if (result.rows.length === 0) {
-        console.log("❌ [SCHEDULING] Appointment not found");
-        return res.status(404).json({ message: "Agendamento não encontrado" });
-      }
-
-      console.log("✅ [SCHEDULING] Appointment updated:", result.rows[0]);
-      res.json(result.rows[0]);
-    } catch (error) {
-      console.error("❌ [SCHEDULING] Error updating appointment:", error);
-      res.status(500).json({
-        message: "Erro ao atualizar agendamento",
-        error: error.message,
-      });
-    }
-  }
-);
-
-// Delete appointment
-app.delete(
-  "/api/scheduling/appointments/:id",
-  authenticate,
-  authorize(["professional"]),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-      const professionalId = req.user.id;
-
-      console.log("🔄 [SCHEDULING] Deleting appointment:", id);
-
-      const result = await pool.query(
-        "DELETE FROM scheduling_appointments WHERE id = $1 AND professional_id = $2 RETURNING *",
-        [id, professionalId]
-      );
-
-      if (result.rows.length === 0) {
-        console.log("❌ [SCHEDULING] Appointment not found for deletion");
-        return res.status(404).json({ message: "Agendamento não encontrado" });
-      }
-
-      console.log("✅ [SCHEDULING] Appointment deleted:", result.rows[0]);
-      res.json({ message: "Agendamento excluído com sucesso" });
-    } catch (error) {
-      console.error("❌ [SCHEDULING] Error deleting appointment:", error);
-      res
-        .status(500)
-        .json({ message: "Erro ao excluir agendamento", error: error.message });
-    }
-  }
-);
 
 // Get appointments for professional
 app.get(
@@ -3414,454 +3325,6 @@ app.get(
   }
 );
 
-// Create appointment
-app.post(
-  "/api/appointments",
-  authenticate,
-  authorize(["professional"]),
-  async (req, res) => {
-    try {
-      const {
-        private_patient_id,
-        user_id,
-        dependent_id,
-        service_id,
-        location_id,
-        appointment_date,
-        appointment_time,
-        notes,
-      } = req.body;
-
-      const professionalId = req.user.id;
-
-      console.log("🔄 Creating appointment:", req.body);
-
-      // Validate required fields
-      if (!service_id || !appointment_date || !appointment_time) {
-        return res.status(400).json({
-          message: "Serviço, data e horário são obrigatórios",
-        });
-      }
-
-      // Validate patient selection
-      if (!private_patient_id && !user_id && !dependent_id) {
-        return res.status(400).json({
-          message: "É necessário selecionar um paciente",
-        });
-      }
-
-      const result = await pool.query(
-        `
-      INSERT INTO appointments (
-        professional_id, private_patient_id, user_id, dependent_id,
-        service_id, location_id, appointment_date, appointment_time,
-        notes, status, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'scheduled', NOW())
-      RETURNING *
-    `,
-        [
-          professionalId,
-          private_patient_id || null,
-          user_id || null,
-          dependent_id || null,
-          service_id,
-          location_id || null,
-          appointment_date,
-          appointment_time,
-          notes || null,
-        ]
-      );
-
-      console.log("✅ Appointment created:", result.rows[0].id);
-      res.status(201).json(result.rows[0]);
-    } catch (error) {
-      console.error("❌ Error creating appointment:", error);
-      res.status(500).json({ message: "Erro ao criar agendamento" });
-    }
-  }
-);
-
-// Update appointment
-app.put(
-  "/api/appointments/:id",
-  authenticate,
-  authorize(["professional"]),
-  async (req, res) => {
-    try {
-      const appointmentId = req.params.id;
-      const professionalId = req.user.id;
-      const {
-        service_id,
-        location_id,
-        appointment_date,
-        appointment_time,
-        notes,
-        status,
-      } = req.body;
-
-      console.log("🔄 Updating appointment:", appointmentId);
-
-      const result = await pool.query(
-        `
-      UPDATE appointments 
-      SET 
-        service_id = COALESCE($1, service_id),
-        location_id = COALESCE($2, location_id),
-        appointment_date = COALESCE($3, appointment_date),
-        appointment_time = COALESCE($4, appointment_time),
-        notes = COALESCE($5, notes),
-        status = COALESCE($6, status),
-        updated_at = NOW()
-      WHERE id = $7 AND professional_id = $8
-      RETURNING *
-    `,
-        [
-          service_id || null,
-          location_id || null,
-          appointment_date || null,
-          appointment_time || null,
-          notes || null,
-          status || null,
-          appointmentId,
-          professionalId,
-        ]
-      );
-
-      if (result.rows.length === 0) {
-        return res.status(404).json({ message: "Agendamento não encontrado" });
-      }
-
-      console.log("✅ Appointment updated");
-      res.json(result.rows[0]);
-    } catch (error) {
-      console.error("❌ Error updating appointment:", error);
-      res.status(500).json({ message: "Erro ao atualizar agendamento" });
-    }
-  }
-);
-
-// Delete appointment
-app.delete(
-  "/api/appointments/:id",
-  authenticate,
-  authorize(["professional"]),
-  async (req, res) => {
-    try {
-      const appointmentId = req.params.id;
-      const professionalId = req.user.id;
-
-      console.log("🔄 Deleting appointment:", appointmentId);
-
-      const result = await pool.query(
-        "DELETE FROM appointments WHERE id = $1 AND professional_id = $2 RETURNING id",
-        [appointmentId, professionalId]
-      );
-
-      if (result.rows.length === 0) {
-        return res.status(404).json({ message: "Agendamento não encontrado" });
-      }
-
-      console.log("✅ Appointment deleted");
-      res.json({ message: "Agendamento excluído com sucesso" });
-    } catch (error) {
-      console.error("❌ Error deleting appointment:", error);
-      res.status(500).json({ message: "Erro ao excluir agendamento" });
-    }
-  }
-);
-
-// Appointments routes (with scheduling access control)
-app.get(
-  "/api/appointments",
-  authenticate,
-  authorize(["professional"]),
-  checkSchedulingAccess,
-  async (req, res) => {
-    try {
-      const { date } = req.query;
-
-      let query = `
-      SELECT 
-        a.*, pp.name as patient_name, pp.phone as patient_phone,
-        s.name as service_name, al.name as location_name,
-        'private' as patient_type
-      FROM appointments a
-      LEFT JOIN private_patients pp ON a.private_patient_id = pp.id
-      LEFT JOIN services s ON a.service_id = s.id
-      LEFT JOIN attendance_locations al ON a.location_id = al.id
-      WHERE a.professional_id = $1
-    `;
-
-      const params = [req.user.id];
-
-      if (date) {
-        query += " AND a.appointment_date = $2";
-        params.push(date);
-      }
-
-      query += " ORDER BY a.appointment_date, a.appointment_time";
-
-      const appointmentsResult = await pool.query(query, params);
-
-      res.json(appointmentsResult.rows);
-    } catch (error) {
-      console.error("❌ Error fetching appointments:", error);
-      res.status(500).json({ message: "Erro ao carregar agendamentos" });
-    }
-  }
-);
-
-app.post(
-  "/api/appointments",
-  authenticate,
-  authorize(["professional"]),
-  checkSchedulingAccess,
-  async (req, res) => {
-    try {
-      const {
-        private_patient_id,
-        service_id,
-        location_id,
-        appointment_date,
-        appointment_time,
-        notes,
-      } = req.body;
-
-      if (
-        !private_patient_id ||
-        !service_id ||
-        !appointment_date ||
-        !appointment_time
-      ) {
-        return res.status(400).json({
-          message: "Paciente, serviço, data e horário são obrigatórios",
-        });
-      }
-
-      // Validate patient belongs to professional
-      const patientResult = await pool.query(
-        `
-      SELECT id FROM private_patients WHERE id = $1 AND professional_id = $2
-    `,
-        [private_patient_id, req.user.id]
-      );
-
-      if (patientResult.rows.length === 0) {
-        return res.status(404).json({ message: "Paciente não encontrado" });
-      }
-
-      // Check for time conflicts
-      const conflictResult = await pool.query(
-        `
-      SELECT id FROM appointments 
-      WHERE professional_id = $1 AND appointment_date = $2 AND appointment_time = $3
-    `,
-        [req.user.id, appointment_date, appointment_time]
-      );
-
-      if (conflictResult.rows.length > 0) {
-        return res
-          .status(409)
-          .json({ message: "Já existe um agendamento para este horário" });
-      }
-
-      const appointmentResult = await pool.query(
-        `
-      INSERT INTO appointments (
-        professional_id, private_patient_id, service_id, location_id,
-        appointment_date, appointment_time, notes
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      RETURNING *
-    `,
-        [
-          req.user.id,
-          private_patient_id,
-          service_id,
-          location_id || null,
-          appointment_date,
-          appointment_time,
-          notes?.trim() || null,
-        ]
-      );
-
-      const appointment = appointmentResult.rows[0];
-
-      console.log("✅ Appointment created:", appointment.id);
-
-      // Log audit action
-      await logAuditAction(
-        req.user.id,
-        "CREATE",
-        "appointments",
-        appointment.id,
-        null,
-        appointment,
-        req
-      );
-
-      res.status(201).json({
-        message: "Agendamento criado com sucesso",
-        appointment,
-      });
-    } catch (error) {
-      console.error("❌ Error creating appointment:", error);
-      res.status(500).json({ message: "Erro ao criar agendamento" });
-    }
-  }
-);
-
-app.put(
-  "/api/appointments/:id",
-  authenticate,
-  authorize(["professional"]),
-  checkSchedulingAccess,
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-      const {
-        private_patient_id,
-        service_id,
-        location_id,
-        appointment_date,
-        appointment_time,
-        status,
-        notes,
-      } = req.body;
-
-      // Get current appointment data
-      const currentAppointmentResult = await pool.query(
-        `
-      SELECT * FROM appointments WHERE id = $1 AND professional_id = $2
-    `,
-        [id, req.user.id]
-      );
-
-      if (currentAppointmentResult.rows.length === 0) {
-        return res.status(404).json({ message: "Agendamento não encontrado" });
-      }
-
-      const currentAppointment = currentAppointmentResult.rows[0];
-
-      // Check for time conflicts (excluding current appointment)
-      if (appointment_date && appointment_time) {
-        const conflictResult = await pool.query(
-          `
-        SELECT id FROM appointments 
-        WHERE professional_id = $1 AND appointment_date = $2 AND appointment_time = $3 AND id != $4
-      `,
-          [req.user.id, appointment_date, appointment_time, id]
-        );
-
-        if (conflictResult.rows.length > 0) {
-          return res
-            .status(409)
-            .json({ message: "Já existe um agendamento para este horário" });
-        }
-      }
-
-      const updatedAppointmentResult = await pool.query(
-        `
-      UPDATE appointments 
-      SET 
-        private_patient_id = COALESCE($1, private_patient_id),
-        service_id = COALESCE($2, service_id),
-        location_id = $3,
-        appointment_date = COALESCE($4, appointment_date),
-        appointment_time = COALESCE($5, appointment_time),
-        status = COALESCE($6, status),
-        notes = $7,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $8 AND professional_id = $9
-      RETURNING *
-    `,
-        [
-          private_patient_id || null,
-          service_id || null,
-          location_id || null,
-          appointment_date || null,
-          appointment_time || null,
-          status || null,
-          notes?.trim() || null,
-          id,
-          req.user.id,
-        ]
-      );
-
-      const updatedAppointment = updatedAppointmentResult.rows[0];
-
-      console.log("✅ Appointment updated:", id);
-
-      // Log audit action
-      await logAuditAction(
-        req.user.id,
-        "UPDATE",
-        "appointments",
-        parseInt(id),
-        currentAppointment,
-        updatedAppointment,
-        req
-      );
-
-      res.json({
-        message: "Agendamento atualizado com sucesso",
-        appointment: updatedAppointment,
-      });
-    } catch (error) {
-      console.error("❌ Error updating appointment:", error);
-      res.status(500).json({ message: "Erro ao atualizar agendamento" });
-    }
-  }
-);
-
-app.delete(
-  "/api/appointments/:id",
-  authenticate,
-  authorize(["professional"]),
-  checkSchedulingAccess,
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-
-      // Get appointment data before deletion
-      const appointmentResult = await pool.query(
-        `
-      SELECT * FROM appointments WHERE id = $1 AND professional_id = $2
-    `,
-        [id, req.user.id]
-      );
-
-      if (appointmentResult.rows.length === 0) {
-        return res.status(404).json({ message: "Agendamento não encontrado" });
-      }
-
-      const appointment = appointmentResult.rows[0];
-
-      await pool.query(
-        "DELETE FROM appointments WHERE id = $1 AND professional_id = $2",
-        [id, req.user.id]
-      );
-
-      console.log("✅ Appointment deleted:", id);
-
-      // Log audit action
-      await logAuditAction(
-        req.user.id,
-        "DELETE",
-        "appointments",
-        parseInt(id),
-        appointment,
-        null,
-        req
-      );
-
-      res.json({ message: "Agendamento excluído com sucesso" });
-    } catch (error) {
-      console.error("❌ Error deleting appointment:", error);
-      res.status(500).json({ message: "Erro ao excluir agendamento" });
-    }
-  }
-);
 
 // Medical records routes
 app.get(
