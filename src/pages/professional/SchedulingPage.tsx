@@ -296,6 +296,43 @@ const SchedulingPage: React.FC = () => {
       console.log("✅ Appointment created successfully:", responseData);
 
       setSuccess("Agendamento criado com sucesso!");
+      setShowNewModal(false);
+      await fetchData();
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (error) {
+      console.error("❌ Error in createAppointment:", error);
+      setError(
+        error instanceof Error ? error.message : "Erro ao criar agendamento"
+      );
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const openStatusModal = (appointment: Appointment) => {
+    setSelectedAppointment(appointment);
+    setNewStatus(appointment.status);
+    setShowStatusModal(true);
+    setError("");
+  };
+
+  const closeStatusModal = () => {
+    setShowStatusModal(false);
+    setSelectedAppointment(null);
+    setError("");
+  };
+
+  const openRescheduleModal = (appointment: Appointment) => {
+    setSelectedAppointment(appointment);
+    setRescheduleData({
+      date: format(new Date(appointment.date), "yyyy-MM-dd"),
+      time: appointment.time,
+    });
+    setShowRescheduleModal(true);
+    setError("");
+  };
+
+  const closeRescheduleModal = () => {
     setShowRescheduleModal(false);
     setSelectedAppointment(null);
     setRescheduleData({ date: "", time: "" });
@@ -338,7 +375,7 @@ const SchedulingPage: React.FC = () => {
       setSuccess("Consulta reagendada com sucesso!");
       setTimeout(() => setSuccess(""), 3000);
     } catch (error) {
-      console.error("❌ Error in createAppointment:", error);
+      console.error("❌ Error in handleReschedule:", error);
       setError(
         error instanceof Error ? error.message : "Erro ao reagendar consulta"
       );
@@ -881,7 +918,6 @@ const SchedulingPage: React.FC = () => {
                         }))
                       }
                       className="input"
-                      min={new Date().toISOString().split('T')[0]}
                       required
                     />
                   </div>
@@ -911,8 +947,95 @@ const SchedulingPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Serviço */}
-                <div>
+                {/* Consulta Recorrente */}
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center mb-4">
+                    <input
+                      type="checkbox"
+                      id="is_recurring"
+                      checked={formData.is_recurring}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          is_recurring: e.target.checked,
+                          total_sessions: e.target.checked ? 2 : 1,
+                          recurring_days: e.target.checked ? [] : [],
+                        }))
+                      }
+                      className="rounded border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50"
+                    />
+                    <label
+                      htmlFor="is_recurring"
+                      className="ml-2 text-sm font-medium text-gray-700"
+                    >
+                      Consulta Recorrente
+                    </label>
+                  </div>
+
+                  {formData.is_recurring && (
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Número de Sessões *
+                        </label>
+                        <input
+                          type="number"
+                          min="2"
+                          max="52"
+                          value={formData.total_sessions}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              total_sessions: parseInt(e.target.value) || 1,
+                            }))
+                          }
+                          className="input"
+                          required
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Quantas sessões serão realizadas no total
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Dias da Semana *
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {daysOfWeek.map((day) => (
+                            <label
+                              key={day.value}
+                              className="flex items-center"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={formData.recurring_days.includes(
+                                  day.value
+                                )}
+                                onChange={(e) =>
+                                  handleRecurringDayChange(
+                                    day.value,
+                                    e.target.checked
+                                  )
+                                }
+                                className="rounded border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50"
+                              />
+                              <span className="ml-2 text-sm text-gray-700">
+                                {day.label}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Selecione os dias da semana para repetir a consulta
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Serviço e Valor */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Serviço *
@@ -930,6 +1053,26 @@ const SchedulingPage: React.FC = () => {
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Valor (R$) *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.value}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          value: e.target.value,
+                        }))
+                      }
+                      className="input"
+                      required
+                    />
                   </div>
                 </div>
 
