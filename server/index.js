@@ -2550,62 +2550,50 @@ app.get(
 
       console.log("🔄 Fetching consultations for professional:", professionalId, "date:", date);
 
-      // Get professional percentage for calculations
-      const professionalResult = await pool.query(
-        "SELECT percentage FROM users WHERE id = $1",
-        [professionalId]
-      );
-      const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
-
       let query = `
         SELECT 
           c.id,
-          c.user_id,
-          c.dependent_id,
-          c.private_patient_id,
-          c.professional_id,
-          c.service_id,
-          c.location_id,
           c.date,
           c.value,
           c.status,
           c.notes,
-          c.created_at,
-          c.updated_at,
           s.name as service_name,
           al.name as location_name,
           CASE 
+            WHEN c.private_patient_id IS NOT NULL THEN pp.name
             WHEN c.user_id IS NOT NULL THEN u.name
             WHEN c.dependent_id IS NOT NULL THEN d.name
-            WHEN c.private_patient_id IS NOT NULL THEN pp.name
             ELSE 'Paciente não identificado'
           END as client_name,
+          CASE 
+            WHEN c.private_patient_id IS NOT NULL THEN 'private'
+            WHEN c.user_id IS NOT NULL THEN 'convenio'
+            WHEN c.dependent_id IS NOT NULL THEN 'dependent'
+            ELSE 'unknown'
+          END as patient_type,
           CASE 
             WHEN c.dependent_id IS NOT NULL THEN true
             ELSE false
           END as is_dependent,
-          CASE 
-            WHEN c.private_patient_id IS NOT NULL THEN 'private'
-            ELSE 'convenio'
-          END as patient_type,
-          $2 as professional_percentage,
+          -- Calculate amount to pay to convenio (only for convenio patients)
           CASE 
             WHEN c.private_patient_id IS NOT NULL THEN 0
-            ELSE ROUND(c.value * (100 - $2) / 100, 2)
+            ELSE ROUND(c.value * (100 - COALESCE(prof.percentage, 50)) / 100, 2)
           END as amount_to_pay
         FROM consultations c
         LEFT JOIN services s ON c.service_id = s.id
         LEFT JOIN attendance_locations al ON c.location_id = al.id
+        LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
         LEFT JOIN users u ON c.user_id = u.id
         LEFT JOIN dependents d ON c.dependent_id = d.id
-        LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
+        LEFT JOIN users prof ON c.professional_id = prof.id
         WHERE c.professional_id = $1
       `;
 
-      const params = [professionalId, professionalPercentage];
+      const params = [professionalId];
 
       if (date) {
-        query += " AND DATE(c.date) = $3";
+        query += " AND DATE(c.date) = $2";
         params.push(date);
       }
 
@@ -2632,7 +2620,12 @@ app.put(
       const { id } = req.params;
       const { status } = req.body;
 
-      if (!status || !["scheduled", "confirmed", "completed", "cancelled"].includes(status)) {
+      if (!status) {
+        return res.status(400).json({ message: "Status é obrigatório" });
+      }
+
+      const validStatuses = ["scheduled", "confirmed", "completed", "cancelled"];
+      if (!validStatuses.includes(status)) {
         return res.status(400).json({ message: "Status inválido" });
       }
 
@@ -2651,10 +2644,97 @@ app.put(
       }
 
       console.log("✅ Consultation status updated:", id, "to", status);
-      res.json({ message: "Status atualizado com sucesso", consultation: result.rows[0] });
+      res.json({
+        message: "Status atualizado com sucesso",
+        consultation: result.rows[0],
+      });
     } catch (error) {
       console.error("❌ Error updating consultation status:", error);
       res.status(500).json({ message: "Erro ao atualizar status" });
+    }
+  }
+);
+
+// Update consultation (reschedule)
+app.put(
+  "/api/consultations/:id",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { date, time, notes, status, value, service_id, location_id } = req.body;
+
+      // Get current consultation
+      const currentResult = await pool.query(
+        "SELECT * FROM consultations WHERE id = $1 AND professional_id = $2",
+        [id, req.user.id]
+      );
+
+      if (currentResult.rows.length === 0) {
+        return res.status(404).json({ message: "Consulta não encontrada" });
+      }
+
+      // Build update query dynamically
+      const updateFields = [];
+      const updateValues = [];
+      let paramCount = 1;
+
+      if (date && time) {
+        const newDateTime = new Date(`${date}T${time}`);
+        updateFields.push(`date = $${paramCount++}`);
+        updateValues.push(newDateTime);
+      }
+
+      if (notes !== undefined) {
+        updateFields.push(`notes = $${paramCount++}`);
+        updateValues.push(notes);
+      }
+
+      if (status) {
+        updateFields.push(`status = $${paramCount++}`);
+        updateValues.push(status);
+      }
+
+      if (value) {
+        updateFields.push(`value = $${paramCount++}`);
+        updateValues.push(parseFloat(value));
+      }
+
+      if (service_id) {
+        updateFields.push(`service_id = $${paramCount++}`);
+        updateValues.push(parseInt(service_id));
+      }
+
+      if (location_id !== undefined) {
+        updateFields.push(`location_id = $${paramCount++}`);
+        updateValues.push(location_id ? parseInt(location_id) : null);
+      }
+
+      updateFields.push(`updated_at = $${paramCount++}`);
+      updateValues.push(new Date());
+
+      updateValues.push(id);
+      updateValues.push(req.user.id);
+
+      const result = await pool.query(
+        `
+        UPDATE consultations 
+        SET ${updateFields.join(", ")}
+        WHERE id = $${paramCount} AND professional_id = $${paramCount + 1}
+        RETURNING *
+      `,
+        updateValues
+      );
+
+      console.log("✅ Consultation updated:", id);
+      res.json({
+        message: "Consulta atualizada com sucesso",
+        consultation: result.rows[0],
+      });
+    } catch (error) {
+      console.error("❌ Error updating consultation:", error);
+      res.status(500).json({ message: "Erro ao atualizar consulta" });
     }
   }
 );
