@@ -1255,6 +1255,7 @@ app.delete(
           date: consultationDateTime.toISOString(),
         [id]
           status: "completed" // For completed consultations
+      )
       // 5. Delete attendance locations
       await client.query(
         "DELETE FROM attendance_locations WHERE professional_id = $1",
@@ -1286,6 +1287,7 @@ app.delete(
       if (deleteResult.rows.length === 0) {
         throw new Error("Falha ao excluir usuário");
         "Consulta registrada com sucesso!"
+      }
       console.log("✅ User deleted successfully:", userName);
 
       res.json({
@@ -2142,3 +2144,6 @@ app.post(
       }
 
       // If
+    }
+  }
+)
