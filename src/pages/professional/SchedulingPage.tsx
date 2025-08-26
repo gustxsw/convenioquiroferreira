@@ -206,6 +206,15 @@ const SchedulingPage: React.FC = () => {
         {
           headers: {
             Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (locationsResponse.ok) {
+        const locationsData = await locationsResponse.json();
+        console.log("Attendance locations loaded:", locationsData.length);
+        setAttendanceLocations(Array.isArray(locationsData) ? locationsData : []);
         // Convert consultations to appointment format
         const processedAppointments = appointmentsData.map((consultation: any) => ({
           id: consultation.id,
@@ -219,6 +228,7 @@ const SchedulingPage: React.FC = () => {
           is_dependent: consultation.is_dependent || false,
           session_number: consultation.session_number || null,
           total_sessions: consultation.total_sessions || null,
+        }));
         console.log("✅ Processed appointments:", processedAppointments);
         setAppointments(processedAppointments);
       } else {
@@ -836,47 +846,81 @@ const SchedulingPage: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Tipo de Paciente *
                   </label>
-                  <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-                    <p className="text-sm text-blue-800">
-                      <strong>Apenas pacientes particulares</strong> podem ser agendados através desta tela.
-                      Para clientes do convênio, use "Registrar Consulta".
-                    </p>
-                  </div>
-                </div>
-
-                {/* Paciente Particular */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Paciente Particular *
-                  </label>
                   <select
-                    value={formData.private_patient_id}
+                    value={formData.patient_type}
                     onChange={(e) =>
                       setFormData((prev) => ({
                         ...prev,
-                        private_patient_id: e.target.value,
+                        patient_type: e.target.value,
+                        client_cpf: "",
+                        private_patient_id: "",
                       }))
                     }
                     className="input"
                     required
                   >
-                    <option value="">Selecione um paciente</option>
-                    {privatePatients.map((patient) => (
-                      <option key={patient.id} value={patient.id}>
-                        {patient.name} -{" "}
-                        {patient.cpf
-                          ? formatCpf(patient.cpf)
-                          : "CPF não informado"}
-                      </option>
-                    ))}
+                    <option value="convenio">Cliente do Convênio</option>
+                    <option value="private">Paciente Particular</option>
                   </select>
-                  {privatePatients.length === 0 && (
-                    <p className="text-sm text-gray-500 mt-1">
-                      Nenhum paciente particular cadastrado. Cadastre
-                      pacientes na seção "Pacientes Particulares".
-                    </p>
-                  )}
                 </div>
+
+                {/* Cliente do Convênio */}
+                {formData.patient_type === "convenio" && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      CPF do Cliente *
+                    </label>
+                    <input
+                      type="text"
+                      value={formatCpf(formData.client_cpf)}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          client_cpf: e.target.value.replace(/\D/g, ""),
+                        }))
+                      }
+                      className="input"
+                      placeholder="000.000.000-00"
+                      required
+                    />
+                  </div>
+                )}
+
+                {/* Paciente Particular */}
+                {formData.patient_type === "private" && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Paciente Particular *
+                    </label>
+                    <select
+                      value={formData.private_patient_id}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          private_patient_id: e.target.value,
+                        }))
+                      }
+                      className="input"
+                      required
+                    >
+                      <option value="">Selecione um paciente</option>
+                      {privatePatients.map((patient) => (
+                        <option key={patient.id} value={patient.id}>
+                          {patient.name} -{" "}
+                          {patient.cpf
+                            ? formatCpf(patient.cpf)
+                            : "CPF não informado"}
+                        </option>
+                      ))}
+                    </select>
+                    {privatePatients.length === 0 && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        Nenhum paciente particular cadastrado. Cadastre
+                        pacientes na seção "Pacientes Particulares".
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Data e Hora */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
