@@ -22,7 +22,7 @@ type DocumentType =
   | "lgpd"
   | "other";
 
-type Document = {
+type MedicalDocument = {
   id: number;
   title: string;
   document_type: DocumentType;
@@ -38,7 +38,7 @@ type PrivatePatient = {
 };
 
 const DocumentsPage: React.FC = () => {
-  const [documents, setDocuments] = useState<Document[]>([]);
+  const [documents, setDocuments] = useState<MedicalDocument[]>([]);
   const [patients, setPatients] = useState<PrivatePatient[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState<DocumentType | "">("");
@@ -96,17 +96,28 @@ const DocumentsPage: React.FC = () => {
   const fetchData = async () => {
     try {
       setIsLoading(true);
+      setError('');
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
+
+      console.log('🔄 Fetching medical documents from:', `${apiUrl}/api/medical-documents`);
 
       // Fetch documents
       const documentsResponse = await fetch(`${apiUrl}/api/medical-documents`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
+      console.log('📡 Documents response status:', documentsResponse.status);
+
       if (documentsResponse.ok) {
         const documentsData = await documentsResponse.json();
+        console.log('✅ Medical documents loaded:', documentsData.length);
         setDocuments(documentsData);
+      } else {
+        const errorText = await documentsResponse.text();
+        console.error('❌ Documents error:', errorText);
+        setError('Não foi possível carregar os documentos médicos');
+        setDocuments([]);
       }
 
       // Fetch private patients
@@ -114,9 +125,15 @@ const DocumentsPage: React.FC = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
 
+      console.log('📡 Patients response status:', patientsResponse.status);
+
       if (patientsResponse.ok) {
         const patientsData = await patientsResponse.json();
+        console.log('✅ Private patients loaded:', patientsData.length);
         setPatients(patientsData);
+      } else {
+        console.warn('⚠️ Private patients not available:', patientsResponse.status);
+        setPatients([]);
       }
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -209,6 +226,12 @@ const DocumentsPage: React.FC = () => {
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
+      console.log('🔄 Creating medical document:', {
+        title: formData.title,
+        document_type: formData.document_type,
+        patient_id: formData.patient_id
+      });
+
       const response = await fetch(`${apiUrl}/api/medical-documents`, {
         method: "POST",
         headers: {
@@ -226,12 +249,22 @@ const DocumentsPage: React.FC = () => {
         }),
       });
 
+      console.log('📡 Document creation response status:', response.status);
+
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorText = await response.text();
+        console.error('❌ Document creation error:', errorText);
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (e) {
+          throw new Error('Erro de comunicação com o servidor');
+        }
         throw new Error(errorData.message || "Erro ao criar documento");
       }
 
       const result = await response.json();
+      console.log('✅ Document created successfully:', result);
       const { title, documentUrl } = result;
 
       // Clean filename
@@ -263,6 +296,7 @@ const DocumentsPage: React.FC = () => {
         closeModal();
       }, 1500);
     } catch (error) {
+      console.error('❌ Error in handleSubmit:', error);
       setError(
         error instanceof Error ? error.message : "Erro ao criar documento"
       );

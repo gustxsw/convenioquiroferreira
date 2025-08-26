@@ -199,11 +199,15 @@ const SchedulingPage: React.FC = () => {
 
       if (appointmentsResponse.ok) {
         const appointmentsData = await appointmentsResponse.json();
+        console.log('✅ Appointments loaded:', appointmentsData.length);
         setAppointments(appointmentsData);
       } else if (appointmentsResponse.status === 403) {
         // Access denied - refresh access status
         await checkSchedulingAccess();
         return;
+      } else {
+        console.warn('⚠️ Appointments not available:', appointmentsResponse.status);
+        setAppointments([]);
       }
 
       // Fetch services
@@ -213,7 +217,11 @@ const SchedulingPage: React.FC = () => {
 
       if (servicesResponse.ok) {
         const servicesData = await servicesResponse.json();
+        console.log('✅ Services loaded:', servicesData.length);
         setServices(servicesData);
+      } else {
+        console.warn('⚠️ Services not available:', servicesResponse.status);
+        setServices([]);
       }
 
       // Fetch locations
@@ -223,6 +231,7 @@ const SchedulingPage: React.FC = () => {
 
       if (locationsResponse.ok) {
         const locationsData = await locationsResponse.json();
+        console.log('✅ Locations loaded:', locationsData.length);
         setLocations(locationsData);
         
         // Set default location
@@ -230,6 +239,9 @@ const SchedulingPage: React.FC = () => {
         if (defaultLocation && !formData.location_id) {
           setFormData(prev => ({ ...prev, location_id: defaultLocation.id.toString() }));
         }
+      } else {
+        console.warn('⚠️ Locations not available:', locationsResponse.status);
+        setLocations([]);
       }
 
       // Fetch private patients
@@ -239,7 +251,11 @@ const SchedulingPage: React.FC = () => {
 
       if (patientsResponse.ok) {
         const patientsData = await patientsResponse.json();
+        console.log('✅ Private patients loaded:', patientsData.length);
         setPrivatePatients(patientsData);
+      } else {
+        console.warn('⚠️ Private patients not available:', patientsResponse.status);
+        setPrivatePatients([]);
       }
 
     } catch (error) {

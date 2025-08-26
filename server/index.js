@@ -2490,6 +2490,200 @@ app.delete('/api/attendance-locations/:id', authenticate, authorize(['profession
   }
 });
 
+// ===== APPOINTMENTS ROUTES =====
+
+// Get appointments for professional
+app.get('/api/appointments', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { date } = req.query;
+    const professionalId = req.user.id;
+    
+    console.log('🔄 Fetching appointments for professional:', professionalId, 'date:', date);
+    
+    let query = `
+      SELECT 
+        a.id,
+        a.appointment_date,
+        a.appointment_time,
+        a.status,
+        a.notes,
+        a.patient_type,
+        s.name as service_name,
+        al.name as location_name,
+        CASE 
+          WHEN a.private_patient_id IS NOT NULL THEN pp.name
+          WHEN a.client_id IS NOT NULL THEN u.name
+          WHEN a.dependent_id IS NOT NULL THEN d.name
+          ELSE 'Paciente não identificado'
+        END as patient_name,
+        CASE 
+          WHEN a.private_patient_id IS NOT NULL THEN pp.phone
+          WHEN a.client_id IS NOT NULL THEN u.phone
+          ELSE NULL
+        END as patient_phone
+      FROM appointments a
+      LEFT JOIN services s ON a.service_id = s.id
+      LEFT JOIN attendance_locations al ON a.location_id = al.id
+      LEFT JOIN private_patients pp ON a.private_patient_id = pp.id
+      LEFT JOIN users u ON a.client_id = u.id
+      LEFT JOIN dependents d ON a.dependent_id = d.id
+      WHERE a.professional_id = $1
+    `;
+    
+    const params = [professionalId];
+    
+    if (date) {
+      query += ' AND a.appointment_date = $2';
+      params.push(date);
+    }
+    
+    query += ' ORDER BY a.appointment_date, a.appointment_time';
+    
+    const result = await pool.query(query, params);
+    
+    console.log('✅ Appointments loaded:', result.rows.length);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('❌ Error fetching appointments:', error);
+    res.status(500).json({ message: 'Erro ao carregar agendamentos' });
+  }
+});
+
+// Create appointment
+app.post('/api/appointments', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const {
+      private_patient_id,
+      client_id,
+      dependent_id,
+      service_id,
+      location_id,
+      appointment_date,
+      appointment_time,
+      notes
+    } = req.body;
+    
+    const professionalId = req.user.id;
+    
+    console.log('🔄 Creating appointment:', req.body);
+    
+    // Validate required fields
+    if (!service_id || !appointment_date || !appointment_time) {
+      return res.status(400).json({ 
+        message: 'Serviço, data e horário são obrigatórios' 
+      });
+    }
+    
+    // Validate patient selection
+    if (!private_patient_id && !client_id && !dependent_id) {
+      return res.status(400).json({ 
+        message: 'É necessário selecionar um paciente' 
+      });
+    }
+    
+    const result = await pool.query(`
+      INSERT INTO appointments (
+        professional_id, private_patient_id, client_id, dependent_id,
+        service_id, location_id, appointment_date, appointment_time,
+        notes, status, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'scheduled', NOW())
+      RETURNING *
+    `, [
+      professionalId,
+      private_patient_id || null,
+      client_id || null,
+      dependent_id || null,
+      service_id,
+      location_id || null,
+      appointment_date,
+      appointment_time,
+      notes || null
+    ]);
+    
+    console.log('✅ Appointment created:', result.rows[0].id);
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('❌ Error creating appointment:', error);
+    res.status(500).json({ message: 'Erro ao criar agendamento' });
+  }
+});
+
+// Update appointment
+app.put('/api/appointments/:id', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const appointmentId = req.params.id;
+    const professionalId = req.user.id;
+    const {
+      service_id,
+      location_id,
+      appointment_date,
+      appointment_time,
+      notes,
+      status
+    } = req.body;
+    
+    console.log('🔄 Updating appointment:', appointmentId);
+    
+    const result = await pool.query(`
+      UPDATE appointments 
+      SET 
+        service_id = COALESCE($1, service_id),
+        location_id = COALESCE($2, location_id),
+        appointment_date = COALESCE($3, appointment_date),
+        appointment_time = COALESCE($4, appointment_time),
+        notes = COALESCE($5, notes),
+        status = COALESCE($6, status),
+        updated_at = NOW()
+      WHERE id = $7 AND professional_id = $8
+      RETURNING *
+    `, [
+      service_id || null,
+      location_id || null,
+      appointment_date || null,
+      appointment_time || null,
+      notes || null,
+      status || null,
+      appointmentId,
+      professionalId
+    ]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Agendamento não encontrado' });
+    }
+    
+    console.log('✅ Appointment updated');
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('❌ Error updating appointment:', error);
+    res.status(500).json({ message: 'Erro ao atualizar agendamento' });
+  }
+});
+
+// Delete appointment
+app.delete('/api/appointments/:id', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const appointmentId = req.params.id;
+    const professionalId = req.user.id;
+    
+    console.log('🔄 Deleting appointment:', appointmentId);
+    
+    const result = await pool.query(
+      'DELETE FROM appointments WHERE id = $1 AND professional_id = $2 RETURNING id',
+      [appointmentId, professionalId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Agendamento não encontrado' });
+    }
+    
+    console.log('✅ Appointment deleted');
+    res.json({ message: 'Agendamento excluído com sucesso' });
+  } catch (error) {
+    console.error('❌ Error deleting appointment:', error);
+    res.status(500).json({ message: 'Erro ao excluir agendamento' });
+  }
+});
+
 // Appointments routes (with scheduling access control)
 app.get('/api/appointments', authenticate, authorize(['professional']), checkSchedulingAccess, async (req, res) => {
   try {
@@ -2942,6 +3136,110 @@ app.post('/api/medical-records/generate-document', authenticate, authorize(['pro
   } catch (error) {
     console.error('❌ Error generating medical record document:', error);
     res.status(500).json({ message: 'Erro ao gerar documento do prontuário' });
+  }
+});
+
+// ===== MEDICAL DOCUMENTS ROUTES (SEPARATE FROM MEDICAL RECORDS) =====
+
+// Get medical documents for professional
+app.get('/api/medical-documents', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const professionalId = req.user.id;
+    
+    console.log('🔄 Fetching medical documents for professional:', professionalId);
+    
+    const result = await pool.query(`
+      SELECT 
+        md.id,
+        md.title,
+        md.document_type,
+        md.document_url,
+        md.created_at,
+        CASE 
+          WHEN md.private_patient_id IS NOT NULL THEN pp.name
+          WHEN md.client_id IS NOT NULL THEN u.name
+          WHEN md.dependent_id IS NOT NULL THEN d.name
+          ELSE 'Paciente não identificado'
+        END as patient_name
+      FROM medical_documents md
+      LEFT JOIN private_patients pp ON md.private_patient_id = pp.id
+      LEFT JOIN users u ON md.client_id = u.id
+      LEFT JOIN dependents d ON md.dependent_id = d.id
+      WHERE md.professional_id = $1
+      ORDER BY md.created_at DESC
+    `, [professionalId]);
+    
+    console.log('✅ Medical documents loaded:', result.rows.length);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('❌ Error fetching medical documents:', error);
+    res.status(500).json({ message: 'Erro ao carregar documentos médicos' });
+  }
+});
+
+// Create medical document
+app.post('/api/medical-documents', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const {
+      title,
+      document_type,
+      private_patient_id,
+      client_id,
+      dependent_id,
+      template_data
+    } = req.body;
+    
+    const professionalId = req.user.id;
+    
+    console.log('🔄 Creating medical document:', { title, document_type });
+    
+    // Validate required fields
+    if (!title || !document_type || !template_data) {
+      return res.status(400).json({ 
+        message: 'Título, tipo de documento e dados do template são obrigatórios' 
+      });
+    }
+    
+    // Validate patient selection
+    if (!private_patient_id && !client_id && !dependent_id) {
+      return res.status(400).json({ 
+        message: 'É necessário selecionar um paciente' 
+      });
+    }
+    
+    // Generate document using the document generator
+    const { generateDocumentPDF } = await import('./utils/documentGenerator.js');
+    const documentResult = await generateDocumentPDF(document_type, template_data);
+    
+    // Save document record to database
+    const result = await pool.query(`
+      INSERT INTO medical_documents (
+        professional_id, private_patient_id, client_id, dependent_id,
+        title, document_type, document_url, template_data, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+      RETURNING *
+    `, [
+      professionalId,
+      private_patient_id || null,
+      client_id || null,
+      dependent_id || null,
+      title,
+      document_type,
+      documentResult.url,
+      JSON.stringify(template_data)
+    ]);
+    
+    console.log('✅ Medical document created:', result.rows[0].id);
+    
+    res.status(201).json({
+      id: result.rows[0].id,
+      title: title,
+      documentUrl: documentResult.url,
+      message: 'Documento criado com sucesso'
+    });
+  } catch (error) {
+    console.error('❌ Error creating medical document:', error);
+    res.status(500).json({ message: 'Erro ao criar documento médico' });
   }
 });
 
