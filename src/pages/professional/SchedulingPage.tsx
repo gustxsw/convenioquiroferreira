@@ -10,44 +10,31 @@ import {
   ChevronLeft,
   ChevronRight,
   Users,
-  Edit2,
   CheckCircle,
   XCircle,
   Search,
-  MapPin,
+  DollarSign,
 } from "lucide-react";
 import { format, addDays, subDays, isSameDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 type Consultation = {
   id: number;
-  user_id: number | null;
-  dependent_id: number | null;
-  private_patient_id: number | null;
-  professional_id: number;
-  service_id: number;
-  location_id: number | null;
   date: string;
-  value: number;
-  status: "scheduled" | "confirmed" | "completed" | "cancelled";
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-  // Joined data
   client_name: string;
   service_name: string;
-  location_name: string | null;
+  status: "scheduled" | "confirmed" | "completed" | "cancelled";
+  value: number;
+  notes?: string;
   is_dependent: boolean;
   patient_type: "convenio" | "private";
-  professional_percentage: number;
-  amount_to_pay: number;
+  location_name?: string;
 };
 
 type Service = {
   id: number;
   name: string;
   base_price: number;
-  category_name: string;
 };
 
 type AttendanceLocation = {
@@ -61,22 +48,6 @@ type PrivatePatient = {
   id: number;
   name: string;
   cpf: string;
-};
-
-type Client = {
-  id: number;
-  name: string;
-  cpf: string;
-  subscription_status: string;
-};
-
-type Dependent = {
-  id: number;
-  name: string;
-  cpf: string;
-  client_id: number;
-  client_name: string;
-  subscription_status: string;
 };
 
 const SchedulingPage: React.FC = () => {
@@ -99,20 +70,10 @@ const SchedulingPage: React.FC = () => {
   const [newStatus, setNewStatus] = useState<"scheduled" | "confirmed" | "completed" | "cancelled">("scheduled");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
-  // Edit modal
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-
-  // Client search state
-  const [searchedClient, setSearchedClient] = useState<Client | null>(null);
-  const [searchedDependents, setSearchedDependents] = useState<Dependent[]>([]);
-  const [isSearchingClient, setIsSearchingClient] = useState(false);
-
   // Form state
   const [formData, setFormData] = useState({
-    patient_type: "private" as "private" | "convenio",
+    patient_type: "private" as "convenio" | "private",
     client_cpf: "",
-    selected_dependent_id: "",
     private_patient_id: "",
     date: format(new Date(), "yyyy-MM-dd"),
     time: "",
@@ -121,6 +82,12 @@ const SchedulingPage: React.FC = () => {
     location_id: "",
     notes: "",
   });
+
+  // Client search state
+  const [clientSearchResult, setClientSearchResult] = useState<any>(null);
+  const [dependents, setDependents] = useState<any[]>([]);
+  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
 
   // Get API URL
   const getApiUrl = () => {
@@ -148,9 +115,9 @@ const SchedulingPage: React.FC = () => {
 
       console.log("🔄 Fetching consultations for date:", dateStr);
 
-      // Fetch consultations for the professional on selected date
+      // Fetch consultations for the selected date
       const consultationsResponse = await fetch(
-        `${apiUrl}/api/consultations/professional?date=${dateStr}`,
+        `${apiUrl}/api/consultations/agenda?date=${dateStr}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -161,7 +128,7 @@ const SchedulingPage: React.FC = () => {
 
       if (consultationsResponse.ok) {
         const consultationsData = await consultationsResponse.json();
-        console.log("✅ Consultations loaded:", consultationsData);
+        console.log("✅ Consultations loaded:", consultationsData.length);
         setConsultations(consultationsData);
       } else {
         console.error("Consultations response error:", consultationsResponse.status);
@@ -179,8 +146,6 @@ const SchedulingPage: React.FC = () => {
       if (servicesResponse.ok) {
         const servicesData = await servicesResponse.json();
         setServices(servicesData);
-      } else {
-        setServices([]);
       }
 
       // Fetch private patients
@@ -194,8 +159,6 @@ const SchedulingPage: React.FC = () => {
       if (patientsResponse.ok) {
         const patientsData = await patientsResponse.json();
         setPrivatePatients(Array.isArray(patientsData) ? patientsData : []);
-      } else {
-        setPrivatePatients([]);
       }
 
       // Fetch attendance locations
@@ -218,8 +181,6 @@ const SchedulingPage: React.FC = () => {
             location_id: defaultLocation.id.toString(),
           }));
         }
-      } else {
-        setAttendanceLocations([]);
       }
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -233,49 +194,14 @@ const SchedulingPage: React.FC = () => {
     if (!formData.client_cpf) return;
 
     try {
-      setIsSearchingClient(true);
+      setIsSearching(true);
       setError("");
-      
+
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
       const cleanCpf = formData.client_cpf.replace(/\D/g, "");
 
-      // First try to find as dependent
-      const dependentResponse = await fetch(
-        `${apiUrl}/api/dependents/lookup?cpf=${cleanCpf}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      if (dependentResponse.ok) {
-        const dependentData = await dependentResponse.json();
-        
-        if (dependentData.dependent_subscription_status !== "active") {
-          setError("Este dependente não possui assinatura ativa");
-          return;
-        }
-
-        // Set as dependent
-        setSearchedClient({
-          id: dependentData.client_id,
-          name: dependentData.client_name,
-          cpf: "",
-          subscription_status: dependentData.dependent_subscription_status
-        });
-        setSearchedDependents([{
-          id: dependentData.id,
-          name: dependentData.name,
-          cpf: dependentData.cpf,
-          client_id: dependentData.client_id,
-          client_name: dependentData.client_name,
-          subscription_status: dependentData.dependent_subscription_status
-        }]);
-        setFormData(prev => ({ ...prev, selected_dependent_id: dependentData.id.toString() }));
-        return;
-      }
-
-      // If not found as dependent, try as client
+      // Search for client
       const clientResponse = await fetch(
         `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`,
         {
@@ -283,40 +209,60 @@ const SchedulingPage: React.FC = () => {
         }
       );
 
-      if (!clientResponse.ok) {
-        throw new Error("Cliente não encontrado");
-      }
-
-      const clientData = await clientResponse.json();
-      
-      if (clientData.subscription_status !== "active") {
-        setError("Este cliente não possui assinatura ativa");
-        return;
-      }
-
-      setSearchedClient(clientData);
-
-      // Fetch dependents
-      const dependentsResponse = await fetch(
-        `${apiUrl}/api/dependents/${clientData.id}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
+      if (clientResponse.ok) {
+        const clientData = await clientResponse.json();
+        
+        if (clientData.subscription_status !== "active") {
+          setError("Cliente não possui assinatura ativa");
+          return;
         }
-      );
 
-      if (dependentsResponse.ok) {
-        const dependentsData = await dependentsResponse.json();
-        setSearchedDependents(dependentsData.filter((d: any) => d.subscription_status === "active"));
+        setClientSearchResult(clientData);
+
+        // Fetch dependents
+        const dependentsResponse = await fetch(
+          `${apiUrl}/api/dependents/${clientData.id}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        if (dependentsResponse.ok) {
+          const dependentsData = await dependentsResponse.json();
+          setDependents(dependentsData.filter((d: any) => d.subscription_status === "active"));
+        }
       } else {
-        setSearchedDependents([]);
-      }
+        // Try searching as dependent
+        const dependentResponse = await fetch(
+          `${apiUrl}/api/dependents/lookup?cpf=${cleanCpf}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
 
+        if (dependentResponse.ok) {
+          const dependentData = await dependentResponse.json();
+          
+          if (dependentData.dependent_subscription_status !== "active") {
+            setError("Dependente não possui assinatura ativa");
+            return;
+          }
+
+          setClientSearchResult({
+            id: dependentData.user_id,
+            name: dependentData.client_name,
+            subscription_status: "active",
+          });
+          setSelectedDependentId(dependentData.id);
+          setDependents([]);
+        } else {
+          setError("Cliente ou dependente não encontrado");
+        }
+      }
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Erro ao buscar cliente");
-      setSearchedClient(null);
-      setSearchedDependents([]);
+      setError("Erro ao buscar cliente");
     } finally {
-      setIsSearchingClient(false);
+      setIsSearching(false);
     }
   };
 
@@ -329,40 +275,26 @@ const SchedulingPage: React.FC = () => {
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      // Validate form
-      if (formData.patient_type === "convenio") {
-        if (!searchedClient) {
-          setError("Busque um cliente válido primeiro");
-          return;
-        }
-      } else {
-        if (!formData.private_patient_id) {
-          setError("Selecione um paciente particular");
-          return;
-        }
-      }
-
-      if (!formData.service_id || !formData.date || !formData.time || !formData.value) {
-        setError("Preencha todos os campos obrigatórios");
-        return;
-      }
-
-      // Combine date and time
-      const consultationDateTime = new Date(`${formData.date}T${formData.time}`);
-
-      const consultationData = {
-        user_id: formData.patient_type === "convenio" && !formData.selected_dependent_id ? searchedClient?.id : null,
-        dependent_id: formData.selected_dependent_id ? parseInt(formData.selected_dependent_id) : null,
-        private_patient_id: formData.patient_type === "private" ? parseInt(formData.private_patient_id) : null,
+      // Prepare consultation data
+      const consultationData: any = {
         service_id: parseInt(formData.service_id),
         location_id: formData.location_id ? parseInt(formData.location_id) : null,
         value: parseFloat(formData.value),
-        date: consultationDateTime.toISOString(),
+        date: new Date(`${formData.date}T${formData.time}`).toISOString(),
         status: "scheduled",
-        notes: formData.notes.trim() || null,
+        notes: formData.notes || null,
       };
 
-      console.log("🔄 Creating consultation:", consultationData);
+      // Set patient based on type
+      if (formData.patient_type === "private") {
+        consultationData.private_patient_id = parseInt(formData.private_patient_id);
+      } else {
+        if (selectedDependentId) {
+          consultationData.dependent_id = selectedDependentId;
+        } else {
+          consultationData.user_id = clientSearchResult?.id;
+        }
+      }
 
       const response = await fetch(`${apiUrl}/api/consultations`, {
         method: "POST",
@@ -375,16 +307,16 @@ const SchedulingPage: React.FC = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || "Falha ao criar agendamento");
+        throw new Error(errorData.message || "Falha ao criar consulta");
       }
 
-      setSuccess("Agendamento criado com sucesso!");
+      setSuccess("Consulta agendada com sucesso!");
       await fetchData();
       setShowNewModal(false);
       resetForm();
       setTimeout(() => setSuccess(""), 3000);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Erro ao criar agendamento");
+      setError(error instanceof Error ? error.message : "Erro ao criar consulta");
     } finally {
       setIsCreating(false);
     }
@@ -394,7 +326,6 @@ const SchedulingPage: React.FC = () => {
     setFormData({
       patient_type: "private",
       client_cpf: "",
-      selected_dependent_id: "",
       private_patient_id: "",
       date: format(selectedDate, "yyyy-MM-dd"),
       time: "",
@@ -403,8 +334,9 @@ const SchedulingPage: React.FC = () => {
       location_id: "",
       notes: "",
     });
-    setSearchedClient(null);
-    setSearchedDependents([]);
+    setClientSearchResult(null);
+    setDependents([]);
+    setSelectedDependentId(null);
   };
 
   const openStatusModal = (consultation: Consultation) => {
@@ -417,80 +349,6 @@ const SchedulingPage: React.FC = () => {
     setShowStatusModal(false);
     setSelectedConsultation(null);
     setError("");
-  };
-
-  const openEditModal = (consultation: Consultation) => {
-    setSelectedConsultation(consultation);
-    setFormData({
-      patient_type: consultation.patient_type,
-      client_cpf: "",
-      selected_dependent_id: consultation.dependent_id?.toString() || "",
-      private_patient_id: consultation.private_patient_id?.toString() || "",
-      date: format(new Date(consultation.date), "yyyy-MM-dd"),
-      time: format(new Date(consultation.date), "HH:mm"),
-      service_id: consultation.service_id.toString(),
-      value: consultation.value.toString(),
-      location_id: consultation.location_id?.toString() || "",
-      notes: consultation.notes || "",
-    });
-    setShowEditModal(true);
-  };
-
-  const closeEditModal = () => {
-    setShowEditModal(false);
-    setSelectedConsultation(null);
-    setError("");
-    resetForm();
-  };
-
-  const updateConsultation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedConsultation) return;
-
-    try {
-      setIsEditing(true);
-      setError("");
-
-      const token = localStorage.getItem("token");
-      const apiUrl = getApiUrl();
-
-      const consultationDateTime = new Date(`${formData.date}T${formData.time}`);
-
-      const updateData = {
-        service_id: parseInt(formData.service_id),
-        location_id: formData.location_id ? parseInt(formData.location_id) : null,
-        value: parseFloat(formData.value),
-        date: consultationDateTime.toISOString(),
-        notes: formData.notes.trim() || null,
-      };
-
-      const response = await fetch(
-        `${apiUrl}/api/consultations/${selectedConsultation.id}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(updateData),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Erro ao atualizar consulta");
-      }
-
-      await fetchData();
-      setShowEditModal(false);
-      setSelectedConsultation(null);
-      setSuccess("Consulta atualizada com sucesso!");
-      setTimeout(() => setSuccess(""), 3000);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Erro ao atualizar consulta");
-    } finally {
-      setIsEditing(false);
-    }
   };
 
   const updateConsultationStatus = async () => {
@@ -529,34 +387,6 @@ const SchedulingPage: React.FC = () => {
       setError(error instanceof Error ? error.message : "Erro ao atualizar status");
     } finally {
       setIsUpdatingStatus(false);
-    }
-  };
-
-  const deleteConsultation = async (consultation: Consultation) => {
-    if (!confirm("Tem certeza que deseja excluir esta consulta?")) return;
-
-    try {
-      const token = localStorage.getItem("token");
-      const apiUrl = getApiUrl();
-
-      const response = await fetch(
-        `${apiUrl}/api/consultations/${consultation.id}`,
-        {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Erro ao excluir consulta");
-      }
-
-      await fetchData();
-      setSuccess("Consulta excluída com sucesso!");
-      setTimeout(() => setSuccess(""), 3000);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Erro ao excluir consulta");
     }
   };
 
@@ -626,7 +456,9 @@ const SchedulingPage: React.FC = () => {
     const slots = [];
     for (let hour = 8; hour <= 18; hour++) {
       for (let minute = 0; minute < 60; minute += 30) {
-        const timeStr = `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`;
+        const timeStr = `${hour.toString().padStart(2, "0")}:${minute
+          .toString()
+          .padStart(2, "0")}`;
         slots.push(timeStr);
       }
     }
@@ -634,18 +466,32 @@ const SchedulingPage: React.FC = () => {
   };
 
   const timeSlots = generateTimeSlots();
-  const dailyConsultations = consultations.sort((a, b) => {
-    const timeA = format(new Date(a.date), "HH:mm");
-    const timeB = format(new Date(b.date), "HH:mm");
-    return timeA.localeCompare(timeB);
-  });
+  
+  // Group consultations by time for display
+  const consultationsByTime = consultations.reduce((acc, consultation) => {
+    const time = format(new Date(consultation.date), "HH:mm");
+    acc[time] = consultation;
+    return acc;
+  }, {} as Record<string, Consultation>);
+
+  // Calculate daily statistics
+  const dailyStats = {
+    scheduled: consultations.filter((c) => c.status === "scheduled").length,
+    confirmed: consultations.filter((c) => c.status === "confirmed").length,
+    completed: consultations.filter((c) => c.status === "completed").length,
+    cancelled: consultations.filter((c) => c.status === "cancelled").length,
+    totalValue: consultations.reduce((sum, c) => sum + c.value, 0),
+    convenioValue: consultations
+      .filter((c) => c.patient_type === "convenio")
+      .reduce((sum, c) => sum + c.value * 0.5, 0), // Assuming 50% to pay to convenio
+  };
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Agenda</h1>
-          <p className="text-gray-600">Visualize e gerencie seus agendamentos</p>
+          <p className="text-gray-600">Visualize e gerencie suas consultas</p>
         </div>
 
         <button
@@ -686,7 +532,7 @@ const SchedulingPage: React.FC = () => {
               {format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })}
             </h2>
             <p className="text-sm text-gray-600">
-              {dailyConsultations.length} consulta(s) agendada(s)
+              {consultations.length} consulta(s)
             </p>
           </div>
 
@@ -708,7 +554,54 @@ const SchedulingPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Schedule Grid */}
+      {/* Daily Statistics */}
+      {consultations.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
+          <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-200">
+            <div className="text-2xl font-bold text-blue-600">{dailyStats.scheduled}</div>
+            <div className="text-sm text-blue-700 flex items-center justify-center">
+              <Clock className="h-3 w-3 mr-1" />
+              Agendados
+            </div>
+          </div>
+
+          <div className="bg-green-50 p-4 rounded-lg text-center border border-green-200">
+            <div className="text-2xl font-bold text-green-600">{dailyStats.confirmed}</div>
+            <div className="text-sm text-green-700 flex items-center justify-center">
+              <CheckCircle className="h-3 w-3 mr-1" />
+              Confirmados
+            </div>
+          </div>
+
+          <div className="bg-gray-50 p-4 rounded-lg text-center border border-gray-200">
+            <div className="text-2xl font-bold text-gray-600">{dailyStats.completed}</div>
+            <div className="text-sm text-gray-700 flex items-center justify-center">
+              <Check className="h-3 w-3 mr-1" />
+              Concluídos
+            </div>
+          </div>
+
+          <div className="bg-red-50 p-4 rounded-lg text-center border border-red-200">
+            <div className="text-2xl font-bold text-red-600">{dailyStats.cancelled}</div>
+            <div className="text-sm text-red-700 flex items-center justify-center">
+              <XCircle className="h-3 w-3 mr-1" />
+              Cancelados
+            </div>
+          </div>
+
+          <div className="bg-green-50 p-4 rounded-lg text-center border border-green-200">
+            <div className="text-lg font-bold text-green-600">{formatCurrency(dailyStats.totalValue)}</div>
+            <div className="text-sm text-green-700">Faturamento</div>
+          </div>
+
+          <div className="bg-red-50 p-4 rounded-lg text-center border border-red-200">
+            <div className="text-lg font-bold text-red-600">{formatCurrency(dailyStats.convenioValue)}</div>
+            <div className="text-sm text-red-700">A Pagar</div>
+          </div>
+        </div>
+      )}
+
+      {/* Agenda View */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
         {isLoading ? (
           <div className="text-center py-12">
@@ -726,7 +619,7 @@ const SchedulingPage: React.FC = () => {
                 {timeSlots.map((timeSlot) => (
                   <div
                     key={timeSlot}
-                    className="h-20 flex items-center justify-center border-b border-gray-100 text-sm font-medium text-gray-700"
+                    className="h-16 flex items-center justify-center border-b border-gray-100 text-sm font-medium text-gray-700"
                   >
                     {timeSlot}
                   </div>
@@ -741,36 +634,31 @@ const SchedulingPage: React.FC = () => {
               </div>
               <div className="relative">
                 {timeSlots.map((timeSlot) => {
-                  const consultation = dailyConsultations.find((cons) => {
-                    const consultationTime = format(new Date(cons.date), "HH:mm");
-                    return consultationTime === timeSlot;
-                  });
+                  const consultation = consultationsByTime[timeSlot];
 
                   return (
                     <div
                       key={timeSlot}
-                      className="h-20 border-b border-gray-100 flex items-center px-4 hover:bg-gray-50 transition-colors"
+                      className="h-16 border-b border-gray-100 flex items-center px-4 hover:bg-gray-50 transition-colors"
                     >
                       {consultation ? (
                         <div className="flex items-center justify-between w-full">
                           <div className="flex items-center space-x-3 flex-1">
                             <div className="flex-1">
                               <div className="flex items-center mb-1">
-                                {consultation.patient_type === "convenio" ? (
-                                  consultation.is_dependent ? (
-                                    <Users className="h-4 w-4 text-blue-600 mr-2" />
-                                  ) : (
-                                    <User className="h-4 w-4 text-green-600 mr-2" />
-                                  )
-                                ) : (
+                                {consultation.is_dependent ? (
+                                  <Users className="h-4 w-4 text-blue-600 mr-2" />
+                                ) : consultation.patient_type === "private" ? (
                                   <User className="h-4 w-4 text-purple-600 mr-2" />
+                                ) : (
+                                  <User className="h-4 w-4 text-green-600 mr-2" />
                                 )}
                                 <span className="font-medium text-gray-900 text-sm">
                                   {consultation.client_name}
                                 </span>
-                                {consultation.patient_type === "convenio" && (
-                                  <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
-                                    Convênio
+                                {consultation.is_dependent && (
+                                  <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                                    Dependente
                                   </span>
                                 )}
                                 {consultation.patient_type === "private" && (
@@ -778,29 +666,20 @@ const SchedulingPage: React.FC = () => {
                                     Particular
                                   </span>
                                 )}
-                                {consultation.is_dependent && (
-                                  <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
-                                    Dependente
-                                  </span>
-                                )}
                               </div>
                               <div className="flex items-center space-x-4">
-                                <p className="text-xs text-gray-600">{consultation.service_name}</p>
+                                <p className="text-xs text-gray-600">
+                                  {consultation.service_name}
+                                </p>
                                 <p className="text-xs font-medium text-green-600">
                                   {formatCurrency(consultation.value)}
                                 </p>
-                                {consultation.patient_type === "convenio" && consultation.amount_to_pay > 0 && (
-                                  <p className="text-xs text-red-600">
-                                    Pagar: {formatCurrency(consultation.amount_to_pay)}
+                                {consultation.location_name && (
+                                  <p className="text-xs text-gray-500">
+                                    {consultation.location_name}
                                   </p>
                                 )}
                               </div>
-                              {consultation.location_name && (
-                                <div className="flex items-center mt-1">
-                                  <MapPin className="h-3 w-3 text-gray-400 mr-1" />
-                                  <p className="text-xs text-gray-500">{consultation.location_name}</p>
-                                </div>
-                              )}
                               {consultation.notes && (
                                 <p className="text-xs text-gray-500 mt-1 italic truncate">
                                   "{consultation.notes}"
@@ -809,31 +688,17 @@ const SchedulingPage: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* Actions */}
+                          {/* Status Button */}
                           <div className="flex items-center space-x-2">
-                            <button
-                              onClick={() => openEditModal(consultation)}
-                              className="p-1 text-blue-600 hover:text-blue-800"
-                              title="Editar"
-                            >
-                              <Edit2 className="h-4 w-4" />
-                            </button>
                             <button
                               onClick={() => openStatusModal(consultation)}
                               className={`px-2 py-1 rounded text-xs font-medium flex items-center border transition-all hover:shadow-sm ${
                                 getStatusInfo(consultation.status).className
                               }`}
-                              title="Alterar status"
+                              title="Clique para alterar o status"
                             >
                               {getStatusInfo(consultation.status).icon}
                               {getStatusInfo(consultation.status).text}
-                            </button>
-                            <button
-                              onClick={() => deleteConsultation(consultation)}
-                              className="p-1 text-red-600 hover:text-red-800"
-                              title="Excluir"
-                            >
-                              <X className="h-4 w-4" />
                             </button>
                           </div>
                         </div>
@@ -847,63 +712,27 @@ const SchedulingPage: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Empty State */}
+        {!isLoading && consultations.length === 0 && (
+          <div className="text-center py-12">
+            <Calendar className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              Nenhuma consulta para este dia
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Sua agenda está livre para {format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}
+            </p>
+            <button
+              onClick={() => setShowNewModal(true)}
+              className="btn btn-primary inline-flex items-center"
+            >
+              <Plus className="h-5 w-5 mr-2" />
+              Agendar Consulta
+            </button>
+          </div>
+        )}
       </div>
-
-      {/* Daily Statistics */}
-      {dailyConsultations.length > 0 && (
-        <div className="mt-6 grid grid-cols-2 md:grid-cols-5 gap-4">
-          <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-200">
-            <div className="text-2xl font-bold text-blue-600">
-              {dailyConsultations.filter((c) => c.status === "scheduled").length}
-            </div>
-            <div className="text-sm text-blue-700 flex items-center justify-center">
-              <Clock className="h-3 w-3 mr-1" />
-              Agendados
-            </div>
-          </div>
-
-          <div className="bg-green-50 p-4 rounded-lg text-center border border-green-200">
-            <div className="text-2xl font-bold text-green-600">
-              {dailyConsultations.filter((c) => c.status === "confirmed").length}
-            </div>
-            <div className="text-sm text-green-700 flex items-center justify-center">
-              <CheckCircle className="h-3 w-3 mr-1" />
-              Confirmados
-            </div>
-          </div>
-
-          <div className="bg-gray-50 p-4 rounded-lg text-center border border-gray-200">
-            <div className="text-2xl font-bold text-gray-600">
-              {dailyConsultations.filter((c) => c.status === "completed").length}
-            </div>
-            <div className="text-sm text-gray-700 flex items-center justify-center">
-              <Check className="h-3 w-3 mr-1" />
-              Concluídos
-            </div>
-          </div>
-
-          <div className="bg-red-50 p-4 rounded-lg text-center border border-red-200">
-            <div className="text-2xl font-bold text-red-600">
-              {dailyConsultations.filter((c) => c.status === "cancelled").length}
-            </div>
-            <div className="text-sm text-red-700 flex items-center justify-center">
-              <XCircle className="h-3 w-3 mr-1" />
-              Cancelados
-            </div>
-          </div>
-
-          <div className="bg-orange-50 p-4 rounded-lg text-center border border-orange-200">
-            <div className="text-2xl font-bold text-orange-600">
-              {formatCurrency(
-                dailyConsultations
-                  .filter((c) => c.patient_type === "convenio")
-                  .reduce((sum, c) => sum + c.amount_to_pay, 0)
-              )}
-            </div>
-            <div className="text-sm text-orange-700">A Pagar</div>
-          </div>
-        </div>
-      )}
 
       {/* New Consultation Modal */}
       {showNewModal && (
@@ -924,12 +753,6 @@ const SchedulingPage: React.FC = () => {
               </div>
             </div>
 
-            {error && (
-              <div className="mx-6 mt-4 bg-red-50 text-red-600 p-3 rounded-lg">
-                {error}
-              </div>
-            )}
-
             <form onSubmit={createConsultation} className="p-6">
               <div className="space-y-6">
                 {/* Patient Type */}
@@ -939,17 +762,14 @@ const SchedulingPage: React.FC = () => {
                   </label>
                   <select
                     value={formData.patient_type}
-                    onChange={(e) => {
+                    onChange={(e) =>
                       setFormData((prev) => ({
                         ...prev,
-                        patient_type: e.target.value as "private" | "convenio",
+                        patient_type: e.target.value as "convenio" | "private",
                         client_cpf: "",
-                        selected_dependent_id: "",
                         private_patient_id: "",
-                      }));
-                      setSearchedClient(null);
-                      setSearchedDependents([]);
-                    }}
+                      }))
+                    }
                     className="input"
                     required
                   >
@@ -957,81 +777,6 @@ const SchedulingPage: React.FC = () => {
                     <option value="convenio">Cliente do Convênio</option>
                   </select>
                 </div>
-
-                {/* Convenio Patient Search */}
-                {formData.patient_type === "convenio" && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      CPF do Cliente *
-                    </label>
-                    <div className="flex space-x-2">
-                      <input
-                        type="text"
-                        value={formatCpf(formData.client_cpf)}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            client_cpf: e.target.value.replace(/\D/g, ""),
-                          }))
-                        }
-                        className="input flex-1"
-                        placeholder="000.000.000-00"
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={searchClientByCpf}
-                        className="btn btn-secondary flex items-center"
-                        disabled={isSearchingClient || !formData.client_cpf}
-                      >
-                        {isSearchingClient ? (
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
-                        ) : (
-                          <Search className="h-4 w-4" />
-                        )}
-                      </button>
-                    </div>
-
-                    {/* Client found */}
-                    {searchedClient && (
-                      <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                        <div className="flex items-center mb-2">
-                          <User className="h-4 w-4 text-green-600 mr-2" />
-                          <span className="font-medium text-green-800">{searchedClient.name}</span>
-                          <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
-                            Assinatura Ativa
-                          </span>
-                        </div>
-
-                        {/* Dependent selection */}
-                        {searchedDependents.length > 0 && (
-                          <div className="mt-3">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Selecionar Dependente (opcional)
-                            </label>
-                            <select
-                              value={formData.selected_dependent_id}
-                              onChange={(e) =>
-                                setFormData((prev) => ({
-                                  ...prev,
-                                  selected_dependent_id: e.target.value,
-                                }))
-                              }
-                              className="input"
-                            >
-                              <option value="">Consulta para o titular</option>
-                              {searchedDependents.map((dependent) => (
-                                <option key={dependent.id} value={dependent.id}>
-                                  {dependent.name} - {formatCpf(dependent.cpf)}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* Private Patient Selection */}
                 {formData.patient_type === "private" && (
@@ -1057,10 +802,68 @@ const SchedulingPage: React.FC = () => {
                         </option>
                       ))}
                     </select>
-                    {privatePatients.length === 0 && (
-                      <p className="text-sm text-gray-500 mt-1">
-                        Nenhum paciente particular cadastrado. Cadastre pacientes na seção "Pacientes Particulares".
-                      </p>
+                  </div>
+                )}
+
+                {/* Convenio Client Search */}
+                {formData.patient_type === "convenio" && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      CPF do Cliente *
+                    </label>
+                    <div className="flex space-x-2">
+                      <input
+                        type="text"
+                        value={formatCpf(formData.client_cpf)}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            client_cpf: e.target.value.replace(/\D/g, ""),
+                          }))
+                        }
+                        className="input flex-1"
+                        placeholder="000.000.000-00"
+                      />
+                      <button
+                        type="button"
+                        onClick={searchClientByCpf}
+                        className="btn btn-secondary"
+                        disabled={isSearching}
+                      >
+                        {isSearching ? "Buscando..." : "Buscar"}
+                      </button>
+                    </div>
+
+                    {/* Client Search Result */}
+                    {clientSearchResult && (
+                      <div className="mt-3 p-3 bg-green-50 rounded-lg">
+                        <p className="font-medium text-green-800">
+                          Cliente: {clientSearchResult.name}
+                        </p>
+                        
+                        {/* Dependent Selection */}
+                        {dependents.length > 0 && (
+                          <div className="mt-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Dependente (opcional)
+                            </label>
+                            <select
+                              value={selectedDependentId || ""}
+                              onChange={(e) =>
+                                setSelectedDependentId(e.target.value ? Number(e.target.value) : null)
+                              }
+                              className="input"
+                            >
+                              <option value="">Consulta para o titular</option>
+                              {dependents.map((dependent) => (
+                                <option key={dependent.id} value={dependent.id}>
+                                  {dependent.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
@@ -1075,10 +878,7 @@ const SchedulingPage: React.FC = () => {
                       type="date"
                       value={formData.date}
                       onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          date: e.target.value,
-                        }))
+                        setFormData((prev) => ({ ...prev, date: e.target.value }))
                       }
                       className="input"
                       required
@@ -1092,10 +892,7 @@ const SchedulingPage: React.FC = () => {
                     <select
                       value={formData.time}
                       onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          time: e.target.value,
-                        }))
+                        setFormData((prev) => ({ ...prev, time: e.target.value }))
                       }
                       className="input"
                       required
@@ -1126,7 +923,6 @@ const SchedulingPage: React.FC = () => {
                       {services.map((service) => (
                         <option key={service.id} value={service.id}>
                           {service.name} - {formatCurrency(service.base_price)}
-                          {service.category_name && ` (${service.category_name})`}
                         </option>
                       ))}
                     </select>
@@ -1142,10 +938,7 @@ const SchedulingPage: React.FC = () => {
                       step="0.01"
                       value={formData.value}
                       onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          value: e.target.value,
-                        }))
+                        setFormData((prev) => ({ ...prev, value: e.target.value }))
                       }
                       className="input"
                       required
@@ -1161,10 +954,7 @@ const SchedulingPage: React.FC = () => {
                   <select
                     value={formData.location_id || ""}
                     onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        location_id: e.target.value,
-                      }))
+                      setFormData((prev) => ({ ...prev, location_id: e.target.value }))
                     }
                     className="input"
                   >
@@ -1185,10 +975,7 @@ const SchedulingPage: React.FC = () => {
                   <textarea
                     value={formData.notes}
                     onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        notes: e.target.value,
-                      }))
+                      setFormData((prev) => ({ ...prev, notes: e.target.value }))
                     }
                     className="input min-h-[80px]"
                     placeholder="Observações sobre a consulta..."
@@ -1226,10 +1013,7 @@ const SchedulingPage: React.FC = () => {
           <div className="bg-white rounded-xl w-full max-w-md">
             <div className="p-6 border-b border-gray-200">
               <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold flex items-center">
-                  <Edit2 className="h-6 w-6 text-blue-600 mr-2" />
-                  Alterar Status
-                </h2>
+                <h2 className="text-xl font-bold">Alterar Status</h2>
                 <button
                   onClick={closeStatusModal}
                   className="text-gray-400 hover:text-gray-600"
@@ -1240,17 +1024,13 @@ const SchedulingPage: React.FC = () => {
             </div>
 
             <div className="p-6">
-              {/* Consultation info */}
+              {/* Consultation Info */}
               <div className="bg-gray-50 p-4 rounded-lg mb-6">
                 <div className="flex items-center mb-2">
-                  {selectedConsultation.patient_type === "convenio" ? (
-                    selectedConsultation.is_dependent ? (
-                      <Users className="h-4 w-4 text-blue-600 mr-2" />
-                    ) : (
-                      <User className="h-4 w-4 text-green-600 mr-2" />
-                    )
+                  {selectedConsultation.is_dependent ? (
+                    <Users className="h-4 w-4 text-blue-600 mr-2" />
                   ) : (
-                    <User className="h-4 w-4 text-purple-600 mr-2" />
+                    <User className="h-4 w-4 text-green-600 mr-2" />
                   )}
                   <span className="font-medium">{selectedConsultation.client_name}</span>
                 </div>
@@ -1258,14 +1038,15 @@ const SchedulingPage: React.FC = () => {
                   <strong>Serviço:</strong> {selectedConsultation.service_name}
                 </p>
                 <p className="text-sm text-gray-600 mb-1">
-                  <strong>Data/Hora:</strong> {format(new Date(selectedConsultation.date), "dd/MM/yyyy 'às\' HH:mm")}
+                  <strong>Data/Hora:</strong>{" "}
+                  {format(new Date(selectedConsultation.date), "dd/MM/yyyy 'às' HH:mm")}
                 </p>
                 <p className="text-sm text-gray-600">
                   <strong>Valor:</strong> {formatCurrency(selectedConsultation.value)}
                 </p>
               </div>
 
-              {/* Status selection */}
+              {/* Status Selection */}
               <div className="space-y-3">
                 <label className="block text-sm font-medium text-gray-700 mb-3">
                   Selecione o novo status:
@@ -1273,36 +1054,37 @@ const SchedulingPage: React.FC = () => {
 
                 <div className="space-y-2">
                   {[
-                    { value: "scheduled", label: "Agendado", icon: Clock, color: "blue" },
-                    { value: "confirmed", label: "Confirmado", icon: CheckCircle, color: "green" },
-                    { value: "completed", label: "Concluído", icon: Check, color: "gray" },
-                    { value: "cancelled", label: "Cancelado", icon: XCircle, color: "red" },
-                  ].map((statusOption) => {
-                    const IconComponent = statusOption.icon;
-                    return (
-                      <label
-                        key={statusOption.value}
-                        className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
-                          newStatus === statusOption.value
-                            ? `border-${statusOption.color}-300 bg-${statusOption.color}-50`
-                            : "border-gray-200 hover:bg-gray-50"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="status"
-                          value={statusOption.value}
-                          checked={newStatus === statusOption.value}
-                          onChange={(e) => setNewStatus(e.target.value as any)}
-                          className={`text-${statusOption.color}-600 focus:ring-${statusOption.color}-500`}
-                        />
-                        <div className="ml-3 flex items-center">
-                          <IconComponent className={`h-4 w-4 text-${statusOption.color}-600 mr-2`} />
-                          <div className="font-medium text-gray-900">{statusOption.label}</div>
+                    { value: "scheduled", label: "Agendado", icon: <Clock className="h-4 w-4" />, color: "blue" },
+                    { value: "confirmed", label: "Confirmado", icon: <CheckCircle className="h-4 w-4" />, color: "green" },
+                    { value: "completed", label: "Concluído", icon: <Check className="h-4 w-4" />, color: "gray" },
+                    { value: "cancelled", label: "Cancelado", icon: <XCircle className="h-4 w-4" />, color: "red" },
+                  ].map((status) => (
+                    <label
+                      key={status.value}
+                      className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                        newStatus === status.value
+                          ? `border-${status.color}-300 bg-${status.color}-50`
+                          : "border-gray-200 hover:bg-gray-50"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="status"
+                        value={status.value}
+                        checked={newStatus === status.value}
+                        onChange={(e) => setNewStatus(e.target.value as any)}
+                        className={`text-${status.color}-600 focus:ring-${status.color}-500`}
+                      />
+                      <div className="ml-3 flex items-center">
+                        <div className={`text-${status.color}-600 mr-2`}>
+                          {status.icon}
                         </div>
-                      </label>
-                    );
-                  })}
+                        <div>
+                          <div className="font-medium text-gray-900">{status.label}</div>
+                        </div>
+                      </div>
+                    </label>
+                  ))}
                 </div>
               </div>
 
@@ -1336,204 +1118,6 @@ const SchedulingPage: React.FC = () => {
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Consultation Modal */}
-      {showEditModal && selectedConsultation && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold flex items-center">
-                  <Edit2 className="h-6 w-6 text-blue-600 mr-2" />
-                  Editar Consulta
-                </h2>
-                <button
-                  onClick={closeEditModal}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-            </div>
-
-            <form onSubmit={updateConsultation} className="p-6">
-              <div className="space-y-6">
-                {/* Patient info (read-only) */}
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <div className="flex items-center">
-                    {selectedConsultation.patient_type === "convenio" ? (
-                      selectedConsultation.is_dependent ? (
-                        <Users className="h-4 w-4 text-blue-600 mr-2" />
-                      ) : (
-                        <User className="h-4 w-4 text-green-600 mr-2" />
-                      )
-                    ) : (
-                      <User className="h-4 w-4 text-purple-600 mr-2" />
-                    )}
-                    <span className="font-medium">{selectedConsultation.client_name}</span>
-                    <span className={`ml-2 px-2 py-1 rounded-full text-xs ${
-                      selectedConsultation.patient_type === "convenio" 
-                        ? "bg-green-100 text-green-800" 
-                        : "bg-purple-100 text-purple-800"
-                    }`}>
-                      {selectedConsultation.patient_type === "convenio" ? "Convênio" : "Particular"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Date and Time */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Data *
-                    </label>
-                    <input
-                      type="date"
-                      value={formData.date}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          date: e.target.value,
-                        }))
-                      }
-                      className="input"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Horário *
-                    </label>
-                    <select
-                      value={formData.time}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          time: e.target.value,
-                        }))
-                      }
-                      className="input"
-                      required
-                    >
-                      <option value="">Selecione um horário</option>
-                      {timeSlots.map((time) => (
-                        <option key={time} value={time}>
-                          {time}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Service and Value */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Serviço *
-                    </label>
-                    <select
-                      value={formData.service_id}
-                      onChange={handleServiceChange}
-                      className="input"
-                      required
-                    >
-                      <option value="">Selecione um serviço</option>
-                      {services.map((service) => (
-                        <option key={service.id} value={service.id}>
-                          {service.name} - {formatCurrency(service.base_price)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Valor (R$) *
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={formData.value}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          value: e.target.value,
-                        }))
-                      }
-                      className="input"
-                      required
-                    />
-                  </div>
-                </div>
-
-                {/* Location */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Local de Atendimento
-                  </label>
-                  <select
-                    value={formData.location_id || ""}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        location_id: e.target.value,
-                      }))
-                    }
-                    className="input"
-                  >
-                    <option value="">Selecione um local</option>
-                    {attendanceLocations.map((location) => (
-                      <option key={location.id} value={location.id}>
-                        {location.name} {location.is_default && "(Padrão)"}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Notes */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Observações
-                  </label>
-                  <textarea
-                    value={formData.notes}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        notes: e.target.value,
-                      }))
-                    }
-                    className="input min-h-[80px]"
-                    placeholder="Observações sobre a consulta..."
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-3 mt-6">
-                <button
-                  type="button"
-                  onClick={closeEditModal}
-                  className="btn btn-secondary"
-                  disabled={isEditing}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className={`btn btn-primary ${
-                    isEditing ? "opacity-70 cursor-not-allowed" : ""
-                  }`}
-                  disabled={isEditing}
-                >
-                  {isEditing ? "Salvando..." : "Salvar Alterações"}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}
