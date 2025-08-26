@@ -139,12 +139,7 @@ const SchedulingPage: React.FC = () => {
         console.log("✅ Raw appointments data:", appointmentsData);
 
         // Filter by selected date and professional, convert to appointment format
-        const filteredAppointments = appointmentsData
-          .filter((appointment: any) => {
-            const appointmentDate = appointment.appointment_date;
-            return appointmentDate === dateStr;
-          })
-          .map((appointment: any) => ({
+        const filteredAppointments = appointmentsData.map((appointment: any) => ({
           id: appointment.id,
           date: `${appointment.appointment_date}T${appointment.appointment_time}`,
           time: appointment.appointment_time,
@@ -370,16 +365,16 @@ const SchedulingPage: React.FC = () => {
       const apiUrl = getApiUrl();
 
       const response = await fetch(
-        `${apiUrl}/api/consultations/${selectedAppointment.id}/reschedule`,
+        `${apiUrl}/api/consultations/${selectedAppointment.id}`,
         {
           method: "PUT",
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
+          body: JSON.stringify({ 
             new_date: rescheduleData.date,
-            new_time: rescheduleData.time,
+            new_time: rescheduleData.time
           }),
         }
       );
@@ -395,7 +390,7 @@ const SchedulingPage: React.FC = () => {
       setSuccess("Consulta reagendada com sucesso!");
       setTimeout(() => setSuccess(""), 3000);
     } catch (error) {
-      console.error("❌ Error in createAppointment:", error);
+      console.error("❌ Error in handleReschedule:", error);
       setError(
         error instanceof Error ? error.message : "Erro ao reagendar consulta"
       );
