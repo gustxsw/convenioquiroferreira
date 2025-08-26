@@ -126,8 +126,8 @@ const SchedulingPage: React.FC = () => {
 
       console.log("🔄 Fetching appointments for date:", dateStr);
 
-      // Fetch appointments
-      const appointmentsResponse = await fetch(`${apiUrl}/api/consultations`, {
+      // Fetch appointments for the specific professional
+      const appointmentsResponse = await fetch(`${apiUrl}/api/appointments?date=${dateStr}`, {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -138,28 +138,23 @@ const SchedulingPage: React.FC = () => {
         const appointmentsData = await appointmentsResponse.json();
         console.log("✅ Raw appointments data:", appointmentsData);
 
-        // Filter by selected date and convert to appointment format
-        const filteredAppointments = appointmentsData
-          .filter((consultation: any) => {
-            const consultationDate = new Date(consultation.date);
-            return isSameDay(consultationDate, selectedDate);
-          })
-          .map((consultation: any) => ({
-            id: consultation.id,
-            date: consultation.date,
-            time: format(new Date(consultation.date), "HH:mm"),
-            client_name: consultation.client_name,
-            service_name: consultation.service_name,
-            status: consultation.status || "completed",
-            value: consultation.value,
-            notes: consultation.notes || "",
-            is_dependent: consultation.is_dependent || false,
-            session_number: consultation.session_number || null,
-            total_sessions: consultation.total_sessions || null,
-          }));
+        // Convert appointments to the expected format
+        const formattedAppointments = appointmentsData.map((appointment: any) => ({
+          id: appointment.id,
+          date: `${appointment.appointment_date}T${appointment.appointment_time}`,
+          time: appointment.appointment_time,
+          client_name: appointment.patient_name || 'Paciente não identificado',
+          service_name: appointment.service_name || 'Serviço não identificado',
+          status: appointment.status || "scheduled",
+          value: 0, // Will be filled from service data if needed
+          notes: appointment.notes || "",
+          is_dependent: appointment.patient_type === 'dependent',
+          session_number: appointment.session_number || null,
+          total_sessions: appointment.total_sessions || null,
+        }));
 
-        console.log("✅ Processed appointments:", filteredAppointments);
-        setAppointments(filteredAppointments);
+        console.log("✅ Processed appointments:", formattedAppointments);
+        setAppointments(formattedAppointments);
       } else {
         console.error(
           "Appointments response error:",
