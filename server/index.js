@@ -955,7 +955,8 @@ app.post('/api/users', authenticate, authorize(['admin']), async (req, res) => {
     // Validate password length
     if (finalPassword.length < 6) {
       return res.status(400).json({ message: 'Senha deve ter pelo menos 6 caracteres' });
-      roles: rolesArray,
+    }
+
     // Convert roles array to PostgreSQL array format
     const rolesArray = `{${roles.map(role => `"${role}"`).join(',')}}`;
     const hashedPassword = await bcrypt.hash(finalPassword, 12);
@@ -1002,7 +1003,7 @@ app.post('/api/users', authenticate, authorize(['admin']), async (req, res) => {
         ...user,
         temporaryPassword
       }
-        roles: user.roles,
+    });
   } catch (error) {
     console.error('❌ Error creating user:', error);
     
@@ -1093,7 +1094,7 @@ app.put('/api/users/:id', authenticate, authorize(['admin']), async (req, res) =
     updateValues.push(state || null);
 
     updateFields.push(`roles = $${paramCount++}`);
-    updateValues.push(JSON.stringify(roles));
+    updateValues.push(`{${roles.map(role => `"${role}"`).join(',')}}`);
 
     updateFields.push(`subscription_status = $${paramCount++}`);
     updateValues.push(subscription_status || 'pending');
@@ -1122,8 +1123,8 @@ app.put('/api/users/:id', authenticate, authorize(['admin']), async (req, res) =
       const hashedPassword = await bcrypt.hash(password, 12);
       updateFields.push(`password = $${paramCount++}`);
       updateValues.push(hashedPassword);
-      updateFields.push(`roles = $${paramCount}`);
-      updateValues.push(`{${roles.map(role => `"${role}"`).join(',')}}`);
+    }
+
     // Add user ID for WHERE clause
     updateValues.push(id);
 
@@ -4153,7 +4154,7 @@ app.get('/api/audit-logs', authenticate, authorize(['admin']), async (req, res) 
         page: parseInt(page),
         limit: parseInt(limit),
         total: totalCount,
-        roles: updatedUser.roles
+        totalPages: Math.ceil(totalCount / limit)
       }
     });
   } catch (error) {
