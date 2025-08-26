@@ -967,7 +967,7 @@ app.post('/api/users', authenticate, authorize(['admin']), async (req, res) => {
     const userResult = await pool.query(`
       INSERT INTO users (
         name, cpf, email, phone, birth_date, address, address_number,
-        address_complement, neighborhood, city, state, password_hash, roles,
+        address_complement, neighborhood, city, state, password, roles,
         subscription_status, subscription_expiry, category_name, 
         professional_percentage, crm, created_at, updated_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW())
@@ -1120,7 +1120,7 @@ app.put('/api/users/:id', authenticate, authorize(['admin']), async (req, res) =
       }
       
       const hashedPassword = await bcrypt.hash(password, 12);
-      updateFields.push(`password_hash = $${paramCount++}`);
+      updateFields.push(`password = $${paramCount++}`);
       updateValues.push(hashedPassword);
     }
 
