@@ -116,7 +116,7 @@ const initializeDatabase = async () => {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS dependents (
         id SERIAL PRIMARY KEY,
-        client_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         name VARCHAR(255) NOT NULL,
         cpf VARCHAR(11) UNIQUE NOT NULL,
         birth_date DATE,
@@ -175,7 +175,7 @@ const initializeDatabase = async () => {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS consultations (
         id SERIAL PRIMARY KEY,
-        client_id INTEGER REFERENCES users(id),
+        user_id INTEGER REFERENCES users(id),
         dependent_id INTEGER REFERENCES dependents(id),
         private_patient_id INTEGER REFERENCES private_patients(id),
         professional_id INTEGER REFERENCES users(id) NOT NULL,
@@ -186,9 +186,9 @@ const initializeDatabase = async () => {
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT check_patient_type CHECK (
-          (client_id IS NOT NULL AND dependent_id IS NULL AND private_patient_id IS NULL) OR
-          (client_id IS NULL AND dependent_id IS NOT NULL AND private_patient_id IS NULL) OR
-          (client_id IS NULL AND dependent_id IS NULL AND private_patient_id IS NOT NULL)
+          (user_id IS NOT NULL AND dependent_id IS NULL AND private_patient_id IS NULL) OR
+          (user_id IS NULL AND dependent_id IS NOT NULL AND private_patient_id IS NULL) OR
+          (user_id IS NULL AND dependent_id IS NULL AND private_patient_id IS NOT NULL)
         )
       )
     `);
@@ -369,7 +369,7 @@ const initializeDatabase = async () => {
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_users_cpf ON users(cpf);
       CREATE INDEX IF NOT EXISTS idx_users_roles ON users USING GIN(roles);
-      CREATE INDEX IF NOT EXISTS idx_dependents_client_id ON dependents(client_id);
+      CREATE INDEX IF NOT EXISTS idx_dependents_user_id ON dependents(user_id);
       CREATE INDEX IF NOT EXISTS idx_consultations_professional_id ON consultations(professional_id);
       CREATE INDEX IF NOT EXISTS idx_consultations_date ON consultations(date);
       CREATE INDEX IF NOT EXISTS idx_appointments_professional_id ON appointments(professional_id);
@@ -1069,7 +1069,7 @@ app.get('/api/dependents/:clientId', authenticate, async (req, res) => {
         billing_amount, payment_reference, activated_at, created_at,
         subscription_status as current_status
       FROM dependents 
-      WHERE client_id = $1 
+      WHERE user_id = $1 
       ORDER BY created_at DESC
     `, [clientId]);
 
@@ -1099,9 +1099,9 @@ app.get('/api/dependents/lookup', authenticate, authorize(['professional', 'admi
     const dependentResult = await pool.query(`
       SELECT 
         d.id, d.name, d.cpf, d.subscription_status as dependent_subscription_status,
-        d.client_id, u.name as client_name, u.subscription_status as client_subscription_status
+        d.user_id, u.name as client_name, u.subscription_status as client_subscription_status
       FROM dependents d
-      JOIN users u ON d.client_id = u.id
+      JOIN users u ON d.user_id = u.id
       WHERE d.cpf = $1
     `, [cleanCPF]);
 
@@ -1120,10 +1120,10 @@ app.get('/api/dependents/lookup', authenticate, authorize(['professional', 'admi
 
 app.post('/api/dependents', authenticate, authorize(['client']), async (req, res) => {
   try {
-    const { client_id, name, cpf, birth_date } = req.body;
+    const { user_id, name, cpf, birth_date } = req.body;
 
     // Validate client can only create dependents for themselves
-    if (req.user.id !== client_id) {
+    if (req.user.id !== user_id) {
       return res.status(403).json({ message: 'Você só pode criar dependentes para sua própria conta' });
     }
 
@@ -1146,16 +1146,16 @@ app.post('/api/dependents', authenticate, authorize(['client']), async (req, res
     }
 
     // Check dependent limit (max 10 per client)
-    const dependentCount = await pool.query('SELECT COUNT(*) FROM dependents WHERE client_id = $1', [client_id]);
+    const dependentCount = await pool.query('SELECT COUNT(*) FROM dependents WHERE user_id = $1', [user_id]);
     if (parseInt(dependentCount.rows[0].count) >= 10) {
       return res.status(400).json({ message: 'Limite máximo de 10 dependentes atingido' });
     }
 
     const dependentResult = await pool.query(`
-      INSERT INTO dependents (client_id, name, cpf, birth_date)
+      INSERT INTO dependents (user_id, name, cpf, birth_date)
       VALUES ($1, $2, $3, $4)
       RETURNING *
-    `, [client_id, name.trim(), cleanCPF, birth_date || null]);
+    `, [user_id, name.trim(), cleanCPF, birth_date || null]);
 
     const dependent = dependentResult.rows[0];
 
@@ -1181,7 +1181,7 @@ app.put('/api/dependents/:id', authenticate, authorize(['client']), async (req, 
 
     // Get current dependent data
     const currentDependentResult = await pool.query(`
-      SELECT * FROM dependents WHERE id = $1 AND client_id = $2
+      SELECT * FROM dependents WHERE id = $1 AND user_id = $2
     `, [id, req.user.id]);
 
     if (currentDependentResult.rows.length === 0) {
@@ -1197,7 +1197,7 @@ app.put('/api/dependents/:id', authenticate, authorize(['client']), async (req, 
     const updatedDependentResult = await pool.query(`
       UPDATE dependents 
       SET name = $1, birth_date = $2, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3 AND client_id = $4
+      WHERE id = $3 AND user_id = $4
       RETURNING *
     `, [name.trim(), birth_date || null, id, req.user.id]);
 
@@ -1224,7 +1224,7 @@ app.delete('/api/dependents/:id', authenticate, authorize(['client']), async (re
 
     // Get dependent data before deletion
     const dependentResult = await pool.query(`
-      SELECT * FROM dependents WHERE id = $1 AND client_id = $2
+      SELECT * FROM dependents WHERE id = $1 AND user_id = $2
     `, [id, req.user.id]);
 
     if (dependentResult.rows.length === 0) {
@@ -1234,7 +1234,7 @@ app.delete('/api/dependents/:id', authenticate, authorize(['client']), async (re
     const dependent = dependentResult.rows[0];
 
     // Delete dependent
-    await pool.query('DELETE FROM dependents WHERE id = $1 AND client_id = $2', [id, req.user.id]);
+    await pool.query('DELETE FROM dependents WHERE id = $1 AND user_id = $2', [id, req.user.id]);
 
     console.log('✅ Dependent deleted successfully:', id);
 
@@ -1255,7 +1255,7 @@ app.get('/api/admin/dependents', authenticate, authorize(['admin']), async (req,
       SELECT 
         d.*, u.name as client_name, u.subscription_status as client_subscription_status
       FROM dependents d
-      JOIN users u ON d.client_id = u.id
+      JOIN users u ON d.user_id = u.id
       ORDER BY d.created_at DESC
     `);
 
@@ -1463,7 +1463,7 @@ app.get('/api/consultations', authenticate, authorize(['admin']), async (req, re
         s.name as service_name,
         u.name as professional_name,
         CASE 
-          WHEN c.client_id IS NOT NULL THEN u2.name
+          WHEN c.user_id IS NOT NULL THEN u2.name
           WHEN c.dependent_id IS NOT NULL THEN d.name
           WHEN c.private_patient_id IS NOT NULL THEN pp.name
         END as client_name,
@@ -1475,7 +1475,7 @@ app.get('/api/consultations', authenticate, authorize(['admin']), async (req, re
       FROM consultations c
       JOIN services s ON c.service_id = s.id
       JOIN users u ON c.professional_id = u.id
-      LEFT JOIN users u2 ON c.client_id = u2.id
+      LEFT JOIN users u2 ON c.user_id = u2.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
@@ -1506,7 +1506,7 @@ app.get('/api/consultations/client/:clientId', authenticate, async (req, res) =>
         s.name as service_name,
         u.name as professional_name,
         CASE 
-          WHEN c.client_id IS NOT NULL THEN u2.name
+          WHEN c.user_id IS NOT NULL THEN u2.name
           WHEN c.dependent_id IS NOT NULL THEN d.name
         END as client_name,
         CASE 
@@ -1517,11 +1517,11 @@ app.get('/api/consultations/client/:clientId', authenticate, async (req, res) =>
       FROM consultations c
       JOIN services s ON c.service_id = s.id
       JOIN users u ON c.professional_id = u.id
-      LEFT JOIN users u2 ON c.client_id = u2.id
+      LEFT JOIN users u2 ON c.user_id = u2.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
-      WHERE (c.client_id = $1 OR c.dependent_id IN (
-        SELECT id FROM dependents WHERE client_id = $1
+      WHERE (c.user_id = $1 OR c.dependent_id IN (
+        SELECT id FROM dependents WHERE user_id = $1
       ))
       ORDER BY c.date DESC
     `, [clientId]);
@@ -1538,7 +1538,7 @@ app.get('/api/consultations/client/:clientId', authenticate, async (req, res) =>
 app.post('/api/consultations', authenticate, authorize(['professional']), async (req, res) => {
   try {
     const {
-      client_id,
+      user_id,
       dependent_id,
       private_patient_id,
       service_id,
@@ -1562,7 +1562,7 @@ app.post('/api/consultations', authenticate, authorize(['professional']), async 
     }
 
     // Validate patient type (exactly one must be provided)
-    const patientCount = [client_id, dependent_id, private_patient_id].filter(Boolean).length;
+    const patientCount = [user_id, dependent_id, private_patient_id].filter(Boolean).length;
     if (patientCount !== 1) {
       return res.status(400).json({ message: 'Exatamente um tipo de paciente deve ser especificado' });
     }
@@ -1574,13 +1574,13 @@ app.post('/api/consultations', authenticate, authorize(['professional']), async 
     }
 
     // If it's a convenio patient, validate subscription status
-    if (client_id || dependent_id) {
+    if (user_id || dependent_id) {
       let subscriptionValid = false;
 
-      if (client_id) {
+      if (user_id) {
         const clientResult = await pool.query(`
           SELECT subscription_status FROM users WHERE id = $1 AND 'client' = ANY(roles)
-        `, [client_id]);
+        `, [user_id]);
         
         if (clientResult.rows.length > 0 && clientResult.rows[0].subscription_status === 'active') {
           subscriptionValid = true;
@@ -1603,13 +1603,13 @@ app.post('/api/consultations', authenticate, authorize(['professional']), async 
     // Create consultation
     const consultationResult = await pool.query(`
       INSERT INTO consultations (
-        client_id, dependent_id, private_patient_id, professional_id, 
+        user_id, dependent_id, private_patient_id, professional_id, 
         service_id, location_id, value, date
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
     `, [
-      client_id || null,
+      user_id || null,
       dependent_id || null,
       private_patient_id || null,
       req.user.id,
@@ -2882,8 +2882,8 @@ app.post('/api/dependents/:id/create-payment', authenticate, authorize(['client'
     const dependentResult = await pool.query(`
       SELECT d.*, u.name as client_name, u.email as client_email, u.cpf as client_cpf
       FROM dependents d
-      JOIN users u ON d.client_id = u.id
-      WHERE d.id = $1 AND d.client_id = $2
+      JOIN users u ON d.user_id = u.id
+      WHERE d.id = $1 AND d.user_id = $2
     `, [dependent_id, req.user.id]);
     
     if (dependentResult.rows.length === 0) {
@@ -2921,7 +2921,7 @@ app.post('/api/dependents/:id/create-payment', authenticate, authorize(['client'
       external_reference: `dependent_${dependent_id}_${Date.now()}`,
       payer: {
         name: dependent.client_name,
-        email: dependent.client_email || `client${dependent.client_id}@temp.com`,
+        email: dependent.client_email || `client${dependent.user_id}@temp.com`,
         identification: {
           type: 'CPF',
           number: dependent.client_cpf
@@ -3189,9 +3189,9 @@ const processDependentPayment = async (payment) => {
     
     // Get dependent and client info for notification
     const dependentInfo = await pool.query(`
-      SELECT d.name as dependent_name, d.client_id, u.name as client_name
+      SELECT d.name as dependent_name, d.user_id, u.name as client_name
       FROM dependents d
-      JOIN users u ON d.client_id = u.id
+      JOIN users u ON d.user_id = u.id
       WHERE d.id = $1
     `, [dependentId]);
     
@@ -3203,7 +3203,7 @@ const processDependentPayment = async (payment) => {
         INSERT INTO notifications (user_id, title, message, type)
         VALUES ($1, $2, $3, $4)
       `, [
-        info.client_id,
+        info.user_id,
         'Dependente Ativado',
         `O dependente ${info.dependent_name} foi ativado com sucesso!`,
         'success'
@@ -3318,7 +3318,7 @@ app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, 
       SELECT COALESCE(SUM(c.value), 0) as total_revenue
       FROM consultations c
       WHERE c.date >= $1 AND c.date <= $2
-        AND (c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL)
+        AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
     `, [start_date, end_date]);
 
     const totalRevenue = parseFloat(totalRevenueResult.rows[0].total_revenue) || 0;
@@ -3335,7 +3335,7 @@ app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, 
       FROM users u
       LEFT JOIN consultations c ON u.id = c.professional_id 
         AND c.date >= $1 AND c.date <= $2
-        AND (c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL)
+        AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
       WHERE 'professional' = ANY(u.roles)
       GROUP BY u.id, u.name, u.percentage
       HAVING COUNT(c.id) > 0
@@ -3351,7 +3351,7 @@ app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, 
       FROM services s
       LEFT JOIN consultations c ON s.id = c.service_id 
         AND c.date >= $1 AND c.date <= $2
-        AND (c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL)
+        AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
       GROUP BY s.id, s.name
       HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
@@ -3395,12 +3395,12 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
         c.date, c.value,
         s.name as service_name,
         CASE 
-          WHEN c.client_id IS NOT NULL THEN u.name
+          WHEN c.user_id IS NOT NULL THEN u.name
           WHEN c.dependent_id IS NOT NULL THEN d.name
           WHEN c.private_patient_id IS NOT NULL THEN pp.name
         END as client_name,
         CASE 
-          WHEN c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0)
+          WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0)
           ELSE 0
         END as amount_to_pay,
         CASE 
@@ -3409,7 +3409,7 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
         END as professional_earnings
       FROM consultations c
       JOIN services s ON c.service_id = s.id
-      LEFT JOIN users u ON c.client_id = u.id
+      LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4
@@ -3461,12 +3461,12 @@ app.get('/api/reports/professional-detailed', authenticate, authorize(['professi
     const statsResult = await pool.query(`
       SELECT 
         COUNT(*) as total_consultations,
-        COUNT(CASE WHEN c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN 1 END) as convenio_consultations,
+        COUNT(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN 1 END) as convenio_consultations,
         COUNT(CASE WHEN c.private_patient_id IS NOT NULL THEN 1 END) as private_consultations,
         COALESCE(SUM(c.value), 0) as total_revenue,
-        COALESCE(SUM(CASE WHEN c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value ELSE 0 END), 0) as convenio_revenue,
+        COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value ELSE 0 END), 0) as convenio_revenue,
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
-        COALESCE(SUM(CASE WHEN c.client_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
+        COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
       WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4
     `, [req.user.id, start_date, 100 - professionalPercentage, end_date]);
