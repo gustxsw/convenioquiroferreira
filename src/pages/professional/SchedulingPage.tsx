@@ -127,7 +127,7 @@ const SchedulingPage: React.FC = () => {
       console.log("🔄 Fetching appointments for date:", dateStr);
 
       // Fetch appointments for the specific professional
-      const appointmentsResponse = await fetch(`${apiUrl}/api/appointments?date=${dateStr}`, {
+      const appointmentsResponse = await fetch(`${apiUrl}/api/consultations`, {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -138,8 +138,8 @@ const SchedulingPage: React.FC = () => {
         const appointmentsData = await appointmentsResponse.json();
         console.log("✅ Raw appointments data:", appointmentsData);
 
-        // Convert appointments to the expected format
-        const formattedAppointments = appointmentsData.map((appointment: any) => ({
+        // Filter by selected date and professional, convert to appointment format
+        const filteredAppointments = appointmentsData
           id: appointment.id,
           date: `${appointment.appointment_date}T${appointment.appointment_time}`,
           time: appointment.appointment_time,
@@ -263,37 +263,38 @@ const SchedulingPage: React.FC = () => {
         throw new Error("CPF do cliente é obrigatório");
       }
 
-      // Criar agendamento usando a rota correta
-      const appointmentData = {
-        private_patient_id: formData.patient_type === "private" 
-          ? parseInt(formData.private_patient_id) 
-          : null,
+      // Criar consulta única
+      const consultationData = {
+        user_id: formData.patient_type === "convenio" ? clientData?.id : null,
+        private_patient_id:
+          formData.patient_type === "private"
+            ? parseInt(formData.private_patient_id)
+            : null,
         service_id: parseInt(formData.service_id),
-        location_id: formData.location_id ? parseInt(formData.location_id) : null,
+        location_id: formData.location_id
+          ? parseInt(formData.location_id)
+          : null,
+        value: parseFloat(formData.value),
+        date: new Date(`${formData.date}T${formData.time}`).toISOString(),
         appointment_date: formData.date,
         appointment_time: formData.time,
-        notes: formData.notes || null,
+        create_appointment: true,
+        notes: formData.notes,
       };
 
-      console.log("🔄 Creating appointment with data:", appointmentData);
-
-      const response = await fetch(`${apiUrl}/api/appointments`, {
+      const response = await fetch(`${apiUrl}/api/consultations`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(appointmentData),
+        body: JSON.stringify(consultationData),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        console.error("❌ Appointment creation error:", errorData);
         throw new Error(errorData.message || "Falha ao criar agendamento");
       }
-
-      const responseData = await response.json();
-      console.log("✅ Appointment created successfully:", responseData);
 
       setSuccess("Agendamento criado com sucesso!");
       setShowNewModal(false);
@@ -364,17 +365,15 @@ const SchedulingPage: React.FC = () => {
       const apiUrl = getApiUrl();
 
       const response = await fetch(
-        `${apiUrl}/api/consultations/${selectedAppointment.id}/reschedule`,
+        `${apiUrl}/api/consultations/${selectedAppointment.id}`,
         {
           method: "PUT",
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
             new_date: rescheduleData.date,
-            new_time: rescheduleData.time,
-          }),
+          body: JSON.stringify({ status: newStatus }),
         }
       );
 
