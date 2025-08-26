@@ -3532,6 +3532,373 @@ app.post(
       );
 
       // Save document reference
+      const documentDbResult = await pool.query(
+        `
+        INSERT INTO medical_documents (
+          professional_id, private_patient_id, title, document_type, document_url, template_data
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+      `,
+        [
+          req.user.id,
+          private_patient_id || null,
+          title,
+          document_type,
+          documentResult.url,
+          JSON.stringify(template_data),
+        ]
+      );
+
+      console.log("✅ Medical document created:", documentDbResult.rows[0].id);
+
+      // Log audit action
+      await logAuditAction(
+        req.user.id,
+        "CREATE",
+        "medical_documents",
+        documentDbResult.rows[0].id,
+        null,
+        documentDbResult.rows[0],
+        req
+      );
+
+      res.status(201).json({
+        message: "Documento criado com sucesso",
+        document: documentDbResult.rows[0],
+        documentUrl: documentResult.url,
+      });
+    } catch (error) {
+      console.error("❌ Error creating medical document:", error);
+      res.status(500).json({ message: "Erro ao criar documento médico" });
+    }
+  }
+);
+
+// Reports routes
+app.get(
+  "/api/reports/revenue",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const { start_date, end_date } = req.query;
+
+      if (!start_date || !end_date) {
+        return res.status(400).json({
+          message: "Data inicial e final são obrigatórias",
+        });
+      }
+
+      console.log("🔄 Generating revenue report for period:", { start_date, end_date });
+
+      // Get revenue by professional
+      const revenueByProfessional = await pool.query(
+        `
+        SELECT 
+          u.name as professional_name,
+          COALESCE(u.percentage, 50) as professional_percentage,
+          COUNT(c.id) as consultation_count,
+          COALESCE(SUM(c.value), 0) as revenue,
+          COALESCE(SUM(c.value * (COALESCE(u.percentage, 50) / 100)), 0) as professional_payment,
+          COALESCE(SUM(c.value * (1 - COALESCE(u.percentage, 50) / 100)), 0) as clinic_revenue
+        FROM users u
+        LEFT JOIN consultations c ON u.id = c.professional_id 
+          AND c.date >= $1 AND c.date <= $2
+          AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
+        WHERE 'professional' = ANY(u.roles)
+        GROUP BY u.id, u.name, u.percentage
+        ORDER BY revenue DESC
+      `,
+        [start_date, end_date]
+      );
+
+      // Get revenue by service
+      const revenueByService = await pool.query(
+        `
+        SELECT 
+          s.name as service_name,
+          COUNT(c.id) as consultation_count,
+          COALESCE(SUM(c.value), 0) as revenue
+        FROM services s
+        LEFT JOIN consultations c ON s.id = c.service_id 
+          AND c.date >= $1 AND c.date <= $2
+          AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
+        GROUP BY s.id, s.name
+        HAVING COUNT(c.id) > 0
+        ORDER BY revenue DESC
+      `,
+        [start_date, end_date]
+      );
+
+      // Calculate total revenue
+      const totalRevenue = revenueByProfessional.rows.reduce(
+        (sum, prof) => sum + parseFloat(prof.revenue || 0),
+        0
+      );
+
+      console.log("✅ Revenue report generated successfully");
+
+      res.json({
+        total_revenue: totalRevenue,
+        revenue_by_professional: revenueByProfessional.rows,
+        revenue_by_service: revenueByService.rows,
+      });
+    } catch (error) {
+      console.error("❌ Error generating revenue report:", error);
+      res.status(500).json({ message: "Erro ao gerar relatório de receita" });
+    }
+  }
+);
+
+app.get(
+  "/api/reports/professional-revenue",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const { start_date, end_date } = req.query;
+      const professionalId = req.user.id;
+
+      if (!start_date || !end_date) {
+        return res.status(400).json({
+          message: "Data inicial e final são obrigatórias",
+        });
+      }
+
+      console.log("🔄 Generating professional revenue report for:", professionalId);
+
+      // Get professional percentage
+      const professionalResult = await pool.query(
+        "SELECT percentage FROM users WHERE id = $1",
+        [professionalId]
+      );
+
+      const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
+
+      // Get consultations for the period
+      const consultationsResult = await pool.query(
+        `
+        SELECT 
+          c.date, c.value, s.name as service_name,
+          CASE 
+            WHEN c.user_id IS NOT NULL THEN u.name
+            WHEN c.dependent_id IS NOT NULL THEN d.name
+            WHEN c.private_patient_id IS NOT NULL THEN pp.name
+          END as client_name,
+          CASE 
+            WHEN c.private_patient_id IS NOT NULL THEN 0
+            ELSE c.value * (1 - $3 / 100)
+          END as amount_to_pay
+        FROM consultations c
+        LEFT JOIN services s ON c.service_id = s.id
+        LEFT JOIN users u ON c.user_id = u.id
+        LEFT JOIN dependents d ON c.dependent_id = d.id
+        LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
+        WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4
+        ORDER BY c.date DESC
+      `,
+        [professionalId, start_date, professionalPercentage, end_date]
+      );
+
+      // Calculate summary
+      const consultations = consultationsResult.rows;
+      const totalRevenue = consultations.reduce((sum, c) => sum + parseFloat(c.value), 0);
+      const totalAmountToPay = consultations.reduce((sum, c) => sum + parseFloat(c.amount_to_pay), 0);
+
+      res.json({
+        summary: {
+          professional_percentage: professionalPercentage,
+          total_revenue: totalRevenue,
+          consultation_count: consultations.length,
+          amount_to_pay: totalAmountToPay,
+        },
+        consultations: consultations,
+      });
+    } catch (error) {
+      console.error("❌ Error generating professional revenue report:", error);
+      res.status(500).json({ message: "Erro ao gerar relatório profissional" });
+    }
+  }
+);
+
+// Image upload route
+app.post("/api/upload-image", authenticate, async (req, res) => {
+  try {
+    console.log("🔄 Processing image upload...");
+
+    const upload = createUpload();
+    
+    upload.single("image")(req, res, async (err) => {
+      if (err) {
+        console.error("❌ Upload error:", err);
+        return res.status(400).json({ 
+          message: err.message || "Erro no upload da imagem" 
+        });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: "Nenhuma imagem foi enviada" });
+      }
+
+      console.log("✅ Image uploaded successfully:", req.file.path);
+
+      // Update user photo_url
+      await pool.query(
+        "UPDATE users SET photo_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+        [req.file.path, req.user.id]
+      );
+
+      console.log("✅ User photo updated in database");
+
+      res.json({
+        message: "Imagem enviada com sucesso",
+        imageUrl: req.file.path,
+      });
+    });
+  } catch (error) {
+    console.error("❌ Error in image upload:", error);
+    res.status(500).json({ message: "Erro ao fazer upload da imagem" });
+  }
+});
+
+// Payment routes
+app.post("/api/create-subscription", authenticate, async (req, res) => {
+  try {
+    const { user_id } = req.body;
+    const userId = user_id || req.user.id;
+
+    console.log("🔄 Creating subscription payment for user:", userId);
+
+    // Get user data
+    const userResult = await pool.query(
+      "SELECT name, email FROM users WHERE id = $1",
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ message: "Usuário não encontrado" });
+    }
+
+    const user = userResult.rows[0];
+
+    // Create MercadoPago preference
+    const preference = new Preference(client);
+    const preferenceData = {
+      items: [
+        {
+          title: "Assinatura Convênio Quiro Ferreira",
+          quantity: 1,
+          unit_price: 250,
+          currency_id: "BRL",
+        },
+      ],
+      payer: {
+        name: user.name,
+        email: user.email || "cliente@quiroferreira.com.br",
+      },
+      back_urls: {
+        success: `${req.protocol}://${req.get("host")}/client?payment=success`,
+        failure: `${req.protocol}://${req.get("host")}/client?payment=failure`,
+        pending: `${req.protocol}://${req.get("host")}/client?payment=pending`,
+      },
+      auto_return: "approved",
+      external_reference: `subscription_${userId}_${Date.now()}`,
+    };
+
+    const response = await preference.create({ body: preferenceData });
+
+    // Save payment record
+    await pool.query(
+      `
+      INSERT INTO client_payments (user_id, amount, payment_reference, mp_preference_id)
+      VALUES ($1, $2, $3, $4)
+    `,
+      [userId, 250, preferenceData.external_reference, response.id]
+    );
+
+    console.log("✅ Subscription payment created:", response.id);
+
+    res.json({
+      preference_id: response.id,
+      init_point: response.init_point,
+    });
+  } catch (error) {
+    console.error("❌ Error creating subscription payment:", error);
+    res.status(500).json({ message: "Erro ao criar pagamento da assinatura" });
+  }
+});
+
+// Webhook for payment notifications
+app.post("/api/webhook/mercadopago", async (req, res) => {
+  try {
+    console.log("🔄 MercadoPago webhook received:", req.body);
+
+    const { type, data } = req.body;
+
+    if (type === "payment") {
+      const paymentId = data.id;
+      
+      // Process payment notification
+      console.log("💰 Processing payment notification:", paymentId);
+      
+      // Here you would typically verify the payment with MercadoPago API
+      // and update the user's subscription status accordingly
+    }
+
+    res.status(200).json({ message: "Webhook processed" });
+  } catch (error) {
+    console.error("❌ Error processing webhook:", error);
+    res.status(500).json({ message: "Erro ao processar webhook" });
+  }
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error("❌ Unhandled error:", err);
+  res.status(500).json({ 
+    message: "Erro interno do servidor",
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
+});
+
+// 404 handler for API routes
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ message: "Rota não encontrada" });
+});
+
+// Serve React app in production
+if (process.env.NODE_ENV === "production") {
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "../dist/index.html"));
+  });
+}
+
+// Start server function
+const startServer = async () => {
+  try {
+    // Initialize database first
+    await initializeDatabase();
+    
+    // Start the server
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+      
+      if (process.env.NODE_ENV === 'production') {
+        console.log(`🔗 Production URL: https://www.cartaoquiroferreira.com.br`);
+      } else {
+        console.log(`🔗 Local URL: http://localhost:${PORT}`);
+      }
+    });
+  } catch (error) {
+    console.error("❌ Failed to start server:", error);
+    process.exit(1);
+  }
+};
+
+// Start the server
+startServer();
       const documentResult2 = await pool.query(
         `
       INSERT INTO medical_documents (
