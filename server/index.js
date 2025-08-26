@@ -2512,20 +2512,20 @@ app.get('/api/appointments', authenticate, authorize(['professional']), async (r
         al.name as location_name,
         CASE 
           WHEN a.private_patient_id IS NOT NULL THEN pp.name
-          WHEN a.client_id IS NOT NULL THEN u.name
+          WHEN a.user_id IS NOT NULL THEN u.name
           WHEN a.dependent_id IS NOT NULL THEN d.name
           ELSE 'Paciente não identificado'
         END as patient_name,
         CASE 
           WHEN a.private_patient_id IS NOT NULL THEN pp.phone
-          WHEN a.client_id IS NOT NULL THEN u.phone
+          WHEN a.user_id IS NOT NULL THEN u.phone
           ELSE NULL
         END as patient_phone
       FROM appointments a
       LEFT JOIN services s ON a.service_id = s.id
       LEFT JOIN attendance_locations al ON a.location_id = al.id
       LEFT JOIN private_patients pp ON a.private_patient_id = pp.id
-      LEFT JOIN users u ON a.client_id = u.id
+      LEFT JOIN users u ON a.user_id = u.id
       LEFT JOIN dependents d ON a.dependent_id = d.id
       WHERE a.professional_id = $1
     `;
@@ -2554,7 +2554,7 @@ app.post('/api/appointments', authenticate, authorize(['professional']), async (
   try {
     const {
       private_patient_id,
-      client_id,
+      user_id,
       dependent_id,
       service_id,
       location_id,
@@ -2575,7 +2575,7 @@ app.post('/api/appointments', authenticate, authorize(['professional']), async (
     }
     
     // Validate patient selection
-    if (!private_patient_id && !client_id && !dependent_id) {
+    if (!private_patient_id && !user_id && !dependent_id) {
       return res.status(400).json({ 
         message: 'É necessário selecionar um paciente' 
       });
@@ -2583,7 +2583,7 @@ app.post('/api/appointments', authenticate, authorize(['professional']), async (
     
     const result = await pool.query(`
       INSERT INTO appointments (
-        professional_id, private_patient_id, client_id, dependent_id,
+        professional_id, private_patient_id, user_id, dependent_id,
         service_id, location_id, appointment_date, appointment_time,
         notes, status, created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'scheduled', NOW())
@@ -2591,7 +2591,7 @@ app.post('/api/appointments', authenticate, authorize(['professional']), async (
     `, [
       professionalId,
       private_patient_id || null,
-      client_id || null,
+      user_id || null,
       dependent_id || null,
       service_id,
       location_id || null,
@@ -3157,13 +3157,13 @@ app.get('/api/medical-documents', authenticate, authorize(['professional']), asy
         md.created_at,
         CASE 
           WHEN md.private_patient_id IS NOT NULL THEN pp.name
-          WHEN md.client_id IS NOT NULL THEN u.name
+          WHEN md.user_id IS NOT NULL THEN u.name
           WHEN md.dependent_id IS NOT NULL THEN d.name
           ELSE 'Paciente não identificado'
         END as patient_name
       FROM medical_documents md
       LEFT JOIN private_patients pp ON md.private_patient_id = pp.id
-      LEFT JOIN users u ON md.client_id = u.id
+      LEFT JOIN users u ON md.user_id = u.id
       LEFT JOIN dependents d ON md.dependent_id = d.id
       WHERE md.professional_id = $1
       ORDER BY md.created_at DESC
@@ -3184,7 +3184,7 @@ app.post('/api/medical-documents', authenticate, authorize(['professional']), as
       title,
       document_type,
       private_patient_id,
-      client_id,
+      user_id,
       dependent_id,
       template_data
     } = req.body;
@@ -3201,7 +3201,7 @@ app.post('/api/medical-documents', authenticate, authorize(['professional']), as
     }
     
     // Validate patient selection
-    if (!private_patient_id && !client_id && !dependent_id) {
+    if (!private_patient_id && !user_id && !dependent_id) {
       return res.status(400).json({ 
         message: 'É necessário selecionar um paciente' 
       });
@@ -3214,14 +3214,14 @@ app.post('/api/medical-documents', authenticate, authorize(['professional']), as
     // Save document record to database
     const result = await pool.query(`
       INSERT INTO medical_documents (
-        professional_id, private_patient_id, client_id, dependent_id,
+        professional_id, private_patient_id, user_id, dependent_id,
         title, document_type, document_url, template_data, created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
       RETURNING *
     `, [
       professionalId,
       private_patient_id || null,
-      client_id || null,
+      user_id || null,
       dependent_id || null,
       title,
       document_type,
