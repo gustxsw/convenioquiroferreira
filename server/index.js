@@ -1294,120 +1294,107 @@ app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), 
     query += " ORDER BY c.date";
 
     const result = await pool.query(query, params);
-  }
-}
-)
 
-// Edit appointment endpoint
+    console.log("✅ Consultations loaded for agenda:", result.rows.length);
+    res.json(result.rows);
+  } catch (error) {
+    console.error("❌ Error fetching consultations for agenda:", error);
+    res.status(500).json({ message: "Erro ao carregar consultas da agenda" });
+  }
+});
+
+// Edit consultation/appointment
 app.put('/api/consultations/:id', authenticate, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { date, time, service_id, location_id, value, notes, patient_type, client_id, dependent_id, private_patient_id } = req.body;
+    const consultationId = req.params.id;
+    const { date, time, service_id, location_id, value, notes } = req.body;
     
-    console.log('🔄 Editing consultation:', { id, body: req.body });
-    
-    // Verify consultation belongs to the professional
-    const consultationCheck = await pool.query(
-      'SELECT id FROM consultations WHERE id = $1 AND professional_id = $2',
-      [id, req.user.id]
+    console.log('🔄 Editing consultation:', consultationId, req.body);
+
+    // First, check if consultation exists and belongs to the professional
+    const checkResult = await pool.query(
+      'SELECT * FROM consultations WHERE id = $1 AND professional_id = $2',
+      [consultationId, req.user.id]
     );
-    
-    if (consultationCheck.rows.length === 0) {
+
+    if (checkResult.rows.length === 0) {
       return res.status(404).json({ message: 'Consulta não encontrada ou não autorizada' });
     }
-    
-    // Combine date and time if both provided
-    let consultationDate;
+
+    // Combine date and time if provided
+    let consultationDate = null;
     if (date && time) {
       consultationDate = new Date(`${date}T${time}`);
     } else if (date) {
-      // If only date provided, keep existing time
-      const existingConsultation = await pool.query(
-        'SELECT date FROM consultations WHERE id = $1',
-        [id]
-      );
-      const existingDate = new Date(existingConsultation.rows[0].date);
+      // Keep existing time if only date is provided
+      const existingDate = new Date(checkResult.rows[0].date);
       consultationDate = new Date(`${date}T${existingDate.toTimeString().split(' ')[0]}`);
     }
-    
+
     // Build update query dynamically
     const updateFields = [];
     const updateValues = [];
     let paramCount = 1;
-    
+
     if (consultationDate) {
       updateFields.push(`date = $${paramCount}`);
       updateValues.push(consultationDate);
       paramCount++;
     }
-    
+
     if (service_id) {
       updateFields.push(`service_id = $${paramCount}`);
       updateValues.push(service_id);
       paramCount++;
     }
-    
-    if (location_id !== undefined) {
+
+    if (location_id) {
       updateFields.push(`location_id = $${paramCount}`);
-      updateValues.push(location_id || null);
+      updateValues.push(location_id);
       paramCount++;
     }
-    
+
     if (value !== undefined) {
       updateFields.push(`value = $${paramCount}`);
       updateValues.push(parseFloat(value));
       paramCount++;
     }
-    
+
     if (notes !== undefined) {
       updateFields.push(`notes = $${paramCount}`);
-      updateValues.push(notes || null);
+      updateValues.push(notes);
       paramCount++;
     }
-    
-    // Handle patient changes
-    if (patient_type === 'private' && private_patient_id) {
-      updateFields.push(`client_id = NULL, dependent_id = NULL, private_patient_id = $${paramCount}`);
-      updateValues.push(private_patient_id);
-      paramCount++;
-    } else if (patient_type === 'convenio') {
-      if (dependent_id) {
-        updateFields.push(`client_id = NULL, dependent_id = $${paramCount}, private_patient_id = NULL`);
-        updateValues.push(dependent_id);
-        paramCount++;
-      } else if (client_id) {
-        updateFields.push(`client_id = $${paramCount}, dependent_id = NULL, private_patient_id = NULL`);
-        updateValues.push(client_id);
-        paramCount++;
-      }
-    }
-    
+
     if (updateFields.length === 0) {
       return res.status(400).json({ message: 'Nenhum campo para atualizar' });
     }
-    
-    // Add updated_at field
-    updateFields.push(`updated_at = NOW()`);
-    
-    // Add consultation ID as last parameter
-    updateValues.push(id);
-    
+
+    // Add updated_at
+    updateFields.push(`updated_at = $${paramCount}`);
+    updateValues.push(new Date());
+    paramCount++;
+
+    // Add WHERE clause parameters
+    updateValues.push(consultationId);
+    updateValues.push(req.user.id);
+
     const updateQuery = `
       UPDATE consultations 
       SET ${updateFields.join(', ')}
-      WHERE id = $${paramCount}
+      WHERE id = $${paramCount - 1} AND professional_id = $${paramCount}
       RETURNING *
     `;
-    
+
     console.log('🔄 Update query:', updateQuery);
     console.log('🔄 Update values:', updateValues);
-    
+
     const result = await pool.query(updateQuery, updateValues);
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Consulta não encontrada' });
     }
-    
+
     console.log('✅ Consultation updated successfully');
     res.json({ 
       message: 'Consulta atualizada com sucesso',
@@ -1416,146 +1403,6 @@ app.put('/api/consultations/:id', authenticate, async (req, res) => {
   } catch (error) {
     console.error('❌ Error updating consultation:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
-  }
-});
-
-// Update consultation (appointment editing)
-app.put('/api/consultations/:id', authenticate, async (req, res) => {
-  try {
-    const consultationId = req.params.id;
-    const { 
-      date, 
-      time, 
-      service_id, 
-      location_id, 
-      value, 
-      notes,
-      client_id,
-      dependent_id,
-      private_patient_id 
-    } = req.body;
-
-    // Verify consultation belongs to the authenticated professional
-    const consultationCheck = await pool.query(
-      'SELECT id, professional_id FROM consultations WHERE id = $1',
-      [consultationId]
-    );
-
-    if (consultationCheck.rows.length === 0) {
-      return res.status(404).json({ message: 'Consulta não encontrada' });
-    }
-
-    if (consultationCheck.rows[0].professional_id !== req.user.id) {
-      return res.status(403).json({ message: 'Não autorizado a editar esta consulta' });
-    }
-
-    // Combine date and time if provided
-    let consultationDate;
-    if (date && time) {
-      consultationDate = new Date(`${date}T${time}`);
-    } else if (date) {
-      // If only date is provided, keep the original time
-      const originalConsultation = await pool.query(
-        'SELECT date FROM consultations WHERE id = $1',
-        [consultationId]
-      );
-      const originalDate = new Date(originalConsultation.rows[0].date);
-      const newDate = new Date(date);
-      newDate.setHours(originalDate.getHours(), originalDate.getMinutes());
-      consultationDate = newDate;
-    }
-
-    // Build update query dynamically
-    const updateFields = [];
-    const updateValues = [];
-    let paramCount = 1;
-
-    if (consultationDate) {
-      updateFields.push(`date = $${paramCount}`);
-      updateValues.push(consultationDate);
-      paramCount++;
-    }
-
-    if (service_id !== undefined) {
-      updateFields.push(`service_id = $${paramCount}`);
-      updateValues.push(service_id);
-      paramCount++;
-    }
-
-    if (location_id !== undefined) {
-      updateFields.push(`location_id = $${paramCount}`);
-      updateValues.push(location_id || null);
-      paramCount++;
-    }
-
-    if (value !== undefined) {
-      updateFields.push(`value = $${paramCount}`);
-      updateValues.push(parseFloat(value));
-      paramCount++;
-    }
-
-    if (notes !== undefined) {
-      updateFields.push(`notes = $${paramCount}`);
-      updateValues.push(notes || null);
-      paramCount++;
-    }
-
-    // Handle patient changes
-    if (client_id !== undefined) {
-      updateFields.push(`client_id = $${paramCount}`);
-      updateValues.push(client_id || null);
-      paramCount++;
-      updateFields.push(`dependent_id = NULL`);
-      updateFields.push(`private_patient_id = NULL`);
-    }
-
-    if (dependent_id !== undefined) {
-      updateFields.push(`dependent_id = $${paramCount}`);
-      updateValues.push(dependent_id || null);
-      paramCount++;
-      updateFields.push(`client_id = NULL`);
-      updateFields.push(`private_patient_id = NULL`);
-    }
-
-    if (private_patient_id !== undefined) {
-      updateFields.push(`private_patient_id = $${paramCount}`);
-      updateValues.push(private_patient_id || null);
-      paramCount++;
-      updateFields.push(`client_id = NULL`);
-      updateFields.push(`dependent_id = NULL`);
-    }
-
-    if (updateFields.length === 0) {
-      return res.status(400).json({ message: 'Nenhum campo para atualizar' });
-    }
-
-    // Add updated_at field
-    updateFields.push(`updated_at = NOW()`);
-
-    // Add consultation ID as last parameter
-    updateValues.push(consultationId);
-
-    const updateQuery = `
-      UPDATE consultations 
-      SET ${updateFields.join(', ')} 
-      WHERE id = $${paramCount}
-      RETURNING *
-    `;
-
-    console.log('🔄 Updating consultation with query:', updateQuery);
-    console.log('🔄 Update values:', updateValues);
-
-    const result = await pool.query(updateQuery, updateValues);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Consulta não encontrada' });
-    }
-
-    console.log("✅ Consultations loaded for agenda:", result.rows.length);
-    res.json(result.rows);
-  } catch (error) {
-    console.error("❌ Error fetching consultations for agenda:", error);
-    res.status(500).json({ message: "Erro ao carregar consultas da agenda" });
   }
 });
 
@@ -1726,101 +1573,6 @@ app.put("/api/consultations/:id/status", authenticate, authorize(["professional"
   } catch (error) {
     console.error("❌ Error updating consultation status:", error);
     res.status(500).json({ message: "Erro ao atualizar status da consulta" });
-  }
-});
-
-// Update consultation (full update)
-app.put("/api/consultations/:id", authenticate, authorize(["professional"]), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const {
-      service_id,
-      location_id,
-      value,
-      date,
-      status,
-      notes
-    } = req.body;
-
-    console.log("🔄 Updating consultation:", id);
-
-    // Get current consultation
-    const currentResult = await pool.query(
-      "SELECT * FROM consultations WHERE id = $1 AND professional_id = $2",
-      [id, req.user.id]
-    );
-
-    if (currentResult.rows.length === 0) {
-      return res.status(404).json({ message: "Consulta não encontrada" });
-    }
-
-    // Build update query dynamically
-    const updateFields = [];
-    const updateValues = [];
-    let paramCount = 1;
-
-    if (service_id !== undefined) {
-      updateFields.push(`service_id = $${paramCount++}`);
-      updateValues.push(service_id);
-    }
-
-    if (location_id !== undefined) {
-      updateFields.push(`location_id = $${paramCount++}`);
-      updateValues.push(location_id);
-    }
-
-    if (value !== undefined) {
-      if (isNaN(parseFloat(value)) || parseFloat(value) <= 0) {
-        return res.status(400).json({ message: "Valor deve ser um número maior que zero" });
-      }
-      updateFields.push(`value = $${paramCount++}`);
-      updateValues.push(parseFloat(value));
-    }
-
-    if (date !== undefined) {
-      updateFields.push(`date = $${paramCount++}`);
-      updateValues.push(new Date(date));
-    }
-
-    if (status !== undefined) {
-      const validStatuses = ['scheduled', 'confirmed', 'completed', 'cancelled'];
-      if (!validStatuses.includes(status)) {
-        return res.status(400).json({ message: "Status inválido" });
-      }
-      updateFields.push(`status = $${paramCount++}`);
-      updateValues.push(status);
-    }
-
-    if (notes !== undefined) {
-      updateFields.push(`notes = $${paramCount++}`);
-      updateValues.push(notes?.trim() || null);
-    }
-
-    // Always update updated_at
-    updateFields.push(`updated_at = $${paramCount++}`);
-    updateValues.push(new Date());
-
-    // Add consultation ID and professional ID for WHERE clause
-    updateValues.push(id, req.user.id);
-
-    const updateQuery = `
-      UPDATE consultations 
-      SET ${updateFields.join(", ")}
-      WHERE id = $${paramCount} AND professional_id = $${paramCount + 1}
-      RETURNING *
-    `;
-
-    const result = await pool.query(updateQuery, updateValues);
-
-    console.log("✅ Consultation updated:", id);
-
-    res.json({
-      message: "Consulta atualizada com sucesso",
-      consultation: result.rows[0],
-    });
-  } catch (error) {
-    console.error("❌ Error updating consultation:", error);
-    res.status(500).json({ message: "Erro ao atualizar consulta" });
   }
 });
 
