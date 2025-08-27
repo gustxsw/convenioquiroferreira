@@ -1265,6 +1265,308 @@ const SchedulingPage: React.FC = () => {
         </div>
       )}
 
+      {/* Edit Consultation Modal */}
+      {showEditModal && selectedConsultation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-bold flex items-center">
+                  <Edit className="h-6 w-6 text-blue-600 mr-2" />
+                  Editar Consulta
+                </h2>
+                <button
+                  onClick={closeEditModal}
+                  className="text-gray-400 hover:text-gray-600"
+                  disabled={isEditing}
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+
+            <form onSubmit={submitEditConsultation} className="p-6">
+              <div className="space-y-6">
+                {/* Patient Type */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Tipo de Paciente *
+                  </label>
+                  <select
+                    value={editFormData.patient_type}
+                    onChange={(e) =>
+                      setEditFormData((prev) => ({
+                        ...prev,
+                        patient_type: e.target.value as "convenio" | "private",
+                        client_cpf: "",
+                        private_patient_id: "",
+                        user_id: "",
+                        dependent_id: "",
+                      }))
+                    }
+                    className="input"
+                    required
+                    disabled={isEditing}
+                  >
+                    <option value="private">Paciente Particular</option>
+                    <option value="convenio">Cliente do Convênio</option>
+                  </select>
+                </div>
+
+                {/* Private Patient Selection */}
+                {editFormData.patient_type === "private" && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Paciente Particular *
+                    </label>
+                    <select
+                      value={editFormData.private_patient_id}
+                      onChange={(e) =>
+                        setEditFormData((prev) => ({
+                          ...prev,
+                          private_patient_id: e.target.value,
+                        }))
+                      }
+                      className="input"
+                      required
+                      disabled={isEditing}
+                    >
+                      <option value="">Selecione um paciente</option>
+                      {privatePatients.map((patient) => (
+                        <option key={patient.id} value={patient.id}>
+                          {patient.name} - {patient.cpf ? formatCpf(patient.cpf) : "CPF não informado"}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Convenio Client Search */}
+                {editFormData.patient_type === "convenio" && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      CPF do Cliente *
+                    </label>
+                    <div className="flex space-x-2">
+                      <input
+                        type="text"
+                        value={formatCpf(editFormData.client_cpf)}
+                        onChange={(e) =>
+                          setEditFormData((prev) => ({
+                            ...prev,
+                            client_cpf: e.target.value.replace(/\D/g, ""),
+                          }))
+                        }
+                        className="input flex-1"
+                        placeholder="000.000.000-00"
+                        disabled={isEditing}
+                      />
+                      <button
+                        type="button"
+                        onClick={searchEditClientByCpf}
+                        className="btn btn-secondary"
+                        disabled={isEditSearching || isEditing}
+                      >
+                        {isEditSearching ? "Buscando..." : "Buscar"}
+                      </button>
+                    </div>
+
+                    {/* Client Search Result */}
+                    {editClientSearchResult && (
+                      <div className="mt-3 p-3 bg-green-50 rounded-lg">
+                        <p className="font-medium text-green-800">
+                          Cliente: {editClientSearchResult.name}
+                        </p>
+                        
+                        {/* Dependent Selection */}
+                        {editDependents.length > 0 && (
+                          <div className="mt-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Dependente (opcional)
+                            </label>
+                            <select
+                              value={editSelectedDependentId || editFormData.dependent_id || ""}
+                              onChange={(e) => {
+                                const depId = e.target.value ? Number(e.target.value) : null;
+                                setEditSelectedDependentId(depId);
+                                setEditFormData(prev => ({
+                                  ...prev,
+                                  dependent_id: depId?.toString() || "",
+                                  user_id: depId ? "" : editClientSearchResult.id.toString()
+                                }));
+                              }}
+                              className="input"
+                              disabled={isEditing}
+                            >
+                              <option value="">Consulta para o titular</option>
+                              {editDependents.map((dependent) => (
+                                <option key={dependent.id} value={dependent.id}>
+                                  {dependent.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Date and Time */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Data *
+                    </label>
+                    <input
+                      type="date"
+                      value={editFormData.date}
+                      onChange={(e) =>
+                        setEditFormData((prev) => ({ ...prev, date: e.target.value }))
+                      }
+                      className="input"
+                      required
+                      disabled={isEditing}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Horário *
+                    </label>
+                    <select
+                      value={editFormData.time}
+                      onChange={(e) =>
+                        setEditFormData((prev) => ({ ...prev, time: e.target.value }))
+                      }
+                      className="input"
+                      required
+                      disabled={isEditing}
+                    >
+                      <option value="">Selecione um horário</option>
+                      {timeSlots.map((time) => (
+                        <option key={time} value={time}>
+                          {time}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Service and Value */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Serviço *
+                    </label>
+                    <select
+                      value={editFormData.service_id}
+                      onChange={handleEditServiceChange}
+                      className="input"
+                      required
+                      disabled={isEditing}
+                    >
+                      <option value="">Selecione um serviço</option>
+                      {services.map((service) => (
+                        <option key={service.id} value={service.id}>
+                          {service.name} - {formatCurrency(service.base_price)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Valor (R$) *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={editFormData.value}
+                      onChange={(e) =>
+                        setEditFormData((prev) => ({ ...prev, value: e.target.value }))
+                      }
+                      className="input"
+                      required
+                      disabled={isEditing}
+                    />
+                  </div>
+                </div>
+
+                {/* Location */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Local de Atendimento
+                  </label>
+                  <select
+                    value={editFormData.location_id || ""}
+                    onChange={(e) =>
+                      setEditFormData((prev) => ({ ...prev, location_id: e.target.value }))
+                    }
+                    className="input"
+                    disabled={isEditing}
+                  >
+                    <option value="">Selecione um local</option>
+                    {attendanceLocations.map((location) => (
+                      <option key={location.id} value={location.id}>
+                        {location.name} {location.is_default && "(Padrão)"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Observações
+                  </label>
+                  <textarea
+                    value={editFormData.notes}
+                    onChange={(e) =>
+                      setEditFormData((prev) => ({ ...prev, notes: e.target.value }))
+                    }
+                    className="input min-h-[80px]"
+                    placeholder="Observações sobre a consulta..."
+                    disabled={isEditing}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 mt-6">
+                <button
+                  type="button"
+                  onClick={closeEditModal}
+                  className="btn btn-secondary"
+                  disabled={isEditing}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className={`btn btn-primary ${
+                    isEditing ? "opacity-70 cursor-not-allowed" : ""
+                  }`}
+                  disabled={isEditing}
+                >
+                  {isEditing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Salvando...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-4 w-4 mr-2" />
+                      Salvar Alterações
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Status Change Modal */}
       {showStatusModal && selectedConsultation && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
