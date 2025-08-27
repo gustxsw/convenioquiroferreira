@@ -14,9 +14,16 @@ import {
   XCircle,
   Search,
   DollarSign,
+  Edit,
+  Trash2,
+  Repeat,
+  Filter,
+  MessageCircle,
 } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import RecurringConsultationModal from "../../components/RecurringConsultationModal";
+import EditConsultationModal from "../../components/EditConsultationModal";
 
 type Consultation = {
   id: number;
@@ -70,6 +77,21 @@ const SchedulingPage: React.FC = () => {
   const [newStatus, setNewStatus] = useState<"scheduled" | "confirmed" | "completed" | "cancelled">("scheduled");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  // New modal states for management features
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [consultationToDelete, setConsultationToDelete] = useState<Consultation | null>(null);
+
+  // Filter states
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [patientTypeFilter, setPatientTypeFilter] = useState("");
+  const [filteredConsultations, setFilteredConsultations] = useState<Consultation[]>([]);
+
+  // WhatsApp state
+  const [sendingWhatsApp, setSendingWhatsApp] = useState<number | null>(null);
+
   // Form state
   const [formData, setFormData] = useState({
     patient_type: "private" as "convenio" | "private",
@@ -103,6 +125,28 @@ const SchedulingPage: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, [selectedDate]);
+
+  // Filter consultations based on search and filters
+  useEffect(() => {
+    let filtered = consultations;
+
+    if (searchTerm) {
+      filtered = filtered.filter(consultation =>
+        consultation.client_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        consultation.service_name.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    if (statusFilter) {
+      filtered = filtered.filter(consultation => consultation.status === statusFilter);
+    }
+
+    if (patientTypeFilter) {
+      filtered = filtered.filter(consultation => consultation.patient_type === patientTypeFilter);
+    }
+
+    setFilteredConsultations(filtered);
+  }, [consultations, searchTerm, statusFilter, patientTypeFilter]);
 
   const fetchData = async () => {
     try {
