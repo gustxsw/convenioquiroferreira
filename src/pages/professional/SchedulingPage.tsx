@@ -14,16 +14,9 @@ import {
   XCircle,
   Search,
   DollarSign,
-  Edit,
-  Trash2,
-  Repeat,
-  Filter,
-  MessageCircle,
 } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import RecurringConsultationModal from "../../components/RecurringConsultationModal";
-import EditConsultationModal from "../../components/EditConsultationModal";
 
 type Consultation = {
   id: number;
@@ -77,188 +70,6 @@ const SchedulingPage: React.FC = () => {
   const [newStatus, setNewStatus] = useState<"scheduled" | "confirmed" | "completed" | "cancelled">("scheduled");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
-  // New modal states for management features
-  const [showRecurringModal, setShowRecurringModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [consultationToDelete, setConsultationToDelete] = useState<Consultation | null>(null);
-
-  // Filter states
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [patientTypeFilter, setPatientTypeFilter] = useState("");
-  const [filteredConsultations, setFilteredConsultations] = useState<Consultation[]>([]);
-
-  // WhatsApp state
-  const [sendingWhatsApp, setSendingWhatsApp] = useState<number | null>(null);
-
-  // Missing function implementations
-  const handleRecurringSuccess = () => {
-    setSuccess('Consultas recorrentes criadas com sucesso!');
-    fetchData();
-    setTimeout(() => setSuccess(''), 3000);
-  };
-
-  const closeEditModal = () => {
-    setShowEditModal(false);
-    setSelectedConsultation(null);
-    setError('');
-  };
-
-  const handleEditSuccess = () => {
-    setSuccess('Consulta atualizada com sucesso!');
-    fetchData();
-    closeEditModal();
-    setTimeout(() => setSuccess(''), 3000);
-  };
-
-  const confirmDelete = (consultation: Consultation) => {
-    setConsultationToDelete(consultation);
-    setShowDeleteConfirm(true);
-  };
-
-  const cancelDelete = () => {
-    setConsultationToDelete(null);
-    setShowDeleteConfirm(false);
-  };
-
-  const deleteConsultation = async () => {
-    if (!consultationToDelete) return;
-
-    try {
-      setIsLoading(true);
-      const token = localStorage.getItem('token');
-      const apiUrl = getApiUrl();
-
-      const response = await fetch(`${apiUrl}/api/consultations/${consultationToDelete.id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Erro ao excluir consulta');
-      }
-
-      await fetchData();
-      setSuccess('Consulta excluída com sucesso!');
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Erro ao excluir consulta');
-    } finally {
-      setIsLoading(false);
-      setConsultationToDelete(null);
-      setShowDeleteConfirm(false);
-    }
-  };
-
-  const sendWhatsAppMessage = async (consultation: Consultation) => {
-    try {
-      setSendingWhatsApp(consultation.id);
-      setError('');
-      
-      const token = localStorage.getItem('token');
-      const apiUrl = getApiUrl();
-
-      // Get client phone number
-      let phoneNumber = '';
-      
-      if (consultation.patient_type === 'convenio') {
-        if (consultation.is_dependent) {
-          // Get dependent's client phone
-          const dependentResponse = await fetch(`${apiUrl}/api/dependents/phone/${consultation.id}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          
-          if (dependentResponse.ok) {
-            const data = await dependentResponse.json();
-            phoneNumber = data.client_phone;
-          }
-        } else {
-          // Get client phone directly
-          const clientResponse = await fetch(`${apiUrl}/api/clients/phone-by-consultation/${consultation.id}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          
-          if (clientResponse.ok) {
-            const data = await clientResponse.json();
-            phoneNumber = data.phone;
-          }
-        }
-      } else {
-        // Get private patient phone
-        const patientResponse = await fetch(`${apiUrl}/api/private-patients/phone/${consultation.id}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        
-        if (patientResponse.ok) {
-          const data = await patientResponse.json();
-          phoneNumber = data.phone;
-        }
-      }
-
-      if (!phoneNumber) {
-        throw new Error('Número de telefone não encontrado para este paciente');
-      }
-
-      // Clean phone number (remove non-digits)
-      const cleanPhone = phoneNumber.replace(/\D/g, '');
-      
-      if (cleanPhone.length < 10) {
-        throw new Error('Número de telefone inválido');
-      }
-
-      // Format consultation date
-      const consultationDate = new Date(consultation.date);
-      const formattedDate = consultationDate.toLocaleDateString('pt-BR', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
-      const formattedTime = consultationDate.toLocaleTimeString('pt-BR', {
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-
-      // Create WhatsApp message
-      let message = `🏥 *CONFIRMAÇÃO DE CONSULTA*\n\n`;
-      message += `👤 *Paciente:* ${consultation.client_name}\n`;
-      message += `📅 *Data:* ${formattedDate}\n`;
-      message += `⏰ *Horário:* ${formattedTime}\n`;
-      message += `🩺 *Serviço:* ${consultation.service_name}\n`;
-      
-      if (consultation.location_name) {
-        message += `📍 *Local:* ${consultation.location_name}\n`;
-      }
-      
-      message += `💰 *Valor:* ${formatCurrency(consultation.value)}\n`;
-      
-      if (consultation.notes && consultation.notes.trim()) {
-        message += `📝 *Observações:* ${consultation.notes.trim()}\n`;
-      }
-      
-      message += `\n✅ *Sua consulta está confirmada!*\n`;
-      message += `\n📞 Em caso de dúvidas, entre em contato conosco.\n`;
-      message += `\n_Convênio Quiro Ferreira - Cuidando da sua saúde_`;
-
-      // Create WhatsApp URL
-      const whatsappUrl = `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(message)}`;
-      
-      // Open WhatsApp
-      window.open(whatsappUrl, '_blank');
-      
-      setSuccess('WhatsApp aberto com a mensagem de confirmação!');
-      setTimeout(() => setSuccess(''), 3000);
-      
-    } catch (error) {
-      console.error('Error sending WhatsApp message:', error);
-      setError(error instanceof Error ? error.message : 'Erro ao enviar mensagem');
-    } finally {
-      setSendingWhatsApp(null);
-    }
-  };
-
   // Form state
   const [formData, setFormData] = useState({
     patient_type: "private" as "convenio" | "private",
@@ -292,28 +103,6 @@ const SchedulingPage: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, [selectedDate]);
-
-  // Filter consultations based on search and filters
-  useEffect(() => {
-    let filtered = consultations;
-
-    if (searchTerm) {
-      filtered = filtered.filter(consultation =>
-        consultation.client_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        consultation.service_name.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    if (statusFilter) {
-      filtered = filtered.filter(consultation => consultation.status === statusFilter);
-    }
-
-    if (patientTypeFilter) {
-      filtered = filtered.filter(consultation => consultation.patient_type === patientTypeFilter);
-    }
-
-    setFilteredConsultations(filtered);
-  }, [consultations, searchTerm, statusFilter, patientTypeFilter]);
 
   const fetchData = async () => {
     try {
@@ -705,23 +494,13 @@ const SchedulingPage: React.FC = () => {
           <p className="text-gray-600">Visualize e gerencie suas consultas</p>
         </div>
 
-        <div className="flex space-x-2">
-          <button
-            onClick={() => setShowRecurringModal(true)}
-            className="btn btn-outline flex items-center"
-          >
-            <Repeat className="h-5 w-5 mr-2" />
-            Consultas Recorrentes
-          </button>
-
-          <button
-            onClick={() => setShowNewModal(true)}
-            className="btn btn-primary flex items-center"
-          >
-            <Plus className="h-5 w-5 mr-2" />
-            Nova Consulta
-          </button>
-        </div>
+        <button
+          onClick={() => setShowNewModal(true)}
+          className="btn btn-primary flex items-center"
+        >
+          <Plus className="h-5 w-5 mr-2" />
+          Nova Consulta
+        </button>
       </div>
 
       {error && (
@@ -903,7 +682,7 @@ const SchedulingPage: React.FC = () => {
                               </div>
                               {consultation.notes && (
                                 <p className="text-xs text-gray-500 mt-1 italic truncate">
-                                  "{consultation.notes.trim()}"
+                                  "{consultation.notes}"
                                 </p>
                               )}
                             </div>
@@ -911,51 +690,6 @@ const SchedulingPage: React.FC = () => {
 
                           {/* Status Button */}
                           <div className="flex items-center space-x-2">
-                            <button
-                              onClick={() => sendWhatsAppMessage(consultation)}
-                              className={`p-1 text-green-600 hover:text-green-800 rounded transition-colors ${
-                                sendingWhatsApp === consultation.id ? 'opacity-50 cursor-not-allowed' : ''
-                              }`}
-                              title="Enviar confirmação via WhatsApp"
-                              disabled={sendingWhatsApp === consultation.id}
-                            >
-                              {sendingWhatsApp === consultation.id ? (
-                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
-                              ) : (
-                                <MessageCircle className="h-4 w-4" />
-                              )}
-                            </button>
-                            <button
-                              onClick={() => {
-                                setSelectedConsultation(consultation);
-                                setShowEditModal(true);
-                              }}
-                              className="p-1 text-blue-600 hover:text-blue-800 rounded transition-colors"
-                              title="Editar consulta"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => confirmDelete(consultation)}
-                              className="p-1 text-red-600 hover:text-red-800 rounded transition-colors"
-                              title="Excluir consulta"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => sendWhatsAppMessage(consultation)}
-                              className={`p-1 text-green-600 hover:text-green-800 rounded transition-colors ${
-                                sendingWhatsApp === consultation.id ? 'opacity-50 cursor-not-allowed' : ''
-                              }`}
-                              title="Enviar confirmação via WhatsApp"
-                              disabled={sendingWhatsApp === consultation.id}
-                            >
-                              {sendingWhatsApp === consultation.id ? (
-                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
-                              ) : (
-                                <MessageCircle className="h-4 w-4" />
-                              )}
-                            </button>
                             <button
                               onClick={() => openStatusModal(consultation)}
                               className={`px-2 py-1 rounded text-xs font-medium flex items-center border transition-all hover:shadow-sm ${
@@ -1383,55 +1117,6 @@ const SchedulingPage: React.FC = () => {
                   )}
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Recurring Consultation Modal */}
-      <RecurringConsultationModal
-        isOpen={showRecurringModal}
-        onClose={() => setShowRecurringModal(false)}
-        onSuccess={handleRecurringSuccess}
-      />
-
-      {/* Edit Consultation Modal */}
-      <EditConsultationModal
-        isOpen={showEditModal}
-        consultation={selectedConsultation}
-        onClose={closeEditModal}
-        onSuccess={handleEditSuccess}
-      />
-
-      {/* Delete confirmation modal */}
-      {showDeleteConfirm && consultationToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-md p-6">
-            <h2 className="text-xl font-bold mb-4 flex items-center">
-              <AlertCircle className="h-6 w-6 text-red-600 mr-2" />
-              Confirmar Exclusão
-            </h2>
-            
-            <p className="mb-6">
-              Tem certeza que deseja excluir a consulta de <strong>{consultationToDelete.client_name}</strong>?
-              Esta ação não pode ser desfeita.
-            </p>
-            
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={cancelDelete}
-                className="btn btn-secondary flex items-center"
-              >
-                <X className="h-4 w-4 mr-2" />
-                Cancelar
-              </button>
-              <button
-                onClick={deleteConsultation}
-                className="btn bg-red-600 text-white hover:bg-red-700 flex items-center"
-              >
-                <Check className="h-4 w-4 mr-2" />
-                Confirmar Exclusão
-              </button>
             </div>
           </div>
         </div>

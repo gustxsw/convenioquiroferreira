@@ -328,11 +328,28 @@ const DocumentsPage: React.FC = () => {
       
       const { title, documentUrl } = result;
 
-      // Open PDF in new tab - works in all browsers
-      window.open(documentUrl, '_blank', 'noopener,noreferrer');
+      // Clean filename for download
+      const fileName = title
+        .replace(/[^a-zA-Z0-9\s]/g, "")
+        .replace(/\s+/g, "_");
+
+      // Create download link that opens in new tab
+      const link = document.createElement("a");
+      link.href = documentUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+
+      // For desktop browsers, try to force download
+      if (window.navigator.userAgent.indexOf("Mobile") === -1) {
+        link.download = `${fileName}.html`;
+      }
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
 
       setSuccess(
-        "Documento PDF criado com sucesso! O arquivo foi aberto em uma nova aba."
+        "Documento criado e aberto em nova aba. Use Ctrl+S (ou Cmd+S no Mac) para salvar ou imprimir."
       );
       
       // Refresh documents list
