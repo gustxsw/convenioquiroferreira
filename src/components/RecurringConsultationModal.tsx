@@ -236,7 +236,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
         recurrence_interval: formData.recurrence_interval,
         end_date: formData.end_date || null,
         occurrences: formData.occurrences,
-        notes: formData.notes || null,
+        notes: formData.notes && formData.notes.trim() ? formData.notes.trim() : null,
       };
 
       // Set patient based on type

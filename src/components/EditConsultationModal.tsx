@@ -125,7 +125,7 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
         date: dateTime.toISOString(),
         value: parseFloat(formData.value),
         location_id: formData.location_id ? parseInt(formData.location_id) : null,
-        notes: formData.notes || null,
+        notes: formData.notes && formData.notes.trim() ? formData.notes.trim() : null,
         status: formData.status,
       };
 

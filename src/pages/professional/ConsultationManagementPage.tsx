@@ -232,7 +232,7 @@ Sua consulta foi confirmada com os seguintes detalhes:
 ${consultation.location_name ? `📍 *Local:* ${consultation.location_name}` : ''}
 💰 *Valor:* ${formatCurrency(consultation.value)}
 
-${consultation.notes ? `📝 *Observações:* ${consultation.notes}\n\n` : ''}Por favor, chegue com 15 minutos de antecedência.
+${consultation.notes && consultation.notes.trim() ? `📝 *Observações:* ${consultation.notes.trim()}\n\n` : ''}Por favor, chegue com 15 minutos de antecedência.
 
 Em caso de dúvidas ou necessidade de reagendamento, entre em contato conosco.
 

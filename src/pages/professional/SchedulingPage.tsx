@@ -682,7 +682,7 @@ const SchedulingPage: React.FC = () => {
                               </div>
                               {consultation.notes && (
                                 <p className="text-xs text-gray-500 mt-1 italic truncate">
-                                  "{consultation.notes}"
+                                  "{consultation.notes.trim()}"
                                 </p>
                               )}
                             </div>
