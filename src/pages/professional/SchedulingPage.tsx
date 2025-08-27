@@ -1392,7 +1392,10 @@ app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), 
         };
       })
     );
+
     console.log("✅ Consultations loaded for agenda:", consultationsWithPhone.length);
+
+    res.json(consultationsWithPhone);
   } catch (error) {
     console.error("❌ Error fetching consultations for agenda:", error);
     res.status(500).json({ message: "Erro ao carregar consultas da agenda" });
