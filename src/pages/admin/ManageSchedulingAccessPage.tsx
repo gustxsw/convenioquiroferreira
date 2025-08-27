@@ -121,9 +121,10 @@ const ManageSchedulingAccessPage: React.FC = () => {
     setSelectedProfessional(professional);
     
     // Set default expiry to 3 months from now
-    const defaultExpiry = new Date();
-    defaultExpiry.setMonth(defaultExpiry.getMonth() + 3);
-    setExpiryDate(defaultExpiry.toISOString().split('T')[0]);
+  const defaultExpiry = new Date();
+  defaultExpiry.setDate(defaultExpiry.getDate() + 7);
+  setExpiryDate(defaultExpiry.toISOString().split('T')[0]);
+
     
     setReason('');
     setIsModalOpen(true);
