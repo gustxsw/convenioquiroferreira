@@ -1,36 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
+import React, { useState, useEffect } from "react";
 import {
   Calendar,
   Clock,
   User,
-  MapPin,
-  FileText,
   Plus,
-  Edit,
-  Trash2,
-  Search,
-  Filter,
-  AlertCircle,
-  CheckCircle,
+  Check,
   X,
-  Save
-} from 'lucide-react';
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
+  Users,
+  CheckCircle,
+  XCircle,
+  Search,
+  DollarSign,
+} from "lucide-react";
+import { format, addDays, subDays } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
-type Appointment = {
+type Consultation = {
   id: number;
   date: string;
-  value: number;
-  service_name: string;
   client_name: string;
-  location_name: string;
-  status: string;
-  notes: string;
-  service_id: number;
-  location_id: number;
-  user_id: number;
-  dependent_id: number;
-  private_patient_id: number;
+  service_name: string;
+  status: "scheduled" | "confirmed" | "completed" | "cancelled";
+  value: number;
+  notes?: string;
+  is_dependent: boolean;
+  patient_type: "convenio" | "private";
+  location_name?: string;
 };
 
 type Service = {
@@ -46,32 +44,50 @@ type AttendanceLocation = {
   is_default: boolean;
 };
 
+type PrivatePatient = {
+  id: number;
+  name: string;
+  cpf: string;
+};
+
 const SchedulingPage: React.FC = () => {
-  const { user } = useAuth();
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [consultations, setConsultations] = useState<Consultation[]>([]);
   const [services, setServices] = useState<Service[]>([]);
-  const [locations, setLocations] = useState<AttendanceLocation[]>([]);
-  const [filteredAppointments, setFilteredAppointments] = useState<Appointment[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [privatePatients, setPrivatePatients] = useState<PrivatePatient[]>([]);
+  const [attendanceLocations, setAttendanceLocations] = useState<AttendanceLocation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  // Edit modal state
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
+  // New consultation modal
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
 
-  // Edit form state
-  const [editFormData, setEditFormData] = useState({
-    date: '',
-    time: '',
-    service_id: '',
-    location_id: '',
-    value: '',
-    notes: ''
+  // Status change modal
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [selectedConsultation, setSelectedConsultation] = useState<Consultation | null>(null);
+  const [newStatus, setNewStatus] = useState<"scheduled" | "confirmed" | "completed" | "cancelled">("scheduled");
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  // Form state
+  const [formData, setFormData] = useState({
+    patient_type: "private" as "convenio" | "private",
+    client_cpf: "",
+    private_patient_id: "",
+    date: format(new Date(), "yyyy-MM-dd"),
+    time: "",
+    service_id: "",
+    value: "",
+    location_id: "",
+    notes: "",
   });
+
+  // Client search state
+  const [clientSearchResult, setClientSearchResult] = useState<any>(null);
+  const [dependents, setDependents] = useState<any[]>([]);
+  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
 
   // Get API URL
   const getApiUrl = () => {
@@ -86,418 +102,771 @@ const SchedulingPage: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
-
-  useEffect(() => {
-    let filtered = appointments;
-
-    if (searchTerm) {
-      filtered = filtered.filter(appointment =>
-        appointment.client_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        appointment.service_name.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    if (statusFilter) {
-      filtered = filtered.filter(appointment => appointment.status === statusFilter);
-    }
-
-    setFilteredAppointments(filtered);
-  }, [appointments, searchTerm, statusFilter]);
+  }, [selectedDate]);
 
   const fetchData = async () => {
     try {
       setIsLoading(true);
-      setError('');
-      const token = localStorage.getItem('token');
+      setError("");
+
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
+      const dateStr = format(selectedDate, "yyyy-MM-dd");
 
-      console.log('🔄 Fetching scheduling data from:', apiUrl);
+      console.log("🔄 Fetching consultations for date:", dateStr);
 
-      // Fetch appointments
-      const appointmentsResponse = await fetch(`${apiUrl}/api/consultations`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      // Fetch consultations for the selected date
+      const consultationsResponse = await fetch(
+        `${apiUrl}/api/consultations/agenda?date=${dateStr}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
 
-      if (appointmentsResponse.ok) {
-        const appointmentsData = await appointmentsResponse.json();
-        console.log('✅ Appointments loaded:', appointmentsData.length);
-        setAppointments(appointmentsData);
+      if (consultationsResponse.ok) {
+        const consultationsData = await consultationsResponse.json();
+        console.log("✅ Consultations loaded:", consultationsData.length);
+        setConsultations(consultationsData);
       } else {
-        console.warn('⚠️ Appointments not available:', appointmentsResponse.status);
-        setAppointments([]);
+        console.error("Consultations response error:", consultationsResponse.status);
+        setConsultations([]);
       }
 
       // Fetch services
       const servicesResponse = await fetch(`${apiUrl}/api/services`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
       });
 
       if (servicesResponse.ok) {
         const servicesData = await servicesResponse.json();
-        console.log('✅ Services loaded:', servicesData.length);
         setServices(servicesData);
-      } else {
-        console.warn('⚠️ Services not available:', servicesResponse.status);
-        setServices([]);
+      }
+
+      // Fetch private patients
+      const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (patientsResponse.ok) {
+        const patientsData = await patientsResponse.json();
+        setPrivatePatients(Array.isArray(patientsData) ? patientsData : []);
       }
 
       // Fetch attendance locations
       const locationsResponse = await fetch(`${apiUrl}/api/attendance-locations`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
       });
 
       if (locationsResponse.ok) {
         const locationsData = await locationsResponse.json();
-        console.log('✅ Locations loaded:', locationsData.length);
-        setLocations(locationsData);
-      } else {
-        console.warn('⚠️ Locations not available:', locationsResponse.status);
-        setLocations([]);
+        setAttendanceLocations(locationsData);
+
+        // Set default location if exists
+        const defaultLocation = locationsData.find((loc: AttendanceLocation) => loc.is_default);
+        if (defaultLocation) {
+          setFormData((prev) => ({
+            ...prev,
+            location_id: defaultLocation.id.toString(),
+          }));
+        }
       }
     } catch (error) {
-      console.error('❌ Error fetching data:', error);
-      setError('Não foi possível carregar os dados da agenda');
+      console.error("Error fetching data:", error);
+      setError("Não foi possível carregar os dados da agenda");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const openEditModal = (appointment: Appointment) => {
-    setSelectedAppointment(appointment);
-    
-    // Parse date and time from appointment date
-    const appointmentDate = new Date(appointment.date);
-    const dateStr = appointmentDate.toISOString().split('T')[0];
-    const timeStr = appointmentDate.toTimeString().slice(0, 5);
-
-    setEditFormData({
-      date: dateStr,
-      time: timeStr,
-      service_id: appointment.service_id.toString(),
-      location_id: appointment.location_id?.toString() || '',
-      value: appointment.value.toString(),
-      notes: appointment.notes || ''
-    });
-
-    setError('');
-    setSuccess('');
-    setIsEditModalOpen(true);
-  };
-
-  const closeEditModal = () => {
-    setIsEditModalOpen(false);
-    setSelectedAppointment(null);
-    setError('');
-    setSuccess('');
-  };
-
-  const handleEditInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setEditFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleEditSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!selectedAppointment) return;
-
-    setIsEditing(true);
-    setError('');
-    setSuccess('');
+  const searchClientByCpf = async () => {
+    if (!formData.client_cpf) return;
 
     try {
-      const token = localStorage.getItem('token');
+      setIsSearching(true);
+      setError("");
+
+      const token = localStorage.getItem("token");
+      const apiUrl = getApiUrl();
+      const cleanCpf = formData.client_cpf.replace(/\D/g, "");
+
+      // Search for client
+      const clientResponse = await fetch(
+        `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (clientResponse.ok) {
+        const clientData = await clientResponse.json();
+        
+        if (clientData.subscription_status !== "active") {
+          setError("Cliente não possui assinatura ativa");
+          return;
+        }
+
+        setClientSearchResult(clientData);
+
+        // Fetch dependents
+        const dependentsResponse = await fetch(
+          `${apiUrl}/api/dependents/${clientData.id}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        if (dependentsResponse.ok) {
+          const dependentsData = await dependentsResponse.json();
+          setDependents(dependentsData.filter((d: any) => d.subscription_status === "active"));
+        }
+      } else {
+        // Try searching as dependent
+        const dependentResponse = await fetch(
+          `${apiUrl}/api/dependents/lookup?cpf=${cleanCpf}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        if (dependentResponse.ok) {
+          const dependentData = await dependentResponse.json();
+          
+          if (dependentData.dependent_subscription_status !== "active") {
+            setError("Dependente não possui assinatura ativa");
+            return;
+          }
+
+          setClientSearchResult({
+            id: dependentData.user_id,
+            name: dependentData.client_name,
+            subscription_status: "active",
+          });
+          setSelectedDependentId(dependentData.id);
+          setDependents([]);
+        } else {
+          setError("Cliente ou dependente não encontrado");
+        }
+      }
+    } catch (error) {
+      setError("Erro ao buscar cliente");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const createConsultation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    try {
+      setIsCreating(true);
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      console.log('🔄 Updating appointment:', selectedAppointment.id, editFormData);
+      // Prepare consultation data
+      const consultationData: any = {
+        service_id: parseInt(formData.service_id),
+        location_id: formData.location_id ? parseInt(formData.location_id) : null,
+        value: parseFloat(formData.value),
+        date: new Date(`${formData.date}T${formData.time}`).toISOString(),
+        status: "scheduled",
+        notes: formData.notes || null,
+      };
 
-      const response = await fetch(`${apiUrl}/api/consultations/${selectedAppointment.id}`, {
-        method: 'PUT',
+      // Set patient based on type
+      if (formData.patient_type === "private") {
+        consultationData.private_patient_id = parseInt(formData.private_patient_id);
+      } else {
+        if (selectedDependentId) {
+          consultationData.dependent_id = selectedDependentId;
+        } else {
+          consultationData.user_id = clientSearchResult?.id;
+        }
+      }
+
+      const response = await fetch(`${apiUrl}/api/consultations`, {
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify(editFormData)
+        body: JSON.stringify(consultationData),
       });
-
-      console.log('📡 Edit response status:', response.status);
 
       if (!response.ok) {
         const errorData = await response.json();
-        console.error('❌ Edit error:', errorData);
-        throw new Error(errorData.message || 'Erro ao atualizar agendamento');
+        throw new Error(errorData.message || "Falha ao criar consulta");
       }
 
-      const responseData = await response.json();
-      console.log('✅ Appointment updated successfully:', responseData);
-
-      setSuccess('Agendamento atualizado com sucesso!');
-      
-      // Refresh appointments list
+      setSuccess("Consulta criada com sucesso!");
       await fetchData();
-
-      // Close modal after short delay
-      setTimeout(() => {
-        closeEditModal();
-      }, 1500);
+      setShowNewModal(false);
+      resetForm();
+      setTimeout(() => setSuccess(""), 3000);
     } catch (error) {
-      console.error('❌ Error updating appointment:', error);
-      setError(error instanceof Error ? error.message : 'Erro ao atualizar agendamento');
+      setError(error instanceof Error ? error.message : "Erro ao criar consulta");
     } finally {
-      setIsEditing(false);
+      setIsCreating(false);
     }
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+  const resetForm = () => {
+    setFormData({
+      patient_type: "private",
+      client_cpf: "",
+      private_patient_id: "",
+      date: format(selectedDate, "yyyy-MM-dd"),
+      time: "",
+      service_id: "",
+      value: "",
+      location_id: "",
+      notes: "",
     });
+    setClientSearchResult(null);
+    setDependents([]);
+    setSelectedDependentId(null);
+  };
+
+  const openStatusModal = (consultation: Consultation) => {
+    setSelectedConsultation(consultation);
+    setNewStatus(consultation.status);
+    setShowStatusModal(true);
+  };
+
+  const closeStatusModal = () => {
+    setShowStatusModal(false);
+    setSelectedConsultation(null);
+    setError("");
+  };
+
+  const updateConsultationStatus = async () => {
+    if (!selectedConsultation) return;
+
+    try {
+      setIsUpdatingStatus(true);
+      setError("");
+
+      const token = localStorage.getItem("token");
+      const apiUrl = getApiUrl();
+
+      const response = await fetch(
+        `${apiUrl}/api/consultations/${selectedConsultation.id}/status`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ status: newStatus }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Erro ao atualizar status");
+      }
+
+      await fetchData();
+      setShowStatusModal(false);
+      setSelectedConsultation(null);
+      setSuccess("Status atualizado com sucesso!");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Erro ao atualizar status");
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
+  const getStatusInfo = (status: string) => {
+    switch (status) {
+      case "scheduled":
+        return {
+          text: "Agendado",
+          className: "bg-blue-100 text-blue-800 border-blue-200",
+          icon: <Clock className="h-3 w-3 mr-1" />,
+        };
+      case "confirmed":
+        return {
+          text: "Confirmado",
+          className: "bg-green-100 text-green-800 border-green-200",
+          icon: <CheckCircle className="h-3 w-3 mr-1" />,
+        };
+      case "completed":
+        return {
+          text: "Concluído",
+          className: "bg-gray-100 text-gray-800 border-gray-200",
+          icon: <Check className="h-3 w-3 mr-1" />,
+        };
+      case "cancelled":
+        return {
+          text: "Cancelado",
+          className: "bg-red-100 text-red-800 border-red-200",
+          icon: <XCircle className="h-3 w-3 mr-1" />,
+        };
+      default:
+        return {
+          text: "Desconhecido",
+          className: "bg-gray-100 text-gray-800 border-gray-200",
+          icon: <AlertCircle className="h-3 w-3 mr-1" />,
+        };
+    }
   };
 
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
     }).format(value);
   };
 
-  const getStatusDisplay = (status: string) => {
-    switch (status) {
-      case 'scheduled':
-        return { text: 'Agendado', className: 'bg-blue-100 text-blue-800' };
-      case 'completed':
-        return { text: 'Concluído', className: 'bg-green-100 text-green-800' };
-      case 'cancelled':
-        return { text: 'Cancelado', className: 'bg-red-100 text-red-800' };
-      case 'no_show':
-        return { text: 'Faltou', className: 'bg-yellow-100 text-yellow-800' };
-      default:
-        return { text: status, className: 'bg-gray-100 text-gray-800' };
+  const formatCpf = (value: string) => {
+    if (!value) return "";
+    const numericValue = value.replace(/\D/g, "");
+    return numericValue.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  };
+
+  const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const serviceId = e.target.value;
+    setFormData((prev) => ({ ...prev, service_id: serviceId }));
+
+    // Auto-fill value based on service
+    const service = services.find((s) => s.id.toString() === serviceId);
+    if (service) {
+      setFormData((prev) => ({
+        ...prev,
+        value: service.base_price.toString(),
+      }));
     }
+  };
+
+  const generateTimeSlots = () => {
+    const slots = [];
+    for (let hour = 8; hour <= 18; hour++) {
+      for (let minute = 0; minute < 60; minute += 30) {
+        const timeStr = `${hour.toString().padStart(2, "0")}:${minute
+          .toString()
+          .padStart(2, "0")}`;
+        slots.push(timeStr);
+      }
+    }
+    return slots;
+  };
+
+  const timeSlots = generateTimeSlots();
+  
+  // Group consultations by time for display
+  const consultationsByTime = consultations.reduce((acc, consultation) => {
+    const time = format(new Date(consultation.date), "HH:mm");
+    acc[time] = consultation;
+    return acc;
+  }, {} as Record<string, Consultation>);
+
+  // Calculate daily statistics
+  const dailyStats = {
+    scheduled: consultations.filter((c) => c.status === "scheduled").length,
+    confirmed: consultations.filter((c) => c.status === "confirmed").length,
+    completed: consultations.filter((c) => c.status === "completed").length,
+    cancelled: consultations.filter((c) => c.status === "cancelled").length,
+    totalValue: consultations.reduce((sum, c) => sum + c.value, 0),
+    convenioValue: consultations
+      .filter((c) => c.patient_type === "convenio")
+      .reduce((sum, c) => sum + c.value * 0.5, 0), // Assuming 50% to pay to convenio
   };
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Agenda de Consultas</h1>
-          <p className="text-gray-600">Visualize e gerencie seus agendamentos</p>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-        <div className="flex items-center mb-4">
-          <Filter className="h-5 w-5 text-red-600 mr-2" />
-          <h2 className="text-lg font-semibold">Filtros</h2>
+          <h1 className="text-2xl font-bold text-gray-900">Agenda</h1>
+          <p className="text-gray-600">Visualize e gerencie suas consultas</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por cliente ou serviço..."
-              className="input pl-10"
-            />
-          </div>
-
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="input"
-          >
-            <option value="">Todos os status</option>
-            <option value="scheduled">Agendado</option>
-            <option value="completed">Concluído</option>
-            <option value="cancelled">Cancelado</option>
-            <option value="no_show">Faltou</option>
-          </select>
-
-          <button
-            onClick={() => {
-              setSearchTerm('');
-              setStatusFilter('');
-            }}
-            className="btn btn-secondary"
-          >
-            Limpar Filtros
-          </button>
-        </div>
+        <button
+          onClick={() => setShowNewModal(true)}
+          className="btn btn-primary flex items-center"
+        >
+          <Plus className="h-5 w-5 mr-2" />
+          Nova Consulta
+        </button>
       </div>
 
       {error && (
         <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 flex items-center">
-          <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
+          <AlertCircle className="h-5 w-5 mr-2" />
           {error}
         </div>
       )}
 
       {success && (
-        <div className="bg-green-50 text-green-600 p-4 rounded-lg mb-6">
+        <div className="bg-green-50 text-green-600 p-4 rounded-lg mb-6 flex items-center">
+          <Check className="h-5 w-5 mr-2" />
           {success}
         </div>
       )}
 
-      {/* Appointments Table */}
+      {/* Date Navigation */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setSelectedDate(subDays(selectedDate, 1))}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+
+          <div className="text-center">
+            <h2 className="text-xl font-semibold text-gray-900">
+              {format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })}
+            </h2>
+            <p className="text-sm text-gray-600">
+              {consultations.length} consulta(s)
+            </p>
+          </div>
+
+          <button
+            onClick={() => setSelectedDate(addDays(selectedDate, 1))}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="flex justify-center mt-4">
+          <button
+            onClick={() => setSelectedDate(new Date())}
+            className="btn btn-secondary"
+          >
+            Hoje
+          </button>
+        </div>
+      </div>
+
+      {/* Daily Statistics */}
+      {consultations.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
+          <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-200">
+            <div className="text-2xl font-bold text-blue-600">{dailyStats.scheduled}</div>
+            <div className="text-sm text-blue-700 flex items-center justify-center">
+              <Clock className="h-3 w-3 mr-1" />
+              Agendados
+            </div>
+          </div>
+
+          <div className="bg-green-50 p-4 rounded-lg text-center border border-green-200">
+            <div className="text-2xl font-bold text-green-600">{dailyStats.confirmed}</div>
+            <div className="text-sm text-green-700 flex items-center justify-center">
+              <CheckCircle className="h-3 w-3 mr-1" />
+              Confirmados
+            </div>
+          </div>
+
+          <div className="bg-gray-50 p-4 rounded-lg text-center border border-gray-200">
+            <div className="text-2xl font-bold text-gray-600">{dailyStats.completed}</div>
+            <div className="text-sm text-gray-700 flex items-center justify-center">
+              <Check className="h-3 w-3 mr-1" />
+              Concluídos
+            </div>
+          </div>
+
+          <div className="bg-red-50 p-4 rounded-lg text-center border border-red-200">
+            <div className="text-2xl font-bold text-red-600">{dailyStats.cancelled}</div>
+            <div className="text-sm text-red-700 flex items-center justify-center">
+              <XCircle className="h-3 w-3 mr-1" />
+              Cancelados
+            </div>
+          </div>
+
+          <div className="bg-green-50 p-4 rounded-lg text-center border border-green-200">
+            <div className="text-lg font-bold text-green-600">{formatCurrency(dailyStats.totalValue)}</div>
+            <div className="text-sm text-green-700">Faturamento</div>
+          </div>
+
+          <div className="bg-red-50 p-4 rounded-lg text-center border border-red-200">
+            <div className="text-lg font-bold text-red-600">{formatCurrency(dailyStats.convenioValue)}</div>
+            <div className="text-sm text-red-700">A Pagar</div>
+          </div>
+        </div>
+      )}
+
+      {/* Agenda View */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
         {isLoading ? (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Carregando agendamentos...</p>
+            <p className="text-gray-600">Carregando agenda...</p>
           </div>
-        ) : filteredAppointments.length === 0 ? (
+        ) : (
+          <div className="flex">
+            {/* Time Column */}
+            <div className="w-24 bg-gray-50 border-r border-gray-200">
+              <div className="sticky top-0 bg-gray-100 p-3 border-b border-gray-200">
+                <div className="text-xs font-medium text-gray-600 text-center">HORÁRIO</div>
+              </div>
+              <div className="space-y-0">
+                {timeSlots.map((timeSlot) => (
+                  <div
+                    key={timeSlot}
+                    className="h-16 flex items-center justify-center border-b border-gray-100 text-sm font-medium text-gray-700"
+                  >
+                    {timeSlot}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Consultations Column */}
+            <div className="flex-1">
+              <div className="sticky top-0 bg-gray-100 p-3 border-b border-gray-200">
+                <div className="text-xs font-medium text-gray-600 text-center">CONSULTAS</div>
+              </div>
+              <div className="relative">
+                {timeSlots.map((timeSlot) => {
+                  const consultation = consultationsByTime[timeSlot];
+
+                  return (
+                    <div
+                      key={timeSlot}
+                      className="h-16 border-b border-gray-100 flex items-center px-4 hover:bg-gray-50 transition-colors"
+                    >
+                      {consultation ? (
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex items-center space-x-3 flex-1">
+                            <div className="flex-1">
+                              <div className="flex items-center mb-1">
+                                {consultation.is_dependent ? (
+                                  <Users className="h-4 w-4 text-blue-600 mr-2" />
+                                ) : consultation.patient_type === "private" ? (
+                                  <User className="h-4 w-4 text-purple-600 mr-2" />
+                                ) : (
+                                  <User className="h-4 w-4 text-green-600 mr-2" />
+                                )}
+                                <span className="font-medium text-gray-900 text-sm">
+                                  {consultation.client_name}
+                                </span>
+                                {consultation.is_dependent && (
+                                  <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                                    Dependente
+                                  </span>
+                                )}
+                                {consultation.patient_type === "private" && (
+                                  <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs">
+                                    Particular
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center space-x-4">
+                                <p className="text-xs text-gray-600">
+                                  {consultation.service_name}
+                                </p>
+                                <p className="text-xs font-medium text-green-600">
+                                  {formatCurrency(consultation.value)}
+                                </p>
+                                {consultation.location_name && (
+                                  <p className="text-xs text-gray-500">
+                                    {consultation.location_name}
+                                  </p>
+                                )}
+                              </div>
+                              {consultation.notes && (
+                                <p className="text-xs text-gray-500 mt-1 italic truncate">
+                                  "{consultation.notes}"
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Status Button */}
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => openStatusModal(consultation)}
+                              className={`px-2 py-1 rounded text-xs font-medium flex items-center border transition-all hover:shadow-sm ${
+                                getStatusInfo(consultation.status).className
+                              }`}
+                              title="Clique para alterar o status"
+                            >
+                              {getStatusInfo(consultation.status).icon}
+                              {getStatusInfo(consultation.status).text}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-400 italic">Horário livre</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!isLoading && consultations.length === 0 && (
           <div className="text-center py-12">
             <Calendar className="h-16 w-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {searchTerm || statusFilter ? 'Nenhum agendamento encontrado' : 'Nenhum agendamento cadastrado'}
+              Nenhuma consulta para este dia
             </h3>
-            <p className="text-gray-600">
-              {searchTerm || statusFilter
-                ? 'Tente ajustar os filtros de busca.'
-                : 'Seus agendamentos aparecerão aqui quando forem criados.'
-              }
+            <p className="text-gray-600 mb-4">
+              Sua agenda está livre para {format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}
             </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Data/Hora
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Cliente
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Serviço
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Local
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Valor
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Ações
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredAppointments.map((appointment) => {
-                  const statusInfo = getStatusDisplay(appointment.status);
-                  return (
-                    <tr key={appointment.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <Calendar className="h-4 w-4 text-gray-400 mr-2" />
-                          <div className="text-sm text-gray-900">
-                            {formatDate(appointment.date)}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <User className="h-4 w-4 text-gray-400 mr-2" />
-                          <div className="text-sm text-gray-900">
-                            {appointment.client_name}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {appointment.service_name}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <MapPin className="h-4 w-4 text-gray-400 mr-2" />
-                          <div className="text-sm text-gray-500">
-                            {appointment.location_name || 'Não informado'}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">
-                          {formatCurrency(appointment.value)}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${statusInfo.className}`}>
-                          {statusInfo.text}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end space-x-2">
-                          <button
-                            onClick={() => openEditModal(appointment)}
-                            className="text-blue-600 hover:text-blue-900"
-                            title="Editar Agendamento"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <button
+              onClick={() => setShowNewModal(true)}
+              className="btn btn-primary inline-flex items-center"
+            >
+              <Plus className="h-5 w-5 mr-2" />
+              Agendar Consulta
+            </button>
           </div>
         )}
       </div>
 
-      {/* Edit Appointment Modal */}
-      {isEditModalOpen && selectedAppointment && (
+      {/* New Consultation Modal */}
+      {showNewModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200">
               <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold">Editar Agendamento</h2>
+                <h2 className="text-xl font-bold flex items-center">
+                  <Plus className="h-6 w-6 text-red-600 mr-2" />
+                  Nova Consulta
+                </h2>
                 <button
-                  onClick={closeEditModal}
-                  className="text-gray-500 hover:text-gray-700"
-                  disabled={isEditing}
+                  onClick={() => setShowNewModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
                 >
                   <X className="h-6 w-6" />
                 </button>
               </div>
             </div>
 
-            {error && (
-              <div className="mx-6 mt-4 bg-red-50 text-red-600 p-3 rounded-lg flex items-center">
-                <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
-                {error}
-              </div>
-            )}
-
-            {success && (
-              <div className="mx-6 mt-4 bg-green-50 text-green-600 p-3 rounded-lg">
-                {success}
-              </div>
-            )}
-
-            <form onSubmit={handleEditSubmit} className="p-6">
+            <form onSubmit={createConsultation} className="p-6">
               <div className="space-y-6">
-                {/* Patient Info (Read-only) */}
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h3 className="font-medium text-gray-900 mb-2">Informações do Paciente</h3>
-                  <p className="text-sm text-gray-600">
-                    <strong>Cliente:</strong> {selectedAppointment.client_name}
-                  </p>
+                {/* Patient Type */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Tipo de Paciente *
+                  </label>
+                  <select
+                    value={formData.patient_type}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        patient_type: e.target.value as "convenio" | "private",
+                        client_cpf: "",
+                        private_patient_id: "",
+                      }))
+                    }
+                    className="input"
+                    required
+                  >
+                    <option value="private">Paciente Particular</option>
+                    <option value="convenio">Cliente do Convênio</option>
+                  </select>
                 </div>
+
+                {/* Private Patient Selection */}
+                {formData.patient_type === "private" && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Paciente Particular *
+                    </label>
+                    <select
+                      value={formData.private_patient_id}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          private_patient_id: e.target.value,
+                        }))
+                      }
+                      className="input"
+                      required
+                    >
+                      <option value="">Selecione um paciente</option>
+                      {privatePatients.map((patient) => (
+                        <option key={patient.id} value={patient.id}>
+                          {patient.name} - {patient.cpf ? formatCpf(patient.cpf) : "CPF não informado"}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Convenio Client Search */}
+                {formData.patient_type === "convenio" && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      CPF do Cliente *
+                    </label>
+                    <div className="flex space-x-2">
+                      <input
+                        type="text"
+                        value={formatCpf(formData.client_cpf)}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            client_cpf: e.target.value.replace(/\D/g, ""),
+                          }))
+                        }
+                        className="input flex-1"
+                        placeholder="000.000.000-00"
+                      />
+                      <button
+                        type="button"
+                        onClick={searchClientByCpf}
+                        className="btn btn-secondary"
+                        disabled={isSearching}
+                      >
+                        {isSearching ? "Buscando..." : "Buscar"}
+                      </button>
+                    </div>
+
+                    {/* Client Search Result */}
+                    {clientSearchResult && (
+                      <div className="mt-3 p-3 bg-green-50 rounded-lg">
+                        <p className="font-medium text-green-800">
+                          Cliente: {clientSearchResult.name}
+                        </p>
+                        
+                        {/* Dependent Selection */}
+                        {dependents.length > 0 && (
+                          <div className="mt-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Dependente (opcional)
+                            </label>
+                            <select
+                              value={selectedDependentId || ""}
+                              onChange={(e) =>
+                                setSelectedDependentId(e.target.value ? Number(e.target.value) : null)
+                              }
+                              className="input"
+                            >
+                              <option value="">Consulta para o titular</option>
+                              {dependents.map((dependent) => (
+                                <option key={dependent.id} value={dependent.id}>
+                                  {dependent.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Date and Time */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -507,51 +876,74 @@ const SchedulingPage: React.FC = () => {
                     </label>
                     <input
                       type="date"
-                      name="date"
-                      value={editFormData.date}
-                      onChange={handleEditInputChange}
+                      value={formData.date}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, date: e.target.value }))
+                      }
                       className="input"
                       required
-                      disabled={isEditing}
                     />
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Hora *
+                      Horário *
                     </label>
-                    <input
-                      type="time"
-                      name="time"
-                      value={editFormData.time}
-                      onChange={handleEditInputChange}
+                    <select
+                      value={formData.time}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, time: e.target.value }))
+                      }
                       className="input"
                       required
-                      disabled={isEditing}
-                    />
+                    >
+                      <option value="">Selecione um horário</option>
+                      {timeSlots.map((time) => (
+                        <option key={time} value={time}>
+                          {time}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
-                {/* Service */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Serviço *
-                  </label>
-                  <select
-                    name="service_id"
-                    value={editFormData.service_id}
-                    onChange={handleEditInputChange}
-                    className="input"
-                    required
-                    disabled={isEditing}
-                  >
-                    <option value="">Selecione um serviço</option>
-                    {services.map((service) => (
-                      <option key={service.id} value={service.id}>
-                        {service.name} - {formatCurrency(service.base_price)}
-                      </option>
-                    ))}
-                  </select>
+                {/* Service and Value */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Serviço *
+                    </label>
+                    <select
+                      value={formData.service_id}
+                      onChange={handleServiceChange}
+                      className="input"
+                      required
+                    >
+                      <option value="">Selecione um serviço</option>
+                      {services.map((service) => (
+                        <option key={service.id} value={service.id}>
+                          {service.name} - {formatCurrency(service.base_price)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Valor (R$) *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.value}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, value: e.target.value }))
+                      }
+                      className="input"
+                      required
+                    />
+                  </div>
                 </div>
 
                 {/* Location */}
@@ -560,37 +952,19 @@ const SchedulingPage: React.FC = () => {
                     Local de Atendimento
                   </label>
                   <select
-                    name="location_id"
-                    value={editFormData.location_id}
-                    onChange={handleEditInputChange}
+                    value={formData.location_id || ""}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, location_id: e.target.value }))
+                    }
                     className="input"
-                    disabled={isEditing}
                   >
                     <option value="">Selecione um local</option>
-                    {locations.map((location) => (
+                    {attendanceLocations.map((location) => (
                       <option key={location.id} value={location.id}>
-                        {location.name} {location.is_default && '(Padrão)'}
+                        {location.name} {location.is_default && "(Padrão)"}
                       </option>
                     ))}
                   </select>
-                </div>
-
-                {/* Value */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Valor (R$) *
-                  </label>
-                  <input
-                    type="number"
-                    name="value"
-                    value={editFormData.value}
-                    onChange={handleEditInputChange}
-                    className="input"
-                    min="0"
-                    step="0.01"
-                    required
-                    disabled={isEditing}
-                  />
                 </div>
 
                 {/* Notes */}
@@ -599,46 +973,151 @@ const SchedulingPage: React.FC = () => {
                     Observações
                   </label>
                   <textarea
-                    name="notes"
-                    value={editFormData.notes}
-                    onChange={handleEditInputChange}
-                    className="input min-h-[100px]"
-                    placeholder="Observações sobre o agendamento..."
-                    disabled={isEditing}
+                    value={formData.notes}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, notes: e.target.value }))
+                    }
+                    className="input min-h-[80px]"
+                    placeholder="Observações sobre a consulta..."
                   />
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-3 mt-8 pt-6 border-t border-gray-200">
+              <div className="flex justify-end space-x-3 mt-6">
                 <button
                   type="button"
-                  onClick={closeEditModal}
+                  onClick={() => setShowNewModal(false)}
                   className="btn btn-secondary"
-                  disabled={isEditing}
+                  disabled={isCreating}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   className={`btn btn-primary ${
-                    isEditing ? 'opacity-70 cursor-not-allowed' : ''
+                    isCreating ? "opacity-70 cursor-not-allowed" : ""
                   }`}
-                  disabled={isEditing}
+                  disabled={isCreating}
                 >
-                  {isEditing ? (
+                  {isCreating ? "Criando..." : "Criar Consulta"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Status Change Modal */}
+      {showStatusModal && selectedConsultation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-bold">Alterar Status</h2>
+                <button
+                  onClick={closeStatusModal}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6">
+              {/* Consultation Info */}
+              <div className="bg-gray-50 p-4 rounded-lg mb-6">
+                <div className="flex items-center mb-2">
+                  {selectedConsultation.is_dependent ? (
+                    <Users className="h-4 w-4 text-blue-600 mr-2" />
+                  ) : (
+                    <User className="h-4 w-4 text-green-600 mr-2" />
+                  )}
+                  <span className="font-medium">{selectedConsultation.client_name}</span>
+                </div>
+                <p className="text-sm text-gray-600 mb-1">
+                  <strong>Serviço:</strong> {selectedConsultation.service_name}
+                </p>
+                <p className="text-sm text-gray-600 mb-1">
+                  <strong>Data/Hora:</strong>{" "}
+                  {format(new Date(selectedConsultation.date), "dd/MM/yyyy 'às' HH:mm")}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <strong>Valor:</strong> {formatCurrency(selectedConsultation.value)}
+                </p>
+              </div>
+
+              {/* Status Selection */}
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Selecione o novo status:
+                </label>
+
+                <div className="space-y-2">
+                  {[
+                    { value: "scheduled", label: "Agendado", icon: <Clock className="h-4 w-4" />, color: "blue" },
+                    { value: "confirmed", label: "Confirmado", icon: <CheckCircle className="h-4 w-4" />, color: "green" },
+                    { value: "completed", label: "Concluído", icon: <Check className="h-4 w-4" />, color: "gray" },
+                    { value: "cancelled", label: "Cancelado", icon: <XCircle className="h-4 w-4" />, color: "red" },
+                  ].map((status) => (
+                    <label
+                      key={status.value}
+                      className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                        newStatus === status.value
+                          ? `border-${status.color}-300 bg-${status.color}-50`
+                          : "border-gray-200 hover:bg-gray-50"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="status"
+                        value={status.value}
+                        checked={newStatus === status.value}
+                        onChange={(e) => setNewStatus(e.target.value as any)}
+                        className={`text-${status.color}-600 focus:ring-${status.color}-500`}
+                      />
+                      <div className="ml-3 flex items-center">
+                        <div className={`text-${status.color}-600 mr-2`}>
+                          {status.icon}
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900">{status.label}</div>
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 mt-6">
+                <button
+                  type="button"
+                  onClick={closeStatusModal}
+                  className="btn btn-secondary"
+                  disabled={isUpdatingStatus}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={updateConsultationStatus}
+                  className={`btn btn-primary ${
+                    isUpdatingStatus ? "opacity-70 cursor-not-allowed" : ""
+                  }`}
+                  disabled={isUpdatingStatus || newStatus === selectedConsultation.status}
+                >
+                  {isUpdatingStatus ? (
                     <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                      Salvando...
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Atualizando...
                     </>
                   ) : (
                     <>
-                      <Save className="h-5 w-5 mr-2" />
-                      Salvar Alterações
+                      <Check className="h-4 w-4 mr-2" />
+                      Atualizar Status
                     </>
                   )}
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
