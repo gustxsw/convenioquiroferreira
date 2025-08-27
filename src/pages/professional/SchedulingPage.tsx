@@ -771,6 +771,27 @@ const SchedulingPage: React.FC = () => {
         </div>
       )}
 
+      {/* Access Info */}
+      {hasSchedulingAccess && accessInfo?.expires_at && (
+        <div className="bg-green-50 border-l-4 border-green-600 p-4 mb-6">
+          <div className="flex items-center">
+            <CheckCircle className="h-5 w-5 text-green-600 mr-2" />
+            <div>
+              <p className="text-green-700 font-medium">
+                Acesso à agenda ativo
+              </p>
+              <p className="text-green-600 text-sm">
+                Válido até: {new Date(accessInfo.expires_at).toLocaleDateString('pt-BR', {
+                  day: '2-digit',
+                  month: 'long',
+                  year: 'numeric'
+                })}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Date Navigation */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
         <div className="flex items-center justify-between">
