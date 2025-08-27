@@ -14,9 +14,14 @@ import {
   XCircle,
   Search,
   DollarSign,
+  Edit,
+  MessageCircle,
+  Repeat,
 } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import EditConsultationModal from "../../components/EditConsultationModal";
+import RecurringConsultationModal from "../../components/RecurringConsultationModal";
 
 type Consultation = {
   id: number;
@@ -50,7 +55,7 @@ type PrivatePatient = {
   cpf: string;
 };
 
-const SchedulingPage: React.FC = () => {
+const SchedulingPageWithExtras: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [consultations, setConsultations] = useState<Consultation[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -70,6 +75,13 @@ const SchedulingPage: React.FC = () => {
   const [newStatus, setNewStatus] = useState<"scheduled" | "confirmed" | "completed" | "cancelled">("scheduled");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  // Edit consultation modal
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [consultationToEdit, setConsultationToEdit] = useState<Consultation | null>(null);
+
+  // Recurring consultation modal
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
+
   // Form state
   const [formData, setFormData] = useState({
     patient_type: "private" as "convenio" | "private",
@@ -81,6 +93,10 @@ const SchedulingPage: React.FC = () => {
     value: "",
     location_id: "",
     notes: "",
+    is_recurring: false,
+    recurrence_type: "weekly" as "daily" | "weekly",
+    recurrence_interval: 1,
+    occurrences: 4,
   });
 
   // Client search state
@@ -275,42 +291,86 @@ const SchedulingPage: React.FC = () => {
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      // Prepare consultation data
-      const consultationData: any = {
-        service_id: parseInt(formData.service_id),
-        location_id: formData.location_id ? parseInt(formData.location_id) : null,
-        value: parseFloat(formData.value),
-        date: new Date(`${formData.date}T${formData.time}`).toISOString(),
-        status: "scheduled",
-        notes: formData.notes || null,
-      };
+      if (formData.is_recurring) {
+        // Create recurring consultations
+        const recurringData: any = {
+          service_id: parseInt(formData.service_id),
+          location_id: formData.location_id ? parseInt(formData.location_id) : null,
+          value: parseFloat(formData.value),
+          start_date: formData.date,
+          start_time: formData.time,
+          recurrence_type: formData.recurrence_type,
+          recurrence_interval: formData.recurrence_interval,
+          occurrences: formData.occurrences,
+          notes: formData.notes || null,
+        };
 
-      // Set patient based on type
-      if (formData.patient_type === "private") {
-        consultationData.private_patient_id = parseInt(formData.private_patient_id);
-      } else {
-        if (selectedDependentId) {
-          consultationData.dependent_id = selectedDependentId;
+        // Set patient based on type
+        if (formData.patient_type === "private") {
+          recurringData.private_patient_id = parseInt(formData.private_patient_id);
         } else {
-          consultationData.user_id = clientSearchResult?.id;
+          if (selectedDependentId) {
+            recurringData.dependent_id = selectedDependentId;
+          } else {
+            recurringData.user_id = clientSearchResult?.id;
+          }
         }
+
+        const response = await fetch(`${apiUrl}/api/consultations/recurring`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(recurringData),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Falha ao criar consultas recorrentes");
+        }
+
+        const result = await response.json();
+        setSuccess(`${result.created_count} consultas recorrentes criadas com sucesso!`);
+      } else {
+        // Create single consultation
+        const consultationData: any = {
+          service_id: parseInt(formData.service_id),
+          location_id: formData.location_id ? parseInt(formData.location_id) : null,
+          value: parseFloat(formData.value),
+          date: new Date(`${formData.date}T${formData.time}`).toISOString(),
+          status: "scheduled",
+          notes: formData.notes || null,
+        };
+
+        // Set patient based on type
+        if (formData.patient_type === "private") {
+          consultationData.private_patient_id = parseInt(formData.private_patient_id);
+        } else {
+          if (selectedDependentId) {
+            consultationData.dependent_id = selectedDependentId;
+          } else {
+            consultationData.user_id = clientSearchResult?.id;
+          }
+        }
+
+        const response = await fetch(`${apiUrl}/api/consultations`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(consultationData),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Falha ao criar consulta");
+        }
+
+        setSuccess("Consulta criada com sucesso!");
       }
 
-      const response = await fetch(`${apiUrl}/api/consultations`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(consultationData),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Falha ao criar consulta");
-      }
-
-      setSuccess("Consulta criada com sucesso!");
       await fetchData();
       setShowNewModal(false);
       resetForm();
@@ -333,6 +393,10 @@ const SchedulingPage: React.FC = () => {
       value: "",
       location_id: "",
       notes: "",
+      is_recurring: false,
+      recurrence_type: "weekly",
+      recurrence_interval: 1,
+      occurrences: 4,
     });
     setClientSearchResult(null);
     setDependents([]);
@@ -387,6 +451,46 @@ const SchedulingPage: React.FC = () => {
       setError(error instanceof Error ? error.message : "Erro ao atualizar status");
     } finally {
       setIsUpdatingStatus(false);
+    }
+  };
+
+  const openEditModal = (consultation: Consultation) => {
+    setConsultationToEdit(consultation);
+    setShowEditModal(true);
+  };
+
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setConsultationToEdit(null);
+  };
+
+  const handleEditSuccess = () => {
+    fetchData();
+    setSuccess("Consulta editada com sucesso!");
+    setTimeout(() => setSuccess(""), 3000);
+  };
+
+  const openWhatsApp = async (consultation: Consultation) => {
+    try {
+      const token = localStorage.getItem("token");
+      const apiUrl = getApiUrl();
+
+      const response = await fetch(
+        `${apiUrl}/api/consultations/${consultation.id}/whatsapp`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Erro ao gerar link do WhatsApp");
+      }
+
+      const data = await response.json();
+      window.open(data.whatsapp_url, "_blank");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Erro ao abrir WhatsApp");
+      setTimeout(() => setError(""), 3000);
     }
   };
 
@@ -494,13 +598,23 @@ const SchedulingPage: React.FC = () => {
           <p className="text-gray-600">Visualize e gerencie suas consultas</p>
         </div>
 
-        <button
-          onClick={() => setShowNewModal(true)}
-          className="btn btn-primary flex items-center"
-        >
-          <Plus className="h-5 w-5 mr-2" />
-          Nova Consulta
-        </button>
+        <div className="flex space-x-2">
+          <button
+            onClick={() => setShowRecurringModal(true)}
+            className="btn btn-outline flex items-center"
+          >
+            <Repeat className="h-5 w-5 mr-2" />
+            Consultas Recorrentes
+          </button>
+          
+          <button
+            onClick={() => setShowNewModal(true)}
+            className="btn btn-primary flex items-center"
+          >
+            <Plus className="h-5 w-5 mr-2" />
+            Nova Consulta
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -619,7 +733,7 @@ const SchedulingPage: React.FC = () => {
                 {timeSlots.map((timeSlot) => (
                   <div
                     key={timeSlot}
-                    className="h-16 flex items-center justify-center border-b border-gray-100 text-sm font-medium text-gray-700"
+                    className="h-20 flex items-center justify-center border-b border-gray-100 text-sm font-medium text-gray-700"
                   >
                     {timeSlot}
                   </div>
@@ -639,7 +753,7 @@ const SchedulingPage: React.FC = () => {
                   return (
                     <div
                       key={timeSlot}
-                      className="h-16 border-b border-gray-100 flex items-center px-4 hover:bg-gray-50 transition-colors"
+                      className="h-20 border-b border-gray-100 flex items-center px-4 hover:bg-gray-50 transition-colors"
                     >
                       {consultation ? (
                         <div className="flex items-center justify-between w-full">
@@ -666,6 +780,15 @@ const SchedulingPage: React.FC = () => {
                                     Particular
                                   </span>
                                 )}
+                                
+                                {/* WhatsApp Button */}
+                                <button
+                                  onClick={() => openWhatsApp(consultation)}
+                                  className="ml-2 p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                                  title="Enviar mensagem no WhatsApp"
+                                >
+                                  <MessageCircle className="h-4 w-4" />
+                                </button>
                               </div>
                               <div className="flex items-center space-x-4">
                                 <p className="text-xs text-gray-600">
@@ -688,8 +811,18 @@ const SchedulingPage: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* Status Button */}
+                          {/* Action Buttons */}
                           <div className="flex items-center space-x-2">
+                            {/* Edit Button */}
+                            <button
+                              onClick={() => openEditModal(consultation)}
+                              className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                              title="Editar consulta"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+
+                            {/* Status Button */}
                             <button
                               onClick={() => openStatusModal(consultation)}
                               className={`px-2 py-1 rounded text-xs font-medium flex items-center border transition-all hover:shadow-sm ${
@@ -868,11 +1001,96 @@ const SchedulingPage: React.FC = () => {
                   </div>
                 )}
 
+                {/* Recurring Consultation Checkbox */}
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={formData.is_recurring}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, is_recurring: e.target.checked }))
+                      }
+                      className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                    />
+                    <span className="ml-3 flex items-center">
+                      <Repeat className="h-4 w-4 text-blue-600 mr-2" />
+                      <span className="font-medium text-blue-900">Consulta Recorrente</span>
+                    </span>
+                  </label>
+                  
+                  {formData.is_recurring && (
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-blue-700 mb-1">
+                          Tipo de Recorrência
+                        </label>
+                        <select
+                          value={formData.recurrence_type}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              recurrence_type: e.target.value as "daily" | "weekly",
+                            }))
+                          }
+                          className="input"
+                        >
+                          <option value="daily">Diário</option>
+                          <option value="weekly">Semanal</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-blue-700 mb-1">
+                          Intervalo
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="30"
+                          value={formData.recurrence_interval}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              recurrence_interval: parseInt(e.target.value),
+                            }))
+                          }
+                          className="input"
+                        />
+                        <p className="text-xs text-blue-600 mt-1">
+                          {formData.recurrence_type === "daily" ? "A cada quantos dias" : "A cada quantas semanas"}
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-blue-700 mb-1">
+                          Quantidade
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="52"
+                          value={formData.occurrences}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              occurrences: parseInt(e.target.value),
+                            }))
+                          }
+                          className="input"
+                        />
+                        <p className="text-xs text-blue-600 mt-1">
+                          Número de consultas
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Date and Time */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Data *
+                      Data {formData.is_recurring ? "de Início" : ""} *
                     </label>
                     <input
                       type="date"
@@ -999,7 +1217,11 @@ const SchedulingPage: React.FC = () => {
                   }`}
                   disabled={isCreating}
                 >
-                  {isCreating ? "Criando..." : "Criar Consulta"}
+                  {isCreating ? (
+                    formData.is_recurring ? "Criando Consultas..." : "Criando..."
+                  ) : (
+                    formData.is_recurring ? "Criar Consultas Recorrentes" : "Criar Consulta"
+                  )}
                 </button>
               </div>
             </form>
@@ -1121,8 +1343,27 @@ const SchedulingPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Edit Consultation Modal */}
+      <EditConsultationModal
+        isOpen={showEditModal}
+        consultation={consultationToEdit}
+        onClose={closeEditModal}
+        onSuccess={handleEditSuccess}
+      />
+
+      {/* Recurring Consultation Modal */}
+      <RecurringConsultationModal
+        isOpen={showRecurringModal}
+        onClose={() => setShowRecurringModal(false)}
+        onSuccess={() => {
+          fetchData();
+          setSuccess("Consultas recorrentes criadas com sucesso!");
+          setTimeout(() => setSuccess(""), 3000);
+        }}
+      />
     </div>
   );
 };
 
-export default SchedulingPage;
+export default SchedulingPageWithExtras;
