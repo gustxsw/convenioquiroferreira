@@ -1568,6 +1568,207 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), asy
   }
 });
 
+// PUT /api/consultations/:id - Update consultation
+app.put('/api/consultations/:id', authenticate, authorize(['professional', 'admin']), async (req, res) => {
+  try {
+    const consultationId = req.params.id;
+    const { date, value, location_id, notes, status } = req.body;
+
+    console.log('🔄 Updating consultation:', consultationId, req.body);
+
+    // Validate required fields
+    if (!date || !value) {
+      return res.status(400).json({ message: 'Data e valor são obrigatórios' });
+    }
+
+    // Check if consultation exists and belongs to the professional
+    const checkResult = await pool.query(
+      'SELECT * FROM consultations WHERE id = $1 AND professional_id = $2',
+      [consultationId, req.user.id]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Consulta não encontrada ou não autorizada' });
+    }
+
+    // Update consultation
+    const updateResult = await pool.query(
+      `UPDATE consultations 
+       SET date = $1, value = $2, location_id = $3, notes = $4, status = $5, updated_at = NOW()
+       WHERE id = $6 AND professional_id = $7
+       RETURNING *`,
+      [date, value, location_id, notes, status, consultationId, req.user.id]
+    );
+
+    console.log('✅ Consultation updated successfully');
+    res.json({ 
+      message: 'Consulta atualizada com sucesso',
+      consultation: updateResult.rows[0]
+    });
+  } catch (error) {
+    console.error('❌ Error updating consultation:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// POST /api/consultations/recurring - Create recurring consultations
+app.post('/api/consultations/recurring', authenticate, authorize(['professional', 'admin']), async (req, res) => {
+  try {
+    const {
+      user_id,
+      dependent_id,
+      private_patient_id,
+      service_id,
+      location_id,
+      value,
+      start_date,
+      start_time,
+      recurrence_type,
+      recurrence_interval,
+      end_date,
+      occurrences,
+      notes
+    } = req.body;
+
+    console.log('🔄 Creating recurring consultations:', req.body);
+
+    // Validate required fields
+    if (!service_id || !value || !start_date || !start_time || !recurrence_type || !occurrences) {
+      return res.status(400).json({ message: 'Campos obrigatórios não preenchidos' });
+    }
+
+    // Validate patient selection
+    if (!user_id && !dependent_id && !private_patient_id) {
+      return res.status(400).json({ message: 'É necessário selecionar um paciente' });
+    }
+
+    const createdConsultations = [];
+    const startDateTime = new Date(`${start_date}T${start_time}`);
+    let currentDate = new Date(startDateTime);
+    const endDateTime = end_date ? new Date(end_date) : null;
+
+    for (let i = 0; i < occurrences; i++) {
+      // Check if we've reached the end date
+      if (endDateTime && currentDate > endDateTime) {
+        break;
+      }
+
+      try {
+        const result = await pool.query(
+          `INSERT INTO consultations (
+            user_id, dependent_id, private_patient_id, professional_id, service_id, 
+            location_id, value, date, status, notes, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+          RETURNING *`,
+          [
+            user_id || null,
+            dependent_id || null,
+            private_patient_id || null,
+            req.user.id,
+            service_id,
+            location_id || null,
+            value,
+            currentDate.toISOString(),
+            'scheduled',
+            notes || null
+          ]
+        );
+
+        createdConsultations.push(result.rows[0]);
+      } catch (error) {
+        console.error(`❌ Error creating consultation ${i + 1}:`, error);
+        // Continue with next consultation instead of failing completely
+      }
+
+      // Calculate next date based on recurrence
+      if (recurrence_type === 'daily') {
+        currentDate.setDate(currentDate.getDate() + recurrence_interval);
+      } else if (recurrence_type === 'weekly') {
+        currentDate.setDate(currentDate.getDate() + (7 * recurrence_interval));
+      }
+    }
+
+    console.log('✅ Recurring consultations created:', createdConsultations.length);
+    res.json({
+      message: `${createdConsultations.length} consultas recorrentes criadas com sucesso`,
+      created_count: createdConsultations.length,
+      consultations: createdConsultations
+    });
+  } catch (error) {
+    console.error('❌ Error creating recurring consultations:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// GET /api/consultations/:id/whatsapp - Get WhatsApp URL for consultation
+app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professional', 'admin']), async (req, res) => {
+  try {
+    const consultationId = req.params.id;
+
+    console.log('🔄 Getting WhatsApp URL for consultation:', consultationId);
+
+    // Get consultation details with patient info
+    const consultationResult = await pool.query(
+      `SELECT 
+        c.*,
+        CASE 
+          WHEN c.private_patient_id IS NOT NULL THEN pp.name
+          WHEN c.dependent_id IS NOT NULL THEN d.name
+          ELSE u.name
+        END as patient_name,
+        CASE 
+          WHEN c.private_patient_id IS NOT NULL THEN pp.phone
+          WHEN c.dependent_id IS NOT NULL THEN cu.phone
+          ELSE u.phone
+        END as patient_phone,
+        s.name as service_name
+       FROM consultations c
+       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
+       LEFT JOIN dependents d ON c.dependent_id = d.id
+       LEFT JOIN users cu ON d.client_id = cu.id
+       LEFT JOIN users u ON c.user_id = u.id
+       LEFT JOIN services s ON c.service_id = s.id
+       WHERE c.id = $1 AND c.professional_id = $2`,
+      [consultationId, req.user.id]
+    );
+
+    if (consultationResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Consulta não encontrada' });
+    }
+
+    const consultation = consultationResult.rows[0];
+    
+    if (!consultation.patient_phone) {
+      return res.status(400).json({ message: 'Telefone do paciente não encontrado' });
+    }
+
+    // Format phone number (remove non-numeric characters and add country code)
+    const cleanPhone = consultation.patient_phone.replace(/\D/g, '');
+    const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+    
+    // Format date and time
+    const consultationDate = new Date(consultation.date);
+    const formattedDate = consultationDate.toLocaleDateString('pt-BR');
+    const formattedTime = consultationDate.toLocaleTimeString('pt-BR', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    
+    // Create WhatsApp message
+    const message = `Olá ${consultation.patient_name}, sua consulta está confirmada para ${formattedDate} às ${formattedTime}`;
+    const encodedMessage = encodeURIComponent(message);
+    
+    // Generate WhatsApp URL
+    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
+
+    console.log('✅ WhatsApp URL generated:', whatsappUrl);
+    res.json({ whatsapp_url: whatsappUrl });
+  } catch (error) {
+    console.error('❌ Error generating WhatsApp URL:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
 // Delete consultation
 app.delete("/api/consultations/:id", authenticate, authorize(["professional"]), async (req, res) => {
   try {
