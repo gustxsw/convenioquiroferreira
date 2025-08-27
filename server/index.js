@@ -1505,6 +1505,200 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), async 
   }
 });
 
+// Check professional scheduling access
+app.get("/api/professional/scheduling-access", authenticate, authorize(["professional"]), async (req, res) => {
+  try {
+    const professionalId = req.user.id;
+
+    console.log("🔍 Checking scheduling access for professional:", professionalId);
+
+    const accessResult = await pool.query(
+      `
+      SELECT 
+        CASE 
+          WHEN sa.expires_at > CURRENT_TIMESTAMP AND sa.is_active = true THEN true
+          ELSE false
+        END as has_access,
+        sa.expires_at,
+        sa.reason,
+        sa.created_at as granted_at,
+        u.name as granted_by
+      FROM users prof
+      LEFT JOIN scheduling_access sa ON prof.id = sa.professional_id AND sa.is_active = true
+      LEFT JOIN users u ON sa.granted_by = u.id
+      WHERE prof.id = $1
+    `,
+      [professionalId]
+    );
+
+    const result = accessResult.rows[0] || { has_access: false };
+
+    console.log("✅ Scheduling access result:", result);
+
+    res.json(result);
+  } catch (error) {
+    console.error("❌ Error checking scheduling access:", error);
+    res.status(500).json({ message: "Erro ao verificar acesso à agenda" });
+  }
+});
+
+// Edit consultation endpoint
+app.put("/api/consultations/:id/edit", authenticate, authorize(["professional"]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      user_id,
+      dependent_id,
+      private_patient_id,
+      service_id,
+      location_id,
+      value,
+      date,
+      notes
+    } = req.body;
+
+    console.log("🔄 Editing consultation:", id);
+
+    // Check scheduling access
+    const accessResult = await pool.query(
+      `
+      SELECT 
+        CASE 
+          WHEN sa.expires_at > CURRENT_TIMESTAMP AND sa.is_active = true THEN true
+          ELSE false
+        END as has_access
+      FROM users prof
+      LEFT JOIN scheduling_access sa ON prof.id = sa.professional_id AND sa.is_active = true
+      WHERE prof.id = $1
+    `,
+      [req.user.id]
+    );
+
+    const hasAccess = accessResult.rows[0]?.has_access || false;
+    if (!hasAccess) {
+      return res.status(403).json({ message: "Acesso à agenda não autorizado" });
+    }
+
+    // Validate required fields
+    if (!service_id || !value || !date) {
+      return res
+        .status(400)
+        .json({ message: "Serviço, valor e data são obrigatórios" });
+    }
+
+    if (isNaN(parseFloat(value)) || parseFloat(value) <= 0) {
+      return res
+        .status(400)
+        .json({ message: "Valor deve ser um número maior que zero" });
+    }
+
+    // Validate patient type (exactly one must be provided)
+    const patientCount = [user_id, dependent_id, private_patient_id].filter(Boolean).length;
+    if (patientCount !== 1) {
+      return res.status(400).json({
+        message: "Exatamente um tipo de paciente deve ser especificado",
+      });
+    }
+
+    // Validate service exists
+    const serviceResult = await pool.query(
+      "SELECT * FROM services WHERE id = $1",
+      [service_id]
+    );
+    if (serviceResult.rows.length === 0) {
+      return res.status(404).json({ message: "Serviço não encontrado" });
+    }
+
+    // If it's a convenio patient, validate subscription status
+    if (user_id || dependent_id) {
+      let subscriptionValid = false;
+
+      if (user_id) {
+        const clientResult = await pool.query(
+          `
+          SELECT subscription_status FROM users WHERE id = $1 AND 'client' = ANY(roles)
+        `,
+          [user_id]
+        );
+
+        if (
+          clientResult.rows.length > 0 &&
+          clientResult.rows[0].subscription_status === "active"
+        ) {
+          subscriptionValid = true;
+        }
+      } else if (dependent_id) {
+        const dependentResult = await pool.query(
+          `
+          SELECT subscription_status FROM dependents WHERE id = $1
+        `,
+          [dependent_id]
+        );
+
+        if (
+          dependentResult.rows.length > 0 &&
+          dependentResult.rows[0].subscription_status === "active"
+        ) {
+          subscriptionValid = true;
+        }
+      }
+
+      if (!subscriptionValid) {
+        return res
+          .status(400)
+          .json({ message: "Paciente não possui assinatura ativa" });
+      }
+    }
+
+    // Update consultation
+    const consultationResult = await pool.query(
+      `
+      UPDATE consultations 
+      SET 
+        user_id = $1, 
+        dependent_id = $2, 
+        private_patient_id = $3, 
+        service_id = $4, 
+        location_id = $5, 
+        value = $6, 
+        date = $7, 
+        notes = $8,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $9 AND professional_id = $10
+      RETURNING *
+    `,
+      [
+        user_id || null,
+        dependent_id || null,
+        private_patient_id || null,
+        service_id,
+        location_id || null,
+        parseFloat(value),
+        new Date(date),
+        notes?.trim() || null,
+        id,
+        req.user.id,
+      ]
+    );
+
+    if (consultationResult.rows.length === 0) {
+      return res.status(404).json({ message: "Consulta não encontrada" });
+    }
+
+    const consultation = consultationResult.rows[0];
+
+    console.log("✅ Consultation edited:", consultation.id);
+
+    res.json({
+      message: "Consulta editada com sucesso",
+      consultation,
+    });
+  } catch (error) {
+    console.error("❌ Error editing consultation:", error);
+    res.status(500).json({ message: "Erro ao editar consulta" });
+  }
+});
+
 // Update consultation status
 app.put("/api/consultations/:id/status", authenticate, authorize(["professional"]), async (req, res) => {
   try {
