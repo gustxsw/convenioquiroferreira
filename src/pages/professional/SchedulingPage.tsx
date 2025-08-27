@@ -705,13 +705,23 @@ const SchedulingPage: React.FC = () => {
           <p className="text-gray-600">Visualize e gerencie suas consultas</p>
         </div>
 
-        <button
-          onClick={() => setShowNewModal(true)}
-          className="btn btn-primary flex items-center"
-        >
-          <Plus className="h-5 w-5 mr-2" />
-          Nova Consulta
-        </button>
+        <div className="flex space-x-2">
+          <button
+            onClick={() => setShowRecurringModal(true)}
+            className="btn btn-outline flex items-center"
+          >
+            <Repeat className="h-5 w-5 mr-2" />
+            Consultas Recorrentes
+          </button>
+
+          <button
+            onClick={() => setShowNewModal(true)}
+            className="btn btn-primary flex items-center"
+          >
+            <Plus className="h-5 w-5 mr-2" />
+            Nova Consulta
+          </button>
+        </div>
       </div>
 
       {error && (
