@@ -1085,8 +1085,9 @@ export const generateDocumentPDF = async (documentType, templateData) => {
     // Generate PDF using Puppeteer
     console.log('🔄 Launching Puppeteer for PDF generation...');
     
-    const browser = await puppeteer.launch({
-      headless: true,
+    // Configure Puppeteer for different environments
+    const puppeteerConfig = {
+      headless: 'new',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -1095,9 +1096,31 @@ export const generateDocumentPDF = async (documentType, templateData) => {
         '--no-first-run',
         '--no-zygote',
         '--single-process',
-        '--disable-gpu'
+        '--disable-gpu',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor',
+        '--run-all-compositor-stages-before-draw',
+        '--memory-pressure-off'
       ]
-    });
+    };
+
+    // Try to detect if we're in WebContainer or production
+    const isWebContainer = process.env.NODE_ENV !== 'production' && !process.env.CHROME_BIN;
+    
+    if (isWebContainer) {
+      console.log('🔍 WebContainer detected, using bundled Chromium');
+      // In WebContainer, use the bundled Chromium
+      puppeteerConfig.executablePath = puppeteer.executablePath();
+    } else if (process.env.CHROME_BIN) {
+      console.log('🔍 Using custom Chrome path:', process.env.CHROME_BIN);
+      puppeteerConfig.executablePath = process.env.CHROME_BIN;
+    } else {
+      console.log('🔍 Using default Puppeteer Chromium');
+      // Let Puppeteer use its default Chromium
+    }
+
+    console.log('🚀 Launching browser with config:', puppeteerConfig);
+    const browser = await puppeteer.launch(puppeteerConfig);
     
     const page = await browser.newPage();
     
