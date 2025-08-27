@@ -1725,7 +1725,7 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
        FROM consultations c
        LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
        LEFT JOIN dependents d ON c.dependent_id = d.id
-       LEFT JOIN users cu ON d.client_id = cu.id
+       LEFT JOIN users cu ON d.user_id = cu.id
        LEFT JOIN users u ON c.user_id = u.id
        LEFT JOIN services s ON c.service_id = s.id
        WHERE c.id = $1 AND c.professional_id = $2`,
@@ -1997,10 +1997,10 @@ app.get("/api/dependents/lookup", authenticate, authorize(["professional", "admi
 
 app.post("/api/dependents", authenticate, authorize(["client"]), async (req, res) => {
   try {
-    const { client_id, name, cpf, birth_date } = req.body;
+    const { user_id, name, cpf, birth_date } = req.body;
 
     // Validate client can only create dependents for themselves
-    if (req.user.id !== client_id) {
+    if (req.user.id !== user_id) {
       return res.status(403).json({
         message: "Você só pode criar dependentes para sua própria conta",
       });
@@ -2033,7 +2033,7 @@ app.post("/api/dependents", authenticate, authorize(["client"]), async (req, res
     // Check dependent limit (max 10 per client)
     const dependentCount = await pool.query(
       "SELECT COUNT(*) FROM dependents WHERE user_id = $1",
-      [client_id]
+      [user_id]
     );
     if (parseInt(dependentCount.rows[0].count) >= 10) {
       return res
@@ -2047,7 +2047,7 @@ app.post("/api/dependents", authenticate, authorize(["client"]), async (req, res
       VALUES ($1, $2, $3, $4)
       RETURNING *
     `,
-      [client_id, name.trim(), cleanCPF, birth_date || null]
+      [user_id, name.trim(), cleanCPF, birth_date || null]
     );
 
     const dependent = dependentResult.rows[0];
