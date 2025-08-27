@@ -14,6 +14,7 @@ import {
   XCircle,
   Search,
   DollarSign,
+  Edit,
 } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -29,6 +30,11 @@ type Consultation = {
   is_dependent: boolean;
   patient_type: "convenio" | "private";
   location_name?: string;
+  user_id?: number;
+  dependent_id?: number;
+  private_patient_id?: number;
+  service_id?: number;
+  location_id?: number;
 };
 
 type Service = {
@@ -70,6 +76,28 @@ const SchedulingPage: React.FC = () => {
   const [newStatus, setNewStatus] = useState<"scheduled" | "confirmed" | "completed" | "cancelled">("scheduled");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  // Edit consultation modal
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    patient_type: "private" as "convenio" | "private",
+    client_cpf: "",
+    private_patient_id: "",
+    user_id: "",
+    dependent_id: "",
+    date: "",
+    time: "",
+    service_id: "",
+    value: "",
+    location_id: "",
+    notes: "",
+  });
+
+  // Edit modal client search state
+  const [editClientSearchResult, setEditClientSearchResult] = useState<any>(null);
+  const [editDependents, setEditDependents] = useState<any[]>([]);
+  const [editSelectedDependentId, setEditSelectedDependentId] = useState<number | null>(null);
+  const [isEditSearching, setIsEditSearching] = useState(false);
   // Form state
   const [formData, setFormData] = useState({
     patient_type: "private" as "convenio" | "private",
@@ -351,6 +379,229 @@ const SchedulingPage: React.FC = () => {
     setError("");
   };
 
+  const openEditModal = (consultation: Consultation) => {
+    setSelectedConsultation(consultation);
+    
+    // Extract date and time from consultation.date
+    const consultationDate = new Date(consultation.date);
+    const dateStr = format(consultationDate, "yyyy-MM-dd");
+    const timeStr = format(consultationDate, "HH:mm");
+    
+    // Determine patient type and set form data
+    const patientType = consultation.patient_type;
+    
+    setEditFormData({
+      patient_type: patientType,
+      client_cpf: "",
+      private_patient_id: consultation.private_patient_id?.toString() || "",
+      user_id: consultation.user_id?.toString() || "",
+      dependent_id: consultation.dependent_id?.toString() || "",
+      date: dateStr,
+      time: timeStr,
+      service_id: consultation.service_id?.toString() || "",
+      value: consultation.value.toString(),
+      location_id: consultation.location_id?.toString() || "",
+      notes: consultation.notes || "",
+    });
+    
+    // Reset search states
+    setEditClientSearchResult(null);
+    setEditDependents([]);
+    setEditSelectedDependentId(null);
+    
+    // If it's a convenio patient, we need to populate the search result
+    if (patientType === "convenio") {
+      if (consultation.user_id) {
+        // Set client search result for titular
+        setEditClientSearchResult({
+          id: consultation.user_id,
+          name: consultation.client_name,
+          subscription_status: "active"
+        });
+      } else if (consultation.dependent_id) {
+        // Set dependent as selected
+        setEditSelectedDependentId(consultation.dependent_id);
+        setEditClientSearchResult({
+          id: consultation.user_id, // This would need to be fetched
+          name: "Cliente", // This would need to be fetched
+          subscription_status: "active"
+        });
+      }
+    }
+    
+    setShowEditModal(true);
+  };
+
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setSelectedConsultation(null);
+    setError("");
+    setEditClientSearchResult(null);
+    setEditDependents([]);
+    setEditSelectedDependentId(null);
+  };
+
+  const searchEditClientByCpf = async () => {
+    if (!editFormData.client_cpf) return;
+
+    try {
+      setIsEditSearching(true);
+      setError("");
+
+      const token = localStorage.getItem("token");
+      const apiUrl = getApiUrl();
+      const cleanCpf = editFormData.client_cpf.replace(/\D/g, "");
+
+      // Search for client
+      const clientResponse = await fetch(
+        `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (clientResponse.ok) {
+        const clientData = await clientResponse.json();
+        
+        if (clientData.subscription_status !== "active") {
+          setError("Cliente não possui assinatura ativa");
+          return;
+        }
+
+        setEditClientSearchResult(clientData);
+        setEditFormData(prev => ({
+          ...prev,
+          user_id: clientData.id.toString(),
+          dependent_id: ""
+        }));
+        setEditSelectedDependentId(null);
+
+        // Fetch dependents
+        const dependentsResponse = await fetch(
+          `${apiUrl}/api/dependents/${clientData.id}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        if (dependentsResponse.ok) {
+          const dependentsData = await dependentsResponse.json();
+          setEditDependents(dependentsData.filter((d: any) => d.subscription_status === "active"));
+        }
+      } else {
+        // Try searching as dependent
+        const dependentResponse = await fetch(
+          `${apiUrl}/api/dependents/lookup?cpf=${cleanCpf}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        if (dependentResponse.ok) {
+          const dependentData = await dependentResponse.json();
+          
+          if (dependentData.dependent_subscription_status !== "active") {
+            setError("Dependente não possui assinatura ativa");
+            return;
+          }
+
+          setEditClientSearchResult({
+            id: dependentData.user_id,
+            name: dependentData.client_name,
+            subscription_status: "active",
+          });
+          setEditSelectedDependentId(dependentData.id);
+          setEditFormData(prev => ({
+            ...prev,
+            user_id: "",
+            dependent_id: dependentData.id.toString()
+          }));
+          setEditDependents([]);
+        } else {
+          setError("Cliente ou dependente não encontrado");
+        }
+      }
+    } catch (error) {
+      setError("Erro ao buscar cliente");
+    } finally {
+      setIsEditSearching(false);
+    }
+  };
+
+  const handleEditServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const serviceId = e.target.value;
+    setEditFormData((prev) => ({ ...prev, service_id: serviceId }));
+
+    // Auto-fill value based on service
+    const service = services.find((s) => s.id.toString() === serviceId);
+    if (service) {
+      setEditFormData((prev) => ({
+        ...prev,
+        value: service.base_price.toString(),
+      }));
+    }
+  };
+
+  const submitEditConsultation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    if (!selectedConsultation) return;
+
+    try {
+      setIsEditing(true);
+      const token = localStorage.getItem("token");
+      const apiUrl = getApiUrl();
+
+      // Prepare consultation data
+      const consultationData: any = {
+        service_id: parseInt(editFormData.service_id),
+        location_id: editFormData.location_id ? parseInt(editFormData.location_id) : null,
+        value: parseFloat(editFormData.value),
+        date: `${editFormData.date}T${editFormData.time}`,
+        notes: editFormData.notes || null,
+      };
+
+      // Set patient based on type
+      if (editFormData.patient_type === "private") {
+        consultationData.private_patient_id = parseInt(editFormData.private_patient_id);
+        consultationData.user_id = null;
+        consultationData.dependent_id = null;
+      } else {
+        consultationData.private_patient_id = null;
+        if (editSelectedDependentId || editFormData.dependent_id) {
+          consultationData.dependent_id = editSelectedDependentId || parseInt(editFormData.dependent_id);
+          consultationData.user_id = null;
+        } else {
+          consultationData.user_id = editClientSearchResult?.id || parseInt(editFormData.user_id);
+          consultationData.dependent_id = null;
+        }
+      }
+
+      const response = await fetch(`${apiUrl}/api/consultations/${selectedConsultation.id}/edit`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(consultationData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Falha ao editar consulta");
+      }
+
+      setSuccess("Consulta editada com sucesso!");
+      await fetchData();
+      setShowEditModal(false);
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Erro ao editar consulta");
+    } finally {
+      setIsEditing(false);
+    }
+  };
   const updateConsultationStatus = async () => {
     if (!selectedConsultation) return;
 
@@ -690,6 +941,13 @@ const SchedulingPage: React.FC = () => {
 
                           {/* Status Button */}
                           <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => openEditModal(consultation)}
+                              className="p-1 text-blue-600 hover:text-blue-800 rounded transition-colors"
+                              title="Editar consulta"
+                            >
+                              <Edit className="h-3 w-3" />
+                            </button>
                             <button
                               onClick={() => openStatusModal(consultation)}
                               className={`px-2 py-1 rounded text-xs font-medium flex items-center border transition-all hover:shadow-sm ${

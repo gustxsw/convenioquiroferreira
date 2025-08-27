@@ -1568,6 +1568,152 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), asy
   }
 });
 
+// Edit consultation (appointment editing)
+app.put("/api/consultations/:id/edit", authenticate, authorize(["professional"]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      date,
+      time,
+      service_id,
+      location_id,
+      value,
+      notes,
+      user_id,
+      dependent_id,
+      private_patient_id
+    } = req.body;
+
+    console.log("🔄 Editing consultation:", id, req.body);
+
+    // Get current consultation to verify ownership
+    const currentResult = await pool.query(
+      "SELECT * FROM consultations WHERE id = $1 AND professional_id = $2",
+      [id, req.user.id]
+    );
+
+    if (currentResult.rows.length === 0) {
+      return res.status(404).json({ message: "Consulta não encontrada" });
+    }
+
+    const currentConsultation = currentResult.rows[0];
+
+    // Validate required fields
+    if (!date || !time) {
+      return res.status(400).json({ message: "Data e hora são obrigatórias" });
+    }
+
+    if (!service_id) {
+      return res.status(400).json({ message: "Serviço é obrigatório" });
+    }
+
+    if (!value || isNaN(parseFloat(value)) || parseFloat(value) <= 0) {
+      return res.status(400).json({ message: "Valor deve ser um número maior que zero" });
+    }
+
+    // Validate patient selection (exactly one must be provided)
+    const patientCount = [user_id, dependent_id, private_patient_id].filter(Boolean).length;
+    if (patientCount !== 1) {
+      return res.status(400).json({
+        message: "Exatamente um tipo de paciente deve ser especificado",
+      });
+    }
+
+    // Validate service exists
+    const serviceResult = await pool.query(
+      "SELECT * FROM services WHERE id = $1",
+      [service_id]
+    );
+    if (serviceResult.rows.length === 0) {
+      return res.status(404).json({ message: "Serviço não encontrado" });
+    }
+
+    // If it's a convenio patient, validate subscription status
+    if (user_id || dependent_id) {
+      let subscriptionValid = false;
+
+      if (user_id) {
+        const clientResult = await pool.query(
+          `SELECT subscription_status FROM users WHERE id = $1 AND 'client' = ANY(roles)`,
+          [user_id]
+        );
+
+        if (
+          clientResult.rows.length > 0 &&
+          clientResult.rows[0].subscription_status === "active"
+        ) {
+          subscriptionValid = true;
+        }
+      } else if (dependent_id) {
+        const dependentResult = await pool.query(
+          `SELECT subscription_status FROM dependents WHERE id = $1`,
+          [dependent_id]
+        );
+
+        if (
+          dependentResult.rows.length > 0 &&
+          dependentResult.rows[0].subscription_status === "active"
+        ) {
+          subscriptionValid = true;
+        }
+      }
+
+      if (!subscriptionValid) {
+        return res
+          .status(400)
+          .json({ message: "Paciente não possui assinatura ativa" });
+      }
+    }
+
+    // Combine date and time
+    const consultationDateTime = new Date(`${date}T${time}`);
+
+    // Update consultation
+    const result = await pool.query(
+      `
+      UPDATE consultations 
+      SET 
+        user_id = $1,
+        dependent_id = $2,
+        private_patient_id = $3,
+        service_id = $4,
+        location_id = $5,
+        value = $6,
+        date = $7,
+        notes = $8,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $9 AND professional_id = $10
+      RETURNING *
+    `,
+      [
+        user_id || null,
+        dependent_id || null,
+        private_patient_id || null,
+        service_id,
+        location_id || null,
+        parseFloat(value),
+        consultationDateTime,
+        notes?.trim() || null,
+        id,
+        req.user.id,
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Consulta não encontrada" });
+    }
+
+    console.log("✅ Consultation edited successfully:", id);
+
+    res.json({
+      message: "Consulta editada com sucesso",
+      consultation: result.rows[0],
+    });
+  } catch (error) {
+    console.error("❌ Error editing consultation:", error);
+    res.status(500).json({ message: "Erro ao editar consulta" });
+  }
+});
 // Delete consultation
 app.delete("/api/consultations/:id", authenticate, authorize(["professional"]), async (req, res) => {
   try {
