@@ -691,6 +691,20 @@ const SchedulingPage: React.FC = () => {
                           {/* Status Button */}
                           <div className="flex items-center space-x-2">
                             <button
+                              onClick={() => sendWhatsAppMessage(consultation)}
+                              className={`p-1 text-green-600 hover:text-green-800 rounded transition-colors ${
+                                sendingWhatsApp === consultation.id ? 'opacity-50 cursor-not-allowed' : ''
+                              }`}
+                              title="Enviar confirmação via WhatsApp"
+                              disabled={sendingWhatsApp === consultation.id}
+                            >
+                              {sendingWhatsApp === consultation.id ? (
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
+                              ) : (
+                                <MessageCircle className="h-4 w-4" />
+                              )}
+                            </button>
+                            <button
                               onClick={() => openStatusModal(consultation)}
                               className={`px-2 py-1 rounded text-xs font-medium flex items-center border transition-all hover:shadow-sm ${
                                 getStatusInfo(consultation.status).className

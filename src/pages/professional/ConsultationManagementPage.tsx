@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Edit, Trash2, Plus, Repeat, Search, Filter, User, Users, Clock, CheckCircle, XCircle, Check, X, AlertCircle } from 'lucide-react';
+import { Calendar, Edit, Trash2, Plus, Repeat, Search, Filter, User, Users, Clock, CheckCircle, XCircle, Check, X, AlertCircle, MessageCircle } from 'lucide-react';
 import { format, addDays, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import RecurringConsultationModal from '../../components/RecurringConsultationModal';
@@ -39,6 +39,10 @@ const ConsultationManagementPage: React.FC = () => {
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [consultationToDelete, setConsultationToDelete] = useState<Consultation | null>(null);
+
+  // WhatsApp state
+  const [sendingWhatsApp, setSendingWhatsApp] = useState<number | null>(null);
+  const [whatsAppError, setWhatsAppError] = useState('');
 
   // Get API URL
   const getApiUrl = () => {
@@ -170,6 +174,91 @@ const ConsultationManagementPage: React.FC = () => {
     } finally {
       setConsultationToDelete(null);
       setShowDeleteConfirm(false);
+    }
+  };
+
+  const sendWhatsAppMessage = async (consultation: Consultation) => {
+    try {
+      setSendingWhatsApp(consultation.id);
+      setWhatsAppError('');
+      setError('');
+
+      const token = localStorage.getItem('token');
+      const apiUrl = getApiUrl();
+
+      console.log('🔄 Fetching client phone for consultation:', consultation.id);
+
+      // Get client phone number
+      const response = await fetch(
+        `${apiUrl}/api/consultations/${consultation.id}/client-phone`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Não foi possível obter o telefone do cliente');
+      }
+
+      const data = await response.json();
+      const clientPhone = data.phone;
+
+      if (!clientPhone) {
+        throw new Error('Cliente não possui telefone cadastrado');
+      }
+
+      // Clean phone number (remove non-numeric characters)
+      const cleanPhone = clientPhone.replace(/\D/g, '');
+      
+      // Ensure phone has country code (55 for Brazil)
+      const phoneWithCountryCode = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+
+      // Format consultation date and time
+      const consultationDate = new Date(consultation.date);
+      const formattedDate = format(consultationDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+      const formattedTime = format(consultationDate, 'HH:mm');
+
+      // Create WhatsApp message
+      const message = `🏥 *Confirmação de Consulta - Convênio Quiro Ferreira*
+
+Olá, ${consultation.client_name}! 👋
+
+Sua consulta foi confirmada com os seguintes detalhes:
+
+📅 *Data:* ${formattedDate}
+⏰ *Horário:* ${formattedTime}
+🩺 *Serviço:* ${consultation.service_name}
+${consultation.location_name ? `📍 *Local:* ${consultation.location_name}` : ''}
+💰 *Valor:* ${formatCurrency(consultation.value)}
+
+${consultation.notes ? `📝 *Observações:* ${consultation.notes}\n\n` : ''}Por favor, chegue com 15 minutos de antecedência.
+
+Em caso de dúvidas ou necessidade de reagendamento, entre em contato conosco.
+
+Atenciosamente,
+Equipe Convênio Quiro Ferreira 🌟`;
+
+      // Encode message for URL
+      const encodedMessage = encodeURIComponent(message);
+      
+      // Create WhatsApp URL
+      const whatsappUrl = `https://wa.me/${phoneWithCountryCode}?text=${encodedMessage}`;
+      
+      console.log('✅ Opening WhatsApp with URL:', whatsappUrl);
+      
+      // Open WhatsApp in new tab
+      window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+      
+      setSuccess(`Mensagem do WhatsApp aberta para ${consultation.client_name}`);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      console.error('Error sending WhatsApp message:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao enviar mensagem';
+      setWhatsAppError(errorMessage);
+      setError(errorMessage);
+    } finally {
+      setSendingWhatsApp(null);
     }
   };
 
@@ -473,6 +562,20 @@ const ConsultationManagementPage: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end space-x-2">
+                          <button
+                            onClick={() => sendWhatsAppMessage(consultation)}
+                            className={`text-green-600 hover:text-green-900 ${
+                              sendingWhatsApp === consultation.id ? 'opacity-50 cursor-not-allowed' : ''
+                            }`}
+                            title="Enviar confirmação via WhatsApp"
+                            disabled={sendingWhatsApp === consultation.id}
+                          >
+                            {sendingWhatsApp === consultation.id ? (
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
+                            ) : (
+                              <MessageCircle className="h-4 w-4" />
+                            )}
+                          </button>
                           <button
                             onClick={() => openEditModal(consultation)}
                             className="text-blue-600 hover:text-blue-900"
