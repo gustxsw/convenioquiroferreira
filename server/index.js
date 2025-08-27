@@ -1243,9 +1243,70 @@ app.delete("/api/users/:id", authenticate, authorize(["admin"]), async (req, res
 
 // ===== CONSULTATIONS ROUTES (MAIN AGENDA SYSTEM) =====
 
+// Check if professional has scheduling access
+const checkSchedulingAccess = async (professionalId) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        CASE 
+          WHEN sa.expires_at > CURRENT_TIMESTAMP AND sa.is_active = true THEN true
+          ELSE false
+        END as has_scheduling_access
+      FROM users u
+      LEFT JOIN scheduling_access sa ON u.id = sa.professional_id AND sa.is_active = true
+      WHERE u.id = $1 AND 'professional' = ANY(u.roles)
+    `, [professionalId]);
+
+    return result.rows[0]?.has_scheduling_access || false;
+  } catch (error) {
+    console.error('Error checking scheduling access:', error);
+    return false;
+  }
+};
+
+// Get professional scheduling access status
+app.get("/api/professional/scheduling-access", authenticate, authorize(["professional"]), async (req, res) => {
+  try {
+    const professionalId = req.user.id;
+    
+    console.log("🔄 Checking scheduling access for professional:", professionalId);
+    
+    const result = await pool.query(`
+      SELECT 
+        CASE 
+          WHEN sa.expires_at > CURRENT_TIMESTAMP AND sa.is_active = true THEN true
+          ELSE false
+        END as has_scheduling_access,
+        sa.expires_at,
+        sa.reason,
+        sa.created_at as access_granted_at
+      FROM users u
+      LEFT JOIN scheduling_access sa ON u.id = sa.professional_id AND sa.is_active = true
+      WHERE u.id = $1 AND 'professional' = ANY(u.roles)
+    `, [professionalId]);
+
+    const accessData = result.rows[0] || { has_scheduling_access: false };
+    
+    console.log("✅ Scheduling access status:", accessData.has_scheduling_access);
+    
+    res.json(accessData);
+  } catch (error) {
+    console.error("❌ Error checking scheduling access:", error);
+    res.status(500).json({ message: "Erro ao verificar acesso à agenda" });
+  }
+});
+
 // Get consultations for professional agenda (by date)
 app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), async (req, res) => {
   try {
+    // Check if professional has scheduling access
+    const hasAccess = await checkSchedulingAccess(req.user.id);
+    if (!hasAccess) {
+      return res.status(403).json({ 
+        message: "Você não possui acesso à agenda. Entre em contato com o administrador." 
+      });
+    }
+
     const { date } = req.query;
     const professionalId = req.user.id;
 
@@ -1306,6 +1367,14 @@ app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), 
 // Create new consultation
 app.post("/api/consultations", authenticate, authorize(["professional"]), async (req, res) => {
   try {
+    // Check if professional has scheduling access
+    const hasAccess = await checkSchedulingAccess(req.user.id);
+    if (!hasAccess) {
+      return res.status(403).json({ 
+        message: "Você não possui acesso à agenda. Entre em contato com o administrador." 
+      });
+    }
+
     const {
       user_id,
       dependent_id,
@@ -1432,6 +1501,14 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), async 
 // Update consultation status
 app.put("/api/consultations/:id/status", authenticate, authorize(["professional"]), async (req, res) => {
   try {
+    // Check if professional has scheduling access
+    const hasAccess = await checkSchedulingAccess(req.user.id);
+    if (!hasAccess) {
+      return res.status(403).json({ 
+        message: "Você não possui acesso à agenda. Entre em contato com o administrador." 
+      });
+    }
+
     const { id } = req.params;
     const { status } = req.body;
 
@@ -1476,6 +1553,14 @@ app.put("/api/consultations/:id/status", authenticate, authorize(["professional"
 // Update consultation (full update)
 app.put("/api/consultations/:id", authenticate, authorize(["professional"]), async (req, res) => {
   try {
+    // Check if professional has scheduling access
+    const hasAccess = await checkSchedulingAccess(req.user.id);
+    if (!hasAccess) {
+      return res.status(403).json({ 
+        message: "Você não possui acesso à agenda. Entre em contato com o administrador." 
+      });
+    }
+
     const { id } = req.params;
     const {
       service_id,
@@ -1717,6 +1802,14 @@ app.put("/api/consultations/:id/edit", authenticate, authorize(["professional"])
 // Delete consultation
 app.delete("/api/consultations/:id", authenticate, authorize(["professional"]), async (req, res) => {
   try {
+    // Check if professional has scheduling access
+    const hasAccess = await checkSchedulingAccess(req.user.id);
+    if (!hasAccess) {
+      return res.status(403).json({ 
+        message: "Você não possui acesso à agenda. Entre em contato com o administrador." 
+      });
+    }
+
     const { id } = req.params;
 
     console.log("🔄 Deleting consultation:", id);

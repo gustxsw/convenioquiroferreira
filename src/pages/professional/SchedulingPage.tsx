@@ -59,6 +59,9 @@ type PrivatePatient = {
 const SchedulingPage: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [consultations, setConsultations] = useState<Consultation[]>([]);
+  const [hasSchedulingAccess, setHasSchedulingAccess] = useState<boolean>(false);
+  const [accessInfo, setAccessInfo] = useState<any>(null);
+  const [isCheckingAccess, setIsCheckingAccess] = useState(true);
   const [services, setServices] = useState<Service[]>([]);
   const [privatePatients, setPrivatePatients] = useState<PrivatePatient[]>([]);
   const [attendanceLocations, setAttendanceLocations] = useState<AttendanceLocation[]>([]);
