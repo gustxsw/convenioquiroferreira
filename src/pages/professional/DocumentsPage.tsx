@@ -328,26 +328,11 @@ const DocumentsPage: React.FC = () => {
       
       const { title, documentUrl } = result;
 
-      // Clean filename for download
-      const fileName = title
-        .replace(/[^a-zA-Z0-9\s]/g, "")
-        .replace(/\s+/g, "_");
-
-      // Create download link that opens in new tab
-      const link = document.createElement("a");
-      link.href = documentUrl;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-
-      // Set download attribute for PDF
-      link.download = `${fileName}.pdf`;
-
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // Open PDF in new tab - works in all browsers
+      window.open(documentUrl, '_blank', 'noopener,noreferrer');
 
       setSuccess(
-        "Documento PDF criado com sucesso! O download deve iniciar automaticamente."
+        "Documento PDF criado com sucesso! O arquivo foi aberto em uma nova aba."
       );
       
       // Refresh documents list
