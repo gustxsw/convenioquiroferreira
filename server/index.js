@@ -1294,6 +1294,9 @@ app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), 
     query += " ORDER BY c.date";
 
     const result = await pool.query(query, params);
+  }
+}
+)
 
 // Edit appointment endpoint
 app.put('/api/consultations/:id', authenticate, async (req, res) => {
