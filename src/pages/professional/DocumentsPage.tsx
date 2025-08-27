@@ -339,17 +339,15 @@ const DocumentsPage: React.FC = () => {
       link.target = "_blank";
       link.rel = "noopener noreferrer";
 
-      // For desktop browsers, try to force download
-      if (window.navigator.userAgent.indexOf("Mobile") === -1) {
-        link.download = `${fileName}.html`;
-      }
+      // Set download attribute for PDF
+      link.download = `${fileName}.pdf`;
 
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
       setSuccess(
-        "Documento criado e aberto em nova aba. Use Ctrl+S (ou Cmd+S no Mac) para salvar ou imprimir."
+        "Documento PDF criado com sucesso! O download deve iniciar automaticamente."
       );
       
       // Refresh documents list

@@ -415,22 +415,18 @@ const MedicalRecordsPage: React.FC = () => {
       // Clean filename
       const fileName = `Prontuario_${record.patient_name.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`;
       
-      // Create download link that opens in new tab for mobile compatibility
+      // Create download link for PDF
       const link = document.createElement('a');
       link.href = documentUrl;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
-      
-      // For desktop browsers, try to force download
-      if (window.navigator.userAgent.indexOf('Mobile') === -1) {
-        link.download = `${fileName}.html`;
-      }
+      link.download = `${fileName}.pdf`;
       
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
-      setSuccess('Prontuário aberto em nova aba. Use Ctrl+S (ou Cmd+S no Mac) para salvar ou imprimir.');
+      setSuccess('Prontuário PDF gerado com sucesso! O download deve iniciar automaticamente.');
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Erro ao gerar prontuário');
     } finally {
