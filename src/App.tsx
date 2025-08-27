@@ -112,7 +112,6 @@ function App() {
         <Route path="/professional/documents" element={<DocumentsPage />} />
         <Route path="/professional/reports" element={<ProfessionalReportsPage />} />
         <Route path="/professional/profile" element={<ProfessionalProfilePage />} />
-        <Route path="/professional/manage-consultations" element={<ConsultationManagementPage />} />
         <Route
           path="/professional/register-consultation"
           element={<RegisterConsultationPage />}

@@ -1179,6 +1179,55 @@ const SchedulingPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Recurring Consultation Modal */}
+      <RecurringConsultationModal
+        isOpen={showRecurringModal}
+        onClose={() => setShowRecurringModal(false)}
+        onSuccess={handleRecurringSuccess}
+      />
+
+      {/* Edit Consultation Modal */}
+      <EditConsultationModal
+        isOpen={showEditModal}
+        consultation={selectedConsultation}
+        onClose={closeEditModal}
+        onSuccess={handleEditSuccess}
+      />
+
+      {/* Delete confirmation modal */}
+      {showDeleteConfirm && consultationToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md p-6">
+            <h2 className="text-xl font-bold mb-4 flex items-center">
+              <AlertCircle className="h-6 w-6 text-red-600 mr-2" />
+              Confirmar Exclusão
+            </h2>
+            
+            <p className="mb-6">
+              Tem certeza que deseja excluir a consulta de <strong>{consultationToDelete.client_name}</strong>?
+              Esta ação não pode ser desfeita.
+            </p>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={cancelDelete}
+                className="btn btn-secondary flex items-center"
+              >
+                <X className="h-4 w-4 mr-2" />
+                Cancelar
+              </button>
+              <button
+                onClick={deleteConsultation}
+                className="btn bg-red-600 text-white hover:bg-red-700 flex items-center"
+              >
+                <Check className="h-4 w-4 mr-2" />
+                Confirmar Exclusão
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

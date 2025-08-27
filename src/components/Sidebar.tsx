@@ -22,7 +22,6 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
       return [
         { to: '/professional', icon: <Home size={20} />, label: 'Início' },
         { to: '/professional/scheduling', icon: <CalendarDays size={20} />, label: 'Agenda' },
-        { to: '/professional/manage-consultations', icon: <Edit size={20} />, label: 'Gerenciar Consultas' },
         { to: '/professional/private-patients', icon: <UserCheck size={20} />, label: 'Pacientes Particulares' },
         { to: '/professional/medical-records', icon: <Stethoscope size={20} />, label: 'Prontuários' },
         { to: '/professional/documents', icon: <FileImage size={20} />, label: 'Documentos' },
