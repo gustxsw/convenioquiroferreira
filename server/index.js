@@ -1416,6 +1416,138 @@ app.put('/api/consultations/:id', authenticate, async (req, res) => {
   }
 });
 
+// Update consultation (appointment editing)
+app.put('/api/consultations/:id', authenticate, async (req, res) => {
+  try {
+    const consultationId = req.params.id;
+    const { 
+      date, 
+      time, 
+      service_id, 
+      location_id, 
+      value, 
+      notes,
+      client_id,
+      dependent_id,
+      private_patient_id 
+    } = req.body;
+
+    // Verify consultation belongs to the authenticated professional
+    const consultationCheck = await pool.query(
+      'SELECT id, professional_id FROM consultations WHERE id = $1',
+      [consultationId]
+    );
+
+    if (consultationCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Consulta não encontrada' });
+    }
+
+    if (consultationCheck.rows[0].professional_id !== req.user.id) {
+      return res.status(403).json({ message: 'Não autorizado a editar esta consulta' });
+    }
+
+    // Combine date and time if provided
+    let consultationDate;
+    if (date && time) {
+      consultationDate = new Date(`${date}T${time}`);
+    } else if (date) {
+      // If only date is provided, keep the original time
+      const originalConsultation = await pool.query(
+        'SELECT date FROM consultations WHERE id = $1',
+        [consultationId]
+      );
+      const originalDate = new Date(originalConsultation.rows[0].date);
+      const newDate = new Date(date);
+      newDate.setHours(originalDate.getHours(), originalDate.getMinutes());
+      consultationDate = newDate;
+    }
+
+    // Build update query dynamically
+    const updateFields = [];
+    const updateValues = [];
+    let paramCount = 1;
+
+    if (consultationDate) {
+      updateFields.push(`date = $${paramCount}`);
+      updateValues.push(consultationDate);
+      paramCount++;
+    }
+
+    if (service_id !== undefined) {
+      updateFields.push(`service_id = $${paramCount}`);
+      updateValues.push(service_id);
+      paramCount++;
+    }
+
+    if (location_id !== undefined) {
+      updateFields.push(`location_id = $${paramCount}`);
+      updateValues.push(location_id || null);
+      paramCount++;
+    }
+
+    if (value !== undefined) {
+      updateFields.push(`value = $${paramCount}`);
+      updateValues.push(parseFloat(value));
+      paramCount++;
+    }
+
+    if (notes !== undefined) {
+      updateFields.push(`notes = $${paramCount}`);
+      updateValues.push(notes || null);
+      paramCount++;
+    }
+
+    // Handle patient changes
+    if (client_id !== undefined) {
+      updateFields.push(`client_id = $${paramCount}`);
+      updateValues.push(client_id || null);
+      paramCount++;
+      updateFields.push(`dependent_id = NULL`);
+      updateFields.push(`private_patient_id = NULL`);
+    }
+
+    if (dependent_id !== undefined) {
+      updateFields.push(`dependent_id = $${paramCount}`);
+      updateValues.push(dependent_id || null);
+      paramCount++;
+      updateFields.push(`client_id = NULL`);
+      updateFields.push(`private_patient_id = NULL`);
+    }
+
+    if (private_patient_id !== undefined) {
+      updateFields.push(`private_patient_id = $${paramCount}`);
+      updateValues.push(private_patient_id || null);
+      paramCount++;
+      updateFields.push(`client_id = NULL`);
+      updateFields.push(`dependent_id = NULL`);
+    }
+
+    if (updateFields.length === 0) {
+      return res.status(400).json({ message: 'Nenhum campo para atualizar' });
+    }
+
+    // Add updated_at field
+    updateFields.push(`updated_at = NOW()`);
+
+    // Add consultation ID as last parameter
+    updateValues.push(consultationId);
+
+    const updateQuery = `
+      UPDATE consultations 
+      SET ${updateFields.join(', ')} 
+      WHERE id = $${paramCount}
+      RETURNING *
+    `;
+
+    console.log('🔄 Updating consultation with query:', updateQuery);
+    console.log('🔄 Update values:', updateValues);
+
+    const result = await pool.query(updateQuery, updateValues);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Consulta não encontrada' });
+    }
+
     console.log("✅ Consultations loaded for agenda:", result.rows.length);
     res.json(result.rows);
   } catch (error) {
