@@ -121,10 +121,9 @@ const ManageSchedulingAccessPage: React.FC = () => {
     setSelectedProfessional(professional);
     
     // Set default expiry to 3 months from now
-  const defaultExpiry = new Date();
-  defaultExpiry.setDate(defaultExpiry.getDate() + 7);
-  setExpiryDate(defaultExpiry.toISOString().split('T')[0]);
-
+    const defaultExpiry = new Date();
+    defaultExpiry.setMonth(defaultExpiry.getMonth() + 3);
+    setExpiryDate(defaultExpiry.toISOString().split('T')[0]);
     
     setReason('');
     setIsModalOpen(true);
@@ -520,6 +519,20 @@ const ManageSchedulingAccessPage: React.FC = () => {
                           {statusInfo.icon}
                           {statusInfo.text}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {professional.access_expires_at 
+                          ? formatDate(professional.access_expires_at)
+                          : '-'
+                        }
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {professional.access_granted_by || '-'}
+                        {professional.access_reason && (
+                          <div className="text-xs text-gray-400 mt-1">
+                            {professional.access_reason}
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end space-x-2">

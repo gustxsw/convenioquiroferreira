@@ -84,24 +84,11 @@ const initializeDatabase = async () => {
         category_name VARCHAR(100),
         percentage DECIMAL(5,2) DEFAULT 50.00,
         crm VARCHAR(20),
-        has_scheduling_access BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
-    // Add has_scheduling_access column if it doesn't exist
-    await pool.query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns 
-          WHERE table_name = 'users' AND column_name = 'has_scheduling_access'
-        ) THEN
-          ALTER TABLE users ADD COLUMN has_scheduling_access BOOLEAN DEFAULT false;
-        END IF;
-      END $$;
-    `);
     // Service categories table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS service_categories (
@@ -1256,70 +1243,9 @@ app.delete("/api/users/:id", authenticate, authorize(["admin"]), async (req, res
 
 // ===== CONSULTATIONS ROUTES (MAIN AGENDA SYSTEM) =====
 
-// Check if professional has scheduling access
-const checkSchedulingAccess = async (professionalId) => {
-  try {
-    const result = await pool.query(`
-      SELECT 
-        CASE 
-          WHEN sa.expires_at > CURRENT_TIMESTAMP AND sa.is_active = true THEN true
-          ELSE false
-        END as has_scheduling_access
-      FROM users u
-      LEFT JOIN scheduling_access sa ON u.id = sa.professional_id AND sa.is_active = true
-      WHERE u.id = $1 AND 'professional' = ANY(u.roles)
-    `, [professionalId]);
-
-    return result.rows[0]?.has_scheduling_access || false;
-  } catch (error) {
-    console.error('Error checking scheduling access:', error);
-    return false;
-  }
-};
-
-// Get professional scheduling access status
-app.get("/api/professional/scheduling-access", authenticate, authorize(["professional"]), async (req, res) => {
-  try {
-    const professionalId = req.user.id;
-    
-    console.log("🔄 Checking scheduling access for professional:", professionalId);
-    
-    const result = await pool.query(`
-      SELECT 
-        CASE 
-          WHEN sa.expires_at > CURRENT_TIMESTAMP AND sa.is_active = true THEN true
-          ELSE false
-        END as has_scheduling_access,
-        sa.expires_at,
-        sa.reason,
-        sa.created_at as access_granted_at
-      FROM users u
-      LEFT JOIN scheduling_access sa ON u.id = sa.professional_id AND sa.is_active = true
-      WHERE u.id = $1 AND 'professional' = ANY(u.roles)
-    `, [professionalId]);
-
-    const accessData = result.rows[0] || { has_scheduling_access: false };
-    
-    console.log("✅ Scheduling access status:", accessData.has_scheduling_access);
-    
-    res.json(accessData);
-  } catch (error) {
-    console.error("❌ Error checking scheduling access:", error);
-    res.status(500).json({ message: "Erro ao verificar acesso à agenda" });
-  }
-});
-
 // Get consultations for professional agenda (by date)
 app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), async (req, res) => {
   try {
-    // Check if professional has scheduling access
-    const hasAccess = await checkSchedulingAccess(req.user.id);
-    if (!hasAccess) {
-      return res.status(403).json({ 
-        message: "Você não possui acesso à agenda. Entre em contato com o administrador." 
-      });
-    }
-
     const { date } = req.query;
     const professionalId = req.user.id;
 
@@ -1342,12 +1268,6 @@ app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), 
           ELSE 'Paciente não identificado'
         END as client_name,
         CASE 
-          WHEN c.user_id IS NOT NULL THEN u.phone
-          WHEN c.dependent_id IS NOT NULL THEN u2.phone
-          WHEN c.private_patient_id IS NOT NULL THEN pp.phone
-          ELSE NULL
-        END as patient_phone,
-        CASE 
           WHEN c.dependent_id IS NOT NULL THEN true
           ELSE false
         END as is_dependent,
@@ -1359,7 +1279,6 @@ app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), 
       JOIN services s ON c.service_id = s.id
       LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
-      LEFT JOIN users u2 ON d.user_id = u2.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
       WHERE c.professional_id = $1
@@ -1387,14 +1306,6 @@ app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), 
 // Create new consultation
 app.post("/api/consultations", authenticate, authorize(["professional"]), async (req, res) => {
   try {
-    // Check if professional has scheduling access
-    const hasAccess = await checkSchedulingAccess(req.user.id);
-    if (!hasAccess) {
-      return res.status(403).json({ 
-        message: "Você não possui acesso à agenda. Entre em contato com o administrador." 
-      });
-    }
-
     const {
       user_id,
       dependent_id,
@@ -1518,211 +1429,9 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), async 
   }
 });
 
-// Check professional scheduling access
-app.get("/api/professional/scheduling-access", authenticate, authorize(["professional"]), async (req, res) => {
-  try {
-    const professionalId = req.user.id;
-
-    console.log("🔍 Checking scheduling access for professional:", professionalId);
-
-    const accessResult = await pool.query(
-      `
-      SELECT 
-        CASE 
-          WHEN sa.expires_at > CURRENT_TIMESTAMP AND sa.is_active = true THEN true
-          ELSE false
-        END as has_access,
-        sa.expires_at,
-        sa.reason,
-        sa.created_at as granted_at,
-        u.name as granted_by
-      FROM users prof
-      LEFT JOIN scheduling_access sa ON prof.id = sa.professional_id AND sa.is_active = true
-      LEFT JOIN users u ON sa.granted_by = u.id
-      WHERE prof.id = $1
-    `,
-      [professionalId]
-    );
-
-    const result = accessResult.rows[0] || { has_access: false };
-
-    console.log("✅ Scheduling access result:", result);
-
-    res.json(result);
-  } catch (error) {
-    console.error("❌ Error checking scheduling access:", error);
-    res.status(500).json({ message: "Erro ao verificar acesso à agenda" });
-  }
-});
-
-// Edit consultation endpoint
-app.put("/api/consultations/:id/edit", authenticate, authorize(["professional"]), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const {
-      user_id,
-      dependent_id,
-      private_patient_id,
-      service_id,
-      location_id,
-      value,
-      date,
-      notes
-    } = req.body;
-
-    console.log("🔄 Editing consultation:", id);
-
-    // Check scheduling access
-    const accessResult = await pool.query(
-      `
-      SELECT 
-        CASE 
-          WHEN sa.expires_at > CURRENT_TIMESTAMP AND sa.is_active = true THEN true
-          ELSE false
-        END as has_access
-      FROM users prof
-      LEFT JOIN scheduling_access sa ON prof.id = sa.professional_id AND sa.is_active = true
-      WHERE prof.id = $1
-    `,
-      [req.user.id]
-    );
-
-    const hasAccess = accessResult.rows[0]?.has_access || false;
-    if (!hasAccess) {
-      return res.status(403).json({ message: "Acesso à agenda não autorizado" });
-    }
-
-    // Validate required fields
-    if (!service_id || !value || !date) {
-      return res
-        .status(400)
-        .json({ message: "Serviço, valor e data são obrigatórios" });
-    }
-
-    if (isNaN(parseFloat(value)) || parseFloat(value) <= 0) {
-      return res
-        .status(400)
-        .json({ message: "Valor deve ser um número maior que zero" });
-    }
-
-    // Validate patient type (exactly one must be provided)
-    const patientCount = [user_id, dependent_id, private_patient_id].filter(Boolean).length;
-    if (patientCount !== 1) {
-      return res.status(400).json({
-        message: "Exatamente um tipo de paciente deve ser especificado",
-      });
-    }
-
-    // Validate service exists
-    const serviceResult = await pool.query(
-      "SELECT * FROM services WHERE id = $1",
-      [service_id]
-    );
-    if (serviceResult.rows.length === 0) {
-      return res.status(404).json({ message: "Serviço não encontrado" });
-    }
-
-    // If it's a convenio patient, validate subscription status
-    if (user_id || dependent_id) {
-      let subscriptionValid = false;
-
-      if (user_id) {
-        const clientResult = await pool.query(
-          `
-          SELECT subscription_status FROM users WHERE id = $1 AND 'client' = ANY(roles)
-        `,
-          [user_id]
-        );
-
-        if (
-          clientResult.rows.length > 0 &&
-          clientResult.rows[0].subscription_status === "active"
-        ) {
-          subscriptionValid = true;
-        }
-      } else if (dependent_id) {
-        const dependentResult = await pool.query(
-          `
-          SELECT subscription_status FROM dependents WHERE id = $1
-        `,
-          [dependent_id]
-        );
-
-        if (
-          dependentResult.rows.length > 0 &&
-          dependentResult.rows[0].subscription_status === "active"
-        ) {
-          subscriptionValid = true;
-        }
-      }
-
-      if (!subscriptionValid) {
-        return res
-          .status(400)
-          .json({ message: "Paciente não possui assinatura ativa" });
-      }
-    }
-
-    // Update consultation
-    const consultationResult = await pool.query(
-      `
-      UPDATE consultations 
-      SET 
-        user_id = $1, 
-        dependent_id = $2, 
-        private_patient_id = $3, 
-        service_id = $4, 
-        location_id = $5, 
-        value = $6, 
-        date = $7, 
-        notes = $8,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $9 AND professional_id = $10
-      RETURNING *
-    `,
-      [
-        user_id || null,
-        dependent_id || null,
-        private_patient_id || null,
-        service_id,
-        location_id || null,
-        parseFloat(value),
-        new Date(date),
-        notes?.trim() || null,
-        id,
-        req.user.id,
-      ]
-    );
-
-    if (consultationResult.rows.length === 0) {
-      return res.status(404).json({ message: "Consulta não encontrada" });
-    }
-
-    const consultation = consultationResult.rows[0];
-
-    console.log("✅ Consultation edited:", consultation.id);
-
-    res.json({
-      message: "Consulta editada com sucesso",
-      consultation,
-    });
-  } catch (error) {
-    console.error("❌ Error editing consultation:", error);
-    res.status(500).json({ message: "Erro ao editar consulta" });
-  }
-});
-
 // Update consultation status
 app.put("/api/consultations/:id/status", authenticate, authorize(["professional"]), async (req, res) => {
   try {
-    // Check if professional has scheduling access
-    const hasAccess = await checkSchedulingAccess(req.user.id);
-    if (!hasAccess) {
-      return res.status(403).json({ 
-        message: "Você não possui acesso à agenda. Entre em contato com o administrador." 
-      });
-    }
-
     const { id } = req.params;
     const { status } = req.body;
 
@@ -1767,14 +1476,6 @@ app.put("/api/consultations/:id/status", authenticate, authorize(["professional"
 // Update consultation (full update)
 app.put("/api/consultations/:id", authenticate, authorize(["professional"]), async (req, res) => {
   try {
-    // Check if professional has scheduling access
-    const hasAccess = await checkSchedulingAccess(req.user.id);
-    if (!hasAccess) {
-      return res.status(403).json({ 
-        message: "Você não possui acesso à agenda. Entre em contato com o administrador." 
-      });
-    }
-
     const { id } = req.params;
     const {
       service_id,
@@ -1867,163 +1568,9 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), asy
   }
 });
 
-// Edit consultation (appointment editing)
-app.put("/api/consultations/:id/edit", authenticate, authorize(["professional"]), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const {
-      date,
-      time,
-      service_id,
-      location_id,
-      value,
-      notes,
-      user_id,
-      dependent_id,
-      private_patient_id
-    } = req.body;
-
-    console.log("🔄 Editing consultation:", id, req.body);
-
-    // Get current consultation to verify ownership
-    const currentResult = await pool.query(
-      "SELECT * FROM consultations WHERE id = $1 AND professional_id = $2",
-      [id, req.user.id]
-    );
-
-    if (currentResult.rows.length === 0) {
-      return res.status(404).json({ message: "Consulta não encontrada" });
-    }
-
-    const currentConsultation = currentResult.rows[0];
-
-    // Validate required fields
-    if (!date || !time) {
-      return res.status(400).json({ message: "Data e hora são obrigatórias" });
-    }
-
-    if (!service_id) {
-      return res.status(400).json({ message: "Serviço é obrigatório" });
-    }
-
-    if (!value || isNaN(parseFloat(value)) || parseFloat(value) <= 0) {
-      return res.status(400).json({ message: "Valor deve ser um número maior que zero" });
-    }
-
-    // Validate patient selection (exactly one must be provided)
-    const patientCount = [user_id, dependent_id, private_patient_id].filter(Boolean).length;
-    if (patientCount !== 1) {
-      return res.status(400).json({
-        message: "Exatamente um tipo de paciente deve ser especificado",
-      });
-    }
-
-    // Validate service exists
-    const serviceResult = await pool.query(
-      "SELECT * FROM services WHERE id = $1",
-      [service_id]
-    );
-    if (serviceResult.rows.length === 0) {
-      return res.status(404).json({ message: "Serviço não encontrado" });
-    }
-
-    // If it's a convenio patient, validate subscription status
-    if (user_id || dependent_id) {
-      let subscriptionValid = false;
-
-      if (user_id) {
-        const clientResult = await pool.query(
-          `SELECT subscription_status FROM users WHERE id = $1 AND 'client' = ANY(roles)`,
-          [user_id]
-        );
-
-        if (
-          clientResult.rows.length > 0 &&
-          clientResult.rows[0].subscription_status === "active"
-        ) {
-          subscriptionValid = true;
-        }
-      } else if (dependent_id) {
-        const dependentResult = await pool.query(
-          `SELECT subscription_status FROM dependents WHERE id = $1`,
-          [dependent_id]
-        );
-
-        if (
-          dependentResult.rows.length > 0 &&
-          dependentResult.rows[0].subscription_status === "active"
-        ) {
-          subscriptionValid = true;
-        }
-      }
-
-      if (!subscriptionValid) {
-        return res
-          .status(400)
-          .json({ message: "Paciente não possui assinatura ativa" });
-      }
-    }
-
-    // Combine date and time
-    const consultationDateTime = new Date(`${date}T${time}`);
-
-    // Update consultation
-    const result = await pool.query(
-      `
-      UPDATE consultations 
-      SET 
-        user_id = $1,
-        dependent_id = $2,
-        private_patient_id = $3,
-        service_id = $4,
-        location_id = $5,
-        value = $6,
-        date = $7,
-        notes = $8,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $9 AND professional_id = $10
-      RETURNING *
-    `,
-      [
-        user_id || null,
-        dependent_id || null,
-        private_patient_id || null,
-        service_id,
-        location_id || null,
-        parseFloat(value),
-        consultationDateTime,
-        notes?.trim() || null,
-        id,
-        req.user.id,
-      ]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: "Consulta não encontrada" });
-    }
-
-    console.log("✅ Consultation edited successfully:", id);
-
-    res.json({
-      message: "Consulta editada com sucesso",
-      consultation: result.rows[0],
-    });
-  } catch (error) {
-    console.error("❌ Error editing consultation:", error);
-    res.status(500).json({ message: "Erro ao editar consulta" });
-  }
-});
 // Delete consultation
 app.delete("/api/consultations/:id", authenticate, authorize(["professional"]), async (req, res) => {
   try {
-    // Check if professional has scheduling access
-    const hasAccess = await checkSchedulingAccess(req.user.id);
-    if (!hasAccess) {
-      return res.status(403).json({ 
-        message: "Você não possui acesso à agenda. Entre em contato com o administrador." 
-      });
-    }
-
     const { id } = req.params;
 
     console.log("🔄 Deleting consultation:", id);
