@@ -521,20 +521,6 @@ const ManageSchedulingAccessPage: React.FC = () => {
                           {statusInfo.text}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {professional.access_expires_at 
-                          ? formatDate(professional.access_expires_at)
-                          : '-'
-                        }
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {professional.access_granted_by || '-'}
-                        {professional.access_reason && (
-                          <div className="text-xs text-gray-400 mt-1">
-                            {professional.access_reason}
-                          </div>
-                        )}
-                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end space-x-2">
                           {!professional.has_scheduling_access ? (

@@ -84,11 +84,24 @@ const initializeDatabase = async () => {
         category_name VARCHAR(100),
         percentage DECIMAL(5,2) DEFAULT 50.00,
         crm VARCHAR(20),
+        has_scheduling_access BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
+    // Add has_scheduling_access column if it doesn't exist
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'users' AND column_name = 'has_scheduling_access'
+        ) THEN
+          ALTER TABLE users ADD COLUMN has_scheduling_access BOOLEAN DEFAULT false;
+        END IF;
+      END $$;
+    `);
     // Service categories table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS service_categories (
