@@ -1329,6 +1329,12 @@ app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), 
           ELSE 'Paciente não identificado'
         END as client_name,
         CASE 
+          WHEN c.user_id IS NOT NULL THEN u.phone
+          WHEN c.dependent_id IS NOT NULL THEN u2.phone
+          WHEN c.private_patient_id IS NOT NULL THEN pp.phone
+          ELSE NULL
+        END as patient_phone,
+        CASE 
           WHEN c.dependent_id IS NOT NULL THEN true
           ELSE false
         END as is_dependent,
@@ -1340,6 +1346,7 @@ app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), 
       JOIN services s ON c.service_id = s.id
       LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
+      LEFT JOIN users u2 ON d.user_id = u2.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
       WHERE c.professional_id = $1
