@@ -1110,13 +1110,15 @@ export const generateDocumentPDF = async (documentType, templateData) => {
     if (isWebContainer) {
       console.log('🔍 WebContainer detected, using bundled Chromium');
       // In WebContainer, use the bundled Chromium
-      puppeteerConfig.executablePath = puppeteer.executablePath();
+      // Don't set executablePath in WebContainer, let Puppeteer handle it
+      delete puppeteerConfig.executablePath;
     } else if (process.env.CHROME_BIN) {
       console.log('🔍 Using custom Chrome path:', process.env.CHROME_BIN);
       puppeteerConfig.executablePath = process.env.CHROME_BIN;
     } else {
       console.log('🔍 Using default Puppeteer Chromium');
-      // Let Puppeteer use its default Chromium
+      // Don't set executablePath, let Puppeteer use its bundled Chromium
+      delete puppeteerConfig.executablePath;
     }
 
     console.log('🚀 Launching browser with config:', puppeteerConfig);
