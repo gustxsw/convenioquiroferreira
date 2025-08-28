@@ -5,38 +5,43 @@
   console.log('DEBUG Document type:', documentType);
   console.log('DEBUG Starting document generation pipeline');
  */
- * Main document generation function with complete validation pipeline
 /**
-
-};
-  }
-    throw new Error(`HTML upload failed: ${error.message}`);
-    console.error('ERROR HTML upload to Cloudinary failed:', error.message);
-  } catch (error) {
-    return uploadResult;
-    console.log('SUCCESS HTML uploaded to Cloudinary:', uploadResult.secure_url);
+ * Main document generation function with complete validation pipeline
+ */
+export const generateDocumentPDF = async (documentType, templateData) => {
+  try {
+    // Step 1: Validate input parameters
+    console.log('DEBUG Step 1: Validating input parameters');
+    if (!documentType || !TEMPLATE_FUNCTIONS[documentType]) {
+      throw new Error(`Unsupported document type: ${documentType}. Supported types: ${Object.keys(TEMPLATE_FUNCTIONS).join(', ')}`);
+    }
+    
+    if (!templateData || typeof templateData !== 'object') {
+      throw new Error('Template data is required and must be an object');
+    }
+    
+    console.log('SUCCESS Document parameters validated');
     
     // Step 2: Generate HTML content
     console.log('DEBUG Step 2: Generating HTML content');
     const templateFunction = TEMPLATE_FUNCTIONS[documentType];
-        use_filename: false,
     if (typeof templateFunction !== 'function') {
       throw new Error(`Template function for ${documentType} is not a function`);
-        resource_type: 'raw',
-        folder: 'quiro-ferreira/documents/html',
+    }
+    
     const htmlContent = templateFunction(templateData);
-    // Step 1: Validate input parameters
+    
     // Step 3: Validate generated HTML
     console.log('DEBUG Step 3: Validating generated HTML');
     if (!htmlContent || typeof htmlContent !== 'string') {
       throw new Error('Template function returned empty or invalid HTML content');
- */
- * Uploads HTML content to Cloudinary as backup
+    }
+    
     const validation = validateHTMLContent(htmlContent, documentType);
     const validationReport = generateValidationReport(validation);
-  return path.split('.').reduce((current, key) => current && current[key], obj);
+    
     console.log('DEBUG HTML validation report:', validationReport);
-/**
+    
     if (!validation.isValid) {
       const errorDetails = {
         documentType,
@@ -48,30 +53,30 @@
       
       console.error('ERROR HTML validation failed:', JSON.stringify(errorDetails, null, 2));
       throw new Error(`Generated HTML is invalid: ${validation.errors.join(', ')}`);
-      return [...commonFields]; // Medical records can be created with minimal data
-    case 'medical_record':
+    }
+    
     console.log('SUCCESS HTML content generated and validated');
     console.log('DEBUG HTML content length:', htmlContent.length);
-    case 'exam_request':
+    
     // Step 4: Upload HTML as backup
     console.log('DEBUG Step 4: Uploading HTML backup');
     const fileName = (templateData.title || `${documentType}_document`)
       .replace(/[^a-zA-Z0-9\s]/g, '')
       .replace(/\s+/g, '_')
       .toLowerCase();
-      return [...commonFields, 'prescription'];
+    
     const htmlUploadResult = await uploadHTMLToCloudinary(htmlContent, fileName);
-  console.log('SUCCESS Document parameters validated');
+    
     // Step 5: Generate PDF
     console.log('DEBUG Step 5: Generating PDF from validated HTML');
     let pdfResult = null;
-  }
-  
+    
+    try {
       pdfResult = await generatePDFFromHTML(htmlContent, fileName);
       console.log('SUCCESS PDF generated successfully');
     } catch (pdfError) {
       console.error('ERROR PDF generation failed, but HTML is available:', pdfError.message);
-    const value = getNestedValue(templateData, field);
+      
       // Return HTML-only result if PDF fails
       return {
         success: true,
@@ -125,6 +130,66 @@
 };
 
 /**
+ * Uploads HTML content to Cloudinary as backup
+ */
+const uploadHTMLToCloudinary = async (htmlContent, fileName) => {
+  try {
+    const uploadResult = await cloudinary.uploader.upload(`data:text/html;base64,${Buffer.from(htmlContent).toString('base64')}`, {
+      resource_type: 'raw',
+      folder: 'quiro-ferreira/documents/html',
+      public_id: `${fileName}_${Date.now()}`,
+      use_filename: false,
+      unique_filename: true
+    });
+    
+    console.log('SUCCESS HTML uploaded to Cloudinary:', uploadResult.secure_url);
+    return uploadResult;
+  } catch (error) {
+    console.error('ERROR HTML upload to Cloudinary failed:', error.message);
+    throw new Error(`HTML upload failed: ${error.message}`);
+  }
+};
+
+/**
+ * Validates document generation parameters
+ */
+const validateDocumentParameters = (documentType, templateData) => {
+  const requiredFields = getRequiredFieldsForDocumentType(documentType);
+  const missingFields = [];
+  
+  for (const field of requiredFields) {
+    const value = getNestedValue(templateData, field);
+    if (!value || (typeof value === 'string' && value.trim() === '')) {
+      missingFields.push(field);
+    }
+  }
+  
+  return {
+    isValid: missingFields.length === 0,
+    missingFields
+  };
+};
+
+const getNestedValue = (obj, path) => {
+  return path.split('.').reduce((current, key) => current && current[key], obj);
+};
+
+const getRequiredFieldsForDocumentType = (documentType) => {
+  const commonFields = ['patientName', 'date'];
+  
+  switch (documentType) {
+    case 'medical_record':
+      return [...commonFields]; // Medical records can be created with minimal data
+    case 'prescription':
+      return [...commonFields, 'prescription'];
+    case 'exam_request':
+      return [...commonFields, 'examType'];
+    default:
+      return commonFields;
+  }
+};
+
+/**
  * Generate medical record document specifically
  */
 export const generateMedicalRecordDocument = async (recordData) => {
@@ -163,20 +228,22 @@ export const generateMedicalRecordDocument = async (recordData) => {
     
     console.log('SUCCESS Medical record document generated');
     return result;
-    throw new Error(`Unsupported document type: ${documentType}. Supported types: ${Object.keys(TEMPLATE_FUNCTIONS).join(', ')}`);
-  
+    
+  } catch (error) {
     console.error('ERROR Medical record document generation failed:', error.message);
     throw new Error(`Medical record generation failed: ${error.message}`);
- * Validates document generation parameters
+  }
+};
+
 /**
+ * Document type to template function mapping
+ */
+const TEMPLATE_FUNCTIONS = {
   lgpd: generateLGPDHTML,
   declaration: generateDeclarationHTML,
   exam_request: generateExamRequestHTML,
   consent_form: generateConsentFormHTML,
   medical_record: generateMedicalRecordHTML,
   prescription: generatePrescriptionHTML,
-  certificate: generateCertificateHTML,
-const TEMPLATE_FUNCTIONS = {
- */
- * Document type to template function mapping
-/**
+  certificate: generateCertificateHTML
+};
