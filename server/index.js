@@ -1692,7 +1692,8 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
     res.json({
       message: `${createdConsultations.length} consultas recorrentes criadas com sucesso`,
       created_count: createdConsultations.length,
-      consultations: createdConsultations
+      consultations: createdConsultations,
+      created_count: createdConsultations.length
     });
   } catch (error) {
     console.error('❌ Error creating recurring consultations:', error);

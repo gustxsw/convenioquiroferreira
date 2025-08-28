@@ -267,6 +267,9 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
       const result = await response.json();
       console.log('Recurring consultations created:', result);
 
+      // Show success message with details
+      alert(`${result.created_count || 'Múltiplas'} consultas recorrentes criadas com sucesso!`);
+      
       onSuccess();
       onClose();
     } catch (error) {
