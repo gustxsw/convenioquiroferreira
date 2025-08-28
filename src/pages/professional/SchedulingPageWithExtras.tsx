@@ -494,6 +494,15 @@ const SchedulingPageWithExtras: React.FC = () => {
     }
   };
 
+  const formatTime = (dateString: string) => {
+    // Convert UTC date to Brasília timezone for display
+    const utcDate = new Date(dateString);
+    const brasiliaOffset = -3 * 60; // -3 hours in minutes
+    const brasiliaDate = new Date(utcDate.getTime() + (brasiliaOffset * 60 * 1000));
+    
+    return format(brasiliaDate, 'HH:mm');
+  };
+
   const getStatusInfo = (status: string) => {
     switch (status) {
       case "scheduled":

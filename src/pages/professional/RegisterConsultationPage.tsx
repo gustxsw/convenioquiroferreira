@@ -391,8 +391,10 @@ const RegisterConsultationPage: React.FC = () => {
       return;
     }
 
-    // Combine date and time
-    const dateTime = new Date(`${date}T${time}`);
+    // Create date in Brasília timezone and convert to UTC
+    const brasiliaOffset = -3 * 60; // -3 hours in minutes
+    const localDate = new Date(`${date}T${time}`);
+    const utcDate = new Date(localDate.getTime() - (brasiliaOffset * 60 * 1000));
 
     try {
       setIsLoading(true);
@@ -415,7 +417,7 @@ const RegisterConsultationPage: React.FC = () => {
           service_id: serviceId,
           location_id: locationId ? parseInt(locationId) : null,
           value: Number(value),
-          date: dateTime.toISOString(),
+          date: utcDate.toISOString(),
           // Add appointment data
           appointment_date: date,
           appointment_time: time,
