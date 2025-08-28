@@ -10,7 +10,6 @@ import { pool } from "./db.js";
 import { authenticate, authorize } from "./middleware/auth.js";
 import createUpload from "./middleware/upload.js";
 import { generateDocumentPDF } from "./utils/documentGenerator.js";
-import { generatePDFFromHTML } from "./utils/pdfGenerator.js";
 import { MercadoPagoConfig, Preference } from "mercadopago";
 
 // ES6 module compatibility
@@ -1315,7 +1314,6 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), async 
       location_id,
       value,
       date,
-      time,
       notes,
       status = 'scheduled'
     } = req.body;
@@ -1323,10 +1321,10 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), async 
     console.log("🔄 Creating consultation:", req.body);
 
     // Validate required fields
-    if (!service_id || !value || !date || !time) {
+    if (!service_id || !value || !date) {
       return res
         .status(400)
-        .json({ message: "Serviço, valor, data e horário são obrigatórios" });
+        .json({ message: "Serviço, valor e data são obrigatórios" });
     }
 
     if (isNaN(parseFloat(value)) || parseFloat(value) <= 0) {
@@ -1393,17 +1391,6 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), async 
       }
     }
 
-    // Parse the date and time as if they were in Brasília timezone
-    const brasiliaDate = new Date(`${date}T${time}:00-03:00`);
-    const utcDate = new Date(brasiliaDate.getTime());
-    
-    console.log('🔄 Creating consultation with date:', {
-      originalDate: date,
-      originalTime: time,
-      brasiliaDate: brasiliaDate.toISOString(),
-      utcDate: utcDate.toISOString()
-    });
-
     // Create consultation
     const consultationResult = await pool.query(
       `
@@ -1422,7 +1409,7 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), async 
         service_id,
         location_id || null,
         parseFloat(value),
-        utcDate,
+        new Date(date),
         status,
         notes?.trim() || null,
       ]
@@ -1656,54 +1643,22 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
       return res.status(400).json({ message: 'É necessário selecionar um paciente' });
     }
 
-    // Base consultation data
-    const baseConsultationData = {
-      user_id: user_id || null,
-      dependent_id: dependent_id || null,
-      private_patient_id: private_patient_id || null,
-      professional_id: req.user.id,
-      service_id,
-      location_id: location_id || null,
-      value: parseFloat(value),
-      notes: notes || null,
-      status: 'scheduled'
-    };
-
-    // Prepare consultation data for recurring
-    const consultationData = {
-      ...baseConsultationData,
-      start_date: req.body.start_date, 
-      start_time: req.body.start_time,
-      recurrence_type: req.body.recurrence_type,
-      recurrence_interval: req.body.recurrence_interval || 1,
-      end_date: req.body.end_date || null,
-      occurrences: req.body.occurrences || 10,
-      timezone_offset: -3 // Brasília timezone
-    };
-    
-    console.log('🔄 Creating recurring consultations with data:', consultationData);
-
     const createdConsultations = [];
-    let currentDate = new Date(consultationData.start_date);
-    const endDateTime = consultationData.end_date ? new Date(consultationData.end_date) : null;
-    const maxOccurrences = Math.min(consultationData.occurrences, 100); // Safety limit
+    const startDateTime = new Date(`${start_date}T${start_time}`);
+    
+    // Create initial date in specified timezone and convert to UTC
+    let currentDate = new Date(`${start_date}T${start_time}`);
+    if (timezone_offset !== undefined) {
+      currentDate = new Date(currentDate.getTime() - (timezone_offset * 60 * 60 * 1000));
+    }
+    
+    const endDateTime = end_date ? new Date(end_date) : null;
 
-    for (let i = 0; i < maxOccurrences; i++) {
+    for (let i = 0; i < occurrences; i++) {
       // Check if we've reached the end date
       if (endDateTime && currentDate > endDateTime) {
         break;
       }
-
-      // Create date in Brasília timezone and convert to UTC
-      const brasiliaDateTime = new Date(`${currentDate.toISOString().split('T')[0]}T${consultationData.start_time}:00-03:00`);
-      const utcDateTime = new Date(brasiliaDateTime.getTime());
-      
-      console.log(`🔄 Creating consultation ${i + 1}:`, {
-        date: currentDate.toISOString().split('T')[0],
-        time: consultationData.start_time,
-        brasiliaDateTime: brasiliaDateTime.toISOString(),
-        utcDateTime: utcDateTime.toISOString()
-      });
 
       try {
         const result = await pool.query(
@@ -1713,16 +1668,16 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
           RETURNING *`,
           [
-            consultationData.user_id,
-            consultationData.dependent_id,
-            consultationData.private_patient_id,
-            consultationData.professional_id,
-            consultationData.service_id,
-            consultationData.location_id,
-            consultationData.value,
-            utcDateTime.toISOString(),
-            consultationData.status,
-            consultationData.notes
+            user_id || null,
+            dependent_id || null,
+            private_patient_id || null,
+            req.user.id,
+            service_id,
+            location_id || null,
+            value,
+            currentDate.toISOString(),
+            'scheduled',
+            notes || null
           ]
         );
 
@@ -1733,10 +1688,10 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
       }
 
       // Calculate next date based on recurrence
-      if (consultationData.recurrence_type === 'daily') {
-        currentDate.setDate(currentDate.getDate() + consultationData.recurrence_interval);
-      } else if (consultationData.recurrence_type === 'weekly') {
-        currentDate.setDate(currentDate.getDate() + (7 * consultationData.recurrence_interval));
+      if (recurrence_type === 'daily') {
+        currentDate.setDate(currentDate.getDate() + recurrence_interval);
+      } else if (recurrence_type === 'weekly') {
+        currentDate.setDate(currentDate.getDate() + (7 * recurrence_interval));
       }
     }
 
@@ -3044,45 +2999,70 @@ app.delete("/api/medical-records/:id", authenticate, authorize(["professional"])
 });
 
 // Generate medical record document
-app.post('/api/medical-records/generate-document', authenticate, authorize(['professional']), async (req, res) => {
+app.post("/api/medical-records/generate-document", authenticate, authorize(["professional"]), async (req, res) => {
   try {
     const { record_id, template_data } = req.body;
-    
-    console.log('🔄 Generating medical record document for record:', record_id);
-    
-    // Verify record belongs to professional
+
+    if (!record_id || !template_data) {
+      return res.status(400).json({
+        message: "ID do prontuário e dados do template são obrigatórios",
+      });
+    }
+
+    // Validate record belongs to professional
     const recordResult = await pool.query(
-      'SELECT * FROM medical_records WHERE id = $1 AND professional_id = $2',
+      `
+      SELECT mr.*, pp.name as patient_name, pp.cpf as patient_cpf
+      FROM medical_records mr
+      JOIN private_patients pp ON mr.private_patient_id = pp.id
+      WHERE mr.id = $1 AND mr.professional_id = $2
+    `,
       [record_id, req.user.id]
     );
-    
+
     if (recordResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Prontuário não encontrado' });
+      return res.status(404).json({ message: "Prontuário não encontrado" });
     }
-    
-    // Generate HTML document
-    const documentResult = await generateDocumentPDF('medical_record', template_data);
-    
-    // Generate PDF version
-    const templates = await import('./utils/documentGenerator.js');
-    const templateFunction = templates.templates?.medical_record;
-    const htmlContent = templateFunction ? templateFunction(template_data) : '';
-    
-    const pdfResult = await generatePDFFromHTML(htmlContent, `prontuario_${template_data.patientName.replace(/[^a-zA-Z0-9]/g, '_')}`);
-    
-    console.log('✅ Medical record document generated');
-    
+
+    const record = recordResult.rows[0];
+
+    // Generate document
+    const documentData = await generateDocumentPDF("medical_record", {
+      ...template_data,
+      patientName: record.patient_name,
+      patientCpf: record.patient_cpf,
+      ...record,
+    });
+
+    // Save document reference
+    const documentResult = await pool.query(
+      `
+      INSERT INTO medical_documents (
+        professional_id, private_patient_id, title, document_type, document_url, template_data
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `,
+      [
+        req.user.id,
+        record.private_patient_id,
+        `Prontuário - ${record.patient_name}`,
+        "medical_record",
+        documentData.url,
+        JSON.stringify(template_data),
+      ]
+    );
+
+    console.log("✅ Medical record document generated:", documentResult.rows[0].id);
+
     res.json({
-      documentUrl: documentResult.url,
-      pdfUrl: pdfResult.url,
-      message: 'Documento do prontuário gerado com sucesso'
+      message: "Documento gerado com sucesso",
+      documentUrl: documentData.url,
+      document: documentResult.rows[0],
     });
   } catch (error) {
-    console.error('❌ Error generating medical record document:', error);
-    res.status(500).json({ 
-      message: 'Erro interno do servidor ao gerar documento do prontuário',
-      error: error.message 
-    });
+    console.error("❌ Error generating medical record document:", error);
+    res.status(500).json({ message: "Erro ao gerar documento do prontuário" });
   }
 });
 
@@ -3121,81 +3101,92 @@ app.get("/api/documents/medical", authenticate, authorize(["professional"]), asy
   }
 });
 
-app.post('/api/documents/medical', authenticate, authorize(['professional']), async (req, res) => {
+app.post("/api/documents/medical", authenticate, authorize(["professional"]), async (req, res) => {
   try {
-    console.log('🔄 [ENDPOINT] Medical document creation started');
-    console.log('🔄 [ENDPOINT] Request body:', JSON.stringify(req.body, null, 2));
-    console.log('🔄 [ENDPOINT] User:', req.user.id, req.user.name);
-    
     const { title, document_type, private_patient_id, template_data } = req.body;
-    
-    console.log('🔄 [ENDPOINT] Extracted data:', {
+    const professionalId = req.user.id;
+
+    console.log("🔄 Creating medical document:", {
       title,
       document_type,
       private_patient_id,
-      template_data_keys: template_data ? Object.keys(template_data) : 'null'
+      professional_id: professionalId,
     });
-    
-    console.log('🔄 Creating medical document:', { title, document_type, private_patient_id });
-    
-    // Get patient data
-    console.log('🔄 [ENDPOINT] Fetching patient data for ID:', private_patient_id);
-    const patientResult = await pool.query(
-      'SELECT name, cpf FROM private_patients WHERE id = $1 AND professional_id = $2',
-      [private_patient_id, req.user.id]
-    );
-    
-    if (patientResult.rows.length === 0) {
-      console.error('ERROR [ENDPOINT] Patient not found');
-      return res.status(404).json({ message: 'Paciente não encontrado' });
+
+    // Validate required fields
+    if (!title || !document_type || !private_patient_id) {
+      console.log("❌ Missing required fields");
+      return res
+        .status(400)
+        .json({ message: "Título, tipo e paciente são obrigatórios" });
     }
-    
-    const patient = patientResult.rows[0];
-    console.log('SUCCESS [ENDPOINT] Patient found:', patient.name);
-    
-    // Prepare template data with patient info
-    const completeTemplateData = {
-      ...template_data,
-      patientName: patient.name,
-      patientCpf: patient.cpf
-    };
-    
-    
-    console.log('🔄 [ENDPOINT] Complete template data:', JSON.stringify(completeTemplateData, null, 2));
-    // Generate HTML document
-    console.log('🔄 [ENDPOINT] Calling generateDocumentPDF...');
-    const documentResult = await generateDocumentPDF(document_type, completeTemplateData);
-    console.log('SUCCESS [ENDPOINT] Document generated:', documentResult);
-    
-    // Generate PDF version
-    const templates = await import('./utils/documentGenerator.js');
-    const templateFunction = templates.templates?.[document_type] || templates.templates?.other;
-    const htmlContent = templateFunction ? templateFunction(completeTemplateData) : '';
-    
-    const pdfResult = await generatePDFFromHTML(htmlContent, `${document_type}_${patient.name.replace(/[^a-zA-Z0-9]/g, '_')}`);
-    
-    // Save to database
-    const insertResult = await pool.query(
-      `INSERT INTO medical_documents 
-       (title, document_type, patient_name, patient_cpf, document_url, pdf_url, professional_id, private_patient_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-      [title, document_type, patient.name, patient.cpf, documentResult.url, pdfResult.url, req.user.id, private_patient_id]
+
+    // Verify patient belongs to professional
+    const patientCheck = await pool.query(
+      "SELECT id, name, cpf FROM private_patients WHERE id = $1 AND professional_id = $2",
+      [private_patient_id, professionalId]
     );
-    
-    console.log('SUCCESS [ENDPOINT] Medical document saved with ID:', insertResult.rows[0].id);
-    
-    res.json({
-      id: insertResult.rows[0].id,
-      title,
-      documentUrl: documentResult.url,
-      pdfUrl: pdfResult.url,
-      message: 'Documento médico criado com sucesso'
-    });
+
+    if (patientCheck.rows.length === 0) {
+      console.log("❌ Patient not found or not owned by professional");
+      return res.status(404).json({ message: "Paciente não encontrado" });
+    }
+
+    const patient = patientCheck.rows[0];
+    console.log("✅ Patient verified:", patient.name);
+
+    // Generate document using the document generator
+    try {
+      const { generateDocumentPDF } = await import("./utils/documentGenerator.js");
+
+      // Prepare complete template data
+      const completeTemplateData = {
+        ...template_data,
+        patientName: patient.name,
+        patientCpf: patient.cpf || "",
+        professionalName: template_data.professionalName || req.user.name,
+        professionalSpecialty: template_data.professionalSpecialty || "",
+        crm: template_data.crm || "",
+      };
+
+      console.log("🔄 Generating document with data:", completeTemplateData);
+      const documentResult = await generateDocumentPDF(document_type, completeTemplateData);
+      console.log("✅ Document generated:", documentResult.url);
+
+      // Save document record to database
+      const result = await pool.query(
+        `INSERT INTO medical_documents (
+          professional_id, private_patient_id, title, document_type, 
+          document_url, created_at
+        ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP) 
+        RETURNING *`,
+        [
+          professionalId,
+          private_patient_id,
+          title,
+          document_type,
+          documentResult.url,
+        ]
+      );
+
+      console.log("✅ Medical document saved to database:", result.rows[0]);
+      res.status(201).json({
+        document: result.rows[0],
+        title,
+        documentUrl: documentResult.url,
+      });
+    } catch (docError) {
+      console.error("❌ Error generating document:", docError);
+      res.status(500).json({
+        message: "Erro ao gerar documento",
+        error: docError.message,
+      });
+    }
   } catch (error) {
-    console.error('ERROR [ENDPOINT] Error creating medical document:', error);
-    res.status(500).json({ 
-      message: 'Erro interno do servidor ao criar documento médico',
-      error: error.message 
+    console.error("❌ Error creating medical document:", error);
+    res.status(500).json({
+      message: "Erro ao criar documento médico",
+      error: error.message,
     });
   }
 });

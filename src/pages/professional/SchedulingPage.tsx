@@ -593,8 +593,6 @@ const SchedulingPageWithExtras: React.FC = () => {
     confirmed: consultations.filter((c) => c.status === "confirmed").length,
     completed: consultations.filter((c) => c.status === "completed").length,
     cancelled: consultations.filter((c) => c.status === "cancelled").length,
-    totalValue: consultations.reduce((sum, c) => sum + c.value, 0),
-    convenioValue: consultations
       .filter((c) => c.patient_type === "convenio")
       .reduce((sum, c) => sum + c.value * 0.5, 0), // Assuming 50% to pay to convenio
   };
@@ -711,24 +709,6 @@ const SchedulingPageWithExtras: React.FC = () => {
               Cancelados
             </div>
           </div>
-
-          <div className="bg-green-50 p-4 rounded-lg text-center border border-green-200">
-            <div className="text-lg font-bold text-green-600">{formatCurrency(dailyStats.totalValue)}</div>
-            <div className="text-sm text-green-700 flex items-center justify-center">
-              <DollarSign className="h-3 w-3 mr-1" />
-              Total
-            </div>
-          </div>
-
-          <div className="bg-yellow-50 p-4 rounded-lg text-center border border-yellow-200">
-            <div className="text-lg font-bold text-yellow-600">{formatCurrency(dailyStats.convenioValue)}</div>
-            <div className="text-sm text-yellow-700 flex items-center justify-center">
-              <DollarSign className="h-3 w-3 mr-1" />
-              Convênio
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Agenda View */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
