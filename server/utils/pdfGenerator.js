@@ -1,5 +1,11 @@
 import htmlPdf from 'html-pdf-node';
 import { v2 as cloudinary } from 'cloudinary';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // PDF generation options
 const pdfOptions = {
@@ -13,17 +19,31 @@ const pdfOptions = {
   type: 'pdf',
   quality: '75',
   renderDelay: 1000,
-  phantomArgs: ['--web-security=false'],
-  args: ['--no-sandbox', '--disable-setuid-sandbox']
+  args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-web-security']
 };
 
 // Generate PDF from HTML content and upload to Cloudinary
 export const generatePDFFromHTML = async (htmlContent, fileName = 'document') => {
+  let tempFilePath = null;
+  
   try {
     console.log('🔄 Generating PDF from HTML content...');
     
-    // Create PDF buffer from HTML
-    const file = { content: htmlContent };
+    // Create temporary HTML file
+    const tempDir = path.join(__dirname, '../../temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    
+    const tempFileName = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.html`;
+    tempFilePath = path.join(tempDir, tempFileName);
+    
+    // Write HTML content to temporary file
+    fs.writeFileSync(tempFilePath, htmlContent, 'utf8');
+    console.log('✅ Temporary HTML file created:', tempFilePath);
+    
+    // Create PDF from file
+    const file = { url: `file://${tempFilePath}` };
     const pdfBuffer = await htmlPdf.generatePdf(file, pdfOptions);
     
     console.log('✅ PDF generated successfully, size:', pdfBuffer.length, 'bytes');
@@ -58,5 +78,15 @@ export const generatePDFFromHTML = async (htmlContent, fileName = 'document') =>
   } catch (error) {
     console.error('❌ Error generating PDF:', error);
     throw new Error(`Erro ao gerar PDF: ${error.message}`);
+  } finally {
+    // Clean up temporary file
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        fs.unlinkSync(tempFilePath);
+        console.log('🧹 Temporary file cleaned up:', tempFilePath);
+      } catch (cleanupError) {
+        console.warn('⚠️ Could not clean up temporary file:', cleanupError);
+      }
+    }
   }
 };
