@@ -160,6 +160,7 @@ const PrivatePatientsPage: React.FC = () => {
   };
 
   const formatPhone = (value: string) => {
+    if (!value) return '';
     const numericValue = value.replace(/\D/g, '');
     const limitedValue = numericValue.slice(0, 11);
     setFormData(prev => ({ ...prev, phone: limitedValue }));
@@ -555,8 +556,8 @@ const PrivatePatientsPage: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={formData.phone ? formatPhoneDisplay(formData.phone) : ''}
-                    onChange={(e) => formatPhone(e.target.value)}
+                    value={formatPhoneDisplay(formData.phone || '')}
+                    onChange={(e) => formatPhone(e.target.value || '')}
                     className="input"
                     placeholder="(00) 00000-0000"
                   />
