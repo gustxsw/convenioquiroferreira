@@ -125,8 +125,8 @@ const PrivatePatientsPage: React.FC = () => {
   const openEditModal = (patient: PrivatePatient) => {
     setModalMode('edit');
     setFormData({
-      name: patient.name,
-      cpf: patient.cpf,
+      name: patient.name || '',
+      cpf: patient.cpf || '',
       email: patient.email || '',
       phone: patient.phone || '',
       birth_date: patient.birth_date || '',
@@ -160,13 +160,14 @@ const PrivatePatientsPage: React.FC = () => {
   };
 
   const formatPhone = (value: string) => {
-    if (!value) return '';
+    if (!value) return;
     const numericValue = value.replace(/\D/g, '');
     const limitedValue = numericValue.slice(0, 11);
     setFormData(prev => ({ ...prev, phone: limitedValue }));
   };
 
   const formatZipCode = (value: string) => {
+    if (!value) return;
     const numericValue = value.replace(/\D/g, '');
     const limitedValue = numericValue.slice(0, 8);
     setFormData(prev => ({ ...prev, zip_code: limitedValue }));
@@ -190,15 +191,15 @@ const PrivatePatientsPage: React.FC = () => {
       // Prepare data with optional CPF
       const submitData = {
         ...formData,
-        cpf: formData.cpf.trim() || null, // Send null if CPF is empty
-        email: formData.email.trim() || null,
+        cpf: (formData.cpf || '').trim() || null, // Send null if CPF is empty
+        email: (formData.email || '').trim() || null,
         phone: formData.phone.replace(/\D/g, '') || null,
         birth_date: formData.birth_date || null,
-        address: formData.address.trim() || null,
-        address_number: formData.address_number.trim() || null,
-        address_complement: formData.address_complement.trim() || null,
-        neighborhood: formData.neighborhood.trim() || null,
-        city: formData.city.trim() || null,
+        address: (formData.address || '').trim() || null,
+        address_number: (formData.address_number || '').trim() || null,
+        address_complement: (formData.address_complement || '').trim() || null,
+        neighborhood: (formData.neighborhood || '').trim() || null,
+        city: (formData.city || '').trim() || null,
         state: formData.state || null,
         zip_code: formData.zip_code.replace(/\D/g, '') || null
       };
@@ -266,6 +267,7 @@ const PrivatePatientsPage: React.FC = () => {
   };
 
   const formatCpfDisplay = (cpf: string) => {
+    if (!cpf) return '';
     return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
   };
 
@@ -529,7 +531,7 @@ const PrivatePatientsPage: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={formData.cpf ? formatCpfDisplay(formData.cpf) : ''}
+                    value={formatCpfDisplay(formData.cpf)}
                     onChange={(e) => formatCpf(e.target.value)}
                     className="input"
                     placeholder="000.000.000-00"
@@ -556,8 +558,8 @@ const PrivatePatientsPage: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={formatPhoneDisplay(formData.phone || '')}
-                    onChange={(e) => formatPhone(e.target.value || '')}
+                    value={formatPhoneDisplay(formData.phone)}
+                    onChange={(e) => formatPhone(e.target.value)}
                     className="input"
                     placeholder="(00) 00000-0000"
                   />
@@ -589,7 +591,7 @@ const PrivatePatientsPage: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={formData.zip_code ? formatZipCodeDisplay(formData.zip_code) : ''}
+                    value={formatZipCodeDisplay(formData.zip_code)}
                     onChange={(e) => formatZipCode(e.target.value)}
                     className="input"
                     placeholder="00000-000"
