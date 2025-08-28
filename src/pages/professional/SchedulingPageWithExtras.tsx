@@ -334,11 +334,16 @@ const SchedulingPageWithExtras: React.FC = () => {
         setSuccess(`${result.created_count} consultas recorrentes criadas com sucesso!`);
       } else {
         // Create single consultation
+        // Create date in Brasília timezone (UTC-3)
+        const brasiliaOffset = -3 * 60; // -3 hours in minutes
+        const localDate = new Date(`${formData.date}T${formData.time}`);
+        const utcDate = new Date(localDate.getTime() - (brasiliaOffset * 60 * 1000));
+
         const consultationData: any = {
           service_id: parseInt(formData.service_id),
           location_id: formData.location_id ? parseInt(formData.location_id) : null,
           value: parseFloat(formData.value),
-          date: new Date(`${formData.date}T${formData.time}`).toISOString(),
+          date: utcDate.toISOString(),
           status: "scheduled",
           notes: formData.notes || null,
         };
