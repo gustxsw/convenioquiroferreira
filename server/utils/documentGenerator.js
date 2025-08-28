@@ -1069,20 +1069,39 @@ ${data.content}
 // Generate HTML document and upload to Cloudinary
 export const generateDocumentPDF = async (documentType, templateData) => {
   try {
-    console.log('🔄 Generating document:', { documentType, templateData });
+    console.log('🔄 [DEBUG] Starting document generation...');
+    console.log('🔄 [DEBUG] Document type:', documentType);
+    console.log('🔄 [DEBUG] Template data keys:', Object.keys(templateData));
+    console.log('🔄 [DEBUG] Template data:', JSON.stringify(templateData, null, 2));
     
     // Get the template function
     const templateFunction = templates[documentType] || templates.other;
+    console.log('🔄 [DEBUG] Template function found:', typeof templateFunction);
+    console.log('🔄 [DEBUG] Available templates:', Object.keys(templates));
     
     // Generate HTML content
+    console.log('🔄 [DEBUG] Calling template function...');
     const htmlContent = templateFunction(templateData);
     
-    console.log('✅ HTML content generated, length:', htmlContent.length);
+    console.log('✅ [DEBUG] HTML content generated');
+    console.log('📊 [DEBUG] HTML length:', htmlContent.length);
+    console.log('📄 [DEBUG] HTML preview (first 500 chars):', htmlContent.substring(0, 500));
+    console.log('📄 [DEBUG] HTML preview (last 200 chars):', htmlContent.substring(htmlContent.length - 200));
     
     // 🔥 VALIDATE HTML CONTENT BEFORE PROCESSING
     if (!htmlContent || htmlContent.trim().length === 0) {
+      console.error('❌ [DEBUG] HTML content validation failed - empty content');
       throw new Error('Generated HTML content is empty');
     }
+    
+    // Additional validation
+    if (!htmlContent.includes('<html') || !htmlContent.includes('</html>')) {
+      console.error('❌ [DEBUG] HTML content validation failed - missing HTML tags');
+      console.error('❌ [DEBUG] Content:', htmlContent);
+      throw new Error('Generated HTML content is not valid HTML');
+    }
+    
+    console.log('✅ [DEBUG] HTML content validation passed');
     
     // Upload HTML to Cloudinary as raw file
     const uploadResult = await cloudinary.uploader.upload(

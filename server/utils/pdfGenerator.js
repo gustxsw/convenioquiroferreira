@@ -38,13 +38,17 @@ export const generatePDFFromHTML = async (htmlContent, fileName = 'document') =>
   let tempFilePath = null;
   
   try {
-    console.log('🔄 Starting PDF generation process...');
-    console.log('📄 HTML content length:', htmlContent.length);
+    console.log('🔄 [PDF] Starting PDF generation process...');
+    console.log('📄 [PDF] HTML content length:', htmlContent.length);
+    console.log('📄 [PDF] File name:', fileName);
     
     // Validate HTML content
     if (!htmlContent || htmlContent.trim().length === 0) {
+      console.error('❌ [PDF] HTML content is empty or invalid');
       throw new Error('HTML content is empty or invalid');
     }
+    
+    console.log('📄 [PDF] HTML content preview (first 200 chars):', htmlContent.substring(0, 200));
     
     // Create temporary directory
     const tempDir = path.join(__dirname, '../../temp');

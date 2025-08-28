@@ -3123,21 +3123,36 @@ app.get("/api/documents/medical", authenticate, authorize(["professional"]), asy
 
 app.post('/api/documents/medical', authenticate, authorize(['professional']), async (req, res) => {
   try {
+    console.log('🔄 [ENDPOINT] Medical document creation started');
+    console.log('🔄 [ENDPOINT] Request body:', JSON.stringify(req.body, null, 2));
+    console.log('🔄 [ENDPOINT] User:', req.user.id, req.user.name);
+    
     const { title, document_type, private_patient_id, template_data } = req.body;
+    
+    console.log('🔄 [ENDPOINT] Extracted data:', {
+      title,
+      document_type,
+      private_patient_id,
+      console.error('❌ [ENDPOINT] Missing required fields');
+      template_data_keys: template_data ? Object.keys(template_data) : 'null'
+    });
     
     console.log('🔄 Creating medical document:', { title, document_type, private_patient_id });
     
     // Get patient data
+    console.log('🔄 [ENDPOINT] Fetching patient data for ID:', private_patient_id);
     const patientResult = await pool.query(
       'SELECT name, cpf FROM private_patients WHERE id = $1 AND professional_id = $2',
       [private_patient_id, req.user.id]
     );
     
     if (patientResult.rows.length === 0) {
+      console.error('❌ [ENDPOINT] Patient not found');
       return res.status(404).json({ message: 'Paciente não encontrado' });
     }
     
     const patient = patientResult.rows[0];
+    console.log('✅ [ENDPOINT] Patient found:', patient.name);
     
     // Prepare template data with patient info
     const completeTemplateData = {
@@ -3146,8 +3161,12 @@ app.post('/api/documents/medical', authenticate, authorize(['professional']), as
       patientCpf: patient.cpf
     };
     
+    
+    console.log('🔄 [ENDPOINT] Complete template data:', JSON.stringify(completeTemplateData, null, 2));
     // Generate HTML document
+    console.log('🔄 [ENDPOINT] Calling generateDocumentPDF...');
     const documentResult = await generateDocumentPDF(document_type, completeTemplateData);
+    console.log('✅ [ENDPOINT] Document generated:', documentResult);
     
     // Generate PDF version
     const templates = await import('./utils/documentGenerator.js');
