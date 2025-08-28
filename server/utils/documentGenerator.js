@@ -1079,7 +1079,12 @@ export const generateDocumentPDF = async (documentType, templateData) => {
     
     console.log('✅ HTML content generated, length:', htmlContent.length);
     
-    // Upload HTML to Cloudinary as raw file (will be converted to PDF on download)
+    // 🔥 VALIDATE HTML CONTENT BEFORE PROCESSING
+    if (!htmlContent || htmlContent.trim().length === 0) {
+      throw new Error('Generated HTML content is empty');
+    }
+    
+    // Upload HTML to Cloudinary as raw file
     const uploadResult = await cloudinary.uploader.upload(
       `data:text/html;base64,${Buffer.from(htmlContent).toString('base64')}`,
       {
@@ -1094,9 +1099,28 @@ export const generateDocumentPDF = async (documentType, templateData) => {
     
     console.log('✅ Document uploaded to Cloudinary:', uploadResult.secure_url);
     
+    // 🔥 GENERATE PDF VERSION
+    let pdfResult = null;
+    try {
+      console.log('🔄 Starting PDF generation...');
+      const { generatePDFFromHTML } = await import('./pdfGenerator.js');
+      
+      const cleanFileName = templateData.title
+        ? templateData.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_')
+        : `document_${documentType}`;
+      
+      pdfResult = await generatePDFFromHTML(htmlContent, cleanFileName);
+      console.log('✅ PDF generated and uploaded:', pdfResult.url);
+    } catch (pdfError) {
+      console.error('⚠️ PDF generation failed, continuing with HTML only:', pdfError.message);
+      // Don't throw error - continue with HTML only
+    }
+    
     return {
       url: uploadResult.secure_url,
-      public_id: uploadResult.public_id
+      public_id: uploadResult.public_id,
+      pdfUrl: pdfResult?.url || null,
+      pdfPublicId: pdfResult?.public_id || null
     };
   } catch (error) {
     console.error('❌ Error generating document:', error);
