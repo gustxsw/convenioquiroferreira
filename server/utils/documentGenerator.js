@@ -4,7 +4,6 @@
   console.log('DEBUG Template data keys:', Object.keys(templateData || {}));
   console.log('DEBUG Document type:', documentType);
   console.log('DEBUG Starting document generation pipeline');
- */
 /**
  * Main document generation function with complete validation pipeline
  */
