@@ -410,27 +410,37 @@ const MedicalRecordsPage: React.FC = () => {
       }
 
       const result = await response.json();
-      const { documentUrl } = result;
+      const { documentUrl, pdfUrl } = result;
 
       // Clean filename
       const fileName = `Prontuario_${record.patient_name.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`;
       
-      // Create download link that opens in new tab for mobile compatibility
-      const link = document.createElement('a');
-      link.href = documentUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      
-      // For desktop browsers, try to force download
-      if (window.navigator.userAgent.indexOf('Mobile') === -1) {
-        link.download = `${fileName}.html`;
+      // Download PDF if available, otherwise HTML
+      if (pdfUrl) {
+        const pdfLink = document.createElement('a');
+        pdfLink.href = pdfUrl;
+        pdfLink.download = `${fileName}.pdf`;
+        pdfLink.target = '_blank';
+        pdfLink.rel = 'noopener noreferrer';
+        document.body.appendChild(pdfLink);
+        pdfLink.click();
+        document.body.removeChild(pdfLink);
+        
+        setSuccess('Prontuário PDF gerado e baixado com sucesso!');
+      } else {
+        // Fallback to HTML
+        const htmlLink = document.createElement('a');
+        htmlLink.href = documentUrl;
+        htmlLink.target = '_blank';
+        htmlLink.rel = 'noopener noreferrer';
+        htmlLink.download = `${fileName}.html`;
+        document.body.appendChild(htmlLink);
+        htmlLink.click();
+        document.body.removeChild(htmlLink);
+        
+        setSuccess('Prontuário HTML gerado e aberto em nova aba.');
       }
-      
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
 
-      setSuccess('Prontuário aberto em nova aba. Use Ctrl+S (ou Cmd+S no Mac) para salvar ou imprimir.');
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Erro ao gerar prontuário');
     } finally {

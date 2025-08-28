@@ -326,31 +326,39 @@ const DocumentsPage: React.FC = () => {
       const result = await response.json();
       console.log('✅ [DOCUMENTS] Document created successfully:', result);
       
-      const { title, documentUrl } = result;
+      const { title, documentUrl, pdfUrl } = result;
 
       // Clean filename for download
       const fileName = title
         .replace(/[^a-zA-Z0-9\s]/g, "")
         .replace(/\s+/g, "_");
 
-      // Create download link that opens in new tab
-      const link = document.createElement("a");
-      link.href = documentUrl;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-
-      // For desktop browsers, try to force download
-      if (window.navigator.userAgent.indexOf("Mobile") === -1) {
-        link.download = `${fileName}.html`;
+      // Download PDF if available, otherwise HTML
+      if (pdfUrl) {
+        const pdfLink = document.createElement("a");
+        pdfLink.href = pdfUrl;
+        pdfLink.download = `${fileName}.pdf`;
+        pdfLink.target = "_blank";
+        pdfLink.rel = "noopener noreferrer";
+        document.body.appendChild(pdfLink);
+        pdfLink.click();
+        document.body.removeChild(pdfLink);
+        
+        setSuccess("Documento PDF criado e baixado com sucesso!");
+      } else {
+        // Fallback to HTML
+        const htmlLink = document.createElement("a");
+        htmlLink.href = documentUrl;
+        htmlLink.target = "_blank";
+        htmlLink.rel = "noopener noreferrer";
+        htmlLink.download = `${fileName}.html`;
+        document.body.appendChild(htmlLink);
+        htmlLink.click();
+        document.body.removeChild(htmlLink);
+        
+        setSuccess("Documento HTML criado e aberto em nova aba.");
       }
 
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      setSuccess(
-        "Documento criado e aberto em nova aba. Use Ctrl+S (ou Cmd+S no Mac) para salvar ou imprimir."
-      );
       
       // Refresh documents list
       await fetchData();

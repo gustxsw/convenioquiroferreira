@@ -1066,6 +1066,18 @@ ${data.content}
 </html>`
 };
 
+// Export templates for PDF generation
+export const templates = {
+  certificate,
+  prescription,
+  consent_form,
+  exam_request,
+  declaration,
+  lgpd,
+  other,
+  medical_record
+};
+
 // Generate HTML document and upload to Cloudinary
 export const generateDocumentPDF = async (documentType, templateData) => {
   try {
