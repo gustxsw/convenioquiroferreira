@@ -4609,9 +4609,6 @@ const startServer = async () => {
       console.log(`📋 Consultations System: Active`);
       console.log(`✅ All systems operational`);
     });
-  } catch (error) {
-    console.error("❌ Failed to start server:", error);
-    process.exit(1);
   }
 };
 
