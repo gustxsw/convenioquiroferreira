@@ -3133,7 +3133,6 @@ app.post('/api/documents/medical', authenticate, authorize(['professional']), as
       title,
       document_type,
       private_patient_id,
-      console.error('❌ [ENDPOINT] Missing required fields');
       template_data_keys: template_data ? Object.keys(template_data) : 'null'
     });
     
@@ -3147,12 +3146,12 @@ app.post('/api/documents/medical', authenticate, authorize(['professional']), as
     );
     
     if (patientResult.rows.length === 0) {
-      console.error('❌ [ENDPOINT] Patient not found');
+      console.error('ERROR [ENDPOINT] Patient not found');
       return res.status(404).json({ message: 'Paciente não encontrado' });
     }
     
     const patient = patientResult.rows[0];
-    console.log('✅ [ENDPOINT] Patient found:', patient.name);
+    console.log('SUCCESS [ENDPOINT] Patient found:', patient.name);
     
     // Prepare template data with patient info
     const completeTemplateData = {
@@ -3166,7 +3165,7 @@ app.post('/api/documents/medical', authenticate, authorize(['professional']), as
     // Generate HTML document
     console.log('🔄 [ENDPOINT] Calling generateDocumentPDF...');
     const documentResult = await generateDocumentPDF(document_type, completeTemplateData);
-    console.log('✅ [ENDPOINT] Document generated:', documentResult);
+    console.log('SUCCESS [ENDPOINT] Document generated:', documentResult);
     
     // Generate PDF version
     const templates = await import('./utils/documentGenerator.js');
@@ -3183,7 +3182,7 @@ app.post('/api/documents/medical', authenticate, authorize(['professional']), as
       [title, document_type, patient.name, patient.cpf, documentResult.url, pdfResult.url, req.user.id, private_patient_id]
     );
     
-    console.log('✅ Medical document saved with ID:', insertResult.rows[0].id);
+    console.log('SUCCESS [ENDPOINT] Medical document saved with ID:', insertResult.rows[0].id);
     
     res.json({
       id: insertResult.rows[0].id,
@@ -3193,7 +3192,7 @@ app.post('/api/documents/medical', authenticate, authorize(['professional']), as
       message: 'Documento médico criado com sucesso'
     });
   } catch (error) {
-    console.error('❌ Error creating medical document:', error);
+    console.error('ERROR [ENDPOINT] Error creating medical document:', error);
     res.status(500).json({ 
       message: 'Erro interno do servidor ao criar documento médico',
       error: error.message 
