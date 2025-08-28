@@ -12,7 +12,6 @@ const __dirname = path.dirname(__filename);
  * Enhanced PDF generation options for reliable rendering
  */
 const getPDFOptions = () => ({
- */
 }
 )
 const getPDFOptions = () => ({
