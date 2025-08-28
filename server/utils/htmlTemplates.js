@@ -18,7 +18,7 @@ const validateAndSanitizeData = (data) => {
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#x27;')
+      .replace(/'/g, '&#39;')
       .trim();
   };
 

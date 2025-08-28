@@ -8,6 +8,12 @@
  * Main document generation function with complete validation pipeline
  */
 export const generateDocumentPDF = async (documentType, templateData) => {
+  const startTime = Date.now();
+  
+  console.log('DEBUG Template data keys:', Object.keys(templateData || {}));
+  console.log('DEBUG Document type:', documentType);
+  console.log('DEBUG Starting document generation pipeline');
+  
   try {
     // Step 1: Validate input parameters
     console.log('DEBUG Step 1: Validating input parameters');
@@ -238,11 +244,11 @@ export const generateMedicalRecordDocument = async (recordData) => {
  * Document type to template function mapping
  */
 const TEMPLATE_FUNCTIONS = {
-  lgpd: generateLGPDHTML,
-  declaration: generateDeclarationHTML,
-  exam_request: generateExamRequestHTML,
-  consent_form: generateConsentFormHTML,
-  medical_record: generateMedicalRecordHTML,
+  certificate: generateCertificateHTML,
   prescription: generatePrescriptionHTML,
-  certificate: generateCertificateHTML
+  consent_form: generateConsentFormHTML,
+  exam_request: generateExamRequestHTML,
+  declaration: generateDeclarationHTML,
+  lgpd: generateLGPDHTML,
+  medical_record: generateMedicalRecordHTML
 };

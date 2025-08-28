@@ -12,9 +12,6 @@ const __dirname = path.dirname(__filename);
  * Enhanced PDF generation options for reliable rendering
  */
 const getPDFOptions = () => ({
-}
-)
-const getPDFOptions = () => ({
   format: 'A4',
   margin: {
     top: '20mm',
@@ -35,13 +32,11 @@ const getPDFOptions = () => ({
     '--disable-backgrounding-occluded-windows',
     '--disable-renderer-backgrounding',
     '--disable-background-timer-throttling',
-    '--disable-renderer-backgrounding',
-    '--disable-background-timer-throttling',
     '--disable-gpu',
     '--disable-dev-shm-usage',
     '--disable-ipc-flooding-protection',
-    '--font-render-hinting=none'
     '--disable-ipc-flooding-protection',
+    '--font-render-hinting=none'
     '--font-render-hinting=none'
   ]
 });
@@ -593,121 +588,3 @@ const uploadPDFToCloudinary = async (pdfBuffer, fileName) => {
 /**
  * Main PDF generation function with complete validation and error handling
  */
-export const generatePDFFromHTML = async (htmlContent, fileName = 'document') => {
-  let tempFilePath = null;
-  
-  console.log('DEBUG Starting PDF generation process');
-  console.log('DEBUG Input file name:', fileName);
-  console.log('DEBUG Input HTML length:', htmlContent ? htmlContent.length : 0);
-  
-  console.log('DEBUG Starting PDF generation process');
-  console.log('DEBUG Input file name:', fileName);
-  console.log('DEBUG Input HTML length:', htmlContent ? htmlContent.length : 0);
-  
-  try {
-    // Step 1: Validate input parameters
-    if (!htmlContent || typeof htmlContent !== 'string') {
-      throw new Error('HTML content is required and must be a string');
-    }
-    
-    if (!fileName || typeof fileName !== 'string') {
-      throw new Error('File name is required and must be a string');
-    }
-    
-    // Step 2: Validate HTML content structure
-    console.log('DEBUG Step 2: Validating HTML content structure');
-    const validation = validateHTMLContent(htmlContent, 'medical_document');
-    const validationReport = generateValidationReport(validation);
-    
-    console.log('DEBUG HTML validation report:', validationReport);
-    
-    // Step 4: Generate PDF from HTML file
-    console.log('DEBUG Step 4: Generating PDF from HTML file');
-    const file = { url: `file://${tempFilePath}` };
-    const pdfOptions = getPDFOptions();
-      throw new Error(errorMessage);
-    console.log('DEBUG PDF generation options:', JSON.stringify(pdfOptions, null, 2));
-    tempFilePath = createTempHTMLFile(htmlContent, fileName);
-    const pdfBuffer = await htmlPdf.generatePdf(file, pdfOptions);
-    console.log('DEBUG Step 4: Generating PDF from HTML file');
-    // Step 5: Validate PDF buffer
-    console.log('DEBUG Step 5: Validating PDF buffer');
-    validatePDFBuffer(pdfBuffer);
-    
-    // Step 6: Upload to Cloudinary
-    console.log('DEBUG Step 6: Uploading PDF to Cloudinary');
-    const uploadResult = await uploadPDFToCloudinary(pdfBuffer, fileName);
-    // Step 5: Validate PDF buffer
-    console.log('SUCCESS PDF generation process completed successfully');
-    
-    return {
-      url: uploadResult.secure_url,
-      public_id: uploadResult.public_id,
-      bytes: uploadResult.bytes,
-      validation: validationReport
-    };
-      url: uploadResult.secure_url,
-  } catch (error) {
-    console.error('ERROR PDF generation process failed:', error.message);
-    console.error('ERROR Stack trace:', error.stack);
-      errorContext.step = 'pdf_generation';
-    // Provide detailed error context
-    const errorContext = {
-      step: 'unknown',
-      htmlLength: htmlContent ? htmlContent.length : 0,
-      fileName: fileName,
-      tempFile: tempFilePath,
-      timestamp: new Date().toISOString()
-    };
-    
-    if (error.message.includes('HTML validation failed')) {
-      errorContext.step = 'html_validation';
-    } else if (error.message.includes('temporary HTML file')) {
-      errorContext.step = 'temp_file_creation';
-    } else if (error.message.includes('PDF buffer')) {
-      errorContext.step = 'pdf_buffer_validation';
-    } else if (error.message.includes('Cloudinary')) {
-      errorContext.step = 'cloudinary_upload';
-    } else {
-      errorContext.step = 'pdf_generation';
-    }
-    console.log('DEBUG Step 3: Creating temporary HTML file');
-    tempFilePath = createTempHTMLFile(htmlContent, fileName);
-    console.error('ERROR Context:', JSON.stringify(errorContext, null, 2));
-    
-    throw new Error(`PDF generation failed at ${errorContext.step}: ${error.message}`);
-  } finally {
-    // Step 7: Cleanup temporary file
-    if (tempFilePath && fs.existsSync(tempFilePath)) {
-      try {
-        fs.unlinkSync(tempFilePath);
-        console.log('DEBUG Temporary file cleaned up:', tempFilePath);
-      } catch (cleanupError) {
-        console.log('WARNING Could not clean up temporary file:', cleanupError.message);
-      }
-    }
-  }
-};
-
-/**
- * Test function to validate the PDF generation pipeline
- */
-export const testPDFGeneration = async () => {
-  console.log('DEBUG Starting PDF generation test');
-  
-  const testHTML = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <title>Test Document</title>
-    <style>
-        body { font-family: Arial, sans-serif; padding: 20px; }
-        h1 { color: #c11c22; }
-    </style>
-</head>
-<body>
-    console.error('ERROR PDF generation test failed:', error.message);
-    throw error;
-  }
-};
-}
