@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Enhanced PDF generation options with better rendering
+// Enhanced PDF generation options
 const pdfOptions = {
   format: 'A4',
   border: {
@@ -18,18 +18,17 @@ const pdfOptions = {
   },
   type: 'pdf',
   quality: '75',
-  // 🔥 INCREASED RENDER DELAY - Wait for CSS to load
-  renderDelay: 3000,
-  // 🔥 WAIT FOR NETWORK IDLE - Ensure all resources are loaded
+  renderDelay: 5000, // Wait 5 seconds for CSS to load
   waitUntil: 'networkidle0',
   args: [
     '--no-sandbox', 
     '--disable-setuid-sandbox', 
     '--disable-web-security',
     '--disable-features=VizDisplayCompositor',
-    // 🔥 FORCE CSS RENDERING
     '--run-all-compositor-stages-before-draw',
-    '--disable-backgrounding-occluded-windows'
+    '--disable-backgrounding-occluded-windows',
+    '--disable-gpu',
+    '--disable-dev-shm-usage'
   ]
 };
 
@@ -39,12 +38,12 @@ export const generatePDFFromHTML = async (htmlContent, fileName = 'document') =>
   
   try {
     console.log('DEBUG Starting PDF generation process...');
-    console.log('DEBUG HTML content length:', htmlContent.length);
+    console.log('DEBUG HTML content length:', htmlContent ? htmlContent.length : 0);
     console.log('DEBUG File name:', fileName);
     
-    // Validate HTML content
-    if (!htmlContent || htmlContent.trim().length === 0) {
-      console.error('ERROR HTML content is empty or invalid');
+    // Validate HTML content first
+    if (!htmlContent || typeof htmlContent !== 'string' || htmlContent.trim().length === 0) {
+      console.error('ERROR HTML content is empty or invalid for PDF generation');
       throw new Error('HTML content is empty or invalid');
     }
     
@@ -61,59 +60,72 @@ export const generatePDFFromHTML = async (htmlContent, fileName = 'document') =>
     const tempFileName = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.html`;
     tempFilePath = path.join(tempDir, tempFileName);
     
-    // 🔥 ENHANCED HTML WITH INLINE STYLES - Ensure CSS loads properly
-    const enhancedHTML = `
-<!DOCTYPE html>
+    // Enhanced HTML with better CSS loading
+    const enhancedHTML = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        /* Force all styles to be inline and loaded */
-        * { box-sizing: border-box; }
+        * { 
+            box-sizing: border-box; 
+            margin: 0; 
+            padding: 0; 
+        }
         body { 
-            font-family: 'Times New Roman', serif !important;
+            font-family: Arial, sans-serif !important;
             line-height: 1.6 !important;
             margin: 0 !important;
             padding: 40px !important;
             background: white !important;
-            color: #333 !important;
+            color: black !important;
+            font-size: 14px !important;
         }
-        /* Ensure all styles are applied immediately */
-        .header, .title, .content, .signature, .footer { display: block !important; }
+        .header, .title, .content, .signature, .footer { 
+            display: block !important; 
+        }
+        h1, h2, h3, h4, h5, h6 {
+            color: #c11c22 !important;
+            margin: 10px 0 !important;
+        }
+        p {
+            margin: 10px 0 !important;
+        }
+        strong {
+            font-weight: bold !important;
+        }
     </style>
 </head>
-${htmlContent.replace('<head>', '<head>').replace('</head>', '</head>')}
+${htmlContent.replace(/<head>.*?<\/head>/s, '').replace('<html lang="pt-BR">', '').replace('</html>', '')}
+</body>
 </html>`;
     
-    // Write enhanced HTML content to temporary file
+    // Write HTML content to temporary file
     fs.writeFileSync(tempFilePath, enhancedHTML, 'utf8');
     console.log('SUCCESS Temporary HTML file created:', tempFilePath);
-    console.log('DEBUG Enhanced HTML length:', enhancedHTML.length);
     
-    // 🔥 VERIFY FILE WAS WRITTEN CORRECTLY
+    // Verify file was written correctly
     const writtenContent = fs.readFileSync(tempFilePath, 'utf8');
     if (writtenContent.length === 0) {
       throw new Error('Failed to write HTML content to temporary file');
     }
     console.log('SUCCESS File verification passed, content length:', writtenContent.length);
     
-    // Create PDF from file with enhanced options
+    // Create PDF from file
     const file = { url: `file://${tempFilePath}` };
     
-    console.log('DEBUG Starting PDF conversion...');
+    console.log('DEBUG Starting PDF conversion with options:', JSON.stringify(pdfOptions, null, 2));
     const pdfBuffer = await htmlPdf.generatePdf(file, pdfOptions);
     
-    // 🔥 VALIDATE PDF BUFFER
+    // Validate PDF buffer
     if (!pdfBuffer || pdfBuffer.length === 0) {
       throw new Error('PDF generation resulted in empty buffer');
     }
     
     console.log('SUCCESS PDF generated successfully');
     console.log('DEBUG PDF buffer size:', pdfBuffer.length, 'bytes');
-    console.log('DEBUG PDF buffer type:', typeof pdfBuffer);
     
-    // 🔥 VALIDATE PDF CONTENT - Check if it's actually a PDF
+    // Validate PDF content
     const pdfHeader = pdfBuffer.slice(0, 4).toString();
     if (pdfHeader !== '%PDF') {
       console.error('ERROR Generated buffer is not a valid PDF. Header:', pdfHeader);
@@ -121,18 +133,16 @@ ${htmlContent.replace('<head>', '<head>').replace('</head>', '</head>')}
     }
     console.log('SUCCESS PDF validation passed - valid PDF header found');
     
-    // 🔥 CORRECT CLOUDINARY UPLOAD FOR PDF
+    // Upload PDF to Cloudinary
     const uploadResult = await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
           folder: 'quiro-ferreira/documents/pdf',
-          // 🔥 CRITICAL: Use 'raw' for PDF files
           resource_type: 'raw',
           format: 'pdf',
           public_id: `${fileName}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           use_filename: false,
           unique_filename: true,
-          // 🔥 ENSURE PROPER CONTENT TYPE
           content_type: 'application/pdf'
         },
         (error, result) => {
@@ -148,11 +158,10 @@ ${htmlContent.replace('<head>', '<head>').replace('</head>', '</head>')}
         }
       );
       
-      // 🔥 WRITE BUFFER TO STREAM PROPERLY
       uploadStream.end(pdfBuffer);
     });
     
-    // 🔥 VALIDATE UPLOAD RESULT
+    // Validate upload result
     if (!uploadResult || !uploadResult.secure_url) {
       throw new Error('Cloudinary upload completed but no URL returned');
     }
@@ -163,11 +172,11 @@ ${htmlContent.replace('<head>', '<head>').replace('</head>', '</head>')}
       bytes: uploadResult.bytes
     };
   } catch (error) {
-    console.error('ERROR in PDF generation process:', error);
+    console.error('ERROR in PDF generation process:', error.message);
     console.error('ERROR stack:', error.stack);
     throw new Error(`Erro ao gerar PDF: ${error.message}`);
   } finally {
-    // 🔥 ENSURE CLEANUP ALWAYS HAPPENS
+    // Cleanup temporary file
     if (tempFilePath && fs.existsSync(tempFilePath)) {
       try {
         fs.unlinkSync(tempFilePath);

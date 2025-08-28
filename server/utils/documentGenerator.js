@@ -1,9 +1,21 @@
 import { v2 as cloudinary } from 'cloudinary';
 
-// Document templates
+// Simplified and robust document templates
 const templates = {
-  certificate: (data) => `
-<!DOCTYPE html>
+  certificate: (data) => {
+    console.log('DEBUG Creating certificate template with data:', JSON.stringify(data, null, 2));
+    
+    const patientName = data.patientName || 'Nome não informado';
+    const patientCpf = data.patientCpf || 'CPF não informado';
+    const description = data.description || 'Atestado médico';
+    const days = data.days || '1';
+    const professionalName = data.professionalName || 'Profissional de Saúde';
+    const professionalSpecialty = data.professionalSpecialty || '';
+    const crm = data.crm || '';
+    const cid = data.cid || '';
+    const currentDate = new Date().toLocaleDateString('pt-BR');
+    
+    const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -11,16 +23,17 @@ const templates = {
     <title>Atestado Médico</title>
     <style>
         body {
-            font-family: 'Times New Roman', serif;
+            font-family: Arial, sans-serif;
             line-height: 1.6;
             margin: 0;
             padding: 40px;
             background: white;
-            color: #333;
+            color: black;
+            font-size: 14px;
         }
         .header {
             text-align: center;
-            margin-bottom: 40px;
+            margin-bottom: 30px;
             border-bottom: 2px solid #c11c22;
             padding-bottom: 20px;
         }
@@ -40,7 +53,6 @@ const templates = {
         .content {
             margin: 30px 0;
             text-align: justify;
-            font-size: 14px;
         }
         .patient-info {
             background: #f9f9f9;
@@ -53,7 +65,7 @@ const templates = {
             text-align: center;
         }
         .signature-line {
-            border-top: 1px solid #333;
+            border-top: 1px solid black;
             width: 300px;
             margin: 40px auto 10px;
         }
@@ -64,9 +76,6 @@ const templates = {
             color: #666;
             border-top: 1px solid #ddd;
             padding-top: 20px;
-        }
-        @media print {
-            body { margin: 0; padding: 20px; }
         }
     </style>
 </head>
@@ -79,19 +88,19 @@ const templates = {
     <div class="title">Atestado Médico</div>
 
     <div class="patient-info">
-        <strong>Paciente:</strong> ${data.patientName}<br>
-        <strong>CPF:</strong> ${data.patientCpf}<br>
-        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+        <strong>Paciente:</strong> ${patientName}<br>
+        <strong>CPF:</strong> ${patientCpf}<br>
+        <strong>Data de Emissão:</strong> ${currentDate}
     </div>
 
     <div class="content">
         <p>Atesto para os devidos fins que o(a) paciente acima identificado(a) esteve sob meus cuidados médicos e apresenta quadro clínico que o(a) impossibilita de exercer suas atividades habituais.</p>
         
-        <p><strong>Descrição:</strong> ${data.description}</p>
+        <p><strong>Descrição:</strong> ${description}</p>
         
-        ${data.cid ? `<p><strong>CID:</strong> ${data.cid}</p>` : ''}
+        ${cid ? `<p><strong>CID:</strong> ${cid}</p>` : ''}
         
-        <p><strong>Período de afastamento:</strong> ${data.days} dia(s) a partir de ${new Date().toLocaleDateString('pt-BR')}.</p>
+        <p><strong>Período de afastamento:</strong> ${days} dia(s) a partir de ${currentDate}.</p>
         
         <p>Este atestado é válido para todos os fins legais e administrativos.</p>
     </div>
@@ -99,22 +108,36 @@ const templates = {
     <div class="signature">
         <div class="signature-line"></div>
         <div>
-            <strong>${data.professionalName}</strong><br>
-            ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
-            ${data.crm ? `CRM: ${data.crm}` : ''}
+            <strong>${professionalName}</strong><br>
+            ${professionalSpecialty}<br>
+            ${crm ? `CRM: ${crm}` : ''}
         </div>
     </div>
 
     <div class="footer">
         <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
+        <p>Telefone: (64) 98124-9199</p>
         <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
     </div>
 </body>
-</html>`,
+</html>`;
 
-  prescription: (data) => `
-<!DOCTYPE html>
+    console.log('SUCCESS Certificate HTML generated, length:', html.length);
+    return html;
+  },
+
+  prescription: (data) => {
+    console.log('DEBUG Creating prescription template with data:', JSON.stringify(data, null, 2));
+    
+    const patientName = data.patientName || 'Nome não informado';
+    const patientCpf = data.patientCpf || 'CPF não informado';
+    const prescription = data.prescription || 'Prescrição não informada';
+    const professionalName = data.professionalName || 'Profissional de Saúde';
+    const professionalSpecialty = data.professionalSpecialty || '';
+    const crm = data.crm || '';
+    const currentDate = new Date().toLocaleDateString('pt-BR');
+    
+    const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -122,16 +145,17 @@ const templates = {
     <title>Receituário Médico</title>
     <style>
         body {
-            font-family: 'Times New Roman', serif;
+            font-family: Arial, sans-serif;
             line-height: 1.6;
             margin: 0;
             padding: 40px;
             background: white;
-            color: #333;
+            color: black;
+            font-size: 14px;
         }
         .header {
             text-align: center;
-            margin-bottom: 40px;
+            margin-bottom: 30px;
             border-bottom: 2px solid #c11c22;
             padding-bottom: 20px;
         }
@@ -155,7 +179,7 @@ const templates = {
             margin: 20px 0;
         }
         .prescription-content {
-            background: #fff;
+            background: white;
             border: 2px solid #c11c22;
             padding: 20px;
             margin: 20px 0;
@@ -171,7 +195,7 @@ const templates = {
             text-align: center;
         }
         .signature-line {
-            border-top: 1px solid #333;
+            border-top: 1px solid black;
             width: 300px;
             margin: 40px auto 10px;
         }
@@ -182,9 +206,6 @@ const templates = {
             color: #666;
             border-top: 1px solid #ddd;
             padding-top: 20px;
-        }
-        @media print {
-            body { margin: 0; padding: 20px; }
         }
     </style>
 </head>
@@ -197,34 +218,49 @@ const templates = {
     <div class="title">Receituário Médico</div>
 
     <div class="patient-info">
-        <strong>Paciente:</strong> ${data.patientName}<br>
-        <strong>CPF:</strong> ${data.patientCpf}<br>
-        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+        <strong>Paciente:</strong> ${patientName}<br>
+        <strong>CPF:</strong> ${patientCpf}<br>
+        <strong>Data de Emissão:</strong> ${currentDate}
     </div>
 
     <div class="prescription-content">
-        <div class="prescription-text">${data.prescription}</div>
+        <div class="prescription-text">${prescription}</div>
     </div>
 
     <div class="signature">
         <div class="signature-line"></div>
         <div>
-            <strong>${data.professionalName}</strong><br>
-            ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
-            ${data.crm ? `CRM: ${data.crm}` : ''}
+            <strong>${professionalName}</strong><br>
+            ${professionalSpecialty}<br>
+            ${crm ? `CRM: ${crm}` : ''}
         </div>
     </div>
 
     <div class="footer">
         <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
+        <p>Telefone: (64) 98124-9199</p>
         <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
     </div>
 </body>
-</html>`,
+</html>`;
 
-  consent_form: (data) => `
-<!DOCTYPE html>
+    console.log('SUCCESS Prescription HTML generated, length:', html.length);
+    return html;
+  },
+
+  consent_form: (data) => {
+    console.log('DEBUG Creating consent form template with data:', JSON.stringify(data, null, 2));
+    
+    const patientName = data.patientName || 'Nome não informado';
+    const patientCpf = data.patientCpf || 'CPF não informado';
+    const procedure = data.procedure || 'Procedimento não informado';
+    const description = data.description || 'Descrição não informada';
+    const risks = data.risks || 'Riscos não informados';
+    const professionalName = data.professionalName || 'Profissional de Saúde';
+    const crm = data.crm || '';
+    const currentDate = new Date().toLocaleDateString('pt-BR');
+    
+    const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -232,16 +268,17 @@ const templates = {
     <title>Termo de Consentimento</title>
     <style>
         body {
-            font-family: 'Times New Roman', serif;
+            font-family: Arial, sans-serif;
             line-height: 1.6;
             margin: 0;
             padding: 40px;
             background: white;
-            color: #333;
+            color: black;
+            font-size: 14px;
         }
         .header {
             text-align: center;
-            margin-bottom: 40px;
+            margin-bottom: 30px;
             border-bottom: 2px solid #c11c22;
             padding-bottom: 20px;
         }
@@ -267,7 +304,6 @@ const templates = {
         .content {
             margin: 20px 0;
             text-align: justify;
-            font-size: 14px;
         }
         .section {
             margin: 20px 0;
@@ -285,7 +321,7 @@ const templates = {
             width: 45%;
         }
         .signature-line {
-            border-top: 1px solid #333;
+            border-top: 1px solid black;
             margin: 40px 0 10px;
         }
         .footer {
@@ -295,9 +331,6 @@ const templates = {
             color: #666;
             border-top: 1px solid #ddd;
             padding-top: 20px;
-        }
-        @media print {
-            body { margin: 0; padding: 20px; }
         }
     </style>
 </head>
@@ -310,21 +343,21 @@ const templates = {
     <div class="title">Termo de Consentimento Livre e Esclarecido</div>
 
     <div class="patient-info">
-        <strong>Paciente:</strong> ${data.patientName}<br>
-        <strong>CPF:</strong> ${data.patientCpf}<br>
-        <strong>Data:</strong> ${new Date().toLocaleDateString('pt-BR')}
+        <strong>Paciente:</strong> ${patientName}<br>
+        <strong>CPF:</strong> ${patientCpf}<br>
+        <strong>Data:</strong> ${currentDate}
     </div>
 
     <div class="content">
         <div class="section">
             <h3>Procedimento a ser realizado:</h3>
-            <p><strong>${data.procedure}</strong></p>
-            <p>${data.description}</p>
+            <p><strong>${procedure}</strong></p>
+            <p>${description}</p>
         </div>
 
         <div class="section">
             <h3>Riscos e Benefícios:</h3>
-            <p>${data.risks}</p>
+            <p>${risks}</p>
         </div>
 
         <div class="section">
@@ -342,7 +375,7 @@ const templates = {
             <div class="signature-line"></div>
             <div>
                 <strong>Paciente ou Responsável</strong><br>
-                ${data.patientName}
+                ${patientName}
             </div>
         </div>
         
@@ -350,22 +383,36 @@ const templates = {
             <div class="signature-line"></div>
             <div>
                 <strong>Profissional Responsável</strong><br>
-                ${data.professionalName}<br>
-                ${data.crm ? `CRM: ${data.crm}` : ''}
+                ${professionalName}<br>
+                ${crm ? `CRM: ${crm}` : ''}
             </div>
         </div>
     </div>
 
     <div class="footer">
         <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
+        <p>Telefone: (64) 98124-9199</p>
         <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
     </div>
 </body>
-</html>`,
+</html>`;
 
-  exam_request: (data) => `
-<!DOCTYPE html>
+    console.log('SUCCESS Certificate HTML template completed, length:', html.length);
+    return html;
+  },
+
+  exam_request: (data) => {
+    console.log('DEBUG Creating exam request template with data:', JSON.stringify(data, null, 2));
+    
+    const patientName = data.patientName || 'Nome não informado';
+    const patientCpf = data.patientCpf || 'CPF não informado';
+    const content = data.content || 'Exames não especificados';
+    const professionalName = data.professionalName || 'Profissional de Saúde';
+    const professionalSpecialty = data.professionalSpecialty || '';
+    const crm = data.crm || '';
+    const currentDate = new Date().toLocaleDateString('pt-BR');
+    
+    const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -373,16 +420,17 @@ const templates = {
     <title>Solicitação de Exames</title>
     <style>
         body {
-            font-family: 'Times New Roman', serif;
+            font-family: Arial, sans-serif;
             line-height: 1.6;
             margin: 0;
             padding: 40px;
             background: white;
-            color: #333;
+            color: black;
+            font-size: 14px;
         }
         .header {
             text-align: center;
-            margin-bottom: 40px;
+            margin-bottom: 30px;
             border-bottom: 2px solid #c11c22;
             padding-bottom: 20px;
         }
@@ -406,7 +454,7 @@ const templates = {
             margin: 20px 0;
         }
         .exam-list {
-            background: #fff;
+            background: white;
             border: 2px solid #c11c22;
             padding: 20px;
             margin: 20px 0;
@@ -417,7 +465,7 @@ const templates = {
             text-align: center;
         }
         .signature-line {
-            border-top: 1px solid #333;
+            border-top: 1px solid black;
             width: 300px;
             margin: 40px auto 10px;
         }
@@ -428,9 +476,6 @@ const templates = {
             color: #666;
             border-top: 1px solid #ddd;
             padding-top: 20px;
-        }
-        @media print {
-            body { margin: 0; padding: 20px; }
         }
     </style>
 </head>
@@ -443,37 +488,51 @@ const templates = {
     <div class="title">Solicitação de Exames</div>
 
     <div class="patient-info">
-        <strong>Paciente:</strong> ${data.patientName}<br>
-        <strong>CPF:</strong> ${data.patientCpf}<br>
-        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+        <strong>Paciente:</strong> ${patientName}<br>
+        <strong>CPF:</strong> ${patientCpf}<br>
+        <strong>Data de Emissão:</strong> ${currentDate}
     </div>
 
     <div class="exam-list">
         <h3>Exames Solicitados:</h3>
         <div style="white-space: pre-line; font-size: 16px; line-height: 2;">
-${data.content}
+${content}
         </div>
     </div>
 
     <div class="signature">
         <div class="signature-line"></div>
         <div>
-            <strong>${data.professionalName}</strong><br>
-            ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
-            ${data.crm ? `CRM: ${data.crm}` : ''}
+            <strong>${professionalName}</strong><br>
+            ${professionalSpecialty}<br>
+            ${crm ? `CRM: ${crm}` : ''}
         </div>
     </div>
 
     <div class="footer">
         <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
+        <p>Telefone: (64) 98124-9199</p>
         <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
     </div>
 </body>
-</html>`,
+</html>`;
 
-  declaration: (data) => `
-<!DOCTYPE html>
+    console.log('SUCCESS Exam request HTML generated, length:', html.length);
+    return html;
+  },
+
+  declaration: (data) => {
+    console.log('DEBUG Creating declaration template with data:', JSON.stringify(data, null, 2));
+    
+    const patientName = data.patientName || 'Nome não informado';
+    const patientCpf = data.patientCpf || 'CPF não informado';
+    const content = data.content || 'Conteúdo da declaração não informado';
+    const professionalName = data.professionalName || 'Profissional de Saúde';
+    const professionalSpecialty = data.professionalSpecialty || '';
+    const crm = data.crm || '';
+    const currentDate = new Date().toLocaleDateString('pt-BR');
+    
+    const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -481,16 +540,17 @@ ${data.content}
     <title>Declaração Médica</title>
     <style>
         body {
-            font-family: 'Times New Roman', serif;
+            font-family: Arial, sans-serif;
             line-height: 1.6;
             margin: 0;
             padding: 40px;
             background: white;
-            color: #333;
+            color: black;
+            font-size: 14px;
         }
         .header {
             text-align: center;
-            margin-bottom: 40px;
+            margin-bottom: 30px;
             border-bottom: 2px solid #c11c22;
             padding-bottom: 20px;
         }
@@ -516,7 +576,6 @@ ${data.content}
         .content {
             margin: 30px 0;
             text-align: justify;
-            font-size: 14px;
             min-height: 200px;
         }
         .signature {
@@ -524,7 +583,7 @@ ${data.content}
             text-align: center;
         }
         .signature-line {
-            border-top: 1px solid #333;
+            border-top: 1px solid black;
             width: 300px;
             margin: 40px auto 10px;
         }
@@ -535,9 +594,6 @@ ${data.content}
             color: #666;
             border-top: 1px solid #ddd;
             padding-top: 20px;
-        }
-        @media print {
-            body { margin: 0; padding: 20px; }
         }
     </style>
 </head>
@@ -550,34 +606,46 @@ ${data.content}
     <div class="title">Declaração Médica</div>
 
     <div class="patient-info">
-        <strong>Paciente:</strong> ${data.patientName}<br>
-        <strong>CPF:</strong> ${data.patientCpf}<br>
-        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+        <strong>Paciente:</strong> ${patientName}<br>
+        <strong>CPF:</strong> ${patientCpf}<br>
+        <strong>Data de Emissão:</strong> ${currentDate}
     </div>
 
     <div class="content">
-        <p>${data.content}</p>
+        <p>${content}</p>
     </div>
 
     <div class="signature">
         <div class="signature-line"></div>
         <div>
-            <strong>${data.professionalName}</strong><br>
-            ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
-            ${data.crm ? `CRM: ${data.crm}` : ''}
+            <strong>${professionalName}</strong><br>
+            ${professionalSpecialty}<br>
+            ${crm ? `CRM: ${crm}` : ''}
         </div>
     </div>
 
     <div class="footer">
         <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
+        <p>Telefone: (64) 98124-9199</p>
         <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
     </div>
 </body>
-</html>`,
+</html>`;
 
-  lgpd: (data) => `
-<!DOCTYPE html>
+    console.log('SUCCESS Declaration HTML generated, length:', html.length);
+    return html;
+  },
+
+  lgpd: (data) => {
+    console.log('DEBUG Creating LGPD template with data:', JSON.stringify(data, null, 2));
+    
+    const patientName = data.patientName || 'Nome não informado';
+    const patientCpf = data.patientCpf || 'CPF não informado';
+    const professionalName = data.professionalName || 'Profissional de Saúde';
+    const crm = data.crm || '';
+    const currentDate = new Date().toLocaleDateString('pt-BR');
+    
+    const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -585,16 +653,17 @@ ${data.content}
     <title>Termo LGPD</title>
     <style>
         body {
-            font-family: 'Times New Roman', serif;
+            font-family: Arial, sans-serif;
             line-height: 1.6;
             margin: 0;
             padding: 40px;
             background: white;
-            color: #333;
+            color: black;
+            font-size: 12px;
         }
         .header {
             text-align: center;
-            margin-bottom: 40px;
+            margin-bottom: 30px;
             border-bottom: 2px solid #c11c22;
             padding-bottom: 20px;
         }
@@ -619,7 +688,6 @@ ${data.content}
         .content {
             margin: 20px 0;
             text-align: justify;
-            font-size: 12px;
         }
         .section {
             margin: 15px 0;
@@ -634,7 +702,7 @@ ${data.content}
             width: 45%;
         }
         .signature-line {
-            border-top: 1px solid #333;
+            border-top: 1px solid black;
             margin: 40px 0 10px;
         }
         .footer {
@@ -644,9 +712,6 @@ ${data.content}
             color: #666;
             border-top: 1px solid #ddd;
             padding-top: 20px;
-        }
-        @media print {
-            body { margin: 0; padding: 20px; }
         }
     </style>
 </head>
@@ -659,9 +724,9 @@ ${data.content}
     <div class="title">Termo de Consentimento para Tratamento de Dados Pessoais (LGPD)</div>
 
     <div class="patient-info">
-        <strong>Paciente:</strong> ${data.patientName}<br>
-        <strong>CPF:</strong> ${data.patientCpf}<br>
-        <strong>Data:</strong> ${new Date().toLocaleDateString('pt-BR')}
+        <strong>Paciente:</strong> ${patientName}<br>
+        <strong>CPF:</strong> ${patientCpf}<br>
+        <strong>Data:</strong> ${currentDate}
     </div>
 
     <div class="content">
@@ -708,7 +773,7 @@ ${data.content}
             <div class="signature-line"></div>
             <div>
                 <strong>Paciente ou Responsável</strong><br>
-                ${data.patientName}
+                ${patientName}
             </div>
         </div>
         
@@ -716,39 +781,55 @@ ${data.content}
             <div class="signature-line"></div>
             <div>
                 <strong>Profissional Responsável</strong><br>
-                ${data.professionalName}<br>
-                ${data.crm ? `CRM: ${data.crm}` : ''}
+                ${professionalName}<br>
+                ${crm ? `CRM: ${crm}` : ''}
             </div>
         </div>
     </div>
 
     <div class="footer">
         <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
+        <p>Telefone: (64) 98124-9199</p>
         <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
     </div>
 </body>
-</html>`,
+</html>`;
 
-  other: (data) => `
-<!DOCTYPE html>
+    console.log('SUCCESS Exam request HTML generated, length:', html.length);
+    return html;
+  },
+
+  other: (data) => {
+    console.log('DEBUG Creating other document template with data:', JSON.stringify(data, null, 2));
+    
+    const title = data.title || 'Documento Médico';
+    const patientName = data.patientName || 'Nome não informado';
+    const patientCpf = data.patientCpf || 'CPF não informado';
+    const content = data.content || 'Conteúdo não informado';
+    const professionalName = data.professionalName || 'Profissional de Saúde';
+    const professionalSpecialty = data.professionalSpecialty || '';
+    const crm = data.crm || '';
+    const currentDate = new Date().toLocaleDateString('pt-BR');
+    
+    const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${data.title}</title>
+    <title>${title}</title>
     <style>
         body {
-            font-family: 'Times New Roman', serif;
+            font-family: Arial, sans-serif;
             line-height: 1.6;
             margin: 0;
             padding: 40px;
             background: white;
-            color: #333;
+            color: black;
+            font-size: 14px;
         }
         .header {
             text-align: center;
-            margin-bottom: 40px;
+            margin-bottom: 30px;
             border-bottom: 2px solid #c11c22;
             padding-bottom: 20px;
         }
@@ -773,7 +854,6 @@ ${data.content}
         .content {
             margin: 30px 0;
             text-align: justify;
-            font-size: 14px;
             min-height: 200px;
             white-space: pre-line;
         }
@@ -782,7 +862,7 @@ ${data.content}
             text-align: center;
         }
         .signature-line {
-            border-top: 1px solid #333;
+            border-top: 1px solid black;
             width: 300px;
             margin: 40px auto 10px;
         }
@@ -794,9 +874,6 @@ ${data.content}
             border-top: 1px solid #ddd;
             padding-top: 20px;
         }
-        @media print {
-            body { margin: 0; padding: 20px; }
-        }
     </style>
 </head>
 <body>
@@ -805,37 +882,55 @@ ${data.content}
         <div>Sistema de Saúde e Bem-Estar</div>
     </div>
 
-    <div class="title">${data.title}</div>
+    <div class="title">${title}</div>
 
     <div class="patient-info">
-        <strong>Paciente:</strong> ${data.patientName}<br>
-        <strong>CPF:</strong> ${data.patientCpf}<br>
-        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+        <strong>Paciente:</strong> ${patientName}<br>
+        <strong>CPF:</strong> ${patientCpf}<br>
+        <strong>Data de Emissão:</strong> ${currentDate}
     </div>
 
     <div class="content">
-        ${data.content}
+        ${content}
     </div>
 
     <div class="signature">
         <div class="signature-line"></div>
         <div>
-            <strong>${data.professionalName}</strong><br>
-            ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
-            ${data.crm ? `CRM: ${data.crm}` : ''}
+            <strong>${professionalName}</strong><br>
+            ${professionalSpecialty}<br>
+            ${crm ? `CRM: ${crm}` : ''}
         </div>
     </div>
 
     <div class="footer">
         <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
+        <p>Telefone: (64) 98124-9199</p>
         <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
     </div>
 </body>
-</html>`,
+</html>`;
 
-  medical_record: (data) => `
-<!DOCTYPE html>
+    console.log('SUCCESS Other document HTML generated, length:', html.length);
+    return html;
+  },
+
+  medical_record: (data) => {
+    console.log('DEBUG Creating medical record template with data:', JSON.stringify(data, null, 2));
+    
+    const patientName = data.patientName || 'Nome não informado';
+    const patientCpf = data.patientCpf || '';
+    const date = data.date || new Date().toISOString();
+    const professionalName = data.professionalName || 'Profissional de Saúde';
+    const professionalSpecialty = data.professionalSpecialty || '';
+    const crm = data.crm || '';
+    const currentDate = new Date().toLocaleDateString('pt-BR');
+    const attendanceDate = new Date(date).toLocaleDateString('pt-BR');
+    
+    // Safely access vital signs
+    const vitalSigns = data.vital_signs || {};
+    
+    const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -843,16 +938,17 @@ ${data.content}
     <title>Prontuário Médico</title>
     <style>
         body {
-            font-family: 'Times New Roman', serif;
+            font-family: Arial, sans-serif;
             line-height: 1.6;
             margin: 0;
             padding: 40px;
             background: white;
-            color: #333;
+            color: black;
+            font-size: 14px;
         }
         .header {
             text-align: center;
-            margin-bottom: 40px;
+            margin-bottom: 30px;
             border-bottom: 2px solid #c11c22;
             padding-bottom: 20px;
         }
@@ -880,7 +976,6 @@ ${data.content}
             padding: 15px;
             border: 1px solid #ddd;
             border-radius: 5px;
-            page-break-inside: avoid;
         }
         .section h3 {
             margin: 0 0 10px 0;
@@ -919,7 +1014,7 @@ ${data.content}
             text-align: center;
         }
         .signature-line {
-            border-top: 1px solid #333;
+            border-top: 1px solid black;
             width: 300px;
             margin: 40px auto 10px;
         }
@@ -930,10 +1025,6 @@ ${data.content}
             color: #666;
             border-top: 1px solid #ddd;
             padding-top: 20px;
-        }
-        @media print {
-            body { margin: 0; padding: 20px; }
-            .section { page-break-inside: avoid; }
         }
     </style>
 </head>
@@ -946,50 +1037,50 @@ ${data.content}
     <div class="title">Prontuário Médico</div>
 
     <div class="patient-info">
-        <strong>Paciente:</strong> ${data.patientName}<br>
-        ${data.patientCpf ? `<strong>CPF:</strong> ${data.patientCpf}<br>` : ''}
-        <strong>Data do Atendimento:</strong> ${new Date(data.date).toLocaleDateString('pt-BR')}<br>
-        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+        <strong>Paciente:</strong> ${patientName}<br>
+        ${patientCpf ? `<strong>CPF:</strong> ${patientCpf}<br>` : ''}
+        <strong>Data do Atendimento:</strong> ${attendanceDate}<br>
+        <strong>Data de Emissão:</strong> ${currentDate}
     </div>
 
-    ${data.vital_signs && Object.values(data.vital_signs).some(v => v) ? `
+    ${Object.values(vitalSigns).some(v => v) ? `
     <div class="section">
         <h3>Sinais Vitais</h3>
         <div class="vital-signs">
-            ${data.vital_signs.blood_pressure ? `
+            ${vitalSigns.blood_pressure ? `
             <div class="vital-sign">
                 <div class="vital-sign-label">Pressão Arterial</div>
-                <div class="vital-sign-value">${data.vital_signs.blood_pressure}</div>
+                <div class="vital-sign-value">${vitalSigns.blood_pressure}</div>
             </div>` : ''}
-            ${data.vital_signs.heart_rate ? `
+            ${vitalSigns.heart_rate ? `
             <div class="vital-sign">
                 <div class="vital-sign-label">Freq. Cardíaca</div>
-                <div class="vital-sign-value">${data.vital_signs.heart_rate}</div>
+                <div class="vital-sign-value">${vitalSigns.heart_rate}</div>
             </div>` : ''}
-            ${data.vital_signs.temperature ? `
+            ${vitalSigns.temperature ? `
             <div class="vital-sign">
                 <div class="vital-sign-label">Temperatura</div>
-                <div class="vital-sign-value">${data.vital_signs.temperature}</div>
+                <div class="vital-sign-value">${vitalSigns.temperature}</div>
             </div>` : ''}
-            ${data.vital_signs.respiratory_rate ? `
+            ${vitalSigns.respiratory_rate ? `
             <div class="vital-sign">
                 <div class="vital-sign-label">Freq. Respiratória</div>
-                <div class="vital-sign-value">${data.vital_signs.respiratory_rate}</div>
+                <div class="vital-sign-value">${vitalSigns.respiratory_rate}</div>
             </div>` : ''}
-            ${data.vital_signs.oxygen_saturation ? `
+            ${vitalSigns.oxygen_saturation ? `
             <div class="vital-sign">
                 <div class="vital-sign-label">Sat. O₂</div>
-                <div class="vital-sign-value">${data.vital_signs.oxygen_saturation}</div>
+                <div class="vital-sign-value">${vitalSigns.oxygen_saturation}</div>
             </div>` : ''}
-            ${data.vital_signs.weight ? `
+            ${vitalSigns.weight ? `
             <div class="vital-sign">
                 <div class="vital-sign-label">Peso</div>
-                <div class="vital-sign-value">${data.vital_signs.weight}</div>
+                <div class="vital-sign-value">${vitalSigns.weight}</div>
             </div>` : ''}
-            ${data.vital_signs.height ? `
+            ${vitalSigns.height ? `
             <div class="vital-sign">
                 <div class="vital-sign-label">Altura</div>
-                <div class="vital-sign-value">${data.vital_signs.height}</div>
+                <div class="vital-sign-value">${vitalSigns.height}</div>
             </div>` : ''}
         </div>
     </div>` : ''}
@@ -1051,59 +1142,77 @@ ${data.content}
     <div class="signature">
         <div class="signature-line"></div>
         <div>
-            <strong>${data.professionalName}</strong><br>
-            ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
-            ${data.crm ? `CRM: ${data.crm}` : ''}
+            <strong>${professionalName}</strong><br>
+            ${professionalSpecialty}<br>
+            ${crm ? `CRM: ${crm}` : ''}
         </div>
     </div>
 
     <div class="footer">
         <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
+        <p>Telefone: (64) 98124-9199</p>
         <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
     </div>
 </body>
-</html>`
+</html>`;
+
+    console.log('SUCCESS Medical record HTML generated, length:', html.length);
+    return html;
+  }
 };
 
-// Generate HTML document and upload to Cloudinary
+// Main function to generate documents
 export const generateDocumentPDF = async (documentType, templateData) => {
   try {
-    console.log('🔄 [DEBUG] Starting document generation...');
-    console.log('🔄 [DEBUG] Document type:', documentType);
-    console.log('🔄 [DEBUG] Template data keys:', Object.keys(templateData));
-    console.log('DEBUG Template data:', JSON.stringify(templateData, null, 2));
+    console.log('DEBUG Starting document generation process...');
+    console.log('DEBUG Document type:', documentType);
+    console.log('DEBUG Template data received:', JSON.stringify(templateData, null, 2));
+    
+    // Validate inputs
+    if (!documentType) {
+      throw new Error('Document type is required');
+    }
+    
+    if (!templateData || typeof templateData !== 'object') {
+      throw new Error('Template data is required and must be an object');
+    }
     
     // Get the template function
     const templateFunction = templates[documentType] || templates.other;
     console.log('DEBUG Template function found:', typeof templateFunction);
     console.log('DEBUG Available templates:', Object.keys(templates));
     
+    if (typeof templateFunction !== 'function') {
+      throw new Error(`Template function not found for type: ${documentType}`);
+    }
+    
     // Generate HTML content
     console.log('DEBUG Calling template function...');
     const htmlContent = templateFunction(templateData);
     
-    console.log('SUCCESS HTML content generated');
-    console.log('DEBUG HTML length:', htmlContent.length);
-    console.log('DEBUG HTML preview (first 500 chars):', htmlContent.substring(0, 500));
-    console.log('DEBUG HTML preview (last 200 chars):', htmlContent.substring(htmlContent.length - 200));
+    console.log('DEBUG HTML generation completed');
+    console.log('DEBUG HTML content type:', typeof htmlContent);
+    console.log('DEBUG HTML content length:', htmlContent ? htmlContent.length : 0);
     
-    // 🔥 VALIDATE HTML CONTENT BEFORE PROCESSING
-    if (!htmlContent || htmlContent.trim().length === 0) {
-      console.error('ERROR HTML content validation failed - empty content');
-      throw new Error('Generated HTML content is empty');
+    // Validate HTML content
+    if (!htmlContent || typeof htmlContent !== 'string' || htmlContent.trim().length === 0) {
+      console.error('ERROR HTML content validation failed');
+      console.error('ERROR HTML content:', htmlContent);
+      throw new Error('Generated HTML content is empty or invalid');
     }
     
-    // Additional validation
+    // Additional HTML validation
     if (!htmlContent.includes('<html') || !htmlContent.includes('</html>')) {
-      console.error('ERROR HTML content validation failed - missing HTML tags');
-      console.error('ERROR Content:', htmlContent);
-      throw new Error('Generated HTML content is not valid HTML');
+      console.error('ERROR HTML structure validation failed');
+      console.error('ERROR Missing HTML tags in content');
+      throw new Error('Generated HTML content is not valid HTML structure');
     }
     
     console.log('SUCCESS HTML content validation passed');
+    console.log('DEBUG HTML preview (first 500 chars):', htmlContent.substring(0, 500));
     
     // Upload HTML to Cloudinary as raw file
+    console.log('DEBUG Starting Cloudinary upload for HTML...');
     const uploadResult = await cloudinary.uploader.upload(
       `data:text/html;base64,${Buffer.from(htmlContent).toString('base64')}`,
       {
@@ -1116,12 +1225,12 @@ export const generateDocumentPDF = async (documentType, templateData) => {
       }
     );
     
-    console.log('✅ Document uploaded to Cloudinary:', uploadResult.secure_url);
+    console.log('SUCCESS HTML uploaded to Cloudinary:', uploadResult.secure_url);
     
-    // 🔥 GENERATE PDF VERSION
+    // Generate PDF version
     let pdfResult = null;
     try {
-      console.log('🔄 Starting PDF generation...');
+      console.log('DEBUG Starting PDF generation...');
       const { generatePDFFromHTML } = await import('./pdfGenerator.js');
       
       const cleanFileName = templateData.title
@@ -1129,9 +1238,9 @@ export const generateDocumentPDF = async (documentType, templateData) => {
         : `document_${documentType}`;
       
       pdfResult = await generatePDFFromHTML(htmlContent, cleanFileName);
-      console.log('✅ PDF generated and uploaded:', pdfResult.url);
+      console.log('SUCCESS PDF generated and uploaded:', pdfResult.url);
     } catch (pdfError) {
-      console.error('⚠️ PDF generation failed, continuing with HTML only:', pdfError.message);
+      console.error('WARNING PDF generation failed, continuing with HTML only:', pdfError.message);
       // Don't throw error - continue with HTML only
     }
     
@@ -1142,7 +1251,8 @@ export const generateDocumentPDF = async (documentType, templateData) => {
       pdfPublicId: pdfResult?.public_id || null
     };
   } catch (error) {
-    console.error('❌ Error generating document:', error);
+    console.error('ERROR Error generating document:', error.message);
+    console.error('ERROR Stack trace:', error.stack);
     throw new Error(`Erro ao gerar documento: ${error.message}`);
   }
 };
