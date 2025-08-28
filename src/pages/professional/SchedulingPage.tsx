@@ -593,6 +593,8 @@ const SchedulingPageWithExtras: React.FC = () => {
     confirmed: consultations.filter((c) => c.status === "confirmed").length,
     completed: consultations.filter((c) => c.status === "completed").length,
     cancelled: consultations.filter((c) => c.status === "cancelled").length,
+    totalValue: consultations.reduce((sum, c) => sum + c.value, 0),
+    convenioValue: consultations
       .filter((c) => c.patient_type === "convenio")
       .reduce((sum, c) => sum + c.value * 0.5, 0), // Assuming 50% to pay to convenio
   };
