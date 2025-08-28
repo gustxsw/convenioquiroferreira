@@ -4,7 +4,6 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { validateHTMLContent, generateValidationReport } from './htmlValidator.js';
-import { validateHTMLContent, generateValidationReport } from './htmlValidator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
