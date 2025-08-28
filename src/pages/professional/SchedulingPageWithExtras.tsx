@@ -703,18 +703,6 @@ const SchedulingPageWithExtras: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-green-50 p-4 rounded-lg text-center border border-green-200">
-            <div className="text-lg font-bold text-green-600">{formatCurrency(dailyStats.totalValue)}</div>
-            <div className="text-sm text-green-700">Faturamento</div>
-          </div>
-
-          <div className="bg-red-50 p-4 rounded-lg text-center border border-red-200">
-            <div className="text-lg font-bold text-red-600">{formatCurrency(dailyStats.convenioValue)}</div>
-            <div className="text-sm text-red-700">A Pagar</div>
-          </div>
-        </div>
-      )}
-
       {/* Agenda View */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
         {isLoading ? (
