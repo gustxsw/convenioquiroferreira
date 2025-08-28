@@ -14,6 +14,8 @@ const __dirname = path.dirname(__filename);
  */
 const getPDFOptions = () => ({
  */
+}
+)
 const getPDFOptions = () => ({
   format: 'A4',
   margin: {
@@ -670,6 +672,7 @@ export const generatePDFFromHTML = async (htmlContent, fileName = 'document') =>
       errorContext.step = 'cloudinary_upload';
     } else {
       errorContext.step = 'pdf_generation';
+    }
     console.log('DEBUG Step 3: Creating temporary HTML file');
     tempFilePath = createTempHTMLFile(htmlContent, fileName);
     console.error('ERROR Context:', JSON.stringify(errorContext, null, 2));
@@ -709,3 +712,4 @@ export const testPDFGeneration = async () => {
     throw error;
   }
 };
+}
