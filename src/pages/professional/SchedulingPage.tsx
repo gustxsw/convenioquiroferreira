@@ -705,12 +705,18 @@ const SchedulingPageWithExtras: React.FC = () => {
 
           <div className="bg-green-50 p-4 rounded-lg text-center border border-green-200">
             <div className="text-lg font-bold text-green-600">{formatCurrency(dailyStats.totalValue)}</div>
-            <div className="text-sm text-green-700">Faturamento</div>
+            <div className="text-sm text-green-700 flex items-center justify-center">
+              <DollarSign className="h-3 w-3 mr-1" />
+              Total
+            </div>
           </div>
 
-          <div className="bg-red-50 p-4 rounded-lg text-center border border-red-200">
-            <div className="text-lg font-bold text-red-600">{formatCurrency(dailyStats.convenioValue)}</div>
-            <div className="text-sm text-red-700">A Pagar</div>
+          <div className="bg-yellow-50 p-4 rounded-lg text-center border border-yellow-200">
+            <div className="text-lg font-bold text-yellow-600">{formatCurrency(dailyStats.convenioValue)}</div>
+            <div className="text-sm text-yellow-700 flex items-center justify-center">
+              <DollarSign className="h-3 w-3 mr-1" />
+              Convênio
+            </div>
           </div>
         </div>
       )}
