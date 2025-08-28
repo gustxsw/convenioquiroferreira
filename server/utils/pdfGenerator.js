@@ -38,23 +38,23 @@ export const generatePDFFromHTML = async (htmlContent, fileName = 'document') =>
   let tempFilePath = null;
   
   try {
-    console.log('🔄 [PDF] Starting PDF generation process...');
-    console.log('📄 [PDF] HTML content length:', htmlContent.length);
-    console.log('📄 [PDF] File name:', fileName);
+    console.log('DEBUG Starting PDF generation process...');
+    console.log('DEBUG HTML content length:', htmlContent.length);
+    console.log('DEBUG File name:', fileName);
     
     // Validate HTML content
     if (!htmlContent || htmlContent.trim().length === 0) {
-      console.error('❌ [PDF] HTML content is empty or invalid');
+      console.error('ERROR HTML content is empty or invalid');
       throw new Error('HTML content is empty or invalid');
     }
     
-    console.log('📄 [PDF] HTML content preview (first 200 chars):', htmlContent.substring(0, 200));
+    console.log('DEBUG HTML content preview (first 200 chars):', htmlContent.substring(0, 200));
     
     // Create temporary directory
     const tempDir = path.join(__dirname, '../../temp');
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true });
-      console.log('📁 Created temp directory:', tempDir);
+      console.log('DEBUG Created temp directory:', tempDir);
     }
     
     // Create temporary HTML file
@@ -88,20 +88,20 @@ ${htmlContent.replace('<head>', '<head>').replace('</head>', '</head>')}
     
     // Write enhanced HTML content to temporary file
     fs.writeFileSync(tempFilePath, enhancedHTML, 'utf8');
-    console.log('✅ Temporary HTML file created:', tempFilePath);
-    console.log('📄 Enhanced HTML length:', enhancedHTML.length);
+    console.log('SUCCESS Temporary HTML file created:', tempFilePath);
+    console.log('DEBUG Enhanced HTML length:', enhancedHTML.length);
     
     // 🔥 VERIFY FILE WAS WRITTEN CORRECTLY
     const writtenContent = fs.readFileSync(tempFilePath, 'utf8');
     if (writtenContent.length === 0) {
       throw new Error('Failed to write HTML content to temporary file');
     }
-    console.log('✅ File verification passed, content length:', writtenContent.length);
+    console.log('SUCCESS File verification passed, content length:', writtenContent.length);
     
     // Create PDF from file with enhanced options
     const file = { url: `file://${tempFilePath}` };
     
-    console.log('🔄 Starting PDF conversion...');
+    console.log('DEBUG Starting PDF conversion...');
     const pdfBuffer = await htmlPdf.generatePdf(file, pdfOptions);
     
     // 🔥 VALIDATE PDF BUFFER
@@ -109,17 +109,17 @@ ${htmlContent.replace('<head>', '<head>').replace('</head>', '</head>')}
       throw new Error('PDF generation resulted in empty buffer');
     }
     
-    console.log('✅ PDF generated successfully');
-    console.log('📊 PDF buffer size:', pdfBuffer.length, 'bytes');
-    console.log('📊 PDF buffer type:', typeof pdfBuffer);
+    console.log('SUCCESS PDF generated successfully');
+    console.log('DEBUG PDF buffer size:', pdfBuffer.length, 'bytes');
+    console.log('DEBUG PDF buffer type:', typeof pdfBuffer);
     
     // 🔥 VALIDATE PDF CONTENT - Check if it's actually a PDF
     const pdfHeader = pdfBuffer.slice(0, 4).toString();
     if (pdfHeader !== '%PDF') {
-      console.error('❌ Generated buffer is not a valid PDF. Header:', pdfHeader);
+      console.error('ERROR Generated buffer is not a valid PDF. Header:', pdfHeader);
       throw new Error('Generated file is not a valid PDF');
     }
-    console.log('✅ PDF validation passed - valid PDF header found');
+    console.log('SUCCESS PDF validation passed - valid PDF header found');
     
     // 🔥 CORRECT CLOUDINARY UPLOAD FOR PDF
     const uploadResult = await new Promise((resolve, reject) => {
@@ -137,12 +137,12 @@ ${htmlContent.replace('<head>', '<head>').replace('</head>', '</head>')}
         },
         (error, result) => {
           if (error) {
-            console.error('❌ Cloudinary upload error:', error);
+            console.error('ERROR Cloudinary upload error:', error);
             reject(new Error(`Cloudinary upload failed: ${error.message}`));
           } else {
-            console.log('✅ PDF uploaded to Cloudinary successfully');
-            console.log('🔗 PDF URL:', result?.secure_url);
-            console.log('📊 Uploaded file size:', result?.bytes, 'bytes');
+            console.log('SUCCESS PDF uploaded to Cloudinary successfully');
+            console.log('DEBUG PDF URL:', result?.secure_url);
+            console.log('DEBUG Uploaded file size:', result?.bytes, 'bytes');
             resolve(result);
           }
         }
@@ -163,17 +163,17 @@ ${htmlContent.replace('<head>', '<head>').replace('</head>', '</head>')}
       bytes: uploadResult.bytes
     };
   } catch (error) {
-    console.error('❌ Error in PDF generation process:', error);
-    console.error('❌ Error stack:', error.stack);
+    console.error('ERROR in PDF generation process:', error);
+    console.error('ERROR stack:', error.stack);
     throw new Error(`Erro ao gerar PDF: ${error.message}`);
   } finally {
     // 🔥 ENSURE CLEANUP ALWAYS HAPPENS
     if (tempFilePath && fs.existsSync(tempFilePath)) {
       try {
         fs.unlinkSync(tempFilePath);
-        console.log('🧹 Temporary file cleaned up:', tempFilePath);
+        console.log('DEBUG Temporary file cleaned up:', tempFilePath);
       } catch (cleanupError) {
-        console.warn('⚠️ Could not clean up temporary file:', cleanupError.message);
+        console.warn('WARNING Could not clean up temporary file:', cleanupError.message);
       }
     }
   }
