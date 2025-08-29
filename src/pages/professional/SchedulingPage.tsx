@@ -17,6 +17,9 @@ import {
   Edit,
   MessageCircle,
   Repeat,
+  Settings,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -611,6 +614,9 @@ const SchedulingPageWithExtras: React.FC = () => {
     const slots = [];
     for (let hour = 8; hour < 18; hour++) {
       for (let minute = 0; minute < 60; minute += slotDuration) {
+        // Don't create slots that would go past 18:00
+        if (hour === 18 && minute > 0) break;
+
         const timeStr = `${hour.toString().padStart(2, "0")}:${minute
           .toString()
           .padStart(2, "0")}`;
@@ -804,7 +810,13 @@ const SchedulingPageWithExtras: React.FC = () => {
                 {timeSlots.map((timeSlot) => (
                   <div
                     key={timeSlot}
-                    className="h-20 flex items-center justify-center border-b border-gray-100 text-sm font-medium text-gray-700"
+                    className={`${
+                      slotDuration === 15
+                        ? "h-12"
+                        : slotDuration === 30
+                        ? "h-16"
+                        : "h-24"
+                    } flex items-center justify-center border-b border-gray-100 text-sm font-medium text-gray-700`}
                   >
                     {timeSlot}
                   </div>
@@ -832,13 +844,31 @@ const SchedulingPageWithExtras: React.FC = () => {
                           : slotDuration === 30
                           ? "h-16"
                           : "h-24"
-                      } border-b border-gray-100 flex items-center px-4 hover:bg-gray-50 transition-colors`}
+                      } border-b border-gray-100 flex items-center px-4 hover:bg-gray-50 transition-colors cursor-pointer`}
+                      onClick={() => {
+                        if (!consultation) {
+                          // Auto-fill time when clicking on empty slot
+                          setFormData((prev) => ({
+                            ...prev,
+                            time: timeSlot,
+                            date: format(selectedDate, "yyyy-MM-dd"),
+                          }));
+                          setShowNewModal(true);
+                        }
+                      }}
+                      title={
+                        !consultation ? `Agendar consulta para ${timeSlot}` : ""
+                      }
                     >
                       {consultation ? (
                         <div className="flex items-center justify-between w-full">
-                          <div className="flex items-center space-x-3 flex-1">
+                          <div className="flex items-center space-x-2 flex-1">
                             <div className="flex-1">
-                              <div className="flex items-center mb-1">
+                              <div
+                                className={`flex items-center ${
+                                  slotDuration === 15 ? "mb-0" : "mb-1"
+                                }`}
+                              >
                                 {consultation.is_dependent ? (
                                   <Users className="h-4 w-4 text-blue-600 mr-2" />
                                 ) : consultation.patient_type === "private" ? (
@@ -854,24 +884,41 @@ const SchedulingPageWithExtras: React.FC = () => {
                                   {consultation.client_name}
                                 </span>
                                 {consultation.is_dependent && (
-                                  <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                                  <span
+                                    className={`ml-1 px-1 py-0.5 bg-blue-100 text-blue-800 rounded-full ${
+                                      slotDuration === 15
+                                        ? "text-xs"
+                                        : "text-xs"
+                                    }`}
+                                  >
                                     Dependente
                                   </span>
                                 )}
                                 {consultation.patient_type === "private" && (
-                                  <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs">
+                                  <span
+                                    className={`ml-1 px-1 py-0.5 bg-purple-100 text-purple-800 rounded-full ${
+                                      slotDuration === 15
+                                        ? "text-xs"
+                                        : "text-xs"
+                                    }`}
+                                  >
                                     Particular
                                   </span>
                                 )}
 
                                 {/* WhatsApp Button */}
-                                <button
-                                  onClick={() => openWhatsApp(consultation)}
-                                  className="ml-2 p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                                  title="Enviar mensagem no WhatsApp"
-                                >
-                                  <MessageCircle className="h-4 w-4" />
-                                </button>
+                                {slotDuration !== 15 && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openWhatsApp(consultation);
+                                    }}
+                                    className="ml-2 p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                                    title="Enviar mensagem no WhatsApp"
+                                  >
+                                    <MessageCircle className="h-4 w-4" />
+                                  </button>
+                                )}
                               </div>
                               <div
                                 className={`flex items-center space-x-2 ${
@@ -880,23 +927,37 @@ const SchedulingPageWithExtras: React.FC = () => {
                                     : "space-x-4"
                                 }`}
                               >
-                                <p className="text-xs text-gray-600">
-                                  {consultation.service_name}
-                                </p>
-                                <p className="text-xs font-medium text-green-600">
-                                  {formatCurrency(consultation.value)}
-                                </p>
-                                {consultation.location_name && (
-                                  <p className="text-xs text-gray-500">
-                                    {consultation.location_name}
+                                {slotDuration !== 15 && (
+                                  <div className="flex items-center space-x-4">
+                                    <p className="text-xs text-gray-600">
+                                      {consultation.service_name}
+                                    </p>
+                                    <p className="text-xs font-medium text-green-600">
+                                      {formatCurrency(consultation.value)}
+                                    </p>
+                                    {consultation.location_name && (
+                                      <p className="text-xs text-gray-500">
+                                        {consultation.location_name}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                                {slotDuration === 15 && (
+                                  <div className="flex items-center space-x-2">
+                                    <p className="text-xs text-gray-500">
+                                      {consultation.service_name}
+                                    </p>
+                                    <p className="text-xs font-medium text-green-600">
+                                      {formatCurrency(consultation.value)}
+                                    </p>
+                                  </div>
+                                )}
+                                {consultation.notes && slotDuration !== 15 && (
+                                  <p className="text-xs text-gray-500 mt-1 italic truncate">
+                                    "{consultation.notes}"
                                   </p>
                                 )}
                               </div>
-                              {consultation.notes && slotDuration >= 30 && (
-                                <p className="text-xs text-gray-500 mt-1 italic truncate">
-                                  "{consultation.notes}"
-                                </p>
-                              )}
                             </div>
                           </div>
 
@@ -904,7 +965,10 @@ const SchedulingPageWithExtras: React.FC = () => {
                           <div className="flex items-center space-x-2">
                             {/* Edit Button */}
                             <button
-                              onClick={() => openEditModal(consultation)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditModal(consultation);
+                              }}
                               className={`${
                                 slotDuration === 15 ? "p-0.5" : "p-1"
                               } text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors`}
@@ -919,7 +983,10 @@ const SchedulingPageWithExtras: React.FC = () => {
 
                             {/* Status Button */}
                             <button
-                              onClick={() => openStatusModal(consultation)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openStatusModal(consultation);
+                              }}
                               className={`${
                                 slotDuration === 15
                                   ? "px-1 py-0.5"
@@ -937,20 +1004,9 @@ const SchedulingPageWithExtras: React.FC = () => {
                           </div>
                         </div>
                       ) : (
-                        <button
-                          onClick={() => {
-                            setFormData((prev) => ({
-                              ...prev,
-                              date: format(selectedDate, "yyyy-MM-dd"),
-                              time: timeSlot,
-                            }));
-                            setShowNewModal(true);
-                          }}
-                          className="w-full h-full text-left px-2 text-xs text-gray-400 italic hover:bg-blue-50 hover:text-blue-600 transition-colors rounded"
-                          title={`Agendar consulta às ${timeSlot}`}
-                        >
-                          Horário livre - Clique para agendar
-                        </button>
+                        <div className="text-xs text-gray-400 italic hover:text-gray-600 transition-colors">
+                          Clique para agendar • {timeSlot}
+                        </div>
                       )}
                     </div>
                   );
@@ -974,6 +1030,10 @@ const SchedulingPageWithExtras: React.FC = () => {
               <span className="text-sm">
                 Configuração atual: slots de {slotDuration} minutos
               </span>
+            </p>
+            <p className="text-sm text-gray-500 mb-4">
+              Slots configurados para {slotDuration} minutos •{" "}
+              {timeSlots.length} horários disponíveis
             </p>
             <button
               onClick={() => setShowNewModal(true)}
@@ -1471,10 +1531,16 @@ const SchedulingPageWithExtras: React.FC = () => {
                         value={status.value}
                         checked={newStatus === status.value}
                         onChange={(e) => setNewStatus(e.target.value as any)}
-                        className={`text-${status.color}-600 focus:ring-${status.color}-500`}
+                        className={
+                          "text-" +
+                          status.color +
+                          "-600 focus:ring-" +
+                          status.color +
+                          "-500"
+                        }
                       />
                       <div className="ml-3 flex items-center">
-                        <div className={`text-${status.color}-600 mr-2`}>
+                        <div className={"text-" + status.color + "-600 mr-2"}>
                           {status.icon}
                         </div>
                         <div>
@@ -1499,9 +1565,10 @@ const SchedulingPageWithExtras: React.FC = () => {
                 </button>
                 <button
                   onClick={updateConsultationStatus}
-                  className={`btn btn-primary ${
-                    isUpdatingStatus ? "opacity-70 cursor-not-allowed" : ""
-                  }`}
+                  className={
+                    "btn btn-primary " +
+                    (isUpdatingStatus ? "opacity-70 cursor-not-allowed" : "")
+                  }
                   disabled={
                     isUpdatingStatus ||
                     newStatus === selectedConsultation.status
