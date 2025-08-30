@@ -1,5 +1,4 @@
 import { v2 as cloudinary } from 'cloudinary';
-import { pool } from '../db.js';
 
 // Document templates
 const templates = {
@@ -1068,51 +1067,15 @@ ${data.content}
 };
 
 // Generate HTML document and upload to Cloudinary
-export const generateDocumentPDF = async (documentType, templateData, professionalId = null) => {
+export const generateDocumentPDF = async (documentType, templateData) => {
   try {
-    console.log('🔄 Generating document:', { documentType, templateData, professionalId });
-    
-    // Get professional signature data if professionalId is provided
-    let professionalSignature = {
-      name: templateData.professionalName || 'Profissional de Saúde',
-      specialty: templateData.professionalSpecialty || '',
-      crm: templateData.crm || ''
-    };
-
-    if (professionalId) {
-      try {
-        const professionalQuery = await pool.query(
-          'SELECT name, category_name, crm FROM users WHERE id = $1',
-          [professionalId]
-        );
-
-        if (professionalQuery.rows.length > 0) {
-          const prof = professionalQuery.rows[0];
-          professionalSignature = {
-            name: prof.name || professionalSignature.name,
-            specialty: prof.category_name || professionalSignature.specialty,
-            crm: prof.crm || professionalSignature.crm
-          };
-          console.log('✅ Professional signature loaded:', professionalSignature);
-        }
-      } catch (error) {
-        console.warn('⚠️ Could not load professional data, using provided data:', error);
-      }
-    }
-
-    // Merge professional signature into template data
-    const enhancedTemplateData = {
-      ...templateData,
-      professionalName: professionalSignature.name,
-      professionalSpecialty: professionalSignature.specialty,
-      crm: professionalSignature.crm
-    };
+    console.log('🔄 Generating document:', { documentType, templateData });
     
     // Get the template function
     const templateFunction = templates[documentType] || templates.other;
     
     // Generate HTML content
-    const htmlContent = templateFunction(enhancedTemplateData);
+    const htmlContent = templateFunction(templateData);
     
     console.log('✅ HTML content generated, length:', htmlContent.length);
     

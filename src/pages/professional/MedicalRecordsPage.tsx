@@ -352,8 +352,30 @@ const MedicalRecordsPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
 
+      // Get current user data for professional info
+      const userResponse = await fetch(`${apiUrl}/api/users/${user?.id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      let professionalData = {
+        name: user?.name || 'Profissional',
+        specialty: '',
+        crm: ''
+      };
+
+      if (userResponse.ok) {
+        const userData = await userResponse.json();
+        professionalData = {
+          name: userData.name || user?.name || 'Profissional',
+          specialty: userData.category_name || '',
+          crm: userData.crm || ''
+        };
+      }
+
       // Prepare template data
       const templateData = {
+        patientName: record.patient_name,
+        patientCpf: '', // CPF not stored in medical records
         date: record.created_at,
         chief_complaint: record.chief_complaint,
         history_present_illness: record.history_present_illness,
@@ -365,8 +387,9 @@ const MedicalRecordsPage: React.FC = () => {
         treatment_plan: record.treatment_plan,
         notes: record.notes,
         vital_signs: record.vital_signs,
-        patientName: record.patient_name,
-        patientCpf: '', // CPF not stored in medical records
+        professionalName: professionalData.name,
+        professionalSpecialty: professionalData.specialty,
+        crm: professionalData.crm
       };
 
       const response = await fetch(`${apiUrl}/api/medical-records/generate-document`, {

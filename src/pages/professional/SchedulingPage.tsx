@@ -18,13 +18,12 @@ import {
   MessageCircle,
   Repeat,
   Settings,
-  ChevronDown,
-  ChevronUp,
 } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import EditConsultationModal from "../../components/EditConsultationModal";
 import RecurringConsultationModal from "../../components/RecurringConsultationModal";
+import SlotCustomizationModal from "../../components/SlotCustomizationModal";
 
 type Consultation = {
   id: number;
@@ -58,19 +57,24 @@ type PrivatePatient = {
   cpf: string;
 };
 
-const SchedulingPageWithExtras: React.FC = () => {
+type SlotDuration = 15 | 30 | 60;
+
+const SchedulingPage: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [slotDuration, setSlotDuration] = useState(30); // 15, 30, or 60 minutes
-  const [showSettings, setShowSettings] = useState(false);
   const [consultations, setConsultations] = useState<Consultation[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [privatePatients, setPrivatePatients] = useState<PrivatePatient[]>([]);
-  const [attendanceLocations, setAttendanceLocations] = useState<
-    AttendanceLocation[]
-  >([]);
+  const [attendanceLocations, setAttendanceLocations] = useState<AttendanceLocation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // Slot customization state
+  const [slotDuration, setSlotDuration] = useState<SlotDuration>(() => {
+    const saved = localStorage.getItem('scheduling-slot-duration');
+    return saved ? (Number(saved) as SlotDuration) : 30;
+  });
+  const [showSlotModal, setShowSlotModal] = useState(false);
 
   // New consultation modal
   const [showNewModal, setShowNewModal] = useState(false);
@@ -78,17 +82,13 @@ const SchedulingPageWithExtras: React.FC = () => {
 
   // Status change modal
   const [showStatusModal, setShowStatusModal] = useState(false);
-  const [selectedConsultation, setSelectedConsultation] =
-    useState<Consultation | null>(null);
-  const [newStatus, setNewStatus] = useState<
-    "scheduled" | "confirmed" | "completed" | "cancelled"
-  >("scheduled");
+  const [selectedConsultation, setSelectedConsultation] = useState<Consultation | null>(null);
+  const [newStatus, setNewStatus] = useState<"scheduled" | "confirmed" | "completed" | "cancelled">("scheduled");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   // Edit consultation modal
   const [showEditModal, setShowEditModal] = useState(false);
-  const [consultationToEdit, setConsultationToEdit] =
-    useState<Consultation | null>(null);
+  const [consultationToEdit, setConsultationToEdit] = useState<Consultation | null>(null);
 
   // Recurring consultation modal
   const [showRecurringModal, setShowRecurringModal] = useState(false);
@@ -113,9 +113,7 @@ const SchedulingPageWithExtras: React.FC = () => {
   // Client search state
   const [clientSearchResult, setClientSearchResult] = useState<any>(null);
   const [dependents, setDependents] = useState<any[]>([]);
-  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(
-    null
-  );
+  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
   // Get API URL
@@ -132,6 +130,12 @@ const SchedulingPageWithExtras: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, [selectedDate]);
+
+  // Handle slot duration change
+  const handleSlotDurationChange = (duration: SlotDuration) => {
+    setSlotDuration(duration);
+    localStorage.setItem('scheduling-slot-duration', duration.toString());
+  };
 
   const fetchData = async () => {
     try {
@@ -160,10 +164,7 @@ const SchedulingPageWithExtras: React.FC = () => {
         console.log("✅ Consultations loaded:", consultationsData.length);
         setConsultations(consultationsData);
       } else {
-        console.error(
-          "Consultations response error:",
-          consultationsResponse.status
-        );
+        console.error("Consultations response error:", consultationsResponse.status);
         setConsultations([]);
       }
 
@@ -194,24 +195,19 @@ const SchedulingPageWithExtras: React.FC = () => {
       }
 
       // Fetch attendance locations
-      const locationsResponse = await fetch(
-        `${apiUrl}/api/attendance-locations`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      const locationsResponse = await fetch(`${apiUrl}/api/attendance-locations`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
 
       if (locationsResponse.ok) {
         const locationsData = await locationsResponse.json();
         setAttendanceLocations(locationsData);
 
         // Set default location if exists
-        const defaultLocation = locationsData.find(
-          (loc: AttendanceLocation) => loc.is_default
-        );
+        const defaultLocation = locationsData.find((loc: AttendanceLocation) => loc.is_default);
         if (defaultLocation) {
           setFormData((prev) => ({
             ...prev,
@@ -248,7 +244,7 @@ const SchedulingPageWithExtras: React.FC = () => {
 
       if (clientResponse.ok) {
         const clientData = await clientResponse.json();
-
+        
         if (clientData.subscription_status !== "active") {
           setError("Cliente não possui assinatura ativa");
           return;
@@ -266,11 +262,7 @@ const SchedulingPageWithExtras: React.FC = () => {
 
         if (dependentsResponse.ok) {
           const dependentsData = await dependentsResponse.json();
-          setDependents(
-            dependentsData.filter(
-              (d: any) => d.subscription_status === "active"
-            )
-          );
+          setDependents(dependentsData.filter((d: any) => d.subscription_status === "active"));
         }
       } else {
         // Try searching as dependent
@@ -283,7 +275,7 @@ const SchedulingPageWithExtras: React.FC = () => {
 
         if (dependentResponse.ok) {
           const dependentData = await dependentResponse.json();
-
+          
           if (dependentData.dependent_subscription_status !== "active") {
             setError("Dependente não possui assinatura ativa");
             return;
@@ -320,9 +312,7 @@ const SchedulingPageWithExtras: React.FC = () => {
         // Create recurring consultations
         const recurringData: any = {
           service_id: parseInt(formData.service_id),
-          location_id: formData.location_id
-            ? parseInt(formData.location_id)
-            : null,
+          location_id: formData.location_id ? parseInt(formData.location_id) : null,
           value: parseFloat(formData.value),
           start_date: formData.date,
           start_time: formData.time,
@@ -334,9 +324,7 @@ const SchedulingPageWithExtras: React.FC = () => {
 
         // Set patient based on type
         if (formData.patient_type === "private") {
-          recurringData.private_patient_id = parseInt(
-            formData.private_patient_id
-          );
+          recurringData.private_patient_id = parseInt(formData.private_patient_id);
         } else {
           if (selectedDependentId) {
             recurringData.dependent_id = selectedDependentId;
@@ -356,22 +344,16 @@ const SchedulingPageWithExtras: React.FC = () => {
 
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(
-            errorData.message || "Falha ao criar consultas recorrentes"
-          );
+          throw new Error(errorData.message || "Falha ao criar consultas recorrentes");
         }
 
         const result = await response.json();
-        setSuccess(
-          `${result.created_count} consultas recorrentes criadas com sucesso!`
-        );
+        setSuccess(`${result.created_count} consultas recorrentes criadas com sucesso!`);
       } else {
         // Create single consultation
         const consultationData: any = {
           service_id: parseInt(formData.service_id),
-          location_id: formData.location_id
-            ? parseInt(formData.location_id)
-            : null,
+          location_id: formData.location_id ? parseInt(formData.location_id) : null,
           value: parseFloat(formData.value),
           date: new Date(`${formData.date}T${formData.time}`).toISOString(),
           status: "scheduled",
@@ -380,9 +362,7 @@ const SchedulingPageWithExtras: React.FC = () => {
 
         // Set patient based on type
         if (formData.patient_type === "private") {
-          consultationData.private_patient_id = parseInt(
-            formData.private_patient_id
-          );
+          consultationData.private_patient_id = parseInt(formData.private_patient_id);
         } else {
           if (selectedDependentId) {
             consultationData.dependent_id = selectedDependentId;
@@ -413,9 +393,7 @@ const SchedulingPageWithExtras: React.FC = () => {
       resetForm();
       setTimeout(() => setSuccess(""), 3000);
     } catch (error) {
-      setError(
-        error instanceof Error ? error.message : "Erro ao criar consulta"
-      );
+      setError(error instanceof Error ? error.message : "Erro ao criar consulta");
     } finally {
       setIsCreating(false);
     }
@@ -487,9 +465,7 @@ const SchedulingPageWithExtras: React.FC = () => {
       setSuccess("Status atualizado com sucesso!");
       setTimeout(() => setSuccess(""), 3000);
     } catch (error) {
-      setError(
-        error instanceof Error ? error.message : "Erro ao atualizar status"
-      );
+      setError(error instanceof Error ? error.message : "Erro ao atualizar status");
     } finally {
       setIsUpdatingStatus(false);
     }
@@ -530,9 +506,7 @@ const SchedulingPageWithExtras: React.FC = () => {
       const data = await response.json();
       window.open(data.whatsapp_url, "_blank");
     } catch (error) {
-      setError(
-        error instanceof Error ? error.message : "Erro ao abrir WhatsApp"
-      );
+      setError(error instanceof Error ? error.message : "Erro ao abrir WhatsApp");
       setTimeout(() => setError(""), 3000);
     }
   };
@@ -541,11 +515,9 @@ const SchedulingPageWithExtras: React.FC = () => {
     // Convert UTC date to Brasília timezone for display
     const utcDate = new Date(dateString);
     const brasiliaOffset = -3 * 60; // -3 hours in minutes
-    const brasiliaDate = new Date(
-      utcDate.getTime() + brasiliaOffset * 60 * 1000
-    );
-
-    return format(brasiliaDate, "HH:mm");
+    const brasiliaDate = new Date(utcDate.getTime() + (brasiliaOffset * 60 * 1000));
+    
+    return format(brasiliaDate, 'HH:mm');
   };
 
   const getStatusInfo = (status: string) => {
@@ -610,13 +582,10 @@ const SchedulingPageWithExtras: React.FC = () => {
     }
   };
 
-  const generateTimeSlots = () => {
+  const generateTimeSlots = (duration: SlotDuration = slotDuration) => {
     const slots = [];
-    for (let hour = 8; hour < 18; hour++) {
-      for (let minute = 0; minute < 60; minute += slotDuration) {
-        // Don't create slots that would go past 18:00
-        if (hour === 18 && minute > 0) break;
-
+    for (let hour = 8; hour <= 18; hour++) {
+      for (let minute = 0; minute < 60; minute += duration) {
         const timeStr = `${hour.toString().padStart(2, "0")}:${minute
           .toString()
           .padStart(2, "0")}`;
@@ -626,8 +595,8 @@ const SchedulingPageWithExtras: React.FC = () => {
     return slots;
   };
 
-  const timeSlots = generateTimeSlots();
-
+  const timeSlots = generateTimeSlots(slotDuration);
+  
   // Group consultations by time for display
   const consultationsByTime = consultations.reduce((acc, consultation) => {
     const time = format(new Date(consultation.date), "HH:mm");
@@ -647,6 +616,19 @@ const SchedulingPageWithExtras: React.FC = () => {
       .reduce((sum, c) => sum + c.value * 0.5, 0), // Assuming 50% to pay to convenio
   };
 
+  const getSlotDurationLabel = (duration: SlotDuration) => {
+    switch (duration) {
+      case 15:
+        return "15 min";
+      case 30:
+        return "30 min";
+      case 60:
+        return "60 min";
+      default:
+        return "30 min";
+    }
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -657,13 +639,22 @@ const SchedulingPageWithExtras: React.FC = () => {
 
         <div className="flex space-x-2">
           <button
+            onClick={() => setShowSlotModal(true)}
+            className="btn btn-outline flex items-center"
+            title="Personalizar duração dos slots"
+          >
+            <Settings className="h-5 w-5 mr-2" />
+            Slots ({getSlotDurationLabel(slotDuration)})
+          </button>
+          
+          <button
             onClick={() => setShowRecurringModal(true)}
             className="btn btn-outline flex items-center"
           >
             <Repeat className="h-5 w-5 mr-2" />
             Consultas Recorrentes
           </button>
-
+          
           <button
             onClick={() => setShowNewModal(true)}
             className="btn btn-primary flex items-center"
@@ -702,9 +693,11 @@ const SchedulingPageWithExtras: React.FC = () => {
             <h2 className="text-xl font-semibold text-gray-900">
               {format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })}
             </h2>
-            <p className="text-sm text-gray-600">
-              {consultations.length} consulta(s)
-            </p>
+            <div className="flex items-center justify-center space-x-4 text-sm text-gray-600">
+              <span>{consultations.length} consulta(s)</span>
+              <span>•</span>
+              <span>Slots de {getSlotDurationLabel(slotDuration)}</span>
+            </div>
           </div>
 
           <button
@@ -729,9 +722,7 @@ const SchedulingPageWithExtras: React.FC = () => {
       {consultations.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
           <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-200">
-            <div className="text-2xl font-bold text-blue-600">
-              {dailyStats.scheduled}
-            </div>
+            <div className="text-2xl font-bold text-blue-600">{dailyStats.scheduled}</div>
             <div className="text-sm text-blue-700 flex items-center justify-center">
               <Clock className="h-3 w-3 mr-1" />
               Agendados
@@ -739,9 +730,7 @@ const SchedulingPageWithExtras: React.FC = () => {
           </div>
 
           <div className="bg-green-50 p-4 rounded-lg text-center border border-green-200">
-            <div className="text-2xl font-bold text-green-600">
-              {dailyStats.confirmed}
-            </div>
+            <div className="text-2xl font-bold text-green-600">{dailyStats.confirmed}</div>
             <div className="text-sm text-green-700 flex items-center justify-center">
               <CheckCircle className="h-3 w-3 mr-1" />
               Confirmados
@@ -749,9 +738,7 @@ const SchedulingPageWithExtras: React.FC = () => {
           </div>
 
           <div className="bg-gray-50 p-4 rounded-lg text-center border border-gray-200">
-            <div className="text-2xl font-bold text-gray-600">
-              {dailyStats.completed}
-            </div>
+            <div className="text-2xl font-bold text-gray-600">{dailyStats.completed}</div>
             <div className="text-sm text-gray-700 flex items-center justify-center">
               <Check className="h-3 w-3 mr-1" />
               Concluídos
@@ -759,9 +746,7 @@ const SchedulingPageWithExtras: React.FC = () => {
           </div>
 
           <div className="bg-red-50 p-4 rounded-lg text-center border border-red-200">
-            <div className="text-2xl font-bold text-red-600">
-              {dailyStats.cancelled}
-            </div>
+            <div className="text-2xl font-bold text-red-600">{dailyStats.cancelled}</div>
             <div className="text-sm text-red-700 flex items-center justify-center">
               <XCircle className="h-3 w-3 mr-1" />
               Cancelados
@@ -769,9 +754,7 @@ const SchedulingPageWithExtras: React.FC = () => {
           </div>
 
           <div className="bg-green-50 p-4 rounded-lg text-center border border-green-200">
-            <div className="text-lg font-bold text-green-600">
-              {formatCurrency(dailyStats.totalValue)}
-            </div>
+            <div className="text-lg font-bold text-green-600">{formatCurrency(dailyStats.totalValue)}</div>
             <div className="text-sm text-green-700 flex items-center justify-center">
               <DollarSign className="h-3 w-3 mr-1" />
               Total
@@ -779,9 +762,7 @@ const SchedulingPageWithExtras: React.FC = () => {
           </div>
 
           <div className="bg-yellow-50 p-4 rounded-lg text-center border border-yellow-200">
-            <div className="text-lg font-bold text-yellow-600">
-              {formatCurrency(dailyStats.convenioValue)}
-            </div>
+            <div className="text-lg font-bold text-yellow-600">{formatCurrency(dailyStats.convenioValue)}</div>
             <div className="text-sm text-yellow-700 flex items-center justify-center">
               <DollarSign className="h-3 w-3 mr-1" />
               Convênio
@@ -802,20 +783,14 @@ const SchedulingPageWithExtras: React.FC = () => {
             {/* Time Column */}
             <div className="w-24 bg-gray-50 border-r border-gray-200">
               <div className="sticky top-0 bg-gray-100 p-3 border-b border-gray-200">
-                <div className="text-xs font-medium text-gray-600 text-center">
-                  HORÁRIO
-                </div>
+                <div className="text-xs font-medium text-gray-600 text-center">HORÁRIO</div>
               </div>
               <div className="space-y-0">
                 {timeSlots.map((timeSlot) => (
                   <div
                     key={timeSlot}
                     className={`${
-                      slotDuration === 15
-                        ? "h-12"
-                        : slotDuration === 30
-                        ? "h-16"
-                        : "h-24"
+                      slotDuration === 15 ? 'h-12' : slotDuration === 30 ? 'h-20' : 'h-32'
                     } flex items-center justify-center border-b border-gray-100 text-sm font-medium text-gray-700`}
                   >
                     {timeSlot}
@@ -827,9 +802,7 @@ const SchedulingPageWithExtras: React.FC = () => {
             {/* Consultations Column */}
             <div className="flex-1">
               <div className="sticky top-0 bg-gray-100 p-3 border-b border-gray-200">
-                <div className="text-xs font-medium text-gray-600 text-center">
-                  CONSULTAS
-                </div>
+                <div className="text-xs font-medium text-gray-600 text-center">CONSULTAS</div>
               </div>
               <div className="relative">
                 {timeSlots.map((timeSlot) => {
@@ -839,36 +812,14 @@ const SchedulingPageWithExtras: React.FC = () => {
                     <div
                       key={timeSlot}
                       className={`${
-                        slotDuration === 15
-                          ? "h-12"
-                          : slotDuration === 30
-                          ? "h-16"
-                          : "h-24"
-                      } border-b border-gray-100 flex items-center px-4 hover:bg-gray-50 transition-colors cursor-pointer`}
-                      onClick={() => {
-                        if (!consultation) {
-                          // Auto-fill time when clicking on empty slot
-                          setFormData((prev) => ({
-                            ...prev,
-                            time: timeSlot,
-                            date: format(selectedDate, "yyyy-MM-dd"),
-                          }));
-                          setShowNewModal(true);
-                        }
-                      }}
-                      title={
-                        !consultation ? `Agendar consulta para ${timeSlot}` : ""
-                      }
+                        slotDuration === 15 ? 'h-12' : slotDuration === 30 ? 'h-20' : 'h-32'
+                      } border-b border-gray-100 flex items-center px-4 hover:bg-gray-50 transition-colors`}
                     >
                       {consultation ? (
                         <div className="flex items-center justify-between w-full">
-                          <div className="flex items-center space-x-2 flex-1">
+                          <div className="flex items-center space-x-3 flex-1">
                             <div className="flex-1">
-                              <div
-                                className={`flex items-center ${
-                                  slotDuration === 15 ? "mb-0" : "mb-1"
-                                }`}
-                              >
+                              <div className="flex items-center mb-1">
                                 {consultation.is_dependent ? (
                                   <Users className="h-4 w-4 text-blue-600 mr-2" />
                                 ) : consultation.patient_type === "private" ? (
@@ -876,88 +827,47 @@ const SchedulingPageWithExtras: React.FC = () => {
                                 ) : (
                                   <User className="h-4 w-4 text-green-600 mr-2" />
                                 )}
-                                <span
-                                  className={`font-medium text-gray-900 ${
-                                    slotDuration === 15 ? "text-xs" : "text-sm"
-                                  }`}
-                                >
+                                <span className="font-medium text-gray-900 text-sm">
                                   {consultation.client_name}
                                 </span>
                                 {consultation.is_dependent && (
-                                  <span
-                                    className={`ml-1 px-1 py-0.5 bg-blue-100 text-blue-800 rounded-full ${
-                                      slotDuration === 15
-                                        ? "text-xs"
-                                        : "text-xs"
-                                    }`}
-                                  >
+                                  <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
                                     Dependente
                                   </span>
                                 )}
                                 {consultation.patient_type === "private" && (
-                                  <span
-                                    className={`ml-1 px-1 py-0.5 bg-purple-100 text-purple-800 rounded-full ${
-                                      slotDuration === 15
-                                        ? "text-xs"
-                                        : "text-xs"
-                                    }`}
-                                  >
+                                  <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs">
                                     Particular
                                   </span>
                                 )}
-
+                                
                                 {/* WhatsApp Button */}
-                                {slotDuration !== 15 && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openWhatsApp(consultation);
-                                    }}
-                                    className="ml-2 p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                                    title="Enviar mensagem no WhatsApp"
-                                  >
-                                    <MessageCircle className="h-4 w-4" />
-                                  </button>
-                                )}
+                                <button
+                                  onClick={() => openWhatsApp(consultation)}
+                                  className="ml-2 p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                                  title="Enviar mensagem no WhatsApp"
+                                >
+                                  <MessageCircle className="h-4 w-4" />
+                                </button>
                               </div>
-                              <div
-                                className={`flex items-center space-x-2 ${
-                                  slotDuration === 15
-                                    ? "flex-col items-start space-x-0 space-y-1"
-                                    : "space-x-4"
-                                }`}
-                              >
-                                {slotDuration !== 15 && (
-                                  <div className="flex items-center space-x-4">
-                                    <p className="text-xs text-gray-600">
-                                      {consultation.service_name}
-                                    </p>
-                                    <p className="text-xs font-medium text-green-600">
-                                      {formatCurrency(consultation.value)}
-                                    </p>
-                                    {consultation.location_name && (
-                                      <p className="text-xs text-gray-500">
-                                        {consultation.location_name}
-                                      </p>
-                                    )}
-                                  </div>
-                                )}
-                                {slotDuration === 15 && (
-                                  <div className="flex items-center space-x-2">
-                                    <p className="text-xs text-gray-500">
-                                      {consultation.service_name}
-                                    </p>
-                                    <p className="text-xs font-medium text-green-600">
-                                      {formatCurrency(consultation.value)}
-                                    </p>
-                                  </div>
-                                )}
-                                {consultation.notes && slotDuration !== 15 && (
-                                  <p className="text-xs text-gray-500 mt-1 italic truncate">
-                                    "{consultation.notes}"
+                              <div className="flex items-center space-x-4">
+                                <p className="text-xs text-gray-600">
+                                  {consultation.service_name}
+                                </p>
+                                <p className="text-xs font-medium text-green-600">
+                                  {formatCurrency(consultation.value)}
+                                </p>
+                                {consultation.location_name && (
+                                  <p className="text-xs text-gray-500">
+                                    {consultation.location_name}
                                   </p>
                                 )}
                               </div>
+                              {consultation.notes && (
+                                <p className="text-xs text-gray-500 mt-1 italic truncate">
+                                  "{consultation.notes}"
+                                </p>
+                              )}
                             </div>
                           </div>
 
@@ -965,48 +875,28 @@ const SchedulingPageWithExtras: React.FC = () => {
                           <div className="flex items-center space-x-2">
                             {/* Edit Button */}
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openEditModal(consultation);
-                              }}
-                              className={`${
-                                slotDuration === 15 ? "p-0.5" : "p-1"
-                              } text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors`}
+                              onClick={() => openEditModal(consultation)}
+                              className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
                               title="Editar consulta"
                             >
-                              <Edit
-                                className={`${
-                                  slotDuration === 15 ? "h-3 w-3" : "h-4 w-4"
-                                }`}
-                              />
+                              <Edit className="h-4 w-4" />
                             </button>
 
                             {/* Status Button */}
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openStatusModal(consultation);
-                              }}
-                              className={`${
-                                slotDuration === 15
-                                  ? "px-1 py-0.5"
-                                  : "px-2 py-1"
-                              } rounded text-xs font-medium flex items-center border transition-all hover:shadow-sm ${
+                              onClick={() => openStatusModal(consultation)}
+                              className={`px-2 py-1 rounded text-xs font-medium flex items-center border transition-all hover:shadow-sm ${
                                 getStatusInfo(consultation.status).className
                               }`}
                               title="Clique para alterar o status"
                             >
                               {getStatusInfo(consultation.status).icon}
-                              {slotDuration === 15
-                                ? ""
-                                : getStatusInfo(consultation.status).text}
+                              {getStatusInfo(consultation.status).text}
                             </button>
                           </div>
                         </div>
                       ) : (
-                        <div className="text-xs text-gray-400 italic hover:text-gray-600 transition-colors">
-                          Clique para agendar • {timeSlot}
-                        </div>
+                        <div className="text-xs text-gray-400 italic">Horário livre</div>
                       )}
                     </div>
                   );
@@ -1024,16 +914,7 @@ const SchedulingPageWithExtras: React.FC = () => {
               Nenhuma consulta para este dia
             </h3>
             <p className="text-gray-600 mb-4">
-              Sua agenda está livre para{" "}
-              {format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}
-              <br />
-              <span className="text-sm">
-                Configuração atual: slots de {slotDuration} minutos
-              </span>
-            </p>
-            <p className="text-sm text-gray-500 mb-4">
-              Slots configurados para {slotDuration} minutos •{" "}
-              {timeSlots.length} horários disponíveis
+              Sua agenda está livre para {format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}
             </p>
             <button
               onClick={() => setShowNewModal(true)}
@@ -1110,10 +991,7 @@ const SchedulingPageWithExtras: React.FC = () => {
                       <option value="">Selecione um paciente</option>
                       {privatePatients.map((patient) => (
                         <option key={patient.id} value={patient.id}>
-                          {patient.name} -{" "}
-                          {patient.cpf
-                            ? formatCpf(patient.cpf)
-                            : "CPF não informado"}
+                          {patient.name} - {patient.cpf ? formatCpf(patient.cpf) : "CPF não informado"}
                         </option>
                       ))}
                     </select>
@@ -1155,7 +1033,7 @@ const SchedulingPageWithExtras: React.FC = () => {
                         <p className="font-medium text-green-800">
                           Cliente: {clientSearchResult.name}
                         </p>
-
+                        
                         {/* Dependent Selection */}
                         {dependents.length > 0 && (
                           <div className="mt-2">
@@ -1165,9 +1043,7 @@ const SchedulingPageWithExtras: React.FC = () => {
                             <select
                               value={selectedDependentId || ""}
                               onChange={(e) =>
-                                setSelectedDependentId(
-                                  e.target.value ? Number(e.target.value) : null
-                                )
+                                setSelectedDependentId(e.target.value ? Number(e.target.value) : null)
                               }
                               className="input"
                             >
@@ -1192,21 +1068,16 @@ const SchedulingPageWithExtras: React.FC = () => {
                       type="checkbox"
                       checked={formData.is_recurring}
                       onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          is_recurring: e.target.checked,
-                        }))
+                        setFormData((prev) => ({ ...prev, is_recurring: e.target.checked }))
                       }
                       className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                     />
                     <span className="ml-3 flex items-center">
                       <Repeat className="h-4 w-4 text-blue-600 mr-2" />
-                      <span className="font-medium text-blue-900">
-                        Consulta Recorrente
-                      </span>
+                      <span className="font-medium text-blue-900">Consulta Recorrente</span>
                     </span>
                   </label>
-
+                  
                   {formData.is_recurring && (
                     <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
@@ -1218,9 +1089,7 @@ const SchedulingPageWithExtras: React.FC = () => {
                           onChange={(e) =>
                             setFormData((prev) => ({
                               ...prev,
-                              recurrence_type: e.target.value as
-                                | "daily"
-                                | "weekly",
+                              recurrence_type: e.target.value as "daily" | "weekly",
                             }))
                           }
                           className="input"
@@ -1248,9 +1117,7 @@ const SchedulingPageWithExtras: React.FC = () => {
                           className="input"
                         />
                         <p className="text-xs text-blue-600 mt-1">
-                          {formData.recurrence_type === "daily"
-                            ? "A cada quantos dias"
-                            : "A cada quantas semanas"}
+                          {formData.recurrence_type === "daily" ? "A cada quantos dias" : "A cada quantas semanas"}
                         </p>
                       </div>
 
@@ -1289,10 +1156,7 @@ const SchedulingPageWithExtras: React.FC = () => {
                       type="date"
                       value={formData.date}
                       onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          date: e.target.value,
-                        }))
+                        setFormData((prev) => ({ ...prev, date: e.target.value }))
                       }
                       className="input"
                       required
@@ -1306,16 +1170,13 @@ const SchedulingPageWithExtras: React.FC = () => {
                     <select
                       value={formData.time}
                       onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          time: e.target.value,
-                        }))
+                        setFormData((prev) => ({ ...prev, time: e.target.value }))
                       }
                       className="input"
                       required
                     >
                       <option value="">Selecione um horário</option>
-                      {timeSlots.map((time) => (
+                      {generateTimeSlots(30).map((time) => (
                         <option key={time} value={time}>
                           {time}
                         </option>
@@ -1355,10 +1216,7 @@ const SchedulingPageWithExtras: React.FC = () => {
                       step="0.01"
                       value={formData.value}
                       onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          value: e.target.value,
-                        }))
+                        setFormData((prev) => ({ ...prev, value: e.target.value }))
                       }
                       className="input"
                       required
@@ -1374,10 +1232,7 @@ const SchedulingPageWithExtras: React.FC = () => {
                   <select
                     value={formData.location_id || ""}
                     onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        location_id: e.target.value,
-                      }))
+                      setFormData((prev) => ({ ...prev, location_id: e.target.value }))
                     }
                     className="input"
                   >
@@ -1398,10 +1253,7 @@ const SchedulingPageWithExtras: React.FC = () => {
                   <textarea
                     value={formData.notes}
                     onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        notes: e.target.value,
-                      }))
+                      setFormData((prev) => ({ ...prev, notes: e.target.value }))
                     }
                     className="input min-h-[80px]"
                     placeholder="Observações sobre a consulta..."
@@ -1425,13 +1277,11 @@ const SchedulingPageWithExtras: React.FC = () => {
                   }`}
                   disabled={isCreating}
                 >
-                  {isCreating
-                    ? formData.is_recurring
-                      ? "Criando Consultas..."
-                      : "Criando..."
-                    : formData.is_recurring
-                    ? "Criar Consultas Recorrentes"
-                    : "Criar Consulta"}
+                  {isCreating ? (
+                    formData.is_recurring ? "Criando Consultas..." : "Criando..."
+                  ) : (
+                    formData.is_recurring ? "Criar Consultas Recorrentes" : "Criar Consulta"
+                  )}
                 </button>
               </div>
             </form>
@@ -1464,23 +1314,17 @@ const SchedulingPageWithExtras: React.FC = () => {
                   ) : (
                     <User className="h-4 w-4 text-green-600 mr-2" />
                   )}
-                  <span className="font-medium">
-                    {selectedConsultation.client_name}
-                  </span>
+                  <span className="font-medium">{selectedConsultation.client_name}</span>
                 </div>
                 <p className="text-sm text-gray-600 mb-1">
                   <strong>Serviço:</strong> {selectedConsultation.service_name}
                 </p>
                 <p className="text-sm text-gray-600 mb-1">
                   <strong>Data/Hora:</strong>{" "}
-                  {format(
-                    new Date(selectedConsultation.date),
-                    "dd/MM/yyyy 'às' HH:mm"
-                  )}
+                  {format(new Date(selectedConsultation.date), "dd/MM/yyyy 'às' HH:mm")}
                 </p>
                 <p className="text-sm text-gray-600">
-                  <strong>Valor:</strong>{" "}
-                  {formatCurrency(selectedConsultation.value)}
+                  <strong>Valor:</strong> {formatCurrency(selectedConsultation.value)}
                 </p>
               </div>
 
@@ -1492,30 +1336,10 @@ const SchedulingPageWithExtras: React.FC = () => {
 
                 <div className="space-y-2">
                   {[
-                    {
-                      value: "scheduled",
-                      label: "Agendado",
-                      icon: <Clock className="h-4 w-4" />,
-                      color: "blue",
-                    },
-                    {
-                      value: "confirmed",
-                      label: "Confirmado",
-                      icon: <CheckCircle className="h-4 w-4" />,
-                      color: "green",
-                    },
-                    {
-                      value: "completed",
-                      label: "Concluído",
-                      icon: <Check className="h-4 w-4" />,
-                      color: "gray",
-                    },
-                    {
-                      value: "cancelled",
-                      label: "Cancelado",
-                      icon: <XCircle className="h-4 w-4" />,
-                      color: "red",
-                    },
+                    { value: "scheduled", label: "Agendado", icon: <Clock className="h-4 w-4" />, color: "blue" },
+                    { value: "confirmed", label: "Confirmado", icon: <CheckCircle className="h-4 w-4" />, color: "green" },
+                    { value: "completed", label: "Concluído", icon: <Check className="h-4 w-4" />, color: "gray" },
+                    { value: "cancelled", label: "Cancelado", icon: <XCircle className="h-4 w-4" />, color: "red" },
                   ].map((status) => (
                     <label
                       key={status.value}
@@ -1531,22 +1355,14 @@ const SchedulingPageWithExtras: React.FC = () => {
                         value={status.value}
                         checked={newStatus === status.value}
                         onChange={(e) => setNewStatus(e.target.value as any)}
-                        className={
-                          "text-" +
-                          status.color +
-                          "-600 focus:ring-" +
-                          status.color +
-                          "-500"
-                        }
+                        className={`text-${status.color}-600 focus:ring-${status.color}-500`}
                       />
                       <div className="ml-3 flex items-center">
-                        <div className={"text-" + status.color + "-600 mr-2"}>
+                        <div className={`text-${status.color}-600 mr-2`}>
                           {status.icon}
                         </div>
                         <div>
-                          <div className="font-medium text-gray-900">
-                            {status.label}
-                          </div>
+                          <div className="font-medium text-gray-900">{status.label}</div>
                         </div>
                       </div>
                     </label>
@@ -1565,14 +1381,10 @@ const SchedulingPageWithExtras: React.FC = () => {
                 </button>
                 <button
                   onClick={updateConsultationStatus}
-                  className={
-                    "btn btn-primary " +
-                    (isUpdatingStatus ? "opacity-70 cursor-not-allowed" : "")
-                  }
-                  disabled={
-                    isUpdatingStatus ||
-                    newStatus === selectedConsultation.status
-                  }
+                  className={`btn btn-primary ${
+                    isUpdatingStatus ? "opacity-70 cursor-not-allowed" : ""
+                  }`}
+                  disabled={isUpdatingStatus || newStatus === selectedConsultation.status}
                 >
                   {isUpdatingStatus ? (
                     <>
@@ -1610,8 +1422,16 @@ const SchedulingPageWithExtras: React.FC = () => {
           setTimeout(() => setSuccess(""), 3000);
         }}
       />
+
+      {/* Slot Customization Modal */}
+      <SlotCustomizationModal
+        isOpen={showSlotModal}
+        currentSlotDuration={slotDuration}
+        onClose={() => setShowSlotModal(false)}
+        onSlotDurationChange={handleSlotDurationChange}
+      />
     </div>
   );
 };
 
-export default SchedulingPageWithExtras;
+export default SchedulingPage;

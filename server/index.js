@@ -2999,77 +2999,70 @@ app.delete("/api/medical-records/:id", authenticate, authorize(["professional"])
 });
 
 // Generate medical record document
-app.post('/api/medical-records/generate-document', authenticate, authorize(['professional']), async (req, res) => {
+app.post("/api/medical-records/generate-document", authenticate, authorize(["professional"]), async (req, res) => {
   try {
     const { record_id, template_data } = req.body;
-    const professionalId = req.user.id;
 
-    // Get medical record with patient info
-    const recordQuery = await pool.query(`
+    if (!record_id || !template_data) {
+      return res.status(400).json({
+        message: "ID do prontuário e dados do template são obrigatórios",
+      });
+    }
+
+    // Validate record belongs to professional
+    const recordResult = await pool.query(
+      `
       SELECT mr.*, pp.name as patient_name, pp.cpf as patient_cpf
       FROM medical_records mr
       JOIN private_patients pp ON mr.private_patient_id = pp.id
       WHERE mr.id = $1 AND mr.professional_id = $2
-    `, [record_id, professionalId]);
+    `,
+      [record_id, req.user.id]
+    );
 
-    if (recordQuery.rows.length === 0) {
-      return res.status(404).json({ message: 'Prontuário não encontrado' });
+    if (recordResult.rows.length === 0) {
+      return res.status(404).json({ message: "Prontuário não encontrado" });
     }
 
-    const record = recordQuery.rows[0];
-
-    // Enhance template data with record and patient info
-    const enhancedTemplateData = {
-      ...template_data,
-      patientName: record.patient_name,
-      patientCpf: record.patient_cpf || '',
-      date: record.created_at,
-      chief_complaint: record.chief_complaint,
-      history_present_illness: record.history_present_illness,
-      past_medical_history: record.past_medical_history,
-      medications: record.medications,
-      allergies: record.allergies,
-      physical_examination: record.physical_examination,
-      diagnosis: record.diagnosis,
-      treatment_plan: record.treatment_plan,
-      notes: record.notes,
-      vital_signs: record.vital_signs
-    };
-
-    console.log('🔄 Generating medical record document:', {
-      record_id,
-      enhancedTemplateData,
-      professionalId
-    });
+    const record = recordResult.rows[0];
 
     // Generate document
-    const documentResult = await generateDocumentPDF('medical_record', enhancedTemplateData, professionalId);
+    const documentData = await generateDocumentPDF("medical_record", {
+      ...template_data,
+      patientName: record.patient_name,
+      patientCpf: record.patient_cpf,
+      ...record,
+    });
 
     // Save document reference
-    const documentSaveResult = await pool.query(
-      `INSERT INTO medical_documents (
+    const documentResult = await pool.query(
+      `
+      INSERT INTO medical_documents (
         professional_id, private_patient_id, title, document_type, document_url, template_data
-      ) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `,
       [
-        professionalId,
+        req.user.id,
         record.private_patient_id,
         `Prontuário - ${record.patient_name}`,
-        'medical_record',
-        documentResult.url,
-        JSON.stringify(enhancedTemplateData)
+        "medical_record",
+        documentData.url,
+        JSON.stringify(template_data),
       ]
     );
 
-    console.log('✅ Medical record document generated:', documentSaveResult.rows[0].id);
+    console.log("✅ Medical record document generated:", documentResult.rows[0].id);
 
     res.json({
-      message: 'Documento gerado com sucesso',
-      documentUrl: documentResult.url,
-      document: documentSaveResult.rows[0]
+      message: "Documento gerado com sucesso",
+      documentUrl: documentData.url,
+      document: documentResult.rows[0],
     });
   } catch (error) {
-    console.error('❌ Error generating medical record document:', error);
-    res.status(500).json({ message: 'Erro ao gerar documento do prontuário' });
+    console.error("❌ Error generating medical record document:", error);
+    res.status(500).json({ message: "Erro ao gerar documento do prontuário" });
   }
 });
 
