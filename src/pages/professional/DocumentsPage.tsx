@@ -13,6 +13,7 @@ import {
   Check,
   AlertCircle,
 } from "lucide-react";
+import DocumentPreview from "../../components/DocumentPreview";
 
 type DocumentType =
   | "certificate"
@@ -50,6 +51,14 @@ const DocumentsPage: React.FC = () => {
   const [success, setSuccess] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+
+  // Document preview state
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewData, setPreviewData] = useState<{
+    title: string;
+    htmlContent: string;
+    documentData: any;
+  } | null>(null);
 
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -292,72 +301,32 @@ const DocumentsPage: React.FC = () => {
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      console.log('🔄 [DOCUMENTS] Creating medical document via API...');
+      console.log('🔄 [DOCUMENTS] Generating document preview...');
 
-      const response = await fetch(`${apiUrl}/api/documents/medical`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          title: formData.title,
+      // Generate HTML content using existing templates
+      const { generateDocumentHTML } = await import('../../utils/documentTemplates');
+      const htmlContent = generateDocumentHTML(formData.document_type, formData);
+
+      console.log('✅ [DOCUMENTS] HTML content generated');
+
+      // Set preview data and open preview modal
+      setPreviewData({
+        title: formData.title,
+        htmlContent: htmlContent,
+        documentData: {
           document_type: formData.document_type,
+          patient_name: formData.patientName,
+          patient_cpf: formData.patientCpf,
+          professional_name: formData.professionalName,
           private_patient_id: parseInt(formData.patient_id),
-          template_data: formData,
-        }),
+          ...formData
+        }
       });
 
-      console.log('📡 [DOCUMENTS] Document creation response status:', response.status);
+      setShowPreview(true);
+      closeModal();
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ [DOCUMENTS] Document creation error:', errorText);
-        
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch (e) {
-          throw new Error(`Erro de comunicação com o servidor: ${response.status}`);
-        }
-        throw new Error(errorData.message || "Erro ao criar documento");
-      }
-
-      const result = await response.json();
-      console.log('✅ [DOCUMENTS] Document created successfully:', result);
-      
-      const { title, documentUrl } = result;
-
-      // Clean filename for download
-      const fileName = title
-        .replace(/[^a-zA-Z0-9\s]/g, "")
-        .replace(/\s+/g, "_");
-
-      // Create download link that opens in new tab
-      const link = document.createElement("a");
-      link.href = documentUrl;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-
-      // For desktop browsers, try to force download
-      if (window.navigator.userAgent.indexOf("Mobile") === -1) {
-        link.download = `${fileName}.html`;
-      }
-
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      setSuccess(
-        "Documento criado e aberto em nova aba. Use Ctrl+S (ou Cmd+S no Mac) para salvar ou imprimir."
-      );
-      
-      // Refresh documents list
-      await fetchData();
-
-      setTimeout(() => {
-        closeModal();
-      }, 2000);
+      setSuccess("Documento gerado! Visualize e salve em PDF.");
     } catch (error) {
       console.error('❌ [DOCUMENTS] Error in handleSubmit:', error);
       setError(
@@ -366,6 +335,13 @@ const DocumentsPage: React.FC = () => {
     } finally {
       setIsCreating(false);
     }
+  };
+
+  const handlePreviewClose = () => {
+    setShowPreview(false);
+    setPreviewData(null);
+    // Refresh documents list after closing preview
+    fetchData();
   };
 
   const confirmDelete = (document: MedicalDocument) => {
@@ -965,6 +941,17 @@ const DocumentsPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Document Preview Modal */}
+      {showPreview && previewData && (
+        <DocumentPreview
+          isOpen={showPreview}
+          onClose={handlePreviewClose}
+          documentTitle={previewData.title}
+          htmlContent={previewData.htmlContent}
+          documentData={previewData.documentData}
+        />
       )}
     </div>
   );
