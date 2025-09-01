@@ -11,6 +11,21 @@ import { authenticate, authorize } from "./middleware/auth.js";
 import createUpload from "./middleware/upload.js";
 import { generateDocumentPDF } from "./utils/documentGenerator.js";
 import { MercadoPagoConfig, Preference } from "mercadopago";
+import authRoutes from './routes/auth.js';
+import consultationRoutes from './routes/consultations.js';
+import userRoutes from './routes/users.js';
+import dependentRoutes from './routes/dependents.js';
+import serviceRoutes from './routes/services.js';
+import reportRoutes from './routes/reports.js';
+import professionalRoutes from './routes/professional.js';
+import clientRoutes from './routes/clients.js';
+import privatePatientRoutes from './routes/privatePatients.js';
+import medicalRecordRoutes from './routes/medicalRecords.js';
+import attendanceLocationRoutes from './routes/attendanceLocations.js';
+import adminRoutes from './routes/admin.js';
+import uploadRoutes from './routes/upload.js';
+import paymentRoutes from './routes/payments.js';
+import documentRoutes from './routes/documents.js';
 
 // ES6 module compatibility
 const __filename = fileURLToPath(import.meta.url);
@@ -526,6 +541,23 @@ const getProductionUrls = () => {
       : "http://localhost:3001/api/webhook/mercadopago"
   };
 };
+
+// Route handlers
+app.use('/api/auth', authRoutes);
+app.use('/api/consultations', consultationRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/dependents', dependentRoutes);
+app.use('/api/services', serviceRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/professional', professionalRoutes);
+app.use('/api/clients', clientRoutes);
+app.use('/api/private-patients', privatePatientRoutes);
+app.use('/api/medical-records', medicalRecordRoutes);
+app.use('/api/attendance-locations', attendanceLocationRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api', uploadRoutes);
+app.use('/api', paymentRoutes);
+app.use('/api/documents', documentRoutes);
 
 // ===== AUTHENTICATION ROUTES =====
 

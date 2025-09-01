@@ -60,6 +60,10 @@ const DocumentsPage: React.FC = () => {
     documentData: any;
   } | null>(null);
 
+  // Saved documents state
+  const [savedDocuments, setSavedDocuments] = useState<any[]>([]);
+  const [showSavedDocuments, setShowSavedDocuments] = useState(false);
+
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<MedicalDocument | null>(null);
@@ -106,6 +110,7 @@ const DocumentsPage: React.FC = () => {
 
   useEffect(() => {
     fetchData();
+    fetchSavedDocuments();
   }, []);
 
   const fetchData = async () => {
@@ -161,6 +166,31 @@ const DocumentsPage: React.FC = () => {
       setError("Não foi possível carregar os dados dos documentos");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchSavedDocuments = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const apiUrl = getApiUrl();
+
+      console.log('🔄 [DOCUMENTS] Fetching saved PDF documents...');
+
+      const response = await fetch(`${apiUrl}/api/documents/saved`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const savedData = await response.json();
+        console.log('✅ [DOCUMENTS] Saved PDF documents loaded:', savedData.length);
+        setSavedDocuments(savedData);
+      } else {
+        console.warn('⚠️ [DOCUMENTS] Saved documents not available:', response.status);
+        setSavedDocuments([]);
+      }
+    } catch (error) {
+      console.error("❌ [DOCUMENTS] Error fetching saved documents:", error);
+      setSavedDocuments([]);
     }
   };
 
@@ -342,6 +372,7 @@ const DocumentsPage: React.FC = () => {
     setPreviewData(null);
     // Refresh documents list after closing preview
     fetchData();
+    fetchSavedDocuments();
   };
 
   const confirmDelete = (document: MedicalDocument) => {
@@ -536,6 +567,33 @@ const DocumentsPage: React.FC = () => {
     }
   };
 
+  // Function to delete saved document
+  async function deleteSavedDocument(documentId: number) {
+    if (!confirm('Tem certeza que deseja excluir este documento?')) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      const apiUrl = getApiUrl();
+
+      const response = await fetch(`${apiUrl}/api/documents/saved/${documentId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erro ao excluir documento');
+      }
+
+      await fetchSavedDocuments();
+      setSuccess('Documento excluído com sucesso!');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Erro ao excluir documento');
+    }
+  }
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -546,14 +604,24 @@ const DocumentsPage: React.FC = () => {
           <p className="text-gray-600">Gere e gerencie documentos médicos para seus pacientes</p>
         </div>
 
-        <button
-          onClick={openCreateModal}
-          className="btn btn-primary flex items-center"
-          disabled={patients.length === 0}
-        >
-          <Plus className="h-5 w-5 mr-2" />
-          Novo Documento
-        </button>
+        <div className="flex space-x-3">
+          <button
+            onClick={() => setShowSavedDocuments(!showSavedDocuments)}
+            className="btn btn-outline flex items-center"
+          >
+            <FileText className="h-5 w-5 mr-2" />
+            Documentos Salvos ({savedDocuments.length})
+          </button>
+          
+          <button
+            onClick={openCreateModal}
+            className="btn btn-primary flex items-center"
+            disabled={patients.length === 0}
+          >
+            <Plus className="h-5 w-5 mr-2" />
+            Novo Documento
+          </button>
+        </div>
       </div>
 
       {/* Info about patients requirement */}
@@ -605,6 +673,131 @@ const DocumentsPage: React.FC = () => {
       {success && (
         <div className="bg-green-50 text-green-600 p-4 rounded-lg mb-6">
           {success}
+        </div>
+      )}
+
+      {/* Saved Documents Section */}
+      {showSavedDocuments && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
+          <div className="p-6 border-b border-gray-200">
+            <h2 className="text-lg font-semibold flex items-center">
+              <FileText className="h-5 w-5 text-red-600 mr-2" />
+              Documentos Salvos em PDF
+            </h2>
+          </div>
+
+          {savedDocuments.length === 0 ? (
+            <div className="text-center py-8">
+              <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Nenhum documento salvo
+              </h3>
+              <p className="text-gray-600">
+                Os documentos gerados em PDF aparecerão aqui.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Documento
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Paciente
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Tipo
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Data de Criação
+                    </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Ações
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {savedDocuments.map((document) => {
+                    const typeInfo = getDocumentTypeInfo(document.document_type);
+                    return (
+                      <tr key={document.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-10 w-10">
+                              <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center">
+                                <FileText className="h-5 w-5 text-green-600" />
+                              </div>
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-medium text-gray-900">
+                                {document.title}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <User className="h-4 w-4 text-gray-400 mr-2" />
+                            <div>
+                              <div className="text-sm text-gray-900">
+                                {document.patient_name}
+                              </div>
+                              {document.patient_cpf && (
+                                <div className="text-xs text-gray-500">
+                                  CPF: {document.patient_cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">
+                            {typeInfo.icon} {typeInfo.label}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center text-sm text-gray-500">
+                            <Calendar className="h-3 w-3 mr-1" />
+                            {formatDate(document.created_at)}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <div className="flex items-center justify-end space-x-2">
+                            <a
+                              href={document.document_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-900"
+                              title="Visualizar PDF"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </a>
+                            <a
+                              href={document.document_url}
+                              download
+                              className="text-green-600 hover:text-green-900"
+                              title="Download PDF"
+                            >
+                              <Download className="h-4 w-4" />
+                            </a>
+                            <button
+                              onClick={() => deleteSavedDocument(document.id)}
+                              className="text-red-600 hover:text-red-900"
+                              title="Excluir"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
