@@ -11,8 +11,6 @@ import { authenticate, authorize } from "./middleware/auth.js";
 import createUpload from "./middleware/upload.js";
 import { generateDocumentPDF } from "./utils/documentGenerator.js";
 import { MercadoPagoConfig, Preference } from "mercadopago";
-import authRoutes from './routes/auth.js';
-import consultationRoutes from './routes/consultations.js';
 import documentsRoutes from './routes/documents.js';
 import pdfRoutes from './routes/pdf.js';
 
