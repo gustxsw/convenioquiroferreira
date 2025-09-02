@@ -940,6 +940,7 @@ const SchedulingPage: React.FC = () => {
                     Tipo de Paciente *
                   </label>
                   <select
+                    value={formData.patient_type}
                     onChange={(e) =>
                       setFormData((prev) => ({
                         ...prev,
@@ -1213,16 +1214,36 @@ const SchedulingPage: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Local de Atendimento
-                  <input
+                  </label>
                   <select
                     value={formData.location_id}
                     onChange={(e) =>
-                      setFormData(prev => ({ ...prev, location_id: e.target.value }))
+                      setFormData((prev) => ({ ...prev, location_id: e.target.value }))
                     }
                     className="input"
                   >
                     <option value="">Selecione um local</option>
                     {attendanceLocations.map((location) => (
+                      <option key={location.id} value={location.id}>
+                        {location.name} - {location.address}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Observações
+                  </label>
+                  <textarea
+                    value={formData.notes}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, notes: e.target.value }))
+                    }
+                    className="input min-h-[80px]"
+                    placeholder="Observações sobre a consulta..."
+                  />
                 </div>
               </div>
 
