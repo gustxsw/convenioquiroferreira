@@ -73,6 +73,9 @@ const DocumentsPage: React.FC = () => {
     type?: string;
   } | null>(null);
 
+  // PDF generation state
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState<number | null>(null);
+  const [pdfError, setPdfError] = useState("");
   // Form state
   const [formData, setFormData] = useState({
     document_type: "certificate" as DocumentType,
@@ -403,6 +406,109 @@ const DocumentsPage: React.FC = () => {
     setShowDeleteConfirm(false);
   };
 
+  const generatePDFFromDocument = async (document: MedicalDocument) => {
+    try {
+      setIsGeneratingPdf(document.id);
+      setPdfError("");
+      setError("");
+
+      console.log('🔄 [DOCUMENTS] Generating PDF for document:', document.id);
+
+      // Load html2pdf library dynamically
+      await loadHtml2Pdf();
+
+      // Fetch the HTML content from the document URL
+      const response = await fetch(document.document_url);
+      if (!response.ok) {
+        throw new Error('Não foi possível carregar o documento original');
+      }
+
+      const htmlContent = await response.text();
+      console.log('✅ [DOCUMENTS] HTML content loaded for PDF generation');
+
+      // Create a temporary container for the HTML content
+      const tempContainer = document.createElement('div');
+      tempContainer.innerHTML = htmlContent;
+      tempContainer.style.position = 'absolute';
+      tempContainer.style.left = '-9999px';
+      tempContainer.style.top = '-9999px';
+      tempContainer.style.width = '210mm'; // A4 width
+      document.body.appendChild(tempContainer);
+
+      // Configure PDF options
+      const options = {
+        margin: [10, 10, 10, 10],
+        filename: `${document.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_')}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { 
+          scale: 2,
+          useCORS: true,
+          letterRendering: true,
+          allowTaint: false
+        },
+        jsPDF: { 
+          unit: 'mm', 
+          format: 'a4', 
+          orientation: 'portrait',
+          compress: true
+        }
+      };
+
+      console.log('🔄 [DOCUMENTS] Generating PDF with options:', options);
+
+      // Generate and download PDF
+      await window.html2pdf()
+        .set(options)
+        .from(tempContainer)
+        .save();
+
+      console.log('✅ [DOCUMENTS] PDF generated and downloaded successfully');
+
+      // Clean up temporary container
+      document.body.removeChild(tempContainer);
+
+      setSuccess('PDF gerado e baixado com sucesso!');
+
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSuccess('');
+      }, 3000);
+
+    } catch (error) {
+      console.error('❌ [DOCUMENTS] Error generating PDF:', error);
+      setPdfError(error instanceof Error ? error.message : 'Erro ao gerar PDF');
+      
+      // Clear error after 5 seconds
+      setTimeout(() => {
+        setPdfError('');
+      }, 5000);
+    } finally {
+      setIsGeneratingPdf(null);
+    }
+  };
+
+  // Load html2pdf library dynamically
+  const loadHtml2Pdf = (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if (window.html2pdf) {
+        resolve();
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+      script.onload = () => {
+        console.log('✅ html2pdf.js loaded successfully');
+        resolve();
+      };
+      script.onerror = () => {
+        console.error('❌ Failed to load html2pdf.js');
+        reject(new Error('Falha ao carregar biblioteca de PDF'));
+      };
+      document.head.appendChild(script);
+    });
+  };
+
   const deleteDocument = async () => {
     if (!documentToDelete) return;
 
@@ -657,6 +763,13 @@ const DocumentsPage: React.FC = () => {
         </div>
       )}
 
+      {pdfError && (
+        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 flex items-center">
+          <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
+          {pdfError}
+        </div>
+      )}
+
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
         {isLoading ? (
           <div className="text-center py-12">
@@ -759,16 +872,32 @@ const DocumentsPage: React.FC = () => {
                             onClick={() => openDocumentView(document)}
                             className="text-blue-600 hover:text-blue-900"
                             title="Visualizar"
+                            disabled={isGeneratingPdf === document.id}
                           >
                             <Eye className="h-4 w-4" />
                           </button>
+                          <button
+                            onClick={() => generatePDFFromDocument(document)}
+                            className={`text-green-600 hover:text-green-900 ${
+                              isGeneratingPdf === document.id ? 'opacity-50 cursor-not-allowed' : ''
+                            }`}
+                            title="Gerar PDF"
+                            disabled={isGeneratingPdf === document.id}
+                          >
+                            {isGeneratingPdf === document.id ? (
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
+                            ) : (
+                              <Download className="h-4 w-4" />
+                            )}
+                          </button>
                           <a
                             href={document.document_url}
-                            download
-                            className="text-green-600 hover:text-green-900"
-                            title="Download"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-purple-600 hover:text-purple-900"
+                            title="Abrir Original"
                           >
-                            <Download className="h-4 w-4" />
+                            <Eye className="h-4 w-4" />
                           </a>
                           <button
                             onClick={() => confirmDelete(document)}
