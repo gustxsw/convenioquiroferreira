@@ -264,23 +264,15 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
     ` : ''}
 
     <div class="signature">
-        <div class="signature-line"></div>
-        <div>
-            <strong>${professionalData.name}</strong><br>
-            ${professionalData.specialty}<br>
-            ${professionalData.crm ? `Registro Profissional: ${professionalData.crm}` : ''}
-        </div>
-    </div>
-
-    <div class="signature">
         ${signatureUrl ? 
           `<img src="${signatureUrl}" alt="Assinatura" class="signature-image" />` : 
           '<div class="signature-line"></div>'
         }
+        <div class="signature-line"></div>
         <div>
             <strong>${professionalData.name}</strong><br>
             ${professionalData.specialty}<br>
-            ${professionalData.crm ? `Registro Profissional: ${professionalData.crm}` : ''}
+            ${professionalData.crm ? `Registro: ${professionalData.crm}` : ''}
         </div>
     </div>
 
