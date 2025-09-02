@@ -42,6 +42,8 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
+  const { user } = useAuth();
 
   // Get API URL
   const getApiUrl = () => {
@@ -53,6 +55,31 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
     }
     return "http://localhost:3001";
   };
+
+  // Fetch professional signature
+  useEffect(() => {
+    const fetchSignature = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const apiUrl = getApiUrl();
+
+        const response = await fetch(`${apiUrl}/api/professionals/${user?.id}/signature`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+          const signatureData = await response.json();
+          setSignatureUrl(signatureData.signature_url);
+        }
+      } catch (error) {
+        console.warn('Could not load signature:', error);
+      }
+    };
+
+    if (isOpen && user?.id) {
+      fetchSignature();
+    }
+  }, [isOpen, user?.id]);
 
   // Generate HTML content for the medical record
   const generateHTML = () => {
@@ -192,6 +219,12 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
             width: 300px;
             margin: 40px auto 10px;
         }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 20px auto 10px;
+            display: block;
+        }
         .footer {
             margin-top: 40px;
             text-align: center;
@@ -235,7 +268,19 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
         <div>
             <strong>${professionalData.name}</strong><br>
             ${professionalData.specialty}<br>
-            ${professionalData.crm ? `CRM: ${professionalData.crm}` : ''}
+            ${professionalData.crm ? `Registro Profissional: ${professionalData.crm}` : ''}
+        </div>
+    </div>
+
+    <div class="signature">
+        ${signatureUrl ? 
+          `<img src="${signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
+        <div>
+            <strong>${professionalData.name}</strong><br>
+            ${professionalData.specialty}<br>
+            ${professionalData.crm ? `Registro Profissional: ${professionalData.crm}` : ''}
         </div>
     </div>
 
