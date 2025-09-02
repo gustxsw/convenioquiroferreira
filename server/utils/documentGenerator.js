@@ -305,7 +305,7 @@ const generateCertificateHTML = (data) => {
             <div>
                 <strong>${sanitizedData.professionalName}</strong><br>
                 ${sanitizedData.professionalSpecialty}<br>
-                ${sanitizedData.crm ? `Registro: ${sanitizedData.crm}` : ''}
+                ${sanitizedData.crm ? `Registro Profissional: ${sanitizedData.crm}` : ''}
             </div>
         </div>
     `;
@@ -354,7 +354,7 @@ const generatePrescriptionHTML = (data) => {
             <div>
                 <strong>${sanitizedData.professionalName}</strong><br>
                 ${sanitizedData.professionalSpecialty}<br>
-                ${sanitizedData.crm ? `Registro: ${sanitizedData.crm}` : ''}
+                ${sanitizedData.crm ? `Registro Profissional: ${sanitizedData.crm}` : ''}
             </div>
         </div>
     `;
@@ -426,7 +426,7 @@ const generateConsentFormHTML = (data) => {
                 <div>
                     <strong>Profissional Responsável</strong><br>
                     ${sanitizedData.professionalName}<br>
-                    ${sanitizedData.crm ? `Registro: ${sanitizedData.crm}` : ''}
+                    ${sanitizedData.crm ? `Registro Profissional: ${sanitizedData.crm}` : ''}
                 </div>
             </div>
         </div>
@@ -477,7 +477,7 @@ const generateExamRequestHTML = (data) => {
             <div>
                 <strong>${sanitizedData.professionalName}</strong><br>
                 ${sanitizedData.professionalSpecialty}<br>
-                ${sanitizedData.crm ? `Registro: ${sanitizedData.crm}` : ''}
+                ${sanitizedData.crm ? `Registro Profissional: ${sanitizedData.crm}` : ''}
             </div>
         </div>
     `;
@@ -526,7 +526,7 @@ const generateDeclarationHTML = (data) => {
             <div>
                 <strong>${sanitizedData.professionalName}</strong><br>
                 ${sanitizedData.professionalSpecialty}<br>
-                ${sanitizedData.crm ? `Registro: ${sanitizedData.crm}` : ''}
+                ${sanitizedData.crm ? `Registro Profissional: ${sanitizedData.crm}` : ''}
             </div>
         </div>
     `;
@@ -613,7 +613,7 @@ const generateLGPDHTML = (data) => {
                 <div>
                     <strong>Profissional Responsável</strong><br>
                     ${sanitizedData.professionalName}<br>
-                    ${sanitizedData.crm ? `Registro: ${sanitizedData.crm}` : ''}
+                    ${sanitizedData.crm ? `Registro Profissional: ${sanitizedData.crm}` : ''}
                 </div>
             </div>
         </div>
@@ -663,7 +663,7 @@ const generateGenericHTML = (data) => {
             <div>
                 <strong>${sanitizedData.professionalName}</strong><br>
                 ${sanitizedData.professionalSpecialty}<br>
-                ${sanitizedData.crm ? `Registro: ${sanitizedData.crm}` : ''}
+                ${sanitizedData.crm ? `Registro Profissional: ${sanitizedData.crm}` : ''}
             </div>
         </div>
     `;
