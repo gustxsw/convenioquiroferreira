@@ -11,6 +11,8 @@ import { authenticate, authorize } from "./middleware/auth.js";
 import createUpload from "./middleware/upload.js";
 import { generateDocumentPDF } from "./utils/documentGenerator.js";
 import { MercadoPagoConfig, Preference } from "mercadopago";
+import documentsRoutes from "./routes/documents.js";
+import pdfRoutes from "./routes/pdf.js";
 
 // ES6 module compatibility
 const __filename = fileURLToPath(import.meta.url);
@@ -39,6 +41,10 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+// Import route modules
+app.use("/api/documents", documentsRoutes);
+app.use("/api/pdf", pdfRoutes);
 
 // Serve static files in production
 if (process.env.NODE_ENV === "production") {
