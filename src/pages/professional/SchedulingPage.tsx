@@ -1225,7 +1225,7 @@ const SchedulingPage: React.FC = () => {
                     <option value="">Selecione um local</option>
                     {attendanceLocations.map((location) => (
                       <option key={location.id} value={location.id}>
-                        {location.name} {location.is_default && '(Padrão)'}
+                        {location.name}
                       </option>
                     ))}
                   </select>
@@ -1241,7 +1241,8 @@ const SchedulingPage: React.FC = () => {
                     onChange={(e) =>
                       setFormData((prev) => ({ ...prev, notes: e.target.value }))
                     }
-                    className="input min-h-[80px]"
+                    className="input"
+                    rows={3}
                     placeholder="Observações sobre a consulta..."
                   />
                 </div>
