@@ -723,7 +723,7 @@ const ManageUsersPage: React.FC = () => {
                             <div className="mb-1">{user.category_name}</div>
                           )}
                           {user.crm && (
-                            <div className="text-gray-500 text-xs">CRM: {user.crm}</div>
+                            <div className="text-gray-500 text-xs">Registro: {user.crm}</div>
                           )}
                           {user.professional_percentage && user.roles?.includes('professional') && (
                             <div className="text-blue-600 text-xs">{user.professional_percentage}%</div>
@@ -984,7 +984,7 @@ const ManageUsersPage: React.FC = () => {
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          CRM/Registro
+                          Registro Profissional
                         </label>
                         <input
                           type="text"
@@ -992,7 +992,7 @@ const ManageUsersPage: React.FC = () => {
                           value={formData.crm}
                           onChange={handleInputChange}
                           className="input"
-                          placeholder="Ex: 12345/GO"
+                          placeholder="Ex: CREFITO 12345/GO, CRM 12345/GO"
                         />
                       </div>
                     </div>

@@ -293,7 +293,7 @@ export const generateCertificateHTML = (data) => {
             <div>
                 <strong>${sanitizedData.professionalName}</strong><br>
                 ${sanitizedData.professionalSpecialty}<br>
-                ${sanitizedData.crm ? `CRM: ${sanitizedData.crm}` : ''}
+                ${sanitizedData.crm ? `Registro: ${sanitizedData.crm}` : ''}
             </div>
         </div>
     `;
@@ -340,7 +340,7 @@ export const generatePrescriptionHTML = (data) => {
             <div>
                 <strong>${sanitizedData.professionalName}</strong><br>
                 ${sanitizedData.professionalSpecialty}<br>
-                ${sanitizedData.crm ? `CRM: ${sanitizedData.crm}` : ''}
+                ${sanitizedData.crm ? `Registro: ${sanitizedData.crm}` : ''}
             </div>
         </div>
     `;
@@ -444,7 +444,7 @@ export const generateMedicalRecordHTML = (data) => {
             <div>
                 <strong>${sanitizedData.professionalName}</strong><br>
                 ${sanitizedData.professionalSpecialty}<br>
-                ${sanitizedData.crm ? `CRM: ${sanitizedData.crm}` : ''}
+                ${sanitizedData.crm ? `Registro: ${sanitizedData.crm}` : ''}
             </div>
         </div>
     `;
@@ -515,7 +515,7 @@ export const generateConsentFormHTML = (data) => {
                     <strong>Profissional Responsável</strong><br>
                     ${sanitizedData.professionalName}<br>
                     ${sanitizedData.crm ? `CRM: ${sanitizedData.crm}` : ''}
-                </div>
+                ${sanitizedData.crm ? `Registro: ${sanitizedData.crm}` : ''}
             </div>
         </div>
     `;
@@ -563,7 +563,7 @@ export const generateExamRequestHTML = (data) => {
             <div>
                 <strong>${sanitizedData.professionalName}</strong><br>
                 ${sanitizedData.professionalSpecialty}<br>
-                ${sanitizedData.crm ? `CRM: ${sanitizedData.crm}` : ''}
+                ${sanitizedData.crm ? `Registro: ${sanitizedData.crm}` : ''}
             </div>
         </div>
     `;
@@ -610,7 +610,7 @@ export const generateDeclarationHTML = (data) => {
             <div>
                 <strong>${sanitizedData.professionalName}</strong><br>
                 ${sanitizedData.professionalSpecialty}<br>
-                ${sanitizedData.crm ? `CRM: ${sanitizedData.crm}` : ''}
+                ${sanitizedData.crm ? `Registro: ${sanitizedData.crm}` : ''}
             </div>
         </div>
     `;
@@ -743,7 +743,7 @@ export const generateGenericHTML = (data) => {
             <div>
                 <strong>${sanitizedData.professionalName}</strong><br>
                 ${sanitizedData.professionalSpecialty}<br>
-                ${sanitizedData.crm ? `CRM: ${sanitizedData.crm}` : ''}
+                ${sanitizedData.crm ? `Registro: ${sanitizedData.crm}` : ''}
             </div>
         </div>
     `;

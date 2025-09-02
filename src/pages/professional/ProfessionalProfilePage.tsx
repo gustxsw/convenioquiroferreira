@@ -790,14 +790,14 @@ const ProfessionalProfilePage: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Telefone
+                      Registro Profissional
                     </label>
                     <input
                       type="text"
                       value={locationData.phone}
                       onChange={(e) => setLocationData(prev => ({ ...prev, phone: formatPhone(e.target.value) }))}
                       className="input"
-                      placeholder="(00) 00000-0000"
+                      placeholder="Ex: CREFITO 12345/GO, CRM 12345/GO"
                     />
                   </div>
                 </div>

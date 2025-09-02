@@ -907,7 +907,7 @@ const DocumentsPage: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      CRM/Registro *
+                      Registro Profissional *
                     </label>
                     <input
                       type="text"
@@ -915,7 +915,7 @@ const DocumentsPage: React.FC = () => {
                       value={formData.crm}
                       onChange={handleInputChange}
                       className="input"
-                      placeholder="Ex: 12345/GO"
+                      placeholder="Ex: CREFITO 12345/GO, CRM 12345/GO"
                       required
                     />
                   </div>
