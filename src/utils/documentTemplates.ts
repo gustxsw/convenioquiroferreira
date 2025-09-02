@@ -50,6 +50,12 @@ const templates = {
             margin-top: 60px;
             text-align: center;
         }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 0 auto 10px;
+            display: block;
+        }
         .signature-line {
             border-top: 1px solid #333;
             width: 300px;
@@ -95,7 +101,7 @@ const templates = {
     </div>
 
     <div class="signature">
-        <div class="signature-line"></div>
+        ${data.signatureUrl ? `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : '<div class="signature-line"></div>'}
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
@@ -168,6 +174,12 @@ const templates = {
             margin-top: 60px;
             text-align: center;
         }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 0 auto 10px;
+            display: block;
+        }
         .signature-line {
             border-top: 1px solid #333;
             width: 300px;
@@ -205,7 +217,7 @@ const templates = {
     </div>
 
     <div class="signature">
-        <div class="signature-line"></div>
+        ${data.signatureUrl ? `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : '<div class="signature-line"></div>'}
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
@@ -274,6 +286,12 @@ const templates = {
             margin-top: 60px;
             display: flex;
             justify-content: space-between;
+        }
+        .signature-image {
+            max-width: 150px;
+            max-height: 50px;
+            margin: 0 auto 10px;
+            display: block;
         }
         .signature-box {
             text-align: center;
@@ -345,6 +363,7 @@ const templates = {
             <div class="signature-line"></div>
             <div>
                 <strong>Profissional Responsável</strong><br>
+                ${data.signatureUrl ? `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : ''}
                 ${data.professionalName}<br>
                 ${data.crm ? `CRM: ${data.crm}` : ''}
             </div>
@@ -411,6 +430,12 @@ const templates = {
             margin-top: 60px;
             text-align: center;
         }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 0 auto 10px;
+            display: block;
+        }
         .signature-line {
             border-top: 1px solid #333;
             width: 300px;
@@ -451,7 +476,7 @@ ${data.content}
     </div>
 
     <div class="signature">
-        <div class="signature-line"></div>
+        ${data.signatureUrl ? `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : '<div class="signature-line"></div>'}
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
@@ -518,6 +543,12 @@ ${data.content}
             margin-top: 60px;
             text-align: center;
         }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 0 auto 10px;
+            display: block;
+        }
         .signature-line {
             border-top: 1px solid #333;
             width: 300px;
@@ -555,7 +586,7 @@ ${data.content}
     </div>
 
     <div class="signature">
-        <div class="signature-line"></div>
+        ${data.signatureUrl ? `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : '<div class="signature-line"></div>'}
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
@@ -623,6 +654,12 @@ ${data.content}
             margin-top: 60px;
             display: flex;
             justify-content: space-between;
+        }
+        .signature-image {
+            max-width: 150px;
+            max-height: 50px;
+            margin: 0 auto 10px;
+            display: block;
         }
         .signature-box {
             text-align: center;
@@ -711,6 +748,7 @@ ${data.content}
             <div class="signature-line"></div>
             <div>
                 <strong>Profissional Responsável</strong><br>
+                ${data.signatureUrl ? `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : ''}
                 ${data.professionalName}<br>
                 ${data.crm ? `CRM: ${data.crm}` : ''}
             </div>
@@ -776,6 +814,12 @@ ${data.content}
             margin-top: 60px;
             text-align: center;
         }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 0 auto 10px;
+            display: block;
+        }
         .signature-line {
             border-top: 1px solid #333;
             width: 300px;
@@ -813,7 +857,7 @@ ${data.content}
     </div>
 
     <div class="signature">
-        <div class="signature-line"></div>
+        ${data.signatureUrl ? `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : '<div class="signature-line"></div>'}
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
