@@ -651,14 +651,6 @@ const SchedulingPage: React.FC = () => {
           </button>
           
           <button
-            onClick={() => setShowSlotModal(true)}
-            className="btn btn-outline flex items-center"
-          >
-            <Settings className="h-5 w-5 mr-2" />
-            Slots ({slotDuration}min)
-          </button>
-
-          <button
             onClick={() => setShowNewModal(true)}
             className="btn btn-primary flex items-center"
           >
