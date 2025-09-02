@@ -738,3 +738,177 @@ ${data.content}
         </div>
 
         <div class="section">
+            <h4>5. CONSENTIMENTO</h4>
+            <p>Ao assinar este termo, declaro que:</p>
+            <ul>
+                <li>Fui informado(a) sobre o tratamento dos meus dados pessoais;</li>
+                <li>Compreendo as finalidades do tratamento;</li>
+                <li>Consinto com o tratamento dos meus dados conforme descrito;</li>
+                <li>Posso revogar este consentimento a qualquer momento.</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="signature-area">
+        <div class="signature-box">
+            <div class="signature-line"></div>
+            <div>
+                <strong>Paciente ou Responsável</strong><br>
+                ${data.patientName}
+            </div>
+        </div>
+        
+        <div class="signature-box">
+            ${data.signatureUrl ? 
+              `<img src="${data.signatureUrl}" alt="Assinatura" style="max-width: 150px; max-height: 50px; margin: 20px auto 10px; display: block;" />` : 
+              '<div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>'
+            }
+            <div>
+                <strong>Profissional Responsável</strong><br>
+                ${data.professionalName}<br>
+                ${data.crm ? `Registro: ${data.crm}` : ''}
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
+        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
+        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
+    </div>
+</body>
+</html>`,
+
+  other: (data: any) => `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${data.title}</title>
+    <style>
+        body {
+            font-family: 'Times New Roman', serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 40px;
+            background: white;
+            color: #333;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 2px solid #c11c22;
+            padding-bottom: 20px;
+        }
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #c11c22;
+            margin-bottom: 10px;
+        }
+        .title {
+            font-size: 20px;
+            font-weight: bold;
+            margin: 30px 0;
+            text-align: center;
+        }
+        .patient-info {
+            background: #f9f9f9;
+            padding: 15px;
+            border-left: 4px solid #c11c22;
+            margin: 20px 0;
+        }
+        .content {
+            margin: 30px 0;
+            text-align: justify;
+            font-size: 14px;
+            min-height: 200px;
+            white-space: pre-line;
+        }
+        .signature {
+            margin-top: 60px;
+            text-align: center;
+        }
+        .signature-line {
+            border-top: 1px solid #333;
+            width: 300px;
+            margin: 40px auto 10px;
+        }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 20px auto 10px;
+            display: block;
+        }
+        .footer {
+            margin-top: 40px;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+            border-top: 1px solid #ddd;
+            padding-top: 20px;
+        }
+        @media print {
+            body { margin: 0; padding: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
+        <div>Sistema de Saúde e Bem-Estar</div>
+    </div>
+
+    <div class="title">${data.title}</div>
+
+    <div class="patient-info">
+        <strong>Paciente:</strong> ${data.patientName}<br>
+        <strong>CPF:</strong> ${data.patientCpf}<br>
+        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+    </div>
+
+    <div class="content">
+        ${data.content}
+    </div>
+
+    <div class="signature">
+        ${data.signatureUrl ? 
+          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
+        <div>
+            <strong>${data.professionalName}</strong><br>
+            ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
+            ${data.crm ? `Registro: ${data.crm}` : ''}
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
+        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
+        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
+    </div>
+</body>
+</html>`
+};
+
+// Generate HTML document
+export const generateDocumentHTML = (documentType: string, templateData: any, professionalId?: number): string => {
+  try {
+    console.log('🔄 Generating HTML for document type:', documentType, 'with professional ID:', professionalId);
+    
+    // Get the template function
+    const templateFunction = templates[documentType as keyof typeof templates] || templates.other;
+    
+    // Generate HTML content
+    const htmlContent = templateFunction(templateData);
+    
+    console.log('✅ HTML content generated, length:', htmlContent.length);
+    
+    return htmlContent;
+  } catch (error) {
+    console.error('❌ Error generating HTML document:', error);
+    throw new Error(`Erro ao gerar documento: ${error.message}`);
+  }
+};
