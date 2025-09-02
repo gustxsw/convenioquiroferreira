@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { User, MapPin, Plus, Edit, Trash2, Eye, EyeOff, Save, X, Check } from 'lucide-react';
+import { User, MapPin, Plus, Edit, Trash2, Eye, EyeOff, Save, X, Check, FileImage, Upload } from 'lucide-react';
+import UploadSignatureModal from '../../components/UploadSignatureModal';
 
 type AttendanceLocation = {
   id: number;
@@ -22,6 +23,10 @@ const ProfessionalProfilePage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  
+  // Signature state
+  const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
+  const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
   
   // Profile form state
   const [profileData, setProfileData] = useState({
@@ -105,6 +110,16 @@ const ProfessionalProfilePage: React.FC = () => {
       if (locationsResponse.ok) {
         const locationsData = await locationsResponse.json();
         setLocations(locationsData);
+      }
+
+      // Fetch professional signature
+      const signatureResponse = await fetch(`${apiUrl}/api/professionals/${user?.id}/signature`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (signatureResponse.ok) {
+        const signatureData = await signatureResponse.json();
+        setSignatureUrl(signatureData.signature_url);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -297,6 +312,20 @@ const ProfessionalProfilePage: React.FC = () => {
     }
   };
 
+  const openSignatureModal = () => {
+    setIsSignatureModalOpen(true);
+  };
+
+  const closeSignatureModal = () => {
+    setIsSignatureModalOpen(false);
+  };
+
+  const handleSignatureSuccess = () => {
+    // Refresh data to get updated signature
+    fetchData();
+    setSuccess('Assinatura digital atualizada com sucesso!');
+  };
+
   const formatZipCode = (value: string) => {
     const numericValue = value.replace(/\D/g, '');
     const limitedValue = numericValue.slice(0, 8);
@@ -333,7 +362,7 @@ const ProfessionalProfilePage: React.FC = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Profile Information */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-center mb-6">
@@ -565,6 +594,76 @@ const ProfessionalProfilePage: React.FC = () => {
         </div>
       </div>
 
+      {/* Digital Signature Section */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center">
+            <FileImage className="h-6 w-6 text-red-600 mr-2" />
+            <h2 className="text-xl font-semibold">Assinatura Digital</h2>
+          </div>
+          
+          <button
+            onClick={openSignatureModal}
+            className="btn btn-primary flex items-center"
+          >
+            <Upload className="h-5 w-5 mr-2" />
+            {signatureUrl ? 'Alterar Assinatura' : 'Adicionar Assinatura'}
+          </button>
+        </div>
+
+        {signatureUrl ? (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
+            <div className="text-center">
+              <img
+                src={signatureUrl}
+                alt="Sua assinatura digital"
+                className="max-w-full max-h-24 mx-auto mb-4 border border-gray-300 rounded bg-white p-2"
+                style={{ maxHeight: '96px' }}
+              />
+              <p className="text-sm text-gray-600 mb-4">
+                Esta assinatura será incluída automaticamente em todos os documentos médicos que você gerar.
+              </p>
+              <div className="flex justify-center space-x-3">
+                <button
+                  onClick={openSignatureModal}
+                  className="btn btn-secondary flex items-center"
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  Alterar
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+            <FileImage className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              Nenhuma assinatura cadastrada
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Adicione sua assinatura digital para incluí-la automaticamente nos documentos médicos.
+            </p>
+            <button
+              onClick={openSignatureModal}
+              className="btn btn-primary inline-flex items-center"
+            >
+              <Upload className="h-5 w-5 mr-2" />
+              Adicionar Assinatura
+            </button>
+          </div>
+        )}
+
+        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h4 className="font-medium text-blue-900 mb-2">Como funciona:</h4>
+          <ul className="text-sm text-blue-700 space-y-1">
+            <li>• Sua assinatura será incluída automaticamente em todos os documentos</li>
+            <li>• Aparecerá no rodapé junto com seu nome e registro profissional</li>
+            <li>• Você pode alterar ou remover a assinatura a qualquer momento</li>
+            <li>• A assinatura é redimensionada automaticamente para caber nos documentos</li>
+          </ul>
+        </div>
+      </div>
+
       {/* Location form modal */}
       {isLocationModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -781,6 +880,14 @@ const ProfessionalProfilePage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Upload Signature Modal */}
+      <UploadSignatureModal
+        isOpen={isSignatureModalOpen}
+        onClose={closeSignatureModal}
+        onSuccess={handleSignatureSuccess}
+        currentSignatureUrl={signatureUrl}
+      />
     </div>
   );
 };
