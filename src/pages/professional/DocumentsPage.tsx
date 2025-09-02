@@ -81,8 +81,6 @@ const DocumentsPage: React.FC = () => {
     document_type: "certificate" as DocumentType,
     patient_id: "",
     title: "",
-    patientName: "",
-    patientCpf: "",
     description: "",
     cid: "",
     days: "",
@@ -90,9 +88,6 @@ const DocumentsPage: React.FC = () => {
     risks: "",
     prescription: "",
     content: "",
-    professionalName: user?.name || "",
-    professionalSpecialty: "",
-    crm: "",
   });
 
   // Get API URL
@@ -228,8 +223,6 @@ const DocumentsPage: React.FC = () => {
       document_type: "certificate",
       patient_id: "",
       title: "",
-      patientName: "",
-      patientCpf: "",
       description: "",
       cid: "",
       days: "",
@@ -237,9 +230,6 @@ const DocumentsPage: React.FC = () => {
       risks: "",
       prescription: "",
       content: "",
-      professionalName: user?.name || "",
-      professionalSpecialty: "",
-      crm: "",
     });
     setError('');
     setSuccess('');
@@ -269,12 +259,6 @@ const DocumentsPage: React.FC = () => {
 
     if (!formData.patient_id) {
       setError('Selecione um paciente');
-      setIsCreating(false);
-      return;
-    }
-
-    if (!formData.professionalName.trim()) {
-      setError('Nome do profissional é obrigatório');
       setIsCreating(false);
       return;
     }
@@ -316,16 +300,36 @@ const DocumentsPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
       
-      let signatureUrl = null;
+      // Get professional data
+      let professionalData = {
+        name: user?.name || 'Profissional de Saúde',
+        specialty: '',
+        crm: '',
+        signatureUrl: null
+      };
+      
       try {
+        // Fetch professional details
+        const userResponse = await fetch(`${apiUrl}/api/users/${user?.id}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          professionalData.name = userData.name || professionalData.name;
+          professionalData.specialty = userData.category_name || '';
+          professionalData.crm = userData.crm || '';
+        }
+        
+        // Fetch signature
         const signatureResponse = await fetch(`${apiUrl}/api/professionals/${user?.id}/signature`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
         if (signatureResponse.ok) {
           const signatureData = await signatureResponse.json();
-          signatureUrl = signatureData.signature_url;
-          console.log('✅ [DOCUMENTS] Professional signature loaded:', signatureUrl ? 'Found' : 'Not found');
+          professionalData.signatureUrl = signatureData.signature_url;
+          console.log('✅ [DOCUMENTS] Professional signature loaded:', professionalData.signatureUrl ? 'Found' : 'Not found');
         }
       } catch (signatureError) {
         console.warn('⚠️ [DOCUMENTS] Could not load signature:', signatureError);
@@ -336,10 +340,15 @@ const DocumentsPage: React.FC = () => {
       // Generate HTML content using existing templates
       const { generateDocumentHTML } = await import('../../utils/documentTemplates');
       
-      // Add signature URL to form data
+      // Prepare enhanced form data with professional info and signature
       const enhancedFormData = {
         ...formData,
-        signatureUrl: signatureUrl
+        patientName: patients.find(p => p.id.toString() === formData.patient_id)?.name || 'Paciente',
+        patientCpf: patients.find(p => p.id.toString() === formData.patient_id)?.cpf || '',
+        professionalName: professionalData.name,
+        professionalSpecialty: professionalData.specialty,
+        crm: professionalData.crm,
+        signatureUrl: professionalData.signatureUrl
       };
       
       const htmlContent = generateDocumentHTML(formData.document_type, enhancedFormData);
@@ -352,11 +361,11 @@ const DocumentsPage: React.FC = () => {
         htmlContent: htmlContent,
         documentData: {
           document_type: formData.document_type,
-          patient_name: formData.patientName,
-          patient_cpf: formData.patientCpf,
-          professional_name: formData.professionalName,
+          patient_name: enhancedFormData.patientName,
+          patient_cpf: enhancedFormData.patientCpf,
+          professional_name: enhancedFormData.professionalName,
           private_patient_id: parseInt(formData.patient_id),
-          signatureUrl: signatureUrl,
+          signatureUrl: enhancedFormData.signatureUrl,
           ...formData
         }
       });
@@ -1052,50 +1061,6 @@ const DocumentsPage: React.FC = () => {
 
                 {/* Dynamic form fields based on document type */}
                 {renderFormFields()}
-              </div>
-
-              <div className="flex justify-end space-x-3 mt-8 pt-6 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="btn btn-secondary"
-                  disabled={isCreating}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className={`btn btn-primary ${
-                    isCreating ? "opacity-70 cursor-not-allowed" : ""
-                  }`}
-                  disabled={isCreating}
-                >
-                  {isCreating ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                      Criando Documento...
-                    </>
-                  ) : (
-                    <>
-                      <FileText className="h-5 w-5 mr-2" />
-                      Criar Documento
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Delete confirmation modal */}
-      {showDeleteConfirm && documentToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-md p-6">
-            <h2 className="text-xl font-bold mb-4">Confirmar Exclusão</h2>
-            
-            <p className="mb-6">
-              Tem certeza que deseja excluir o documento <strong>{documentToDelete.title}</strong>?
               Esta ação não pode ser desfeita.
             </p>
             
