@@ -940,7 +940,6 @@ const SchedulingPage: React.FC = () => {
                     Tipo de Paciente *
                   </label>
                   <select
-                    value={formData.patient_type}
                     onChange={(e) =>
                       setFormData((prev) => ({
                         ...prev,
