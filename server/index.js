@@ -456,3 +456,6 @@ const generateToken = (user) => {
     {
       id: user.id,
       current
+    }
+  )
+}

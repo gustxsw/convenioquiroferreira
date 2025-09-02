@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
+import DocumentViewModal from "../../components/DocumentViewModal";
 import {
   FileText,
   Plus,
@@ -63,6 +64,14 @@ const DocumentsPage: React.FC = () => {
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<MedicalDocument | null>(null);
+
+  // Document view modal state
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [documentToView, setDocumentToView] = useState<{
+    url: string;
+    title: string;
+    type?: string;
+  } | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -368,6 +377,20 @@ const DocumentsPage: React.FC = () => {
     setPreviewData(null);
     // Refresh documents list after closing preview
     fetchData();
+  };
+
+  const openDocumentView = (document: MedicalDocument) => {
+    setDocumentToView({
+      url: document.document_url,
+      title: document.title,
+      type: document.document_url.toLowerCase().includes('.pdf') ? 'pdf' : 'html'
+    });
+    setShowViewModal(true);
+  };
+
+  const closeDocumentView = () => {
+    setShowViewModal(false);
+    setDocumentToView(null);
   };
 
   const confirmDelete = (document: MedicalDocument) => {
@@ -732,15 +755,13 @@ const DocumentsPage: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end space-x-2">
-                          <a
-                            href={document.document_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            onClick={() => openDocumentView(document)}
                             className="text-blue-600 hover:text-blue-900"
                             title="Visualizar"
                           >
                             <Eye className="h-4 w-4" />
-                          </a>
+                          </button>
                           <a
                             href={document.document_url}
                             download
@@ -977,6 +998,17 @@ const DocumentsPage: React.FC = () => {
           documentTitle={previewData.title}
           htmlContent={previewData.htmlContent}
           documentData={previewData.documentData}
+        />
+      )}
+
+      {/* Document View Modal */}
+      {showViewModal && documentToView && (
+        <DocumentViewModal
+          isOpen={showViewModal}
+          onClose={closeDocumentView}
+          documentUrl={documentToView.url}
+          documentTitle={documentToView.title}
+          documentType={documentToView.type}
         />
       )}
     </div>
