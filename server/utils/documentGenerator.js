@@ -101,7 +101,7 @@ const templates = {
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
-            ${data.crm ? `CRM: ${data.crm}` : ''}
+            ${data.crm ? `Registro: ${data.crm}` : ''}
         </div>
     </div>
 
@@ -211,7 +211,7 @@ const templates = {
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
-            ${data.crm ? `CRM: ${data.crm}` : ''}
+            ${data.crm ? `Registro: ${data.crm}` : ''}
         </div>
     </div>
 
@@ -351,7 +351,7 @@ const templates = {
             <div>
                 <strong>Profissional Responsável</strong><br>
                 ${data.professionalName}<br>
-                ${data.crm ? `CRM: ${data.crm}` : ''}
+                ${data.crm ? `Registro: ${data.crm}` : ''}
             </div>
         </div>
     </div>
@@ -469,7 +469,7 @@ ${data.content}
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
-            ${data.crm ? `CRM: ${data.crm}` : ''}
+            ${data.crm ? `Registro: ${data.crm}` : ''}
         </div>
     </div>
 
@@ -582,7 +582,7 @@ ${data.content}
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
-            ${data.crm ? `CRM: ${data.crm}` : ''}
+            ${data.crm ? `Registro: ${data.crm}` : ''}
         </div>
     </div>
 
@@ -744,7 +744,7 @@ ${data.content}
             <div>
                 <strong>Profissional Responsável</strong><br>
                 ${data.professionalName}<br>
-                ${data.crm ? `CRM: ${data.crm}` : ''}
+                ${data.crm ? `Registro: ${data.crm}` : ''}
             </div>
         </div>
     </div>
@@ -791,384 +791,3 @@ ${data.content}
             margin: 30px 0;
             text-align: center;
         }
-        .patient-info {
-            background: #f9f9f9;
-            padding: 15px;
-            border-left: 4px solid #c11c22;
-            margin: 20px 0;
-        }
-        .content {
-            margin: 30px 0;
-            text-align: justify;
-            font-size: 14px;
-            min-height: 200px;
-            white-space: pre-line;
-        }
-        .signature {
-            margin-top: 60px;
-            text-align: center;
-        }
-        .signature-line {
-            border-top: 1px solid #333;
-            width: 300px;
-            margin: 40px auto 10px;
-        }
-        .signature-image {
-            max-width: 200px;
-            max-height: 60px;
-            margin: 20px auto 10px;
-            display: block;
-        }
-        .footer {
-            margin-top: 40px;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-            border-top: 1px solid #ddd;
-            padding-top: 20px;
-        }
-        @media print {
-            body { margin: 0; padding: 20px; }
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
-        <div>Sistema de Saúde e Bem-Estar</div>
-    </div>
-
-    <div class="title">${data.title}</div>
-
-    <div class="patient-info">
-        <strong>Paciente:</strong> ${data.patientName}<br>
-        <strong>CPF:</strong> ${data.patientCpf}<br>
-        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
-    </div>
-
-    <div class="content">
-        ${data.content}
-    </div>
-
-    <div class="signature">
-        ${data.signatureUrl ? 
-          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
-          '<div class="signature-line"></div>'
-        }
-        <div>
-            <strong>${data.professionalName}</strong><br>
-            ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
-            ${data.crm ? `CRM: ${data.crm}` : ''}
-        </div>
-    </div>
-
-    <div class="footer">
-        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
-        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
-    </div>
-</body>
-</html>`,
-
-  medical_record: (data) => `
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Prontuário Médico</title>
-    <style>
-        body {
-            font-family: 'Times New Roman', serif;
-            line-height: 1.6;
-            margin: 0;
-            padding: 40px;
-            background: white;
-            color: #333;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            border-bottom: 2px solid #c11c22;
-            padding-bottom: 20px;
-        }
-        .logo {
-            font-size: 24px;
-            font-weight: bold;
-            color: #c11c22;
-            margin-bottom: 10px;
-        }
-        .title {
-            font-size: 20px;
-            font-weight: bold;
-            text-transform: uppercase;
-            margin: 30px 0;
-            text-align: center;
-        }
-        .patient-info {
-            background: #f9f9f9;
-            padding: 15px;
-            border-left: 4px solid #c11c22;
-            margin: 20px 0;
-        }
-        .section {
-            margin: 20px 0;
-            padding: 15px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            page-break-inside: avoid;
-        }
-        .section h3 {
-            margin: 0 0 10px 0;
-            color: #c11c22;
-            font-size: 16px;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 5px;
-        }
-        .vital-signs {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 10px;
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 15px 0;
-        }
-        .vital-sign {
-            text-align: center;
-            padding: 10px;
-            background: white;
-            border-radius: 3px;
-            border: 1px solid #e9ecef;
-        }
-        .vital-sign-label {
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 5px;
-        }
-        .vital-sign-value {
-            font-weight: bold;
-            color: #c11c22;
-        }
-        .signature {
-            margin-top: 60px;
-            text-align: center;
-        }
-        .signature-line {
-            border-top: 1px solid #333;
-            width: 300px;
-            margin: 40px auto 10px;
-        }
-        .signature-image {
-            max-width: 200px;
-            max-height: 60px;
-            margin: 20px auto 10px;
-            display: block;
-        }
-        .footer {
-            margin-top: 40px;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-            border-top: 1px solid #ddd;
-            padding-top: 20px;
-        }
-        @media print {
-            body { margin: 0; padding: 20px; }
-            .section { page-break-inside: avoid; }
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
-        <div>Sistema de Saúde e Bem-Estar</div>
-    </div>
-
-    <div class="title">Prontuário Médico</div>
-
-    <div class="patient-info">
-        <strong>Paciente:</strong> ${data.patientName}<br>
-        ${data.patientCpf ? `<strong>CPF:</strong> ${data.patientCpf}<br>` : ''}
-        <strong>Data do Atendimento:</strong> ${new Date(data.date).toLocaleDateString('pt-BR')}<br>
-        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
-    </div>
-
-    ${data.vital_signs && Object.values(data.vital_signs).some(v => v) ? `
-    <div class="section">
-        <h3>Sinais Vitais</h3>
-        <div class="vital-signs">
-            ${data.vital_signs.blood_pressure ? `
-            <div class="vital-sign">
-                <div class="vital-sign-label">Pressão Arterial</div>
-                <div class="vital-sign-value">${data.vital_signs.blood_pressure}</div>
-            </div>` : ''}
-            ${data.vital_signs.heart_rate ? `
-            <div class="vital-sign">
-                <div class="vital-sign-label">Freq. Cardíaca</div>
-                <div class="vital-sign-value">${data.vital_signs.heart_rate}</div>
-            </div>` : ''}
-            ${data.vital_signs.temperature ? `
-            <div class="vital-sign">
-                <div class="vital-sign-label">Temperatura</div>
-                <div class="vital-sign-value">${data.vital_signs.temperature}</div>
-            </div>` : ''}
-            ${data.vital_signs.respiratory_rate ? `
-            <div class="vital-sign">
-                <div class="vital-sign-label">Freq. Respiratória</div>
-                <div class="vital-sign-value">${data.vital_signs.respiratory_rate}</div>
-            </div>` : ''}
-            ${data.vital_signs.oxygen_saturation ? `
-            <div class="vital-sign">
-                <div class="vital-sign-label">Sat. O₂</div>
-                <div class="vital-sign-value">${data.vital_signs.oxygen_saturation}</div>
-            </div>` : ''}
-            ${data.vital_signs.weight ? `
-            <div class="vital-sign">
-                <div class="vital-sign-label">Peso</div>
-                <div class="vital-sign-value">${data.vital_signs.weight}</div>
-            </div>` : ''}
-            ${data.vital_signs.height ? `
-            <div class="vital-sign">
-                <div class="vital-sign-label">Altura</div>
-                <div class="vital-sign-value">${data.vital_signs.height}</div>
-            </div>` : ''}
-        </div>
-    </div>` : ''}
-
-    ${data.chief_complaint ? `
-    <div class="section">
-        <h3>Queixa Principal</h3>
-        <p>${data.chief_complaint}</p>
-    </div>` : ''}
-
-    ${data.history_present_illness ? `
-    <div class="section">
-        <h3>História da Doença Atual</h3>
-        <p>${data.history_present_illness}</p>
-    </div>` : ''}
-
-    ${data.past_medical_history ? `
-    <div class="section">
-        <h3>História Médica Pregressa</h3>
-        <p>${data.past_medical_history}</p>
-    </div>` : ''}
-
-    ${data.medications ? `
-    <div class="section">
-        <h3>Medicamentos em Uso</h3>
-        <p>${data.medications}</p>
-    </div>` : ''}
-
-    ${data.allergies ? `
-    <div class="section">
-        <h3>Alergias</h3>
-        <p>${data.allergies}</p>
-    </div>` : ''}
-
-    ${data.physical_examination ? `
-    <div class="section">
-        <h3>Exame Físico</h3>
-        <p>${data.physical_examination}</p>
-    </div>` : ''}
-
-    ${data.diagnosis ? `
-    <div class="section">
-        <h3>Diagnóstico</h3>
-        <p>${data.diagnosis}</p>
-    </div>` : ''}
-
-    ${data.treatment_plan ? `
-    <div class="section">
-        <h3>Plano de Tratamento</h3>
-        <p>${data.treatment_plan}</p>
-    </div>` : ''}
-
-    ${data.notes ? `
-    <div class="section">
-        <h3>Observações Gerais</h3>
-        <p>${data.notes}</p>
-    </div>` : ''}
-
-    <div class="signature">
-        ${data.signatureUrl ? 
-          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
-          '<div class="signature-line"></div>'
-        }
-        <div>
-            <strong>${data.professionalName}</strong><br>
-            ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
-            ${data.crm ? `CRM: ${data.crm}` : ''}
-        </div>
-    </div>
-
-    <div class="footer">
-        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
-        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
-    </div>
-</body>
-</html>`
-};
-
-// Generate HTML document and upload to Cloudinary with signature support
-export const generateDocumentPDF = async (documentType, templateData, professionalId = null) => {
-  try {
-    console.log('🔄 Generating document:', { documentType, templateData, professionalId });
-    
-    // If professionalId is provided, fetch signature
-    let signatureUrl = null;
-    if (professionalId) {
-      try {
-        const signatureResult = await pool.query(
-          'SELECT signature_url FROM users WHERE id = $1 AND $2 = ANY(roles)',
-          [professionalId, 'professional']
-        );
-        
-        if (signatureResult.rows.length > 0) {
-          signatureUrl = signatureResult.rows[0].signature_url;
-          console.log('✅ [SIGNATURE] Professional signature loaded:', signatureUrl ? 'Found' : 'Not found');
-        }
-      } catch (signatureError) {
-        console.warn('⚠️ [SIGNATURE] Could not load professional signature:', signatureError);
-      }
-    }
-    
-    // Add signature URL to template data
-    const enhancedTemplateData = {
-      ...templateData,
-      signatureUrl: signatureUrl
-    };
-    
-    // Get the template function
-    const templateFunction = templates[documentType] || templates.other;
-    
-    // Generate HTML content
-    const htmlContent = templateFunction(enhancedTemplateData);
-    
-    console.log('✅ HTML content generated, length:', htmlContent.length);
-    
-    // Upload HTML to Cloudinary as raw file (will be converted to PDF on download)
-    const uploadResult = await cloudinary.uploader.upload(
-      `data:text/html;base64,${Buffer.from(htmlContent).toString('base64')}`,
-      {
-        folder: 'quiro-ferreira/documents',
-        resource_type: 'raw',
-        format: 'html',
-        public_id: `document_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        use_filename: false,
-        unique_filename: true
-      }
-    );
-    
-    console.log('✅ Document uploaded to Cloudinary:', uploadResult.secure_url);
-    
-    return {
-      url: uploadResult.secure_url,
-      public_id: uploadResult.public_id
-    };
-  } catch (error) {
-    console.error('❌ Error generating document:', error);
-    throw new Error(`Erro ao gerar documento: ${error.message}`);
-  }
-};
