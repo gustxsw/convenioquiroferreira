@@ -1215,15 +1215,20 @@ const SchedulingPage: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Local de Atendimento
                   <input
-                    type="time"
-                    value={formData.time}
+                  <select
+                    value={formData.location_id}
                     onChange={(e) =>
-                      setFormData(prev => ({ ...prev, time: e.target.value }))
+                      setFormData(prev => ({ ...prev, location_id: e.target.value }))
                     }
                     className="input"
-                    required
-                  />
-                </div>
+                  >
+                    <option value="">Selecione um local</option>
+                    {attendanceLocations.map((location) => (
+                      <option key={location.id} value={location.id}>
+                        {location.name} {location.is_default && '(Padrão)'}
+                      </option>
+                    ))}
+                  </select>
 
                 {/* Notes */}
                 <div>
