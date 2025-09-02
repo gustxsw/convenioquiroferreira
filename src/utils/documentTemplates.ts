@@ -56,10 +56,14 @@ const templates = {
             margin: 40px auto 10px;
         }
         .signature-image {
-            max-width: 200px;
-            max-height: 60px;
+            max-width: 300px;
+            max-height: 100px;
             margin: 20px auto 10px;
             display: block;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 5px;
+            background: white;
         }
         .footer {
             margin-top: 40px;
@@ -183,10 +187,14 @@ const templates = {
             margin: 40px auto 10px;
         }
         .signature-image {
-            max-width: 200px;
-            max-height: 60px;
+            max-width: 300px;
+            max-height: 100px;
             margin: 20px auto 10px;
             display: block;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 5px;
+            background: white;
         }
         .footer {
             margin-top: 40px;
@@ -302,10 +310,14 @@ const templates = {
             margin: 40px 0 10px;
         }
         .signature-image {
-            max-width: 200px;
-            max-height: 60px;
+            max-width: 300px;
+            max-height: 100px;
             margin: 20px auto 10px;
             display: block;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 5px;
+            background: white;
         }
         .footer {
             margin-top: 40px;
@@ -444,10 +456,14 @@ const templates = {
             margin: 40px auto 10px;
         }
         .signature-image {
-            max-width: 200px;
-            max-height: 60px;
+            max-width: 300px;
+            max-height: 100px;
             margin: 20px auto 10px;
             display: block;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 5px;
+            background: white;
         }
         .footer {
             margin-top: 40px;
@@ -560,10 +576,14 @@ ${data.content}
             margin: 40px auto 10px;
         }
         .signature-image {
-            max-width: 200px;
-            max-height: 60px;
+            max-width: 300px;
+            max-height: 100px;
             margin: 20px auto 10px;
             display: block;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 5px;
+            background: white;
         }
         .footer {
             margin-top: 40px;
@@ -678,10 +698,14 @@ ${data.content}
             margin: 40px 0 10px;
         }
         .signature-image {
-            max-width: 200px;
-            max-height: 60px;
+            max-width: 300px;
+            max-height: 100px;
             margin: 20px auto 10px;
             display: block;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 5px;
+            background: white;
         }
         .footer {
             margin-top: 40px;
@@ -836,10 +860,14 @@ ${data.content}
             margin: 40px auto 10px;
         }
         .signature-image {
-            max-width: 200px;
-            max-height: 60px;
+            max-width: 300px;
+            max-height: 100px;
             margin: 20px auto 10px;
             display: block;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 5px;
+            background: white;
         }
         .footer {
             margin-top: 40px;
