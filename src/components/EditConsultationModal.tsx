@@ -294,21 +294,15 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Local de Atendimento
-                </label>
-                <select
-                  value={formData.location_id}
+                <input
+                  type="time"
+                  value={formData.time}
                   onChange={(e) =>
-                    setFormData(prev => ({ ...prev, location_id: e.target.value }))
+                    setFormData(prev => ({ ...prev, time: e.target.value }))
                   }
                   className="input"
-                >
-                  <option value="">Selecione um local</option>
-                  {attendanceLocations.map((location) => (
-                    <option key={location.id} value={location.id}>
-                      {location.name} {location.is_default && '(Padrão)'}
-                    </option>
-                  ))}
-                </select>
+                  required
+                />
               </div>
             </div>
 

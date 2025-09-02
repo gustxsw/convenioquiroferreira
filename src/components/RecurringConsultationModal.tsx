@@ -519,12 +519,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                   className="input"
                   required
                 />
-              </div>
-            </div>
-
-            {/* Recurrence Settings */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                 <Repeat className="h-5 w-5 text-red-600 mr-2" />
                 Configurações de Recorrência
               </h3>
