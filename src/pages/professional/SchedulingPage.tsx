@@ -1218,14 +1218,14 @@ const SchedulingPage: React.FC = () => {
                   <select
                     value={formData.location_id}
                     onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, location_id: e.target.value }))
+                      setFormData(prev => ({ ...prev, location_id: e.target.value }))
                     }
                     className="input"
                   >
                     <option value="">Selecione um local</option>
                     {attendanceLocations.map((location) => (
                       <option key={location.id} value={location.id}>
-                        {location.name} - {location.address}
+                        {location.name} {location.is_default && '(Padrão)'}
                       </option>
                     ))}
                   </select>
