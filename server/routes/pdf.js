@@ -1,6 +1,8 @@
 import express from 'express';
 import { pool } from '../db.js';
+import { authenticate } from '../middleware/auth.js';
 import { generatePDFFromHTML } from '../utils/pdfGenerator.js';
+import { v2 as cloudinary } from 'cloudinary';
 
 const router = express.Router();
 
