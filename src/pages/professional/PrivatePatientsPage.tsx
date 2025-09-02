@@ -535,7 +535,6 @@ const PrivatePatientsPage: React.FC = () => {
                     onChange={(e) => formatCpf(e.target.value)}
                     className="input"
                     placeholder="000.000.000-00"
-                    disabled={modalMode === 'edit'}
                   />
                 </div>
 
