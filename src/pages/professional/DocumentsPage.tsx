@@ -298,14 +298,39 @@ const DocumentsPage: React.FC = () => {
     }
 
     try {
-      const token = localStorage.getItem("token");
+      console.log('🔄 [DOCUMENTS] Fetching professional signature...');
+      
+      // Fetch professional signature
+      const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
+      
+      let signatureUrl = null;
+      try {
+        const signatureResponse = await fetch(`${apiUrl}/api/professionals/${user?.id}/signature`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (signatureResponse.ok) {
+          const signatureData = await signatureResponse.json();
+          signatureUrl = signatureData.signature_url;
+          console.log('✅ [DOCUMENTS] Professional signature loaded:', signatureUrl ? 'Found' : 'Not found');
+        }
+      } catch (signatureError) {
+        console.warn('⚠️ [DOCUMENTS] Could not load signature:', signatureError);
+      }
 
       console.log('🔄 [DOCUMENTS] Generating document preview...');
 
       // Generate HTML content using existing templates
       const { generateDocumentHTML } = await import('../../utils/documentTemplates');
-      const htmlContent = generateDocumentHTML(formData.document_type, formData);
+      
+      // Add signature URL to form data
+      const enhancedFormData = {
+        ...formData,
+        signatureUrl: signatureUrl
+      };
+      
+      const htmlContent = generateDocumentHTML(formData.document_type, enhancedFormData);
 
       console.log('✅ [DOCUMENTS] HTML content generated');
 
@@ -319,6 +344,7 @@ const DocumentsPage: React.FC = () => {
           patient_cpf: formData.patientCpf,
           professional_name: formData.professionalName,
           private_patient_id: parseInt(formData.patient_id),
+          signatureUrl: signatureUrl,
           ...formData
         }
       });

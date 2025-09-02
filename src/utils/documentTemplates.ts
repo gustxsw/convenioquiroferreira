@@ -55,6 +55,12 @@ const templates = {
             width: 300px;
             margin: 40px auto 10px;
         }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 20px auto 10px;
+            display: block;
+        }
         .footer {
             margin-top: 40px;
             text-align: center;
@@ -95,7 +101,10 @@ const templates = {
     </div>
 
     <div class="signature">
-        <div class="signature-line"></div>
+        ${data.signatureUrl ? 
+          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
@@ -173,6 +182,12 @@ const templates = {
             width: 300px;
             margin: 40px auto 10px;
         }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 20px auto 10px;
+            display: block;
+        }
         .footer {
             margin-top: 40px;
             text-align: center;
@@ -205,7 +220,10 @@ const templates = {
     </div>
 
     <div class="signature">
-        <div class="signature-line"></div>
+        ${data.signatureUrl ? 
+          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
@@ -283,6 +301,12 @@ const templates = {
             border-top: 1px solid #333;
             margin: 40px 0 10px;
         }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 20px auto 10px;
+            display: block;
+        }
         .footer {
             margin-top: 40px;
             text-align: center;
@@ -342,7 +366,10 @@ const templates = {
         </div>
         
         <div class="signature-box">
-            <div class="signature-line"></div>
+            ${data.signatureUrl ? 
+              `<img src="${data.signatureUrl}" alt="Assinatura" style="max-width: 150px; max-height: 50px; margin: 20px auto 10px; display: block;" />` : 
+              '<div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>'
+            }
             <div>
                 <strong>Profissional Responsável</strong><br>
                 ${data.professionalName}<br>
@@ -416,6 +443,12 @@ const templates = {
             width: 300px;
             margin: 40px auto 10px;
         }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 20px auto 10px;
+            display: block;
+        }
         .footer {
             margin-top: 40px;
             text-align: center;
@@ -451,7 +484,10 @@ ${data.content}
     </div>
 
     <div class="signature">
-        <div class="signature-line"></div>
+        ${data.signatureUrl ? 
+          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
@@ -523,6 +559,12 @@ ${data.content}
             width: 300px;
             margin: 40px auto 10px;
         }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 20px auto 10px;
+            display: block;
+        }
         .footer {
             margin-top: 40px;
             text-align: center;
@@ -555,7 +597,10 @@ ${data.content}
     </div>
 
     <div class="signature">
-        <div class="signature-line"></div>
+        ${data.signatureUrl ? 
+          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
@@ -631,6 +676,12 @@ ${data.content}
         .signature-line {
             border-top: 1px solid #333;
             margin: 40px 0 10px;
+        }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 20px auto 10px;
+            display: block;
         }
         .footer {
             margin-top: 40px;
@@ -708,7 +759,10 @@ ${data.content}
         </div>
         
         <div class="signature-box">
-            <div class="signature-line"></div>
+            ${data.signatureUrl ? 
+              `<img src="${data.signatureUrl}" alt="Assinatura" style="max-width: 150px; max-height: 50px; margin: 20px auto 10px; display: block;" />` : 
+              '<div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>'
+            }
             <div>
                 <strong>Profissional Responsável</strong><br>
                 ${data.professionalName}<br>
@@ -781,6 +835,12 @@ ${data.content}
             width: 300px;
             margin: 40px auto 10px;
         }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 20px auto 10px;
+            display: block;
+        }
         .footer {
             margin-top: 40px;
             text-align: center;
@@ -813,7 +873,10 @@ ${data.content}
     </div>
 
     <div class="signature">
-        <div class="signature-line"></div>
+        ${data.signatureUrl ? 
+          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
@@ -831,9 +894,9 @@ ${data.content}
 };
 
 // Generate HTML document
-export const generateDocumentHTML = (documentType: string, templateData: any): string => {
+export const generateDocumentHTML = (documentType: string, templateData: any, professionalId?: number): string => {
   try {
-    console.log('🔄 Generating HTML for document type:', documentType);
+    console.log('🔄 Generating HTML for document type:', documentType, 'with professional ID:', professionalId);
     
     // Get the template function
     const templateFunction = templates[documentType as keyof typeof templates] || templates.other;

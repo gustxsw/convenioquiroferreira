@@ -2370,6 +2370,139 @@ app.get("/api/professionals", authenticate, async (req, res) => {
   }
 });
 
+// Professional signature routes
+app.post('/api/professionals/:id/signature', authenticate, createUpload().single('signature'), async (req, res) => {
+  try {
+    const professionalId = parseInt(req.params.id);
+    const userId = req.user.id;
+
+    // Verify that the user is updating their own signature
+    if (professionalId !== userId) {
+      return res.status(403).json({ message: 'Você só pode alterar sua própria assinatura' });
+    }
+
+    // Verify that user has professional role
+    if (!req.user.roles || !req.user.roles.includes('professional')) {
+      return res.status(403).json({ message: 'Apenas profissionais podem ter assinatura digital' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'Arquivo de assinatura é obrigatório' });
+    }
+
+    console.log('🔄 [SIGNATURE] Uploading signature for professional:', professionalId);
+    console.log('🔄 [SIGNATURE] File info:', {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    });
+
+    // Update user with signature URL (Cloudinary URL is in req.file.path)
+    const result = await pool.query(
+      'UPDATE users SET signature_url = $1, updated_at = NOW() WHERE id = $2 RETURNING signature_url',
+      [req.file.path, professionalId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Profissional não encontrado' });
+    }
+
+    console.log('✅ [SIGNATURE] Signature saved successfully:', result.rows[0].signature_url);
+
+    res.json({
+      message: 'Assinatura digital salva com sucesso',
+      signature_url: result.rows[0].signature_url
+    });
+  } catch (error) {
+    console.error('❌ [SIGNATURE] Error uploading signature:', error);
+    res.status(500).json({ message: 'Erro interno do servidor ao salvar assinatura' });
+  }
+});
+
+app.get('/api/professionals/:id/signature', authenticate, async (req, res) => {
+  try {
+    const professionalId = parseInt(req.params.id);
+    const userId = req.user.id;
+
+    // Verify that the user is accessing their own signature or is admin
+    if (professionalId !== userId && !req.user.roles?.includes('admin')) {
+      return res.status(403).json({ message: 'Acesso não autorizado' });
+    }
+
+    console.log('🔄 [SIGNATURE] Fetching signature for professional:', professionalId);
+
+    const result = await pool.query(
+      'SELECT signature_url FROM users WHERE id = $1 AND $2 = ANY(roles)',
+      [professionalId, 'professional']
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Profissional não encontrado' });
+    }
+
+    console.log('✅ [SIGNATURE] Signature fetched successfully');
+
+    res.json({
+      signature_url: result.rows[0].signature_url
+    });
+  } catch (error) {
+    console.error('❌ [SIGNATURE] Error fetching signature:', error);
+    res.status(500).json({ message: 'Erro interno do servidor ao buscar assinatura' });
+  }
+});
+
+app.delete('/api/professionals/:id/signature', authenticate, async (req, res) => {
+  try {
+    const professionalId = parseInt(req.params.id);
+    const userId = req.user.id;
+
+    // Verify that the user is removing their own signature
+    if (professionalId !== userId) {
+      return res.status(403).json({ message: 'Você só pode remover sua própria assinatura' });
+    }
+
+    console.log('🔄 [SIGNATURE] Removing signature for professional:', professionalId);
+
+    // Get current signature URL for cleanup
+    const currentResult = await pool.query(
+      'SELECT signature_url FROM users WHERE id = $1',
+      [professionalId]
+    );
+
+    // Remove signature URL from database
+    const result = await pool.query(
+      'UPDATE users SET signature_url = NULL, updated_at = NOW() WHERE id = $1 RETURNING id',
+      [professionalId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Profissional não encontrado' });
+    }
+
+    // Try to delete from Cloudinary (optional, don't fail if it doesn't work)
+    try {
+      if (currentResult.rows[0]?.signature_url) {
+        const publicId = currentResult.rows[0].signature_url.split('/').pop()?.split('.')[0];
+        if (publicId) {
+          await cloudinary.uploader.destroy(`quiro-ferreira/signatures/${publicId}`);
+          console.log('✅ [SIGNATURE] Signature deleted from Cloudinary');
+        }
+      }
+    } catch (cloudinaryError) {
+      console.warn('⚠️ [SIGNATURE] Could not delete from Cloudinary:', cloudinaryError);
+    }
+
+    console.log('✅ [SIGNATURE] Signature removed successfully');
+
+    res.json({
+      message: 'Assinatura digital removida com sucesso'
+    });
+  } catch (error) {
+    console.error('❌ [SIGNATURE] Error removing signature:', error);
+    res.status(500).json({ message: 'Erro interno do servidor ao remover assinatura' });
+  }
+});
+
 // ===== PRIVATE PATIENTS ROUTES =====
 
 app.get("/api/private-patients", authenticate, authorize(["professional"]), async (req, res) => {

@@ -421,6 +421,12 @@ const templates = {
             width: 300px;
             margin: 40px auto 10px;
         }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 20px auto 10px;
+            display: block;
+        }
         .footer {
             margin-top: 40px;
             text-align: center;
@@ -456,7 +462,10 @@ ${data.content}
     </div>
 
     <div class="signature">
-        <div class="signature-line"></div>
+        ${data.signatureUrl ? 
+          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
@@ -528,6 +537,12 @@ ${data.content}
             width: 300px;
             margin: 40px auto 10px;
         }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 20px auto 10px;
+            display: block;
+        }
         .footer {
             margin-top: 40px;
             text-align: center;
@@ -560,7 +575,10 @@ ${data.content}
     </div>
 
     <div class="signature">
-        <div class="signature-line"></div>
+        ${data.signatureUrl ? 
+          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
@@ -636,6 +654,12 @@ ${data.content}
         .signature-line {
             border-top: 1px solid #333;
             margin: 40px 0 10px;
+        }
+        .signature-image {
+            max-width: 150px;
+            max-height: 50px;
+            margin: 20px auto 10px;
+            display: block;
         }
         .footer {
             margin-top: 40px;
@@ -713,7 +737,10 @@ ${data.content}
         </div>
         
         <div class="signature-box">
-            <div class="signature-line"></div>
+            ${data.signatureUrl ? 
+              `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+              '<div class="signature-line"></div>'
+            }
             <div>
                 <strong>Profissional Responsável</strong><br>
                 ${data.professionalName}<br>
@@ -786,6 +813,12 @@ ${data.content}
             width: 300px;
             margin: 40px auto 10px;
         }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 20px auto 10px;
+            display: block;
+        }
         .footer {
             margin-top: 40px;
             text-align: center;
@@ -818,7 +851,10 @@ ${data.content}
     </div>
 
     <div class="signature">
-        <div class="signature-line"></div>
+        ${data.signatureUrl ? 
+          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
@@ -922,6 +958,12 @@ ${data.content}
             border-top: 1px solid #333;
             width: 300px;
             margin: 40px auto 10px;
+        }
+        .signature-image {
+            max-width: 200px;
+            max-height: 60px;
+            margin: 20px auto 10px;
+            display: block;
         }
         .footer {
             margin-top: 40px;
@@ -1049,7 +1091,10 @@ ${data.content}
     </div>` : ''}
 
     <div class="signature">
-        <div class="signature-line"></div>
+        ${data.signatureUrl ? 
+          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
         <div>
             <strong>${data.professionalName}</strong><br>
             ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
@@ -1066,16 +1111,40 @@ ${data.content}
 </html>`
 };
 
-// Generate HTML document and upload to Cloudinary
-export const generateDocumentPDF = async (documentType, templateData) => {
+// Generate HTML document and upload to Cloudinary with signature support
+export const generateDocumentPDF = async (documentType, templateData, professionalId = null) => {
   try {
-    console.log('🔄 Generating document:', { documentType, templateData });
+    console.log('🔄 Generating document:', { documentType, templateData, professionalId });
+    
+    // If professionalId is provided, fetch signature
+    let signatureUrl = null;
+    if (professionalId) {
+      try {
+        const signatureResult = await pool.query(
+          'SELECT signature_url FROM users WHERE id = $1 AND $2 = ANY(roles)',
+          [professionalId, 'professional']
+        );
+        
+        if (signatureResult.rows.length > 0) {
+          signatureUrl = signatureResult.rows[0].signature_url;
+          console.log('✅ [SIGNATURE] Professional signature loaded:', signatureUrl ? 'Found' : 'Not found');
+        }
+      } catch (signatureError) {
+        console.warn('⚠️ [SIGNATURE] Could not load professional signature:', signatureError);
+      }
+    }
+    
+    // Add signature URL to template data
+    const enhancedTemplateData = {
+      ...templateData,
+      signatureUrl: signatureUrl
+    };
     
     // Get the template function
     const templateFunction = templates[documentType] || templates.other;
     
     // Generate HTML content
-    const htmlContent = templateFunction(templateData);
+    const htmlContent = templateFunction(enhancedTemplateData);
     
     console.log('✅ HTML content generated, length:', htmlContent.length);
     
