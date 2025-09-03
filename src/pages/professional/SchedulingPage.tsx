@@ -1422,7 +1422,7 @@ const SchedulingPage: React.FC = () => {
         onClose={() => setShowRecurringModal(false)}
         onSuccess={() => {
           setShowRecurringModal(false);
-          fetchConsultations();
+          fetchData();
         }}
       />
 
@@ -1435,5 +1435,6 @@ const SchedulingPage: React.FC = () => {
       />
     </div>
   );
+};
 
 export default SchedulingPage;
