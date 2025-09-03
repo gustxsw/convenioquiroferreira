@@ -519,11 +519,8 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
               <TimeInput
                 value={formData.start_time}
                 onChange={(time) => setFormData(prev => ({ ...prev, start_time: time }))}
-                slotDuration={slotDuration}
                 label="Horário"
                 required
-                showValidation
-                businessHours={{ start: 7, end: 18 }}
               />
             </div>
 

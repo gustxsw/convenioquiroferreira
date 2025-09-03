@@ -809,12 +809,9 @@ const RegisterConsultationPage: React.FC = () => {
                 <TimeInput
                   value={time}
                   onChange={setTime}
-                  slotDuration={slotDuration}
                   label="Horário"
                   required
                   disabled={isLoading}
-                  showValidation
-                  businessHours={{ start: 7, end: 18 }}
                 />
               </div>
             </div>

@@ -1152,21 +1152,19 @@ const SchedulingPage: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Horário *
                     </label>
-                    <select
+                    <input
+                      type="time"
                       value={formData.time}
                       onChange={(e) =>
                         setFormData((prev) => ({ ...prev, time: e.target.value }))
                       }
                       className="input"
+                      step="60"
                       required
-                    >
-                      <option value="">Selecione um horário</option>
-                      {generateTimeSlots(30).map((time) => (
-                        <option key={time} value={time}>
-                          {time}
-                        </option>
-                      ))}
-                    </select>
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Digite o horário desejado (ex: 09:30)
+                    </p>
                   </div>
                 </div>
 

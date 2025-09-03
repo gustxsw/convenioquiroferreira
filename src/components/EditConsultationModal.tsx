@@ -273,11 +273,9 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
               <TimeInput
                 value={formData.time}
                 onChange={(time) => setFormData(prev => ({ ...prev, time }))}
-                slotDuration={slotDuration}
                 label="Horário"
                 required
-                showValidation
-                businessHours={{ start: 7, end: 18 }}
+                disabled={isUpdating}
               />
             </div>
 
