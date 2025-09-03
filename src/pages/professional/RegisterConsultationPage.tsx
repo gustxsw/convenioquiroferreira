@@ -295,7 +295,7 @@ const RegisterConsultationPage: React.FC = () => {
 
       // Fetch dependents
       const dependentsResponse = await fetch(
-        `${apiUrl}/api/dependents/${clientData.id}`,
+        `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`,
         {
           method: "GET",
           headers: {

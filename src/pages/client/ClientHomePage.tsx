@@ -156,7 +156,7 @@ const ClientHomePage: React.FC = () => {
 
         // Fetch dependents
         const dependentsResponse = await fetch(
-          `${apiUrl}/api/dependents/${user?.id}`,
+          `${apiUrl}/api/dependents?client_id=${user?.id}`,
           {
             method: "GET",
             headers: {

@@ -83,10 +83,10 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
 
       console.log(
         "🔄 Fetching dependents from:",
-        `${apiUrl}/api/dependents/${clientId}`
+        `${apiUrl}/api/dependents?client_id=${clientId}`
       );
 
-      const response = await fetch(`${apiUrl}/api/dependents/${clientId}`, {
+      const response = await fetch(`${apiUrl}/api/dependents?client_id=${clientId}`, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
