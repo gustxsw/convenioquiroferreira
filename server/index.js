@@ -4018,6 +4018,7 @@ const processDependentPayment = async (payment) => {
       `
       UPDATE dependents 
       SET 
+        status = 'active',
         subscription_status = 'active',
         subscription_expiry = CURRENT_TIMESTAMP + INTERVAL '1 year',
         activated_at = CURRENT_TIMESTAMP
