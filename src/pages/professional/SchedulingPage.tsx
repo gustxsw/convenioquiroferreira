@@ -647,14 +647,6 @@ const SchedulingPage: React.FC = () => {
 
         <div className="flex space-x-2">
           <button
-            onClick={() => setShowCancelledModal(true)}
-            className="btn btn-outline flex items-center"
-          >
-            <XCircle className="h-5 w-5 mr-2" />
-            Consultas Canceladas
-          </button>
-
-          <button
             onClick={() => setShowSlotModal(true)}
             className="btn btn-outline flex items-center"
             title="Personalizar duração dos slots"
@@ -1409,6 +1401,22 @@ const SchedulingPage: React.FC = () => {
         consultation={consultationToEdit}
         onClose={closeEditModal}
         onSuccess={handleEditSuccess}
+      />
+
+      {/* Cancel Consultation Modal */}
+      <CancelConsultationModal
+        isOpen={showCancelModal}
+        onClose={closeCancelModal}
+        onConfirm={handleCancelConfirm}
+        consultationData={consultationToCancel}
+        isLoading={false}
+      />
+
+      {/* Cancelled Consultations Modal */}
+      <CancelledConsultationsModal
+        isOpen={showCancelledModal}
+        onClose={() => setShowCancelledModal(false)}
+        autoRefresh={true}
       />
 
       {/* Slot Customization Modal */}
