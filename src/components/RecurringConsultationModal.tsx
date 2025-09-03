@@ -168,8 +168,8 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
         if (dependentsResponse.ok) {
           const dependentsData = await dependentsResponse.json();
-          // Filter only active dependents
-          setDependents(dependentsData.filter((d: any) => d.status === 'active'));
+          // Filter only active dependents  
+          setDependents(dependentsData.filter((d: any) => d.subscription_status === 'active'));
         }
       } else {
         // Try searching as dependent

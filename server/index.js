@@ -1956,6 +1956,10 @@ app.get("/api/dependents", authenticate, async (req, res) => {
 
     if (!client_id) {
       return res.status(400).json({ message: "client_id é obrigatório" });
+    const { client_id, status } = req.query;
+
+    if (!client_id) {
+      return res.status(400).json({ message: "client_id é obrigatório" });
     }
 
     // Clients can only access their own dependents
@@ -1967,9 +1971,8 @@ app.get("/api/dependents", authenticate, async (req, res) => {
     }
 
     let query = `
-      SELECT 
         id, name, cpf, birth_date, subscription_status, subscription_expiry,
-        billing_amount, payment_reference, activated_at, created_at, status
+        subscription_status as status
       FROM dependents 
       WHERE user_id = $1
     `;
@@ -2048,8 +2051,46 @@ app.get("/api/dependents/lookup", authenticate, authorize(["professional", "admi
 
     const dependentResult = await pool.query(
       `
-      SELECT 
+        d.id, d.name, d.cpf, d.subscription_status as status,
         d.id, d.name, d.cpf, d.status,
+        d.user_id, u.name as client_name, u.subscription_status as client_subscription_status
+      FROM dependents d
+      JOIN users u ON d.user_id = u.id
+      WHERE d.cpf = $1
+    `,
+      [cleanCPF]
+    );
+
+    if (dependentResult.rows.length === 0) {
+      return res.status(404).json({ message: "Dependente não encontrado" });
+    }
+
+    const dependent = dependentResult.rows[0];
+
+    res.json(dependent);
+  } catch (error) {
+    console.error("❌ Error looking up dependent:", error);
+    res.status(500).json({ message: "Erro ao buscar dependente" });
+  }
+});
+app.get("/api/dependents/lookup", authenticate, authorize(["professional", "admin"]), async (req, res) => {
+  try {
+    const { cpf } = req.query;
+
+    if (!cpf) {
+      return res.status(400).json({ message: "CPF é obrigatório" });
+    }
+
+    if (!validateCPF(cpf)) {
+      return res.status(400).json({ message: "CPF inválido" });
+    }
+
+    const cleanCPF = cpf.replace(/\D/g, "");
+
+    const dependentResult = await pool.query(
+      `
+      SELECT 
+        d.id, d.name, d.cpf, d.subscription_status as status,
         d.user_id, u.name as client_name, u.subscription_status as client_subscription_status
       FROM dependents d
       JOIN users u ON d.user_id = u.id
@@ -4546,11 +4587,19 @@ app.get("/api/notifications", authenticate, async (req, res) => {
     const notificationsResult = await pool.query(
       `
       SELECT * FROM notifications 
-      WHERE user_id = $1 
-      ORDER BY created_at DESC 
-      LIMIT 50
-    `,
-      [req.user.id]
+      WHERE user_id = $1
+    `;
+    
+    const params = [client_id];
+    
+    if (status) {
+      query += " AND subscription_status = $2";
+      params.push(status);
+    }
+    
+    query += " ORDER BY created_at DESC";
+
+    const dependentsResult = await pool.query(query, params);
     );
 
     res.json(notificationsResult.rows);
@@ -4634,7 +4683,7 @@ app.put("/api/system-settings/:key", authenticate, authorize(["admin"]), async (
         updated_at = EXCLUDED.updated_at
       RETURNING *
     `,
-      [key, value, description || null, req.user.id]
+    console.log("✅ Dependents fetched for client:", client_id, "Count:", dependentsResult.rows.length);
     );
 
     const setting = settingResult.rows[0];
@@ -4643,7 +4692,7 @@ app.put("/api/system-settings/:key", authenticate, authorize(["admin"]), async (
 
     res.json({
       message: "Configuração atualizada com sucesso",
-      setting,
+app.get("/api/dependents/search", authenticate, authorize(["professional", "admin"]), async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error updating system setting:", error);

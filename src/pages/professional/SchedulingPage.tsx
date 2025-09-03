@@ -256,7 +256,7 @@ const SchedulingPage: React.FC = () => {
 
         // Fetch dependents
         const dependentsResponse = await fetch(
-          `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`,
+          `${apiUrl}/api/dependents?client_id=${clientData.id}`,
           {
             headers: { Authorization: `Bearer ${token}` },
           }
@@ -264,12 +264,12 @@ const SchedulingPage: React.FC = () => {
 
         if (dependentsResponse.ok) {
           const dependentsData = await dependentsResponse.json();
-          setDependents(dependentsData);
+          setDependents(dependentsData.filter((d: any) => d.subscription_status === "active"));
         }
       } else {
         // Try searching as dependent
         const dependentResponse = await fetch(
-          `${apiUrl}/api/dependents/lookup?cpf=${cleanCpf}`,
+          `${apiUrl}/api/dependents/search?cpf=${cleanCpf}`,
           {
             headers: { Authorization: `Bearer ${token}` },
           }

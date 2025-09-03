@@ -237,7 +237,7 @@ const RegisterConsultationPage: React.FC = () => {
         // 🔥 Check if the dependent has active subscription
         if (dependentData.status !== "active") {
           setError(
-          `${apiUrl}/api/dependents?client_id=${clientData.id}`,
+            "Este dependente não pode ser atendido pois não possui assinatura ativa."
           );
           resetForm();
           return;
@@ -307,8 +307,8 @@ const RegisterConsultationPage: React.FC = () => {
 
       if (dependentsResponse.ok) {
         const dependentsData = await dependentsResponse.json();
-        // Filter only active dependents for selection
-        setDependents(dependentsData.filter((d: any) => d.status === 'active'));
+        // Filter only active dependents  
+        setDependents(dependentsData.filter((d: any) => d.subscription_status === 'active'));
       }
 
       setSuccess("Cliente encontrado com sucesso!");
@@ -664,7 +664,7 @@ const RegisterConsultationPage: React.FC = () => {
                         className="input"
                       >
                         <option value="">Consulta para o titular</option>
-                        {dependents.filter((dependent) => dependent.status === 'active').map((dependent) => (
+                        {dependents.filter((dependent) => dependent.subscription_status === 'active').map((dependent) => (
                           <option key={dependent.id} value={dependent.id}>
                             {dependent.name} (CPF:{" "}
                             {dependent.cpf.replace(
