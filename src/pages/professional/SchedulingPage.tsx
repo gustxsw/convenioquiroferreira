@@ -17,13 +17,11 @@ import {
   Edit,
   MessageCircle,
   Settings,
-  Repeat,
 } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import EditConsultationModal from "../../components/EditConsultationModal";
 import SlotCustomizationModal from "../../components/SlotCustomizationModal";
-import RecurringConsultationModal from '../../components/RecurringConsultationModal';
 
 type Consultation = {
   id: number;
@@ -76,7 +74,6 @@ const SchedulingPage: React.FC = () => {
   });
   const [showSlotModal, setShowSlotModal] = useState(false);
 
-  const [showRecurringModal, setShowRecurringModal] = useState(false);
   // New consultation modal
   const [showNewModal, setShowNewModal] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -659,14 +656,6 @@ const SchedulingPage: React.FC = () => {
           >
             <Plus className="h-5 w-5 mr-2" />
             Nova Consulta
-          </button>
-          
-          <button
-            onClick={() => setShowRecurringModal(true)}
-            className="btn btn-outline flex items-center"
-          >
-            <Repeat className="h-5 w-5 mr-2" />
-            Consultas Recorrentes
           </button>
         </div>
       </div>
@@ -1413,16 +1402,6 @@ const SchedulingPage: React.FC = () => {
         currentSlotDuration={slotDuration}
         onClose={() => setShowSlotModal(false)}
         onSlotDurationChange={handleSlotDurationChange}
-      />
-
-      {/* Recurring Consultation Modal */}
-      <RecurringConsultationModal
-        isOpen={showRecurringModal}
-        onClose={() => setShowRecurringModal(false)}
-        onSuccess={() => {
-          setShowRecurringModal(false);
-          fetchData();
-        }}
       />
 
       {/* Slot Customization Modal */}
