@@ -136,20 +136,6 @@ const initializeDatabase = async () => {
       )
     `);
 
-    // Add status column to dependents table if it doesn't exist
-    await pool.query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns 
-          WHERE table_name = 'dependents' AND column_name = 'status'
-        ) THEN
-          ALTER TABLE dependents ADD COLUMN status VARCHAR(20) DEFAULT 'pending';
-          -- Copy existing subscription_status to status column
-          UPDATE dependents SET status = subscription_status WHERE status IS NULL;
-        END IF;
-      END $$;
-    `);
     // Private patients table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS private_patients (
@@ -1950,86 +1936,37 @@ app.get("/api/clients/lookup", authenticate, authorize(["professional", "admin"]
 
 // ===== DEPENDENTS ROUTES =====
 
-app.get("/api/dependents", authenticate, async (req, res) => {
+app.get("/api/dependents/:clientId", authenticate, async (req, res) => {
   try {
-    const { client_id, status } = req.query;
-
-    if (!client_id) {
-      return res.status(400).json({ message: "client_id é obrigatório" });
-    }
+    const { clientId } = req.params;
 
     // Clients can only access their own dependents
     if (
       req.user.currentRole === "client" &&
-      req.user.id !== parseInt(client_id)
+      req.user.id !== parseInt(clientId)
     ) {
       return res.status(403).json({ message: "Acesso negado" });
     }
 
-    let query = `
+    const dependentsResult = await pool.query(
+      `
       SELECT 
         id, name, cpf, birth_date, subscription_status, subscription_expiry,
-        subscription_status as status
+        billing_amount, payment_reference, activated_at, created_at,
+        subscription_status as current_status
       FROM dependents 
-      WHERE user_id = $1
-    `;
-    
-    const params = [client_id];
-    
-    if (status) {
-      query += " AND status = $2";
-      params.push(status);
-    }
-    
-    query += " ORDER BY created_at DESC";
+      WHERE user_id = $1 
+      ORDER BY created_at DESC
+    `,
+      [clientId]
+    );
 
-    const dependentsResult = await pool.query(query, params);
-
-    console.log("✅ Dependents fetched for client:", client_id, "Count:", dependentsResult.rows.length);
+    console.log("✅ Dependents fetched for client:", clientId, "Count:", dependentsResult.rows.length);
 
     res.json(dependentsResult.rows);
   } catch (error) {
     console.error("❌ Error fetching dependents:", error);
     res.status(500).json({ message: "Erro ao carregar dependentes" });
-  }
-});
-
-app.get("/api/dependents/search", authenticate, authorize(["professional", "admin"]), async (req, res) => {
-  try {
-    const { cpf } = req.query;
-
-    if (!cpf) {
-      return res.status(400).json({ message: "CPF é obrigatório" });
-    }
-
-    if (!validateCPF(cpf)) {
-      return res.status(400).json({ message: "CPF inválido" });
-    }
-
-    const cleanCPF = cpf.replace(/\D/g, "");
-
-    const dependentResult = await pool.query(
-      `
-      SELECT 
-        d.id, d.name, d.cpf, d.status,
-        d.user_id, u.name as client_name, u.subscription_status as client_subscription_status
-      FROM dependents d
-      JOIN users u ON d.user_id = u.id
-      WHERE d.cpf = $1
-    `,
-      [cleanCPF]
-    );
-
-    if (dependentResult.rows.length === 0) {
-      return res.status(404).json({ message: "Dependente não encontrado" });
-    }
-
-    const dependent = dependentResult.rows[0];
-
-    res.json(dependent);
-  } catch (error) {
-    console.error("❌ Error searching dependent:", error);
-    res.status(500).json({ message: "Erro ao buscar dependente" });
   }
 });
 
@@ -2050,7 +1987,7 @@ app.get("/api/dependents/lookup", authenticate, authorize(["professional", "admi
     const dependentResult = await pool.query(
       `
       SELECT 
-        d.id, d.name, d.cpf, d.subscription_status as status,
+        d.id, d.name, d.cpf, d.subscription_status as dependent_subscription_status,
         d.user_id, u.name as client_name, u.subscription_status as client_subscription_status
       FROM dependents d
       JOIN users u ON d.user_id = u.id
@@ -2074,8 +2011,7 @@ app.get("/api/dependents/lookup", authenticate, authorize(["professional", "admi
 
 app.post("/api/dependents", authenticate, authorize(["client"]), async (req, res) => {
   try {
-    const { client_id, name, cpf, birth_date } = req.body;
-    const user_id = client_id || req.user.id;
+    const { user_id, name, cpf, birth_date } = req.body;
 
     // Validate client can only create dependents for themselves
     if (req.user.id !== user_id) {
@@ -2121,8 +2057,8 @@ app.post("/api/dependents", authenticate, authorize(["client"]), async (req, res
 
     const dependentResult = await pool.query(
       `
-      INSERT INTO dependents (user_id, name, cpf, birth_date, status)
-      VALUES ($1, $2, $3, $4, 'pending')
+      INSERT INTO dependents (user_id, name, cpf, birth_date)
+      VALUES ($1, $2, $3, $4)
       RETURNING *
     `,
       [user_id, name.trim(), cleanCPF, birth_date || null]
@@ -4019,7 +3955,6 @@ const processDependentPayment = async (payment) => {
       `
       UPDATE dependents 
       SET 
-        status = 'active',
         subscription_status = 'active',
         subscription_expiry = CURRENT_TIMESTAMP + INTERVAL '1 year',
         activated_at = CURRENT_TIMESTAMP
@@ -4547,8 +4482,9 @@ app.get("/api/notifications", authenticate, async (req, res) => {
     const notificationsResult = await pool.query(
       `
       SELECT * FROM notifications 
-      WHERE user_id = $1
-      ORDER BY created_at DESC
+      WHERE user_id = $1 
+      ORDER BY created_at DESC 
+      LIMIT 50
     `,
       [req.user.id]
     );
@@ -4598,4 +4534,242 @@ app.put("/api/notifications/mark-all-read", authenticate, async (req, res) => {
   }
 });
 
-// =====
+// ===== SYSTEM SETTINGS ROUTES =====
+
+app.get("/api/system-settings", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const settingsResult = await pool.query(`
+      SELECT * FROM system_settings ORDER BY key
+    `);
+
+    res.json(settingsResult.rows);
+  } catch (error) {
+    console.error("❌ Error fetching system settings:", error);
+    res.status(500).json({ message: "Erro ao carregar configurações do sistema" });
+  }
+});
+
+app.put("/api/system-settings/:key", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const { key } = req.params;
+    const { value, description } = req.body;
+
+    if (!value) {
+      return res.status(400).json({ message: "Valor é obrigatório" });
+    }
+
+    const settingResult = await pool.query(
+      `
+      INSERT INTO system_settings (key, value, description, updated_by, updated_at)
+      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+      ON CONFLICT (key) 
+      DO UPDATE SET 
+        value = EXCLUDED.value,
+        description = EXCLUDED.description,
+        updated_by = EXCLUDED.updated_by,
+        updated_at = EXCLUDED.updated_at
+      RETURNING *
+    `,
+      [key, value, description || null, req.user.id]
+    );
+
+    const setting = settingResult.rows[0];
+
+    console.log("✅ System setting updated:", key);
+
+    res.json({
+      message: "Configuração atualizada com sucesso",
+      setting,
+    });
+  } catch (error) {
+    console.error("❌ Error updating system setting:", error);
+    res.status(500).json({ message: "Erro ao atualizar configuração do sistema" });
+  }
+});
+
+// ===== AUDIT LOGS ROUTES =====
+
+app.get("/api/audit-logs", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const { page = 1, limit = 50, user_id, action, table_name } = req.query;
+    const offset = (page - 1) * limit;
+
+    let query = `
+      SELECT 
+        al.*, u.name as user_name
+      FROM audit_logs al
+      LEFT JOIN users u ON al.user_id = u.id
+      WHERE 1=1
+    `;
+    const params = [];
+    let paramCount = 0;
+
+    if (user_id) {
+      paramCount++;
+      query += ` AND al.user_id = $${paramCount}`;
+      params.push(user_id);
+    }
+
+    if (action) {
+      paramCount++;
+      query += ` AND al.action = $${paramCount}`;
+      params.push(action);
+    }
+
+    if (table_name) {
+      paramCount++;
+      query += ` AND al.table_name = $${paramCount}`;
+      params.push(table_name);
+    }
+
+    query += ` ORDER BY al.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+    params.push(limit, offset);
+
+    const logsResult = await pool.query(query, params);
+
+    // Get total count for pagination
+    let countQuery = `SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
+    const countParams = [];
+    let countParamCount = 0;
+
+    if (user_id) {
+      countParamCount++;
+      countQuery += ` AND al.user_id = $${countParamCount}`;
+      countParams.push(user_id);
+    }
+
+    if (action) {
+      countParamCount++;
+      countQuery += ` AND al.action = $${countParamCount}`;
+      countParams.push(action);
+    }
+
+    if (table_name) {
+      countParamCount++;
+      countQuery += ` AND al.table_name = $${countParamCount}`;
+      countParams.push(table_name);
+    }
+
+    const countResult = await pool.query(countQuery, countParams);
+    const totalCount = parseInt(countResult.rows[0].count);
+
+    res.json({
+      logs: logsResult.rows,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error fetching audit logs:", error);
+    res.status(500).json({ message: "Erro ao carregar logs de auditoria" });
+  }
+});
+
+// ===== HEALTH CHECK =====
+
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "OK",
+    timestamp: new Date().toISOString(),
+    version: "2.0.0",
+    database: "Connected",
+    mercadopago: "Configured",
+  });
+});
+
+// ===== ERROR HANDLERS =====
+
+// Catch-all route for SPA in production
+if (process.env.NODE_ENV === "production") {
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "../dist/index.html"));
+  });
+}
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error("Global error handler:", err);
+
+  // Log error to audit logs if user is available
+  if (req.user) {
+    logAuditAction(
+      req.user.id,
+      "ERROR",
+      null,
+      null,
+      null,
+      {
+        error: err.message,
+        stack: err.stack,
+        url: req.url,
+        method: req.method,
+      },
+      req
+    ).catch(console.error);
+  }
+
+  res.status(500).json({
+    message: "Erro interno do servidor",
+    ...(process.env.NODE_ENV === "development" && { error: err.message }),
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ message: "Rota não encontrada" });
+});
+
+// ===== SERVER STARTUP =====
+
+const startServer = async () => {
+  try {
+    // Initialize database
+    await initializeDatabase();
+
+    // Start listening
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log(`📊 Database: Connected`);
+      console.log(`💳 MercadoPago: Configured`);
+      console.log(`📋 Consultations System: Active`);
+      console.log(`✅ All systems operational`);
+    });
+  } catch (error) {
+    console.error("❌ Failed to start server:", error);
+    process.exit(1);
+  }
+};
+
+// Handle graceful shutdown
+process.on("SIGTERM", async () => {
+  console.log("🔄 SIGTERM received, shutting down gracefully...");
+
+  try {
+    await pool.end();
+    console.log("✅ Database connections closed");
+    process.exit(0);
+  } catch (error) {
+    console.error("❌ Error during shutdown:", error);
+    process.exit(1);
+  }
+});
+
+process.on("SIGINT", async () => {
+  console.log("🔄 SIGINT received, shutting down gracefully...");
+
+  try {
+    await pool.end();
+    console.log("✅ Database connections closed");
+    process.exit(0);
+  } catch (error) {
+    console.error("❌ Error during shutdown:", error);
+    process.exit(1);
+  }
+});
+
+// Start the server
+startServer();
