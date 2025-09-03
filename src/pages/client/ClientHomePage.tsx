@@ -258,7 +258,7 @@ const ClientHomePage: React.FC = () => {
 
     // Only show active dependents in filter (check individual status)
     dependents
-      .filter((d) => d.subscription_status === "active")
+      .filter((d) => d.status === "active" || d.subscription_status === "active")
       .forEach((dependent) => {
         options.push({
           value: dependent.id.toString(),

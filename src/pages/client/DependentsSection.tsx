@@ -261,7 +261,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
   };
 
   const getStatusDisplay = (dependent: Dependent) => {
-    const status = dependent.current_status || dependent.subscription_status;
+    const status = dependent.status || dependent.current_status || dependent.subscription_status;
     switch (status) {
       case "active":
         return {

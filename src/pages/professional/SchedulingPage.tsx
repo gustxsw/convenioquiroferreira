@@ -278,15 +278,15 @@ const SchedulingPage: React.FC = () => {
         if (dependentResponse.ok) {
           const dependentData = await dependentResponse.json();
           
-          if (dependentData.dependent_subscription_status !== "active") {
-            setError("Dependente não possui assinatura ativa");
+          if (dependentData.status !== "active") {
+            setError("Dependente não possui status ativo");
             return;
           }
 
           setClientSearchResult({
             id: dependentData.user_id,
             name: dependentData.client_name,
-            subscription_status: "active",
+            subscription_status: "active", // Keep for compatibility
           });
           setSelectedDependentId(dependentData.id);
           setDependents([]);

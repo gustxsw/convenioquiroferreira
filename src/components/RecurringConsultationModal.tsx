@@ -168,7 +168,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
         if (dependentsResponse.ok) {
           const dependentsData = await dependentsResponse.json();
-          setDependents(dependentsData.filter((d: any) => d.subscription_status === 'active'));
+          setDependents(dependentsData.filter((d: any) => d.status === 'active'));
         }
       } else {
         // Try searching as dependent
@@ -182,8 +182,8 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
         if (dependentResponse.ok) {
           const dependentData = await dependentResponse.json();
           
-          if (dependentData.dependent_subscription_status !== 'active') {
-            setError('Dependente não possui assinatura ativa');
+          if (dependentData.status !== 'active') {
+            setError('Dependente não possui status ativo');
             return;
           }
 
