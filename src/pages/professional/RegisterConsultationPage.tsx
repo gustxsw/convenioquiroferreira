@@ -663,7 +663,7 @@ const RegisterConsultationPage: React.FC = () => {
                         className="input"
                       >
                         <option value="">Consulta para o titular</option>
-                        {dependents.filter((dependent) => dependent.subscription_status === 'active').map((dependent) => (
+                        {dependents.map((dependent) => (
                           <option key={dependent.id} value={dependent.id}>
                             {dependent.name} (CPF:{" "}
                             {dependent.cpf.replace(

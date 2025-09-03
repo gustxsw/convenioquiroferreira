@@ -160,7 +160,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
         // Fetch dependents
         const dependentsResponse = await fetch(
-          `${apiUrl}/api/dependents?client_id=${clientData.id}`,
+          `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`,
           {
             headers: { Authorization: `Bearer ${token}` },
           }
@@ -168,8 +168,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
         if (dependentsResponse.ok) {
           const dependentsData = await dependentsResponse.json();
-          // Filter only active dependents  
-          setDependents(dependentsData.filter((d: any) => d.subscription_status === 'active'));
+          setDependents(dependentsData);
         }
       } else {
         // Try searching as dependent
@@ -183,8 +182,8 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
         if (dependentResponse.ok) {
           const dependentData = await dependentResponse.json();
           
-          if (dependentData.status !== 'active') {
-            setError('Dependente não possui status ativo');
+          if (dependentData.status !== "active") {
+            setError("Dependente não possui status ativo");
             return;
           }
 
