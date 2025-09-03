@@ -52,6 +52,8 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
     start_time: '',
     recurrence_type: 'weekly' as 'daily' | 'weekly' | 'monthly',
     recurrence_interval: 1,
+    weekly_count: 4,
+    selected_weekdays: [] as number[], // 0 = Sunday, 1 = Monday, etc.
     end_date: '',
     occurrences: 10,
     notes: '',
@@ -243,7 +245,9 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
         start_date: formData.start_date,
         start_time: formData.start_time,
         recurrence_type: formData.recurrence_type,
-        recurrence_interval: formData.recurrence_interval,
+        recurrence_interval: formData.recurrence_type === 'weekly' ? 1 : formData.recurrence_interval,
+        weekly_count: formData.recurrence_type === 'weekly' ? formData.weekly_count : null,
+        selected_weekdays: formData.recurrence_type === 'daily' ? formData.selected_weekdays : null,
         end_date: formData.end_date || null,
         occurrences: formData.occurrences,
         notes: formData.notes && formData.notes.trim() ? formData.notes.trim() : null,
@@ -530,7 +534,8 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                 Configurações de Recorrência
               </h3>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-6">
+                {/* Recurrence Type */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Tipo de Recorrência *
@@ -541,6 +546,9 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                       setFormData(prev => ({
                         ...prev,
                         recurrence_type: e.target.value as 'daily' | 'weekly' | 'monthly',
+                        // Reset specific fields when changing type
+                        selected_weekdays: e.target.value === 'daily' ? [] : prev.selected_weekdays,
+                        weekly_count: e.target.value === 'weekly' ? 4 : prev.weekly_count,
                       }))
                     }
                     className="input"
@@ -552,32 +560,251 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Intervalo *
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="12"
-                    value={formData.recurrence_interval}
-                    onChange={(e) =>
-                      setFormData(prev => ({
-                        ...prev,
-                        recurrence_interval: parseInt(e.target.value),
-                      }))
-                    }
-                    className="input"
-                    required
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    {formData.recurrence_type === 'daily' && 'A cada quantos dias'}
-                    {formData.recurrence_type === 'weekly' && 'A cada quantas semanas'}
-                    {formData.recurrence_type === 'monthly' && 'A cada quantos meses'}
-                  </p>
+                {/* Daily Recurrence - Weekday Selection */}
+                {formData.recurrence_type === 'daily' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-3">
+                      Selecione os dias da semana *
+                    </label>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {[
+                        { value: 1, label: 'Segunda', short: 'SEG' },
+                        { value: 2, label: 'Terça', short: 'TER' },
+                        { value: 3, label: 'Quarta', short: 'QUA' },
+                        { value: 4, label: 'Quinta', short: 'QUI' },
+                        { value: 5, label: 'Sexta', short: 'SEX' },
+                        { value: 6, label: 'Sábado', short: 'SÁB' },
+                        { value: 0, label: 'Domingo', short: 'DOM' }
+                      ].map((day) => (
+                        <label
+                          key={day.value}
+                          className={`
+                            flex flex-col items-center p-3 rounded-lg border-2 cursor-pointer transition-all
+                            ${formData.selected_weekdays.includes(day.value)
+                              ? 'border-red-500 bg-red-50 text-red-700'
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                            }
+                          `}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={formData.selected_weekdays.includes(day.value)}
+                            onChange={(e) => {
+                              const isChecked = e.target.checked;
+                              setFormData(prev => ({
+                                ...prev,
+                                selected_weekdays: isChecked
+                                  ? [...prev.selected_weekdays, day.value]
+                                  : prev.selected_weekdays.filter(d => d !== day.value)
+                              }));
+                            }}
+                            className="sr-only"
+                          />
+                          <span className="text-xs font-medium mb-1">{day.short}</span>
+                          <span className="text-xs text-center">{day.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {formData.selected_weekdays.length === 0 && (
+                      <p className="text-sm text-red-600 mt-2">
+                        Selecione pelo menos um dia da semana
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-500 mt-2">
+                      As consultas serão criadas apenas nos dias selecionados
+                    </p>
+                  </div>
+                )}
+
+                {/* Weekly Recurrence - Number of Weeks */}
+                {formData.recurrence_type === 'weekly' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Quantas semanas seguidas? *
+                    </label>
+                    <select
+                      value={formData.weekly_count}
+                      onChange={(e) =>
+                        setFormData(prev => ({
+                          ...prev,
+                          weekly_count: parseInt(e.target.value),
+                        }))
+                      }
+                      className="input"
+                      required
+                    >
+                      <option value={1}>1 semana</option>
+                      <option value={2}>2 semanas</option>
+                      <option value={3}>3 semanas</option>
+                      <option value={4}>4 semanas (1 mês)</option>
+                      <option value={6}>6 semanas</option>
+                      <option value={8}>8 semanas (2 meses)</option>
+                      <option value={12}>12 semanas (3 meses)</option>
+                      <option value={24}>24 semanas (6 meses)</option>
+                      <option value={52}>52 semanas (1 ano)</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      A consulta será repetida no mesmo dia da semana por {formData.weekly_count} semana{formData.weekly_count > 1 ? 's' : ''} seguida{formData.weekly_count > 1 ? 's' : ''}
+                    </p>
+                  </div>
+                )}
+
+                {/* Monthly Recurrence - Interval */}
+                {formData.recurrence_type === 'monthly' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      A cada quantos meses? *
+                    </label>
+                    <select
+                      value={formData.recurrence_interval}
+                      onChange={(e) =>
+                        setFormData(prev => ({
+                          ...prev,
+                          recurrence_interval: parseInt(e.target.value),
+                        }))
+                      }
+                      className="input"
+                      required
+                    >
+                      <option value={1}>Todo mês</option>
+                      <option value={2}>A cada 2 meses</option>
+                      <option value={3}>A cada 3 meses</option>
+                      <option value={6}>A cada 6 meses</option>
+                      <option value={12}>A cada 12 meses (anual)</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      A consulta será repetida no mesmo dia do mês
+                    </p>
+                  </div>
+                )}
+
+                {/* End Date and Occurrences */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Data Final (opcional)
+                    </label>
+                    <input
+                      type="date"
+                      value={formData.end_date}
+                      onChange={(e) =>
+                        setFormData(prev => ({ ...prev, end_date: e.target.value }))
+                      }
+                      className="input"
+                      min={formData.start_date}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Máximo de Consultas *
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={formData.occurrences}
+                      onChange={(e) =>
+                        setFormData(prev => ({
+                          ...prev,
+                          occurrences: parseInt(e.target.value),
+                        }))
+                      }
+                      className="input"
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Limite de consultas a serem criadas
+                    </p>
+                  </div>
                 </div>
 
-                <div>
+                {/* Preview of recurrence pattern */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="font-medium text-blue-900 mb-2">📅 Resumo da Recorrência:</h4>
+                  <div className="text-sm text-blue-700">
+                    {formData.recurrence_type === 'daily' && formData.selected_weekdays.length > 0 && (
+                      <p>
+                        Consultas serão criadas {formData.selected_weekdays.length === 7 ? 'todos os dias' : 
+                        `nas ${['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
+                          .filter((_, index) => formData.selected_weekdays.includes(index))
+                          .join(', ')}`} 
+                        {formData.start_time && ` às ${formData.start_time}`}
+                      </p>
+                    )}
+                    {formData.recurrence_type === 'weekly' && (
+                      <p>
+                        Consultas serão criadas semanalmente por {formData.weekly_count} semana{formData.weekly_count > 1 ? 's' : ''}
+                        {formData.start_time && ` às ${formData.start_time}`}
+                      </p>
+                    )}
+                    {formData.recurrence_type === 'monthly' && (
+                      <p>
+                        Consultas serão criadas a cada {formData.recurrence_interval} mês{formData.recurrence_interval > 1 ? 'es' : ''}
+                        {formData.start_time && ` às ${formData.start_time}`}
+                      </p>
+                    )}
+                    <p className="mt-1">
+                      <strong>Máximo:</strong> {formData.occurrences} consultas
+                      {formData.end_date && ` até ${new Date(formData.end_date).toLocaleDateString('pt-BR')}`}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Notes */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Observações
+              </label>
+              <textarea
+                value={formData.notes}
+                onChange={(e) =>
+                  setFormData(prev => ({ ...prev, notes: e.target.value }))
+                }
+                className="input min-h-[80px]"
+                placeholder="Observações sobre as consultas..."
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-3 mt-6">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn btn-secondary"
+              disabled={isCreating}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className={`btn btn-primary ${
+                isCreating ? 'opacity-70 cursor-not-allowed' : ''
+              }`}
+              disabled={isCreating || 
+                (formData.recurrence_type === 'daily' && formData.selected_weekdays.length === 0)
+              }
+            >
+              {isCreating ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                  Criando Consultas...
+                </>
+              ) : (
+                <>
+                  <Repeat className="h-5 w-5 mr-2" />
+                  Criar Consultas Recorrentes
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Data Final (opcional)
                   </label>
