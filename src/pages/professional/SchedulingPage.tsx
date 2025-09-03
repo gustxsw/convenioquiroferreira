@@ -17,8 +17,8 @@ import {
   Edit,
   MessageCircle,
   Settings,
-} from "lucide-react";
   Repeat,
+} from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import EditConsultationModal from "../../components/EditConsultationModal";
