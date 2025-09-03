@@ -929,7 +929,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
       subscription_status,
       subscription_expiry,
       category_name,
-      professional_percentage,
+      percentage,
       crm,
     } = req.body;
 
@@ -1014,7 +1014,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
         subscription_status || "pending",
         subscription_expiry || null,
         category_name?.trim() || null,
-        professional_percentage || null,
+        percentage || null,
         crm?.trim() || null,
       ]
     );
@@ -1058,7 +1058,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
       subscription_status,
       subscription_expiry,
       category_name,
-      professional_percentage,
+      percentage,
       crm,
       currentPassword,
       newPassword,
@@ -1124,7 +1124,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
       if (subscription_status !== undefined) updateData.subscription_status = subscription_status;
       if (subscription_expiry !== undefined) updateData.subscription_expiry = subscription_expiry;
       if (category_name !== undefined) updateData.category_name = category_name?.trim() || null;
-      if (professional_percentage !== undefined) updateData.percentage = professional_percentage;
+      if (percentage !== undefined) updateData.percentage = percentage;
       if (crm !== undefined) updateData.crm = crm?.trim() || null;
     }
 
@@ -2253,16 +2253,16 @@ app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, 
     const professionalRevenueResult = await pool.query(`
       SELECT 
         u.name as professional_name,
-        u.professional_percentage,
+        u.percentage,
         COUNT(c.id) as consultation_count,
         SUM(c.value) as revenue,
-        SUM(c.value * (u.professional_percentage / 100.0)) as professional_payment,
-        SUM(c.value * ((100 - u.professional_percentage) / 100.0)) as clinic_revenue
+        SUM(c.value * (u.percentage / 100.0)) as professional_payment,
+        SUM(c.value * ((100 - u.percentage) / 100.0)) as clinic_revenue
       FROM consultations c
       JOIN users u ON c.professional_id = u.id
       WHERE c.date >= $1 AND c.date <= $2 
         AND c.status != 'cancelled'
-      GROUP BY u.id, u.name, u.professional_percentage
+      GROUP BY u.id, u.name, u.percentage
       ORDER BY revenue DESC
     `, [start_date, end_date]);
 
@@ -2292,7 +2292,7 @@ app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, 
       total_revenue: Number(totalRevenueResult.rows[0].total_revenue) || 0,
       revenue_by_professional: professionalRevenueResult.rows.map(row => ({
         professional_name: row.professional_name,
-        professional_percentage: Number(row.professional_percentage) || 50,
+        percentage: Number(row.percentage) || 50,
         revenue: Number(row.revenue) || 0,
         consultation_count: Number(row.consultation_count) || 0,
         professional_payment: Number(row.professional_payment) || 0,
@@ -2331,11 +2331,11 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
 
     // Get professional percentage
     const professionalResult = await pool.query(
-      'SELECT professional_percentage FROM users WHERE id = $1',
+      'SELECT percentage FROM users WHERE id = $1',
       [professionalId]
     );
 
-    const professionalPercentage = professionalResult.rows[0]?.professional_percentage || 50;
+    const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
 
     // Get consultations for the period (excluding cancelled consultations)
     const consultationsResult = await pool.query(`
@@ -2379,7 +2379,7 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
 
     const report = {
       summary: {
-        professional_percentage: professionalPercentage,
+        percentage: professionalPercentage,
         total_revenue: Number(summary.total_revenue) || 0,
         consultation_count: Number(summary.consultation_count) || 0,
         amount_to_pay: Number(summary.amount_to_pay) || 0
@@ -2419,11 +2419,11 @@ app.get('/api/reports/professional-detailed', authenticate, authorize(['professi
 
     // Get professional percentage
     const professionalResult = await pool.query(
-      'SELECT professional_percentage FROM users WHERE id = $1',
+      'SELECT percentage FROM users WHERE id = $1',
       [professionalId]
     );
 
-    const professionalPercentage = professionalResult.rows[0]?.professional_percentage || 50;
+    const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
 
     // Get detailed statistics (excluding cancelled consultations)
     const statsResult = await pool.query(`
@@ -2451,7 +2451,7 @@ app.get('/api/reports/professional-detailed', authenticate, authorize(['professi
         total_revenue: Number(stats.total_revenue) || 0,
         convenio_revenue: Number(stats.convenio_revenue) || 0,
         private_revenue: Number(stats.private_revenue) || 0,
-        professional_percentage: professionalPercentage,
+        percentage: professionalPercentage,
         amount_to_pay: Number(stats.amount_to_pay) || 0
       }
     };
@@ -4885,7 +4885,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       `
       SELECT 
         u.name as professional_name,
-        u.percentage as professional_percentage,
+        u.percentage as percentage,
         COALESCE(SUM(c.value), 0) as revenue,
         COUNT(c.id) as consultation_count,
         COALESCE(SUM(c.value * (100 - u.percentage) / 100), 0) as clinic_revenue,
@@ -4994,7 +4994,7 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
 
     const report = {
       summary: {
-        professional_percentage: professionalPercentage,
+        percentage: professionalPercentage,
         total_revenue: totalRevenue,
         consultation_count: consultationCount,
         amount_to_pay: totalAmountToPay,
@@ -5060,7 +5060,7 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         total_revenue: parseFloat(stats.total_revenue),
         convenio_revenue: parseFloat(stats.convenio_revenue),
         private_revenue: parseFloat(stats.private_revenue),
-        professional_percentage: professionalPercentage,
+        percentage: professionalPercentage,
         amount_to_pay: parseFloat(stats.amount_to_pay),
       },
     };
