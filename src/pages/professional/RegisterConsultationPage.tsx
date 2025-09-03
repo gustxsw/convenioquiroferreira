@@ -237,7 +237,7 @@ const RegisterConsultationPage: React.FC = () => {
         // 🔥 Check if the dependent has active subscription
         if (dependentData.status !== "active") {
           setError(
-            "Este dependente não pode ser atendido pois não possui status ativo."
+          `${apiUrl}/api/dependents?client_id=${clientData.id}`,
           );
           resetForm();
           return;
@@ -248,7 +248,8 @@ const RegisterConsultationPage: React.FC = () => {
         setClientName(dependentData.client_name);
         setSubscriptionStatus(dependentData.status);
         setSelectedDependentId(dependentData.id);
-        setDependents([]);
+          // Filter only active dependents
+          setDependents(dependentsData.filter((d: any) => d.status === 'active'));
         setSuccess(
           `Dependente encontrado: ${dependentData.name} (Titular: ${dependentData.client_name}) - Status: ${dependentData.status === 'active' ? 'Ativo' : 'Inativo'}`
         );
@@ -295,7 +296,7 @@ const RegisterConsultationPage: React.FC = () => {
 
       // Fetch dependents
       const dependentsResponse = await fetch(
-        `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`,
+        `${apiUrl}/api/dependents?client_id=${clientData.id}`,
         {
           method: "GET",
           headers: {
@@ -306,7 +307,8 @@ const RegisterConsultationPage: React.FC = () => {
 
       if (dependentsResponse.ok) {
         const dependentsData = await dependentsResponse.json();
-        setDependents(dependentsData);
+        // Filter only active dependents for selection
+        setDependents(dependentsData.filter((d: any) => d.status === 'active'));
       }
 
       setSuccess("Cliente encontrado com sucesso!");
