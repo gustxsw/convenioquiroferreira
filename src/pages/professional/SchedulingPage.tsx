@@ -23,6 +23,7 @@ import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import EditConsultationModal from "../../components/EditConsultationModal";
 import SlotCustomizationModal from "../../components/SlotCustomizationModal";
+import RecurringConsultationModal from '../../components/RecurringConsultationModal';
 
 type Consultation = {
   id: number;
@@ -1433,7 +1434,6 @@ const SchedulingPage: React.FC = () => {
       />
     </div>
   );
-import RecurringConsultationModal from '../../components/RecurringConsultationModal';
 };
 
 export default SchedulingPage;
