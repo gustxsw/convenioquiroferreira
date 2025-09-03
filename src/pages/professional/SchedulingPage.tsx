@@ -75,6 +75,11 @@ const SchedulingPage: React.FC = () => {
     return saved ? (Number(saved) as SlotDuration) : 30;
   });
   const [showSlotModal, setShowSlotModal] = useState(false);
+  const [showQuickScheduleModal, setShowQuickScheduleModal] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<{
+    date: string;
+    time: string;
+  } | null>(null);
 
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   // New consultation modal
