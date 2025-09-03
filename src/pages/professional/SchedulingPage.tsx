@@ -15,7 +15,6 @@ import {
   CheckCircle,
   XCircle,
   Search,
-  CheckCircle,
   DollarSign,
   Edit,
   MessageCircle,
