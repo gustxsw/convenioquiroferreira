@@ -1,6 +1,4 @@
 import React, { useState, useEffect } from "react";
-import CancelConsultationModal from '../../components/CancelConsultationModal';
-import CancelledConsultationsModal from '../../components/CancelledConsultationsModal';
 import {
   Calendar,
   Clock,
@@ -1398,22 +1396,6 @@ const SchedulingPage: React.FC = () => {
         consultation={consultationToEdit}
         onClose={closeEditModal}
         onSuccess={handleEditSuccess}
-      />
-
-      {/* Cancel Consultation Modal */}
-      <CancelConsultationModal
-        isOpen={showCancelModal}
-        onClose={closeCancelModal}
-        onConfirm={handleCancelConfirm}
-        consultationData={consultationToCancel}
-        isLoading={false}
-      />
-
-      {/* Cancelled Consultations Modal */}
-      <CancelledConsultationsModal
-        isOpen={showCancelledModal}
-        onClose={() => setShowCancelledModal(false)}
-        autoRefresh={true}
       />
 
       {/* Slot Customization Modal */}

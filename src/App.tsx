@@ -20,7 +20,6 @@ import MedicalRecordsPage from "./pages/professional/MedicalRecordsPage";
 import DocumentsPage from "./pages/professional/DocumentsPage";
 import ProfessionalReportsPage from "./pages/professional/ProfessionalReportsPage";
 import ProfessionalProfilePage from "./pages/professional/ProfessionalProfilePage";
-import CancelledConsultationsPage from "./pages/professional/CancelledConsultationsPage";
 import AdminHomePage from "./pages/admin/AdminHomePage";
 import ManageUsersPage from "./pages/admin/ManageUsersPage";
 import ManageServicesPage from "./pages/admin/ManageServicesPage";
