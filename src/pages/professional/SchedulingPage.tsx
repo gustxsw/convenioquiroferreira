@@ -17,11 +17,13 @@ import {
   Edit,
   MessageCircle,
   Settings,
+  Repeat,
 } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import EditConsultationModal from "../../components/EditConsultationModal";
 import SlotCustomizationModal from "../../components/SlotCustomizationModal";
+import RecurringConsultationModal from '../../components/RecurringConsultationModal';
 
 type Consultation = {
   id: number;
@@ -74,6 +76,7 @@ const SchedulingPage: React.FC = () => {
   });
   const [showSlotModal, setShowSlotModal] = useState(false);
 
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
   // New consultation modal
   const [showNewModal, setShowNewModal] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -94,6 +97,25 @@ const SchedulingPage: React.FC = () => {
     return (saved ? parseInt(saved) : 30) as SlotDuration;
   });
   const [showSlotModal2, setShowSlotModal2] = useState(false);
+
+  // Recurring consultation form state
+  const [recurringFormData, setRecurringFormData] = useState({
+    patient_type: 'convenio' as 'convenio' | 'private',
+    client_cpf: '',
+    private_patient_id: '',
+    service_id: '',
+    value: '',
+    location_id: '',
+    start_date: '',
+    start_time: '',
+    recurrence_type: 'weekly' as 'daily' | 'weekly' | 'monthly',
+    recurrence_interval: 1,
+    weekly_count: 4,
+    selected_weekdays: [] as number[],
+    end_date: '',
+    occurrences: 10,
+    notes: '',
+  });
 
   // Form state
   const [formData, setFormData] = useState({
@@ -657,6 +679,14 @@ const SchedulingPage: React.FC = () => {
             <Plus className="h-5 w-5 mr-2" />
             Nova Consulta
           </button>
+          
+          <button
+            onClick={() => setShowRecurringModal(true)}
+            className="btn btn-outline flex items-center"
+          >
+            <Repeat className="h-5 w-5 mr-2" />
+            Consultas Recorrentes
+          </button>
         </div>
       </div>
 
@@ -673,6 +703,27 @@ const SchedulingPage: React.FC = () => {
           {success}
         </div>
       )}
+
+      {/* Recurring Consultation Section */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center">
+            <Repeat className="h-6 w-6 text-purple-600 mr-2" />
+            <h2 className="text-xl font-semibold">Consultas Recorrentes</h2>
+          </div>
+          <button
+            onClick={() => setShowRecurringModal(true)}
+            className="btn btn-primary flex items-center"
+          >
+            <Plus className="h-5 w-5 mr-2" />
+            Criar Recorrência
+          </button>
+        </div>
+        
+        <p className="text-gray-600 text-sm">
+          Configure consultas que se repetem automaticamente em dias específicos da semana ou mensalmente.
+        </p>
+      </div>
 
       {/* Date Navigation */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
@@ -1402,6 +1453,265 @@ const SchedulingPage: React.FC = () => {
         currentSlotDuration={slotDuration}
         onClose={() => setShowSlotModal(false)}
         onSlotDurationChange={handleSlotDurationChange}
+      />
+
+      {/* Recurring Consultation Modal */}
+      {showRecurringModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-bold flex items-center">
+                  <Repeat className="h-6 w-6 text-purple-600 mr-2" />
+                  Criar Consultas Recorrentes
+                </h2>
+                <button
+                  onClick={() => setShowRecurringModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+
+            <form className="p-6">
+              <div className="space-y-6">
+                {/* Recurrence Type Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">
+                    Tipo de Recorrência *
+                  </label>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {[
+                      { value: 'daily', label: 'Diário', icon: '📅', desc: 'Escolha os dias da semana' },
+                      { value: 'weekly', label: 'Semanal', icon: '📆', desc: 'Mesmo dia, várias semanas' },
+                      { value: 'monthly', label: 'Mensal', icon: '🗓️', desc: 'Mesmo dia do mês' }
+                    ].map((option) => (
+                      <label
+                        key={option.value}
+                        className={`
+                          flex flex-col items-center p-4 rounded-xl border-2 cursor-pointer transition-all
+                          ${recurringFormData.recurrence_type === option.value
+                            ? 'border-purple-500 bg-purple-50 text-purple-700'
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          }
+                        `}
+                      >
+                        <input
+                          type="radio"
+                          name="recurrence_type"
+                          value={option.value}
+                          checked={recurringFormData.recurrence_type === option.value}
+                          onChange={(e) =>
+                            setRecurringFormData(prev => ({
+                              ...prev,
+                              recurrence_type: e.target.value as 'daily' | 'weekly' | 'monthly',
+                              selected_weekdays: e.target.value === 'daily' ? [] : prev.selected_weekdays,
+                              weekly_count: e.target.value === 'weekly' ? 4 : prev.weekly_count,
+                            }))
+                          }
+                          className="sr-only"
+                        />
+                        <div className="text-3xl mb-2">{option.icon}</div>
+                        <span className="font-medium">{option.label}</span>
+                        <span className="text-xs text-center mt-1 opacity-75">{option.desc}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Daily Recurrence - Weekday Selection */}
+                {recurringFormData.recurrence_type === 'daily' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-3">
+                      Selecione os dias da semana *
+                    </label>
+                    <div className="grid grid-cols-3 md:grid-cols-7 gap-2">
+                      {[
+                        { value: 1, label: 'Segunda', short: 'SEG', color: 'blue' },
+                        { value: 2, label: 'Terça', short: 'TER', color: 'green' },
+                        { value: 3, label: 'Quarta', short: 'QUA', color: 'yellow' },
+                        { value: 4, label: 'Quinta', short: 'QUI', color: 'purple' },
+                        { value: 5, label: 'Sexta', short: 'SEX', color: 'pink' },
+                        { value: 6, label: 'Sábado', short: 'SÁB', color: 'indigo' },
+                        { value: 0, label: 'Domingo', short: 'DOM', color: 'red' }
+                      ].map((day) => (
+                        <label
+                          key={day.value}
+                          className={`
+                            flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all transform hover:scale-105
+                            ${recurringFormData.selected_weekdays.includes(day.value)
+                              ? 'border-purple-500 bg-purple-50 text-purple-700 shadow-md'
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm'
+                            }
+                          `}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={recurringFormData.selected_weekdays.includes(day.value)}
+                            onChange={(e) => {
+                              const isChecked = e.target.checked;
+                              setRecurringFormData(prev => ({
+                                ...prev,
+                                selected_weekdays: isChecked
+                                  ? [...prev.selected_weekdays, day.value]
+                                  : prev.selected_weekdays.filter(d => d !== day.value)
+                              }));
+                            }}
+                            className="sr-only"
+                          />
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-2 ${
+                            recurringFormData.selected_weekdays.includes(day.value)
+                              ? 'bg-purple-500 text-white'
+                              : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            <span className="text-xs font-bold">{day.short.charAt(0)}</span>
+                          </div>
+                          <span className="text-xs font-medium text-center">{day.short}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {recurringFormData.selected_weekdays.length === 0 && (
+                      <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-sm text-red-600 font-medium">
+                          ⚠️ Selecione pelo menos um dia da semana
+                        </p>
+                      </div>
+                    )}
+                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-xs text-blue-700">
+                        💡 <strong>Dica:</strong> As consultas serão criadas apenas nos dias selecionados. 
+                        Você pode escolher múltiplos dias para maior flexibilidade.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Weekly Recurrence - Number of Weeks */}
+                {recurringFormData.recurrence_type === 'weekly' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-3">
+                      Quantas semanas seguidas? *
+                    </label>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {[
+                        { value: 1, label: '1 semana', desc: 'Apenas 1 vez' },
+                        { value: 2, label: '2 semanas', desc: '2 consultas' },
+                        { value: 3, label: '3 semanas', desc: '3 consultas' },
+                        { value: 4, label: '4 semanas', desc: '1 mês' },
+                        { value: 6, label: '6 semanas', desc: '1,5 mês' },
+                        { value: 8, label: '8 semanas', desc: '2 meses' },
+                        { value: 12, label: '12 semanas', desc: '3 meses' },
+                        { value: 24, label: '24 semanas', desc: '6 meses' }
+                      ].map((option) => (
+                        <label
+                          key={option.value}
+                          className={`
+                            flex flex-col items-center p-4 rounded-xl border-2 cursor-pointer transition-all transform hover:scale-105
+                            ${recurringFormData.weekly_count === option.value
+                              ? 'border-purple-500 bg-purple-50 text-purple-700 shadow-md'
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm'
+                            }
+                          `}
+                        >
+                          <input
+                            type="radio"
+                            name="weekly_count"
+                            value={option.value}
+                            checked={recurringFormData.weekly_count === option.value}
+                            onChange={(e) =>
+                              setRecurringFormData(prev => ({
+                                ...prev,
+                                weekly_count: parseInt(e.target.value),
+                              }))
+                            }
+                            className="sr-only"
+                          />
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${
+                            recurringFormData.weekly_count === option.value
+                              ? 'bg-purple-500 text-white'
+                              : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            <span className="text-sm font-bold">{option.value}</span>
+                          </div>
+                          <span className="text-xs font-medium text-center">{option.label}</span>
+                          <span className="text-xs text-center opacity-75">{option.desc}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-xs text-blue-700">
+                        📅 <strong>Como funciona:</strong> A consulta será repetida no mesmo dia da semana 
+                        por {recurringFormData.weekly_count} semana{recurringFormData.weekly_count > 1 ? 's' : ''} seguida{recurringFormData.weekly_count > 1 ? 's' : ''}.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Preview of recurrence pattern */}
+                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-4">
+                  <h4 className="font-medium text-purple-900 mb-3 flex items-center">
+                    📅 <span className="ml-2">Resumo da Recorrência:</span>
+                  </h4>
+                  <div className="text-sm text-purple-700 space-y-2">
+                    {recurringFormData.recurrence_type === 'daily' && recurringFormData.selected_weekdays.length > 0 && (
+                      <>
+                        <p className="font-medium">
+                          🔄 Consultas serão criadas {recurringFormData.selected_weekdays.length === 7 ? 'todos os dias' : 
+                          `nas ${['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
+                            .filter((_, index) => recurringFormData.selected_weekdays.includes(index))
+                            .join(', ')}`}
+                        </p>
+                        <p>📊 Estimativa: {recurringFormData.selected_weekdays.length} consulta{recurringFormData.selected_weekdays.length > 1 ? 's' : ''} por semana</p>
+                      </>
+                    )}
+                    {recurringFormData.recurrence_type === 'weekly' && (
+                      <>
+                        <p className="font-medium">
+                          🔄 Consultas semanais por {recurringFormData.weekly_count} semana{recurringFormData.weekly_count > 1 ? 's' : ''}
+                        </p>
+                        <p>📊 Total: {recurringFormData.weekly_count} consulta{recurringFormData.weekly_count > 1 ? 's' : ''}</p>
+                      </>
+                    )}
+                    <div className="border-t border-purple-300 pt-2 mt-3">
+                      <p className="font-medium">
+                        🎯 <strong>Máximo:</strong> {recurringFormData.occurrences} consultas
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowRecurringModal(false)}
+                  className="btn btn-secondary"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={recurringFormData.recurrence_type === 'daily' && recurringFormData.selected_weekdays.length === 0}
+                >
+                  <Repeat className="h-5 w-5 mr-2" />
+                  Criar Consultas Recorrentes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Recurring Consultation Modal */}
+      <RecurringConsultationModal
+        isOpen={showRecurringModal}
+        onClose={() => setShowRecurringModal(false)}
+        onSuccess={() => {
+          setShowRecurringModal(false);
+          fetchData();
+        }}
       />
 
       {/* Slot Customization Modal */}
