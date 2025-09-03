@@ -525,6 +525,11 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                 showValidation
                 businessHours={{ start: 7, end: 18 }}
               />
+            </div>
+
+            {/* Recurrence Settings */}
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
                 Configurações de Recorrência
               </h3>
 
