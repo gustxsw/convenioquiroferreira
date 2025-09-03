@@ -296,7 +296,7 @@ const RegisterConsultationPage: React.FC = () => {
 
       // Fetch dependents
       const dependentsResponse = await fetch(
-        `${apiUrl}/api/dependents?client_id=${clientData.id}`,
+        `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`,
         {
           method: "GET",
           headers: {
@@ -307,8 +307,7 @@ const RegisterConsultationPage: React.FC = () => {
 
       if (dependentsResponse.ok) {
         const dependentsData = await dependentsResponse.json();
-        // Filter only active dependents  
-        setDependents(dependentsData.filter((d: any) => d.subscription_status === 'active'));
+        setDependents(dependentsData);
       }
 
       setSuccess("Cliente encontrado com sucesso!");
