@@ -136,6 +136,20 @@ const initializeDatabase = async () => {
       )
     `);
 
+    // Add status column to dependents table if it doesn't exist
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'dependents' AND column_name = 'status'
+        ) THEN
+          ALTER TABLE dependents ADD COLUMN status VARCHAR(20) DEFAULT 'pending';
+          -- Copy existing subscription_status to status column
+          UPDATE dependents SET status = subscription_status WHERE status IS NULL;
+        END IF;
+      END $$;
+    `);
     // Private patients table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS private_patients (
@@ -1936,32 +1950,42 @@ app.get("/api/clients/lookup", authenticate, authorize(["professional", "admin"]
 
 // ===== DEPENDENTS ROUTES =====
 
-app.get("/api/dependents/:clientId", authenticate, async (req, res) => {
+app.get("/api/dependents", authenticate, async (req, res) => {
   try {
-    const { clientId } = req.params;
+    const { client_id, status } = req.query;
+
+    if (!client_id) {
+      return res.status(400).json({ message: "client_id é obrigatório" });
+    }
 
     // Clients can only access their own dependents
     if (
       req.user.currentRole === "client" &&
-      req.user.id !== parseInt(clientId)
+      req.user.id !== parseInt(client_id)
     ) {
       return res.status(403).json({ message: "Acesso negado" });
     }
 
-    const dependentsResult = await pool.query(
-      `
+    let query = `
       SELECT 
         id, name, cpf, birth_date, subscription_status, subscription_expiry,
-        billing_amount, payment_reference, activated_at, created_at,
-        subscription_status as current_status
+        billing_amount, payment_reference, activated_at, created_at, status
       FROM dependents 
-      WHERE user_id = $1 
-      ORDER BY created_at DESC
-    `,
-      [clientId]
-    );
+      WHERE user_id = $1
+    `;
+    
+    const params = [client_id];
+    
+    if (status) {
+      query += " AND status = $2";
+      params.push(status);
+    }
+    
+    query += " ORDER BY created_at DESC";
 
-    console.log("✅ Dependents fetched for client:", clientId, "Count:", dependentsResult.rows.length);
+    const dependentsResult = await pool.query(query, params);
+
+    console.log("✅ Dependents fetched for client:", client_id, "Count:", dependentsResult.rows.length);
 
     res.json(dependentsResult.rows);
   } catch (error) {
@@ -1970,6 +1994,44 @@ app.get("/api/dependents/:clientId", authenticate, async (req, res) => {
   }
 });
 
+app.get("/api/dependents/search", authenticate, authorize(["professional", "admin"]), async (req, res) => {
+  try {
+    const { cpf } = req.query;
+
+    if (!cpf) {
+      return res.status(400).json({ message: "CPF é obrigatório" });
+    }
+
+    if (!validateCPF(cpf)) {
+      return res.status(400).json({ message: "CPF inválido" });
+    }
+
+    const cleanCPF = cpf.replace(/\D/g, "");
+
+    const dependentResult = await pool.query(
+      `
+      SELECT 
+        d.id, d.name, d.cpf, d.status,
+        d.user_id, u.name as client_name, u.subscription_status as client_subscription_status
+      FROM dependents d
+      JOIN users u ON d.user_id = u.id
+      WHERE d.cpf = $1
+    `,
+      [cleanCPF]
+    );
+
+    if (dependentResult.rows.length === 0) {
+      return res.status(404).json({ message: "Dependente não encontrado" });
+    }
+
+    const dependent = dependentResult.rows[0];
+
+    res.json(dependent);
+  } catch (error) {
+    console.error("❌ Error searching dependent:", error);
+    res.status(500).json({ message: "Erro ao buscar dependente" });
+  }
+});
 app.get("/api/dependents/lookup", authenticate, authorize(["professional", "admin"]), async (req, res) => {
   try {
     const { cpf } = req.query;
@@ -1987,7 +2049,7 @@ app.get("/api/dependents/lookup", authenticate, authorize(["professional", "admi
     const dependentResult = await pool.query(
       `
       SELECT 
-        d.id, d.name, d.cpf, d.subscription_status as dependent_subscription_status,
+        d.id, d.name, d.cpf, d.status,
         d.user_id, u.name as client_name, u.subscription_status as client_subscription_status
       FROM dependents d
       JOIN users u ON d.user_id = u.id
@@ -2011,7 +2073,8 @@ app.get("/api/dependents/lookup", authenticate, authorize(["professional", "admi
 
 app.post("/api/dependents", authenticate, authorize(["client"]), async (req, res) => {
   try {
-    const { user_id, name, cpf, birth_date } = req.body;
+    const { client_id, name, cpf, birth_date } = req.body;
+    const user_id = client_id || req.user.id;
 
     // Validate client can only create dependents for themselves
     if (req.user.id !== user_id) {
@@ -2057,8 +2120,8 @@ app.post("/api/dependents", authenticate, authorize(["client"]), async (req, res
 
     const dependentResult = await pool.query(
       `
-      INSERT INTO dependents (user_id, name, cpf, birth_date)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO dependents (user_id, name, cpf, birth_date, status)
+      VALUES ($1, $2, $3, $4, 'pending')
       RETURNING *
     `,
       [user_id, name.trim(), cleanCPF, birth_date || null]
