@@ -1936,6 +1936,98 @@ app.get("/api/clients/lookup", authenticate, authorize(["professional", "admin"]
 
 // ===== DEPENDENTS ROUTES =====
 
+// Get dependents with optional filtering
+app.get("/api/dependents", authenticate, authorize(["professional", "admin", "client"]), async (req, res) => {
+  try {
+    const { client_id, status } = req.query;
+
+    console.log("🔄 Fetching dependents with filters:", { client_id, status });
+
+    let query = `
+      SELECT 
+        id, user_id, name, cpf, birth_date, subscription_status, subscription_expiry,
+        billing_amount, payment_reference, activated_at, created_at,
+        subscription_status as status
+      FROM dependents 
+      WHERE 1=1
+    `;
+    const params = [];
+    let paramCount = 0;
+
+    // Filter by client_id if provided
+    if (client_id) {
+      paramCount++;
+      query += ` AND user_id = $${paramCount}`;
+      params.push(client_id);
+
+      // Clients can only access their own dependents
+      if (req.user.currentRole === "client" && req.user.id !== parseInt(client_id)) {
+        return res.status(403).json({ message: "Acesso negado" });
+      }
+    }
+
+    // Filter by status if provided (maps to subscription_status)
+    if (status) {
+      paramCount++;
+      query += ` AND subscription_status = $${paramCount}`;
+      params.push(status);
+    }
+
+    query += " ORDER BY created_at DESC";
+
+    const dependentsResult = await pool.query(query, params);
+
+    console.log("✅ Dependents fetched:", dependentsResult.rows.length);
+    res.json(dependentsResult.rows);
+  } catch (error) {
+    console.error("❌ Error fetching dependents:", error);
+    res.status(500).json({ message: "Erro ao carregar dependentes" });
+  }
+});
+
+// Search dependent by CPF
+app.get("/api/dependents/search", authenticate, authorize(["professional", "admin"]), async (req, res) => {
+  try {
+    const { cpf } = req.query;
+
+    if (!cpf) {
+      return res.status(400).json({ message: "CPF é obrigatório" });
+    }
+
+    if (!validateCPF(cpf)) {
+      return res.status(400).json({ message: "CPF inválido" });
+    }
+
+    const cleanCPF = cpf.replace(/\D/g, "");
+
+    console.log("🔄 Searching dependent by CPF:", cleanCPF);
+
+    const dependentResult = await pool.query(
+      `
+      SELECT 
+        d.id, d.name, d.cpf, d.subscription_status as status,
+        d.user_id, u.name as client_name, u.subscription_status as client_subscription_status
+      FROM dependents d
+      JOIN users u ON d.user_id = u.id
+      WHERE d.cpf = $1
+    `,
+      [cleanCPF]
+    );
+
+    if (dependentResult.rows.length === 0) {
+      return res.status(404).json({ message: "Dependente não encontrado" });
+    }
+
+    const dependent = dependentResult.rows[0];
+
+    console.log("✅ Dependent found:", dependent.name, "Status:", dependent.status);
+    res.json(dependent);
+  } catch (error) {
+    console.error("❌ Error searching dependent:", error);
+    res.status(500).json({ message: "Erro ao buscar dependente" });
+  }
+});
+
 app.get("/api/dependents/:clientId", authenticate, async (req, res) => {
   try {
     const { clientId } = req.params;
@@ -1984,10 +2076,12 @@ app.get("/api/dependents/lookup", authenticate, authorize(["professional", "admi
 
     const cleanCPF = cpf.replace(/\D/g, "");
 
+    console.log("🔄 Looking up dependent by CPF:", cleanCPF);
+
     const dependentResult = await pool.query(
       `
       SELECT 
-        d.id, d.name, d.cpf, d.subscription_status as dependent_subscription_status,
+        d.id, d.name, d.cpf, d.subscription_status as status,
         d.user_id, u.name as client_name, u.subscription_status as client_subscription_status
       FROM dependents d
       JOIN users u ON d.user_id = u.id
@@ -2002,6 +2096,7 @@ app.get("/api/dependents/lookup", authenticate, authorize(["professional", "admi
 
     const dependent = dependentResult.rows[0];
 
+    console.log("✅ Dependent lookup result:", dependent.name, "Status:", dependent.status);
     res.json(dependent);
   } catch (error) {
     console.error("❌ Error looking up dependent:", error);
@@ -4116,6 +4211,75 @@ const processAgendaPayment = async (payment) => {
 };
 
 // ===== REPORTS ROUTES =====
+
+// ===== REPORTS ROUTES =====
+
+// Get cancelled consultations report
+app.get("/api/reports/cancelled-consultations", authenticate, authorize(["professional", "admin"]), async (req, res) => {
+  try {
+    const { start_date, end_date } = req.query;
+
+    if (!start_date || !end_date) {
+      return res.status(400).json({ message: "Data inicial e final são obrigatórias" });
+    }
+
+    console.log("🔄 Fetching cancelled consultations for period:", start_date, "to", end_date);
+
+    let query = `
+      SELECT 
+        c.id,
+        c.date,
+        c.value,
+        c.notes as cancellation_reason,
+        c.updated_at as cancelled_at,
+        s.name as service_name,
+        prof.name as professional_name,
+        CASE 
+          WHEN c.user_id IS NOT NULL THEN u.name
+          WHEN c.dependent_id IS NOT NULL THEN d.name
+          WHEN c.private_patient_id IS NOT NULL THEN pp.name
+          ELSE 'Paciente não identificado'
+        END as patient_name,
+        CASE 
+          WHEN c.dependent_id IS NOT NULL THEN true
+          ELSE false
+        END as is_dependent,
+        CASE 
+          WHEN c.private_patient_id IS NOT NULL THEN 'private'
+          ELSE 'convenio'
+        END as patient_type,
+        al.name as location_name,
+        'Sistema' as cancelled_by_name
+      FROM consultations c
+      JOIN services s ON c.service_id = s.id
+      JOIN users prof ON c.professional_id = prof.id
+      LEFT JOIN users u ON c.user_id = u.id
+      LEFT JOIN dependents d ON c.dependent_id = d.id
+      LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
+      LEFT JOIN attendance_locations al ON c.location_id = al.id
+      WHERE c.status = 'cancelled'
+        AND c.date >= $1 AND c.date <= $2
+    `;
+
+    const params = [start_date, end_date];
+
+    // If professional, only show their cancelled consultations
+    if (req.user.currentRole === "professional") {
+      query += " AND c.professional_id = $3";
+      params.push(req.user.id);
+    }
+
+    query += " ORDER BY c.updated_at DESC";
+
+    const result = await pool.query(query, params);
+
+    console.log("✅ Cancelled consultations fetched:", result.rows.length);
+    res.json(result.rows);
+  } catch (error) {
+    console.error("❌ Error fetching cancelled consultations:", error);
+    res.status(500).json({ message: "Erro ao carregar consultas canceladas" });
+  }
+});
 
 app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, res) => {
   try {
