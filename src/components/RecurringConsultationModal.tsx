@@ -751,7 +751,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                   </div>
                 </div>
               </div>
-            )}
+            </div>
 
             {/* Notes */}
             <div>
@@ -804,4 +804,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
       </div>
     </div>
   );
+};
+
 export default RecurringConsultationModal;
