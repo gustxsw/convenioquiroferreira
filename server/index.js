@@ -1279,7 +1279,7 @@ app.get('/api/consultations', authenticate, async (req, res) => {
           ELSE 'convenio'
         END as patient_type
       FROM consultations c
-      LEFT JOIN users u ON c.client_id = u.id
+      LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN services s ON c.service_id = s.id
@@ -1320,12 +1320,12 @@ app.get('/api/consultations/client/:clientId', authenticate, async (req, res) =>
           ELSE false
         END as is_dependent
       FROM consultations c
-      LEFT JOIN users u ON c.client_id = u.id
+      LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN services s ON c.service_id = s.id
       LEFT JOIN users prof ON c.professional_id = prof.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
-      WHERE (c.client_id = $1 OR d.client_id = $1) 
+      WHERE (c.user_id = $1 OR d.user_id = $1) 
         AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `, [clientId]);
@@ -1366,7 +1366,7 @@ app.get('/api/consultations/professional/:professionalId', authenticate, async (
           ELSE 'convenio'
         END as patient_type
       FROM consultations c
-      LEFT JOIN users u ON c.client_id = u.id
+      LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN services s ON c.service_id = s.id
@@ -1387,7 +1387,7 @@ app.get('/api/consultations/professional/:professionalId', authenticate, async (
 app.post('/api/consultations', authenticate, async (req, res) => {
   try {
     const {
-      client_id,
+      user_id,
       dependent_id,
       private_patient_id,
       service_id,
@@ -1401,7 +1401,7 @@ app.post('/api/consultations', authenticate, async (req, res) => {
     } = req.body;
 
     console.log('🔄 [CONSULTATIONS] Creating consultation:', {
-      client_id,
+      user_id,
       dependent_id,
       private_patient_id,
       service_id,
@@ -1418,7 +1418,7 @@ app.post('/api/consultations', authenticate, async (req, res) => {
     }
 
     // Validate patient selection
-    if (!client_id && !dependent_id && !private_patient_id) {
+    if (!user_id && !dependent_id && !private_patient_id) {
       return res.status(400).json({ 
         message: 'É necessário selecionar um cliente, dependente ou paciente particular' 
       });
@@ -1427,12 +1427,12 @@ app.post('/api/consultations', authenticate, async (req, res) => {
     // Insert consultation
     const result = await pool.query(`
       INSERT INTO consultations (
-        client_id, dependent_id, private_patient_id, professional_id, 
+        user_id, dependent_id, private_patient_id, professional_id, 
         service_id, location_id, value, date, notes, status, created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'completed', NOW())
       RETURNING *
     `, [
-      client_id || null,
+      user_id || null,
       dependent_id || null,
       private_patient_id || null,
       req.user.id,
@@ -1459,7 +1459,7 @@ app.post('/api/consultations', authenticate, async (req, res) => {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            client_id,
+            user_id,
             dependent_id,
             private_patient_id,
             service_id,
@@ -2353,7 +2353,7 @@ app.get('/api/reports/professional-revenue', authenticate, authorize(['professio
           ELSE c.value * ((100 - $3) / 100.0)
         END as amount_to_pay
       FROM consultations c
-      LEFT JOIN users u ON c.client_id = u.id
+      LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN services s ON c.service_id = s.id
@@ -2499,7 +2499,7 @@ app.get('/api/reports/cancelled-consultations', authenticate, async (req, res) =
           ELSE 'convenio'
         END as patient_type
       FROM consultations c
-      LEFT JOIN users u ON c.client_id = u.id
+      LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN services s ON c.service_id = s.id
