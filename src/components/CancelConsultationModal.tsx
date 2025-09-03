@@ -10,6 +10,7 @@ type CancelConsultationModalProps = {
     patient_name: string;
     service_name: string;
     date: string;
+    professional_name?: string;
   } | null;
   isLoading?: boolean;
 };
@@ -73,6 +74,9 @@ const CancelConsultationModal: React.FC<CancelConsultationModalProps> = ({
               <p><strong>Paciente:</strong> {consultationData.patient_name}</p>
               <p><strong>Serviço:</strong> {consultationData.service_name}</p>
               <p><strong>Data/Hora:</strong> {formatDate(consultationData.date)}</p>
+              {consultationData.professional_name && (
+                <p><strong>Profissional:</strong> {consultationData.professional_name}</p>
+              )}
             </div>
           </div>
 
@@ -117,7 +121,7 @@ const CancelConsultationModal: React.FC<CancelConsultationModalProps> = ({
               className="btn btn-secondary"
               disabled={isLoading}
             >
-              Manter Consulta
+              Voltar
             </button>
             <button
               onClick={handleConfirm}

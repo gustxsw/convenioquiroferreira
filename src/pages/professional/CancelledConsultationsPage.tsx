@@ -10,7 +10,8 @@ import {
   AlertCircle,
   MessageSquare,
   Clock,
-  FileText
+  FileText,
+  MapPin
 } from 'lucide-react';
 
 type CancelledConsultation = {
