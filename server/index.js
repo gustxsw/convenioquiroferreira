@@ -1956,10 +1956,6 @@ app.get("/api/dependents", authenticate, async (req, res) => {
 
     if (!client_id) {
       return res.status(400).json({ message: "client_id é obrigatório" });
-    const { client_id, status } = req.query;
-
-    if (!client_id) {
-      return res.status(400).json({ message: "client_id é obrigatório" });
     }
 
     // Clients can only access their own dependents
@@ -1971,6 +1967,7 @@ app.get("/api/dependents", authenticate, async (req, res) => {
     }
 
     let query = `
+      SELECT 
         id, name, cpf, birth_date, subscription_status, subscription_expiry,
         subscription_status as status
       FROM dependents 
@@ -2035,44 +2032,7 @@ app.get("/api/dependents/search", authenticate, authorize(["professional", "admi
     res.status(500).json({ message: "Erro ao buscar dependente" });
   }
 });
-app.get("/api/dependents/lookup", authenticate, authorize(["professional", "admin"]), async (req, res) => {
-  try {
-    const { cpf } = req.query;
 
-    if (!cpf) {
-      return res.status(400).json({ message: "CPF é obrigatório" });
-    }
-
-    if (!validateCPF(cpf)) {
-      return res.status(400).json({ message: "CPF inválido" });
-    }
-
-    const cleanCPF = cpf.replace(/\D/g, "");
-
-    const dependentResult = await pool.query(
-      `
-        d.id, d.name, d.cpf, d.subscription_status as status,
-        d.id, d.name, d.cpf, d.status,
-        d.user_id, u.name as client_name, u.subscription_status as client_subscription_status
-      FROM dependents d
-      JOIN users u ON d.user_id = u.id
-      WHERE d.cpf = $1
-    `,
-      [cleanCPF]
-    );
-
-    if (dependentResult.rows.length === 0) {
-      return res.status(404).json({ message: "Dependente não encontrado" });
-    }
-
-    const dependent = dependentResult.rows[0];
-
-    res.json(dependent);
-  } catch (error) {
-    console.error("❌ Error looking up dependent:", error);
-    res.status(500).json({ message: "Erro ao buscar dependente" });
-  }
-});
 app.get("/api/dependents/lookup", authenticate, authorize(["professional", "admin"]), async (req, res) => {
   try {
     const { cpf } = req.query;
@@ -4588,18 +4548,9 @@ app.get("/api/notifications", authenticate, async (req, res) => {
       `
       SELECT * FROM notifications 
       WHERE user_id = $1
-    `;
-    
-    const params = [client_id];
-    
-    if (status) {
-      query += " AND subscription_status = $2";
-      params.push(status);
-    }
-    
-    query += " ORDER BY created_at DESC";
-
-    const dependentsResult = await pool.query(query, params);
+      ORDER BY created_at DESC
+    `,
+      [req.user.id]
     );
 
     res.json(notificationsResult.rows);
@@ -4647,242 +4598,4 @@ app.put("/api/notifications/mark-all-read", authenticate, async (req, res) => {
   }
 });
 
-// ===== SYSTEM SETTINGS ROUTES =====
-
-app.get("/api/system-settings", authenticate, authorize(["admin"]), async (req, res) => {
-  try {
-    const settingsResult = await pool.query(`
-      SELECT * FROM system_settings ORDER BY key
-    `);
-
-    res.json(settingsResult.rows);
-  } catch (error) {
-    console.error("❌ Error fetching system settings:", error);
-    res.status(500).json({ message: "Erro ao carregar configurações do sistema" });
-  }
-});
-
-app.put("/api/system-settings/:key", authenticate, authorize(["admin"]), async (req, res) => {
-  try {
-    const { key } = req.params;
-    const { value, description } = req.body;
-
-    if (!value) {
-      return res.status(400).json({ message: "Valor é obrigatório" });
-    }
-
-    const settingResult = await pool.query(
-      `
-      INSERT INTO system_settings (key, value, description, updated_by, updated_at)
-      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-      ON CONFLICT (key) 
-      DO UPDATE SET 
-        value = EXCLUDED.value,
-        description = EXCLUDED.description,
-        updated_by = EXCLUDED.updated_by,
-        updated_at = EXCLUDED.updated_at
-      RETURNING *
-    `,
-    console.log("✅ Dependents fetched for client:", client_id, "Count:", dependentsResult.rows.length);
-    );
-
-    const setting = settingResult.rows[0];
-
-    console.log("✅ System setting updated:", key);
-
-    res.json({
-      message: "Configuração atualizada com sucesso",
-app.get("/api/dependents/search", authenticate, authorize(["professional", "admin"]), async (req, res) => {
-    });
-  } catch (error) {
-    console.error("❌ Error updating system setting:", error);
-    res.status(500).json({ message: "Erro ao atualizar configuração do sistema" });
-  }
-});
-
-// ===== AUDIT LOGS ROUTES =====
-
-app.get("/api/audit-logs", authenticate, authorize(["admin"]), async (req, res) => {
-  try {
-    const { page = 1, limit = 50, user_id, action, table_name } = req.query;
-    const offset = (page - 1) * limit;
-
-    let query = `
-      SELECT 
-        al.*, u.name as user_name
-      FROM audit_logs al
-      LEFT JOIN users u ON al.user_id = u.id
-      WHERE 1=1
-    `;
-    const params = [];
-    let paramCount = 0;
-
-    if (user_id) {
-      paramCount++;
-      query += ` AND al.user_id = $${paramCount}`;
-      params.push(user_id);
-    }
-
-    if (action) {
-      paramCount++;
-      query += ` AND al.action = $${paramCount}`;
-      params.push(action);
-    }
-
-    if (table_name) {
-      paramCount++;
-      query += ` AND al.table_name = $${paramCount}`;
-      params.push(table_name);
-    }
-
-    query += ` ORDER BY al.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
-    params.push(limit, offset);
-
-    const logsResult = await pool.query(query, params);
-
-    // Get total count for pagination
-    let countQuery = `SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
-    const countParams = [];
-    let countParamCount = 0;
-
-    if (user_id) {
-      countParamCount++;
-      countQuery += ` AND al.user_id = $${countParamCount}`;
-      countParams.push(user_id);
-    }
-
-    if (action) {
-      countParamCount++;
-      countQuery += ` AND al.action = $${countParamCount}`;
-      countParams.push(action);
-    }
-
-    if (table_name) {
-      countParamCount++;
-      countQuery += ` AND al.table_name = $${countParamCount}`;
-      countParams.push(table_name);
-    }
-
-    const countResult = await pool.query(countQuery, countParams);
-    const totalCount = parseInt(countResult.rows[0].count);
-
-    res.json({
-      logs: logsResult.rows,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: totalCount,
-        totalPages: Math.ceil(totalCount / limit),
-      },
-    });
-  } catch (error) {
-    console.error("❌ Error fetching audit logs:", error);
-    res.status(500).json({ message: "Erro ao carregar logs de auditoria" });
-  }
-});
-
-// ===== HEALTH CHECK =====
-
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: "OK",
-    timestamp: new Date().toISOString(),
-    version: "2.0.0",
-    database: "Connected",
-    mercadopago: "Configured",
-  });
-});
-
-// ===== ERROR HANDLERS =====
-
-// Catch-all route for SPA in production
-if (process.env.NODE_ENV === "production") {
-  app.get("*", (req, res) => {
-    res.sendFile(path.join(__dirname, "../dist/index.html"));
-  });
-}
-
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error("Global error handler:", err);
-
-  // Log error to audit logs if user is available
-  if (req.user) {
-    logAuditAction(
-      req.user.id,
-      "ERROR",
-      null,
-      null,
-      null,
-      {
-        error: err.message,
-        stack: err.stack,
-        url: req.url,
-        method: req.method,
-      },
-      req
-    ).catch(console.error);
-  }
-
-  res.status(500).json({
-    message: "Erro interno do servidor",
-    ...(process.env.NODE_ENV === "development" && { error: err.message }),
-  });
-});
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ message: "Rota não encontrada" });
-});
-
-// ===== SERVER STARTUP =====
-
-const startServer = async () => {
-  try {
-    // Initialize database
-    await initializeDatabase();
-
-    // Start listening
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(`📊 Database: Connected`);
-      console.log(`💳 MercadoPago: Configured`);
-      console.log(`📋 Consultations System: Active`);
-      console.log(`✅ All systems operational`);
-    });
-  } catch (error) {
-    console.error("❌ Failed to start server:", error);
-    process.exit(1);
-  }
-};
-
-// Handle graceful shutdown
-process.on("SIGTERM", async () => {
-  console.log("🔄 SIGTERM received, shutting down gracefully...");
-
-  try {
-    await pool.end();
-    console.log("✅ Database connections closed");
-    process.exit(0);
-  } catch (error) {
-    console.error("❌ Error during shutdown:", error);
-    process.exit(1);
-  }
-});
-
-process.on("SIGINT", async () => {
-  console.log("🔄 SIGINT received, shutting down gracefully...");
-
-  try {
-    await pool.end();
-    console.log("✅ Database connections closed");
-    process.exit(0);
-  } catch (error) {
-    console.error("❌ Error during shutdown:", error);
-    process.exit(1);
-  }
-});
-
-// Start the server
-startServer();
+// =====
