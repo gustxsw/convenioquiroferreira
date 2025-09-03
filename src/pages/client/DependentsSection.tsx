@@ -508,8 +508,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
               <div className="text-lg font-bold text-green-600">
                 {
                   dependents.filter(
-                    (d) =>
-                      (d.current_status || d.subscription_status) === "active"
+                    (d) => d.subscription_status === "active"
                   ).length
                 }
               </div>
@@ -519,8 +518,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
               <div className="text-lg font-bold text-yellow-600">
                 {
                   dependents.filter(
-                    (d) =>
-                      (d.current_status || d.subscription_status) === "pending"
+                    (d) => d.subscription_status === "pending"
                   ).length
                 }
               </div>
@@ -530,8 +528,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
               <div className="text-lg font-bold text-red-600">
                 {
                   dependents.filter(
-                    (d) =>
-                      (d.current_status || d.subscription_status) === "expired"
+                    (d) => d.subscription_status === "expired"
                   ).length
                 }
               </div>
@@ -541,8 +538,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
               <div className="text-lg font-bold text-blue-600">
                 {formatCurrency(
                   dependents.filter(
-                    (d) =>
-                      (d.current_status || d.subscription_status) === "pending"
+                    (d) => d.subscription_status === "pending"
                   ).length * 50
                 )}
               </div>
