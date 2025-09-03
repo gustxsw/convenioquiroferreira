@@ -101,7 +101,7 @@ const SlotCustomizationModal: React.FC<SlotCustomizationModalProps> = ({
                     <div className="flex items-center">
                       <Clock className="h-4 w-4 text-gray-500 mr-2" />
                       <span className="font-medium text-gray-900">{option.label}</span>
-                      <p className="text-xs text-gray-600 leading-relaxed">{option.description}</p>
+                    </div>
                     <p className="text-sm text-gray-600 mt-1">{option.description}</p>
                   </div>
                   
