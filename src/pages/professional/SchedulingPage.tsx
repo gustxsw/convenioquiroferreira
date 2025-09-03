@@ -25,6 +25,7 @@ import EditConsultationModal from "../../components/EditConsultationModal";
 import SlotCustomizationModal from "../../components/SlotCustomizationModal";
 import RecurringConsultationModal from '../../components/RecurringConsultationModal';
 
+import RecurringConsultationModal from '../../components/RecurringConsultationModal';
 type Consultation = {
   id: number;
   date: string;
@@ -1434,6 +1435,5 @@ const SchedulingPage: React.FC = () => {
       />
     </div>
   );
-};
 
 export default SchedulingPage;
