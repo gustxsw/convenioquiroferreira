@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import CancelConsultationModal from '../../components/CancelConsultationModal';
+import CancelledConsultationsModal from '../../components/CancelledConsultationsModal';
 import {
   Calendar,
   Clock,
@@ -13,6 +15,9 @@ import {
   CheckCircle,
   XCircle,
   Search,
+  XCircle,
+  AlertCircle,
+  CheckCircle
   DollarSign,
   Edit,
   MessageCircle,
