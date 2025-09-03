@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
+import TimeInput from "../../components/TimeInput";
+import { validateTimeSlot, type SlotDuration } from "../../utils/timeSlotValidation";
 import {
   Search,
   Calendar,
@@ -92,6 +94,7 @@ const RegisterConsultationPage: React.FC = () => {
   >([]);
   const [hasSchedulingSubscription, setHasSchedulingSubscription] =
     useState(false);
+  const [slotDuration, setSlotDuration] = useState<SlotDuration>(30);
   const [isLoading, setIsLoading] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState("");
@@ -361,6 +364,13 @@ const RegisterConsultationPage: React.FC = () => {
     e.preventDefault();
     setError("");
     setSuccess("");
+
+    // Validate time format and slot
+    const timeValidation = validateTimeSlot(time, slotDuration);
+    if (!timeValidation.isValid) {
+      setError(timeValidation.error || 'Horário inválido');
+      return;
+    }
 
     // Validate form
     if (!clientId && !selectedDependentId) {
@@ -796,23 +806,16 @@ const RegisterConsultationPage: React.FC = () => {
                   />
                 </div>
 
-                <div>
-                  <label
-                    htmlFor="time"
-                    className="block text-sm font-medium text-gray-700 mb-1"
-                  >
-                    Hora
-                  </label>
-                  <input
-                    id="time"
-                    type="time"
-                    value={time}
-                    onChange={(e) => setTime(e.target.value)}
-                    className="input"
-                    disabled={isLoading}
-                    required
-                  />
-                </div>
+                <TimeInput
+                  value={time}
+                  onChange={setTime}
+                  slotDuration={slotDuration}
+                  label="Horário"
+                  required
+                  disabled={isLoading}
+                  showValidation
+                  businessHours={{ start: 7, end: 18 }}
+                />
               </div>
             </div>
           )}

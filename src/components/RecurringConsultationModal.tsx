@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, Repeat, X, Check, AlertCircle } from 'lucide-react';
+import TimeInput from './TimeInput';
+import { validateTimeSlot, type SlotDuration } from '../utils/timeSlotValidation';
 
 type Service = {
   id: number;
@@ -36,6 +38,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
   const [attendanceLocations, setAttendanceLocations] = useState<AttendanceLocation[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState('');
+  const [slotDuration, setSlotDuration] = useState<SlotDuration>(30);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -219,6 +222,13 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    // Validate time format and slot
+    const timeValidation = validateTimeSlot(formData.start_time, slotDuration);
+    if (!timeValidation.isValid) {
+      setError(timeValidation.error || 'Horário inválido');
+      return;
+    }
 
     try {
       setIsCreating(true);
@@ -506,20 +516,15 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Horário *
-                </label>
-                <input
-                  type="time"
-                  value={formData.start_time}
-                  onChange={(e) =>
-                    setFormData(prev => ({ ...prev, start_time: e.target.value }))
-                  }
-                  className="input"
-                  required
-                />
-                <Repeat className="h-5 w-5 text-red-600 mr-2" />
+              <TimeInput
+                value={formData.start_time}
+                onChange={(time) => setFormData(prev => ({ ...prev, start_time: time }))}
+                slotDuration={slotDuration}
+                label="Horário"
+                required
+                showValidation
+                businessHours={{ start: 7, end: 18 }}
+              />
                 Configurações de Recorrência
               </h3>
 

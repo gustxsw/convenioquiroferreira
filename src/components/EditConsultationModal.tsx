@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, X, Check, AlertCircle, User, Users } from 'lucide-react';
+import TimeInput from './TimeInput';
+import { validateTimeSlot, type SlotDuration } from '../utils/timeSlotValidation';
 
 type Consultation = {
   id: number;
@@ -37,6 +39,7 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
   const [attendanceLocations, setAttendanceLocations] = useState<AttendanceLocation[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState('');
+  const [slotDuration, setSlotDuration] = useState<SlotDuration>(30);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -65,7 +68,11 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
       const consultationDate = new Date(consultation.date);
       setFormData({
         date: consultationDate.toISOString().split('T')[0],
-        time: consultationDate.toTimeString().slice(0, 5),
+        time: consultationDate.toLocaleTimeString('pt-BR', { 
+          hour: '2-digit', 
+          minute: '2-digit',
+          hour12: false 
+        }),
         value: consultation.value.toString(),
         location_id: '', // Will be set after locations are loaded
         notes: consultation.notes || '',
@@ -110,6 +117,13 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    // Validate time format and slot
+    const timeValidation = validateTimeSlot(formData.time, slotDuration);
+    if (!timeValidation.isValid) {
+      setError(timeValidation.error || 'Horário inválido');
+      return;
+    }
 
     if (!consultation) return;
 
@@ -256,20 +270,15 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Horário *
-                </label>
-                <input
-                  type="time"
-                  value={formData.time}
-                  onChange={(e) =>
-                    setFormData(prev => ({ ...prev, time: e.target.value }))
-                  }
-                  className="input"
-                  required
-                />
-              </div>
+              <TimeInput
+                value={formData.time}
+                onChange={(time) => setFormData(prev => ({ ...prev, time }))}
+                slotDuration={slotDuration}
+                label="Horário"
+                required
+                showValidation
+                businessHours={{ start: 7, end: 18 }}
+              />
             </div>
 
             {/* Value and Location */}

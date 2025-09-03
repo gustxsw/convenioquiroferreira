@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Clock, X, Check, Settings } from 'lucide-react';
+import { getSlotDurationDescription } from '../utils/timeSlotValidation';
 
 type SlotDuration = 15 | 30 | 60;
 
@@ -22,19 +23,19 @@ const SlotCustomizationModal: React.FC<SlotCustomizationModalProps> = ({
     {
       value: 15 as SlotDuration,
       label: '15 minutos',
-      description: 'Consultas rápidas e avaliações',
+      description: 'Consultas rápidas e avaliações - Horários: 09:00, 09:15, 09:30, 09:45...',
       icon: '⚡',
     },
     {
       value: 30 as SlotDuration,
       label: '30 minutos',
-      description: 'Consultas padrão e procedimentos',
+      description: 'Consultas padrão e procedimentos - Horários: 09:00, 09:30, 10:00, 10:30...',
       icon: '⏰',
     },
     {
       value: 60 as SlotDuration,
       label: '60 minutos',
-      description: 'Consultas longas e terapias',
+      description: 'Consultas longas e terapias - Horários: 09:00, 10:00, 11:00, 12:00...',
       icon: '🕐',
     },
   ];
@@ -67,8 +68,9 @@ const SlotCustomizationModal: React.FC<SlotCustomizationModalProps> = ({
         <div className="p-6">
           <div className="mb-4">
             <p className="text-gray-600 text-sm">
-              Escolha a duração dos slots de tempo que melhor se adapta ao seu tipo de atendimento.
-              Esta configuração afeta apenas a visualização da agenda.
+              Escolha a duração dos slots de tempo. Esta configuração determina quais horários 
+              você pode digitar ao agendar consultas (ex: com slots de 30 min, você pode usar 
+              09:00, 09:30, 10:00, mas não 09:15).
             </p>
           </div>
 
@@ -99,7 +101,7 @@ const SlotCustomizationModal: React.FC<SlotCustomizationModalProps> = ({
                     <div className="flex items-center">
                       <Clock className="h-4 w-4 text-gray-500 mr-2" />
                       <span className="font-medium text-gray-900">{option.label}</span>
-                    </div>
+                      <p className="text-xs text-gray-600 leading-relaxed">{option.description}</p>
                     <p className="text-sm text-gray-600 mt-1">{option.description}</p>
                   </div>
                   
@@ -118,8 +120,9 @@ const SlotCustomizationModal: React.FC<SlotCustomizationModalProps> = ({
           <div className="bg-blue-50 p-4 rounded-lg mt-6">
             <h4 className="font-medium text-blue-900 mb-2">💡 Dica:</h4>
             <p className="text-sm text-blue-700">
-              Você pode alterar a duração dos slots a qualquer momento. 
-              Esta configuração não afeta consultas já agendadas, apenas a visualização da agenda.
+              Você pode alterar a duração dos slots a qualquer momento. Esta configuração 
+              determina quais horários são válidos ao digitar manualmente o horário das consultas. 
+              Consultas já agendadas não são afetadas.
             </p>
           </div>
         </div>
