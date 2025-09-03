@@ -159,7 +159,8 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
-      .filter((d) => d.subscription_status === "active")
+          },
+          body: JSON.stringify({
             client_id: clientId,
             name,
             cpf: cpf.replace(/\D/g, ""),
