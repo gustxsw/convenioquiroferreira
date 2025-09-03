@@ -545,6 +545,36 @@ const SchedulingPage: React.FC = () => {
     localStorage.setItem('scheduling-slot-duration', duration.toString());
   };
 
+  const handleSlotClick = (date: string, time: string) => {
+    // Check if slot is already occupied
+    const isOccupied = consultations.some(consultation => {
+      const consultationDate = new Date(consultation.date);
+      const consultationDateStr = consultationDate.toISOString().split('T')[0];
+      const consultationTime = consultationDate.toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      
+      return consultationDateStr === date && consultationTime === time;
+    });
+
+    if (!isOccupied) {
+      setSelectedSlot({ date, time });
+      setShowQuickScheduleModal(true);
+    }
+  };
+
+  const closeQuickScheduleModal = () => {
+    setShowQuickScheduleModal(false);
+    setSelectedSlot(null);
+  };
+
+  const handleQuickScheduleSuccess = () => {
+    fetchData();
+    closeQuickScheduleModal();
+  };
+
   const formatTime = (dateString: string) => {
     // Convert UTC date to Brasília timezone for display
     const utcDate = new Date(dateString);
