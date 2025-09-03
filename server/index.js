@@ -1251,8 +1251,8 @@ app.delete("/api/users/:id", authenticate, authorize(["admin"]), async (req, res
 // CONSULTATIONS ROUTES
 // ========================================
 
-// Get all consultations for admin
-app.get('/api/consultations', authenticate, async (req, res) => {
+// Get all consultations (admin only)
+app.get('/api/consultations', authenticate, authorize(['admin']), async (req, res) => {
   try {
     console.log('🔄 [CONSULTATIONS] Fetching all consultations for admin');
 
@@ -1292,12 +1292,12 @@ app.get('/api/consultations', authenticate, async (req, res) => {
     console.log('✅ [CONSULTATIONS] All consultations loaded:', result.rows.length);
     res.json(result.rows);
   } catch (error) {
-    console.error('❌ [CONSULTATIONS] Error fetching consultations:', error);
+    console.error('❌ [CONSULTATIONS] Error fetching all consultations:', error);
     res.status(500).json({ message: 'Erro ao carregar consultas' });
   }
 });
 
-// Get consultations for specific client
+// Get consultations for a specific client
 app.get('/api/consultations/client/:clientId', authenticate, async (req, res) => {
   try {
     const clientId = req.params.clientId;
@@ -1306,15 +1306,12 @@ app.get('/api/consultations/client/:clientId', authenticate, async (req, res) =>
     const result = await pool.query(`
       SELECT 
         c.*,
-        u.name as client_name,
-        d.name as dependent_name,
         s.name as service_name,
         prof.name as professional_name,
-        al.name as location_name,
         CASE 
           WHEN c.dependent_id IS NOT NULL THEN d.name
           ELSE u.name
-        END as patient_name,
+        END as client_name,
         CASE 
           WHEN c.dependent_id IS NOT NULL THEN true
           ELSE false
@@ -1324,9 +1321,10 @@ app.get('/api/consultations/client/:clientId', authenticate, async (req, res) =>
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN services s ON c.service_id = s.id
       LEFT JOIN users prof ON c.professional_id = prof.id
-      LEFT JOIN attendance_locations al ON c.location_id = al.id
-      WHERE (c.user_id = $1 OR d.user_id = $1) 
-        AND c.status != 'cancelled'
+      WHERE (c.user_id = $1 OR c.dependent_id IN (
+        SELECT id FROM dependents WHERE user_id = $1
+      ))
+      AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `, [clientId]);
 
@@ -1338,7 +1336,7 @@ app.get('/api/consultations/client/:clientId', authenticate, async (req, res) =>
   }
 });
 
-// Get consultations for specific professional
+// Get consultations for a specific professional
 app.get('/api/consultations/professional/:professionalId', authenticate, async (req, res) => {
   try {
     const professionalId = req.params.professionalId;
@@ -1347,11 +1345,7 @@ app.get('/api/consultations/professional/:professionalId', authenticate, async (
     const result = await pool.query(`
       SELECT 
         c.*,
-        u.name as client_name,
-        d.name as dependent_name,
-        pp.name as private_patient_name,
         s.name as service_name,
-        al.name as location_name,
         CASE 
           WHEN c.dependent_id IS NOT NULL THEN d.name
           WHEN c.private_patient_id IS NOT NULL THEN pp.name
@@ -1364,7 +1358,8 @@ app.get('/api/consultations/professional/:professionalId', authenticate, async (
         CASE 
           WHEN c.private_patient_id IS NOT NULL THEN 'private'
           ELSE 'convenio'
-        END as patient_type
+        END as patient_type,
+        al.name as location_name
       FROM consultations c
       LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
@@ -1384,7 +1379,7 @@ app.get('/api/consultations/professional/:professionalId', authenticate, async (
 });
 
 // Create new consultation
-app.post('/api/consultations', authenticate, async (req, res) => {
+app.post('/api/consultations', authenticate, authorize(['professional', 'admin']), async (req, res) => {
   try {
     const {
       user_id,
@@ -1394,20 +1389,18 @@ app.post('/api/consultations', authenticate, async (req, res) => {
       location_id,
       value,
       date,
+      notes,
       appointment_date,
       appointment_time,
-      create_appointment,
-      notes
+      create_appointment
     } = req.body;
 
-    console.log('🔄 [CONSULTATIONS] Creating consultation:', {
+    console.log('🔄 [CONSULTATIONS] Creating new consultation:', {
       user_id,
       dependent_id,
       private_patient_id,
       service_id,
-      professional_id: req.user.id,
-      value,
-      date
+      professional_id: req.user.id
     });
 
     // Validate required fields
@@ -1424,7 +1417,7 @@ app.post('/api/consultations', authenticate, async (req, res) => {
       });
     }
 
-    // Insert consultation
+    // Create consultation
     const result = await pool.query(`
       INSERT INTO consultations (
         user_id, dependent_id, private_patient_id, professional_id, 
@@ -1443,15 +1436,12 @@ app.post('/api/consultations', authenticate, async (req, res) => {
       notes || null
     ]);
 
-    console.log('✅ [CONSULTATIONS] Consultation created:', result.rows[0].id);
-
-    let appointmentResult = null;
+    console.log('✅ [CONSULTATIONS] Consultation created successfully');
 
     // Create appointment if requested
+    let appointmentResult = null;
     if (create_appointment && appointment_date && appointment_time) {
       try {
-        console.log('🔄 [CONSULTATIONS] Creating associated appointment');
-
         const appointmentResponse = await fetch(`${req.protocol}://${req.get('host')}/api/appointments`, {
           method: 'POST',
           headers: {
@@ -1473,12 +1463,10 @@ app.post('/api/consultations', authenticate, async (req, res) => {
 
         if (appointmentResponse.ok) {
           appointmentResult = await appointmentResponse.json();
-          console.log('✅ [CONSULTATIONS] Associated appointment created');
-        } else {
-          console.warn('⚠️ [CONSULTATIONS] Could not create associated appointment');
+          console.log('✅ [CONSULTATIONS] Appointment created with consultation');
         }
       } catch (appointmentError) {
-        console.warn('⚠️ [CONSULTATIONS] Appointment creation failed:', appointmentError);
+        console.warn('⚠️ [CONSULTATIONS] Could not create appointment:', appointmentError);
       }
     }
 
@@ -1493,16 +1481,34 @@ app.post('/api/consultations', authenticate, async (req, res) => {
   }
 });
 
-// Cancel consultation - NOVA FUNCIONALIDADE
-app.put('/api/consultations/:id/cancel', authenticate, async (req, res) => {
+// Cancel consultation
+app.put('/api/consultations/:id/cancel', authenticate, authorize(['professional', 'admin']), async (req, res) => {
   try {
     const consultationId = req.params.id;
     const { cancellation_reason } = req.body;
 
     console.log('🔄 [CONSULTATIONS] Cancelling consultation:', consultationId);
+    console.log('🔄 [CONSULTATIONS] Cancellation reason:', cancellation_reason);
+
+    // Check if consultation exists and belongs to the professional (or is admin)
+    const checkResult = await pool.query(`
+      SELECT * FROM consultations 
+      WHERE id = $1 AND (professional_id = $2 OR $3 = true)
+    `, [consultationId, req.user.id, req.user.currentRole === 'admin']);
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Consulta não encontrada ou sem permissão' });
+    }
+
+    const consultation = checkResult.rows[0];
+
+    // Check if already cancelled
+    if (consultation.status === 'cancelled') {
+      return res.status(400).json({ message: 'Esta consulta já foi cancelada' });
+    }
 
     // Update consultation status to cancelled
-    const result = await pool.query(`
+    const updateResult = await pool.query(`
       UPDATE consultations 
       SET 
         status = 'cancelled',
@@ -1510,37 +1516,31 @@ app.put('/api/consultations/:id/cancel', authenticate, async (req, res) => {
         cancelled_at = NOW(),
         cancelled_by = $2,
         updated_at = NOW()
-      WHERE id = $3 AND professional_id = $4
+      WHERE id = $3
       RETURNING *
-    `, [
-      cancellation_reason || null,
-      req.user.id,
-      consultationId,
-      req.user.id
-    ]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Consulta não encontrada' });
-    }
+    `, [cancellation_reason || null, req.user.id, consultationId]);
 
     console.log('✅ [CONSULTATIONS] Consultation cancelled successfully');
 
     // Try to cancel related appointment if exists
     try {
-      await pool.query(`
+      const appointmentResult = await pool.query(`
         UPDATE appointments 
         SET status = 'cancelled', updated_at = NOW()
         WHERE consultation_id = $1
+        RETURNING *
       `, [consultationId]);
-      
-      console.log('✅ [CONSULTATIONS] Related appointment also cancelled');
+
+      if (appointmentResult.rows.length > 0) {
+        console.log('✅ [CONSULTATIONS] Related appointment also cancelled');
+      }
     } catch (appointmentError) {
       console.warn('⚠️ [CONSULTATIONS] Could not cancel related appointment:', appointmentError);
     }
 
     res.json({
-      message: 'Consulta cancelada com sucesso',
-      consultation: result.rows[0]
+      message: 'Consulta cancelada com sucesso. Horário liberado para novos agendamentos.',
+      consultation: updateResult.rows[0]
     });
   } catch (error) {
     console.error('❌ [CONSULTATIONS] Error cancelling consultation:', error);
@@ -1549,32 +1549,39 @@ app.put('/api/consultations/:id/cancel', authenticate, async (req, res) => {
 });
 
 // Update consultation
-app.put('/api/consultations/:id', authenticate, async (req, res) => {
+app.put('/api/consultations/:id', authenticate, authorize(['professional', 'admin']), async (req, res) => {
   try {
     const consultationId = req.params.id;
     const { date, value, location_id, notes, status } = req.body;
 
     console.log('🔄 [CONSULTATIONS] Updating consultation:', consultationId);
 
-    // Validate required fields
-    if (!date || !value) {
-      return res.status(400).json({ 
-        message: 'Data e valor são obrigatórios' 
-      });
+    // Check if consultation exists and belongs to the professional (or is admin)
+    const checkResult = await pool.query(`
+      SELECT * FROM consultations 
+      WHERE id = $1 AND (professional_id = $2 OR $3 = true)
+    `, [consultationId, req.user.id, req.user.currentRole === 'admin']);
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Consulta não encontrada ou sem permissão' });
     }
 
+    // Update consultation
     const result = await pool.query(`
       UPDATE consultations 
-      SET date = $1, value = $2, location_id = $3, notes = $4, status = $5, updated_at = NOW()
-      WHERE id = $6 AND professional_id = $7
+      SET 
+        date = COALESCE($1, date),
+        value = COALESCE($2, value),
+        location_id = COALESCE($3, location_id),
+        notes = COALESCE($4, notes),
+        status = COALESCE($5, status),
+        updated_at = NOW()
+      WHERE id = $6
       RETURNING *
-    `, [date, value, location_id || null, notes || null, status || 'completed', consultationId, req.user.id]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Consulta não encontrada' });
-    }
+    `, [date, value, location_id, notes, status, consultationId]);
 
     console.log('✅ [CONSULTATIONS] Consultation updated successfully');
+
     res.json({
       message: 'Consulta atualizada com sucesso',
       consultation: result.rows[0]
@@ -1582,6 +1589,338 @@ app.put('/api/consultations/:id', authenticate, async (req, res) => {
   } catch (error) {
     console.error('❌ [CONSULTATIONS] Error updating consultation:', error);
     res.status(500).json({ message: 'Erro ao atualizar consulta' });
+  }
+});
+
+// ========================================
+// REPORTS ROUTES
+// ========================================
+
+// Revenue report (admin only)
+app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const { start_date, end_date } = req.query;
+
+    console.log('🔄 [REPORTS] Generating revenue report:', { start_date, end_date });
+
+    // Get revenue by professional (excluding cancelled consultations)
+    const professionalsResult = await pool.query(`
+      SELECT 
+        prof.name as professional_name,
+        prof.percentage as professional_percentage,
+        COUNT(c.id) as consultation_count,
+        COALESCE(SUM(c.value), 0) as revenue,
+        COALESCE(SUM(c.value * (prof.percentage / 100.0)), 0) as professional_payment,
+        COALESCE(SUM(c.value * ((100 - prof.percentage) / 100.0)), 0) as clinic_revenue
+      FROM users prof
+      LEFT JOIN consultations c ON c.professional_id = prof.id 
+        AND c.date >= $1 AND c.date <= $2 
+        AND c.status != 'cancelled'
+      WHERE prof.roles::jsonb ? 'professional'
+      GROUP BY prof.id, prof.name, prof.percentage
+      ORDER BY revenue DESC
+    `, [start_date, end_date]);
+
+    // Get revenue by service (excluding cancelled consultations)
+    const servicesResult = await pool.query(`
+      SELECT 
+        s.name as service_name,
+        COUNT(c.id) as consultation_count,
+        COALESCE(SUM(c.value), 0) as revenue
+      FROM services s
+      LEFT JOIN consultations c ON c.service_id = s.id 
+        AND c.date >= $1 AND c.date <= $2 
+        AND c.status != 'cancelled'
+      GROUP BY s.id, s.name
+      HAVING COUNT(c.id) > 0
+      ORDER BY revenue DESC
+    `, [start_date, end_date]);
+
+    // Calculate total revenue (excluding cancelled consultations)
+    const totalResult = await pool.query(`
+      SELECT COALESCE(SUM(value), 0) as total_revenue
+      FROM consultations
+      WHERE date >= $1 AND date <= $2 AND status != 'cancelled'
+    `, [start_date, end_date]);
+
+    console.log('✅ [REPORTS] Revenue report generated successfully');
+
+    res.json({
+      total_revenue: totalResult.rows[0].total_revenue,
+      revenue_by_professional: professionalsResult.rows,
+      revenue_by_service: servicesResult.rows
+    });
+  } catch (error) {
+    console.error('❌ [REPORTS] Error generating revenue report:', error);
+    res.status(500).json({ message: 'Erro ao gerar relatório de receita' });
+  }
+});
+
+// Professional revenue report
+app.get('/api/reports/professional-revenue', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { start_date, end_date } = req.query;
+    const professionalId = req.user.id;
+
+    console.log('🔄 [REPORTS] Generating professional revenue report for:', professionalId);
+
+    // Get professional percentage
+    const profResult = await pool.query(`
+      SELECT percentage FROM users WHERE id = $1
+    `, [professionalId]);
+
+    const professionalPercentage = profResult.rows[0]?.percentage || 50;
+
+    // Get consultations for the professional (excluding cancelled)
+    const consultationsResult = await pool.query(`
+      SELECT 
+        c.date,
+        c.value as total_value,
+        c.value * (($3 - $4) / 100.0) as amount_to_pay,
+        s.name as service_name,
+        CASE 
+          WHEN c.dependent_id IS NOT NULL THEN d.name
+          WHEN c.private_patient_id IS NOT NULL THEN pp.name
+          ELSE u.name
+        END as client_name
+      FROM consultations c
+      LEFT JOIN users u ON c.user_id = u.id
+      LEFT JOIN dependents d ON c.dependent_id = d.id
+      LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
+      LEFT JOIN services s ON c.service_id = s.id
+      WHERE c.professional_id = $1 
+        AND c.date >= $2 AND c.date <= $3
+        AND c.status != 'cancelled'
+      ORDER BY c.date DESC
+    `, [professionalId, start_date, end_date, professionalPercentage]);
+
+    // Calculate summary
+    const summary = {
+      professional_percentage: professionalPercentage,
+      total_revenue: consultationsResult.rows.reduce((sum, c) => sum + parseFloat(c.total_value), 0),
+      consultation_count: consultationsResult.rows.length,
+      amount_to_pay: consultationsResult.rows.reduce((sum, c) => sum + parseFloat(c.amount_to_pay), 0)
+    };
+
+    console.log('✅ [REPORTS] Professional revenue report generated');
+
+    res.json({
+      summary,
+      consultations: consultationsResult.rows
+    });
+  } catch (error) {
+    console.error('❌ [REPORTS] Error generating professional revenue report:', error);
+    res.status(500).json({ message: 'Erro ao gerar relatório de receita profissional' });
+  }
+});
+
+// Professional detailed report
+app.get('/api/reports/professional-detailed', authenticate, authorize(['professional']), async (req, res) => {
+  try {
+    const { start_date, end_date } = req.query;
+    const professionalId = req.user.id;
+
+    console.log('🔄 [REPORTS] Generating detailed professional report for:', professionalId);
+
+    // Get professional percentage
+    const profResult = await pool.query(`
+      SELECT percentage FROM users WHERE id = $1
+    `, [professionalId]);
+
+    const professionalPercentage = profResult.rows[0]?.percentage || 50;
+
+    // Get consultations breakdown (excluding cancelled)
+    const consultationsResult = await pool.query(`
+      SELECT 
+        COUNT(*) as total_consultations,
+        COUNT(CASE WHEN c.private_patient_id IS NOT NULL THEN 1 END) as private_consultations,
+        COUNT(CASE WHEN c.private_patient_id IS NULL THEN 1 END) as convenio_consultations,
+        COALESCE(SUM(c.value), 0) as total_revenue,
+        COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
+        COALESCE(SUM(CASE WHEN c.private_patient_id IS NULL THEN c.value ELSE 0 END), 0) as convenio_revenue,
+        COALESCE(SUM(CASE WHEN c.private_patient_id IS NULL THEN c.value * ((100 - $3) / 100.0) ELSE 0 END), 0) as amount_to_pay
+      FROM consultations c
+      WHERE c.professional_id = $1 
+        AND c.date >= $2 AND c.date <= $4
+        AND c.status != 'cancelled'
+    `, [professionalId, start_date, professionalPercentage, end_date]);
+
+    const summary = {
+      ...consultationsResult.rows[0],
+      professional_percentage: professionalPercentage
+    };
+
+    console.log('✅ [REPORTS] Detailed professional report generated');
+
+    res.json({ summary });
+  } catch (error) {
+    console.error('❌ [REPORTS] Error generating detailed professional report:', error);
+    res.status(500).json({ message: 'Erro ao gerar relatório detalhado' });
+  }
+});
+
+// Cancelled consultations report
+app.get('/api/reports/cancelled-consultations', authenticate, authorize(['professional', 'admin']), async (req, res) => {
+  try {
+    const { start_date, end_date } = req.query;
+    const professionalId = req.user.currentRole === 'admin' ? null : req.user.id;
+
+    console.log('🔄 [REPORTS] Fetching cancelled consultations report');
+    console.log('🔄 [REPORTS] Professional ID filter:', professionalId);
+    console.log('🔄 [REPORTS] Date range:', { start_date, end_date });
+
+    let query = `
+      SELECT 
+        c.id,
+        c.date,
+        c.value,
+        c.cancellation_reason,
+        c.cancelled_at,
+        c.location_id,
+        s.name as service_name,
+        prof.name as professional_name,
+        cancelled_by_user.name as cancelled_by_name,
+        al.name as location_name,
+        CASE 
+          WHEN c.dependent_id IS NOT NULL THEN d.name
+          WHEN c.private_patient_id IS NOT NULL THEN pp.name
+          ELSE u.name
+        END as patient_name,
+        CASE 
+          WHEN c.dependent_id IS NOT NULL THEN true
+          ELSE false
+        END as is_dependent,
+        CASE 
+          WHEN c.private_patient_id IS NOT NULL THEN 'private'
+          ELSE 'convenio'
+        END as patient_type
+      FROM consultations c
+      LEFT JOIN users u ON c.user_id = u.id
+      LEFT JOIN dependents d ON c.dependent_id = d.id
+      LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
+      LEFT JOIN services s ON c.service_id = s.id
+      LEFT JOIN users prof ON c.professional_id = prof.id
+      LEFT JOIN users cancelled_by_user ON c.cancelled_by = cancelled_by_user.id
+      LEFT JOIN attendance_locations al ON c.location_id = al.id
+      WHERE c.status = 'cancelled'
+    `;
+
+    const params = [];
+    let paramIndex = 1;
+
+    // Add date filters if provided
+    if (start_date) {
+      query += ` AND c.date >= $${paramIndex}`;
+      params.push(start_date);
+      paramIndex++;
+    }
+
+    if (end_date) {
+      query += ` AND c.date <= $${paramIndex}`;
+      params.push(end_date);
+      paramIndex++;
+    }
+
+    // Add professional filter if not admin
+    if (professionalId) {
+      query += ` AND c.professional_id = $${paramIndex}`;
+      params.push(professionalId);
+      paramIndex++;
+    }
+
+    query += ` ORDER BY c.cancelled_at DESC`;
+
+    const result = await pool.query(query, params);
+
+    console.log('✅ [REPORTS] Cancelled consultations report generated:', result.rows.length);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('❌ [REPORTS] Error generating cancelled consultations report:', error);
+    res.status(500).json({ message: 'Erro ao gerar relatório de consultas canceladas' });
+  }
+});
+
+// Clients by city report (admin only)
+app.get('/api/reports/clients-by-city', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    console.log('🔄 [REPORTS] Generating clients by city report');
+
+    const result = await pool.query(`
+      SELECT 
+        city,
+        state,
+        COUNT(*) as client_count,
+        COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
+        COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
+        COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
+      FROM users 
+      WHERE roles::jsonb ? 'client' 
+        AND city IS NOT NULL 
+        AND city != ''
+      GROUP BY city, state
+      ORDER BY client_count DESC, city
+    `);
+
+    console.log('✅ [REPORTS] Clients by city report generated:', result.rows.length);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('❌ [REPORTS] Error generating clients by city report:', error);
+    res.status(500).json({ message: 'Erro ao gerar relatório de clientes por cidade' });
+  }
+});
+
+// Professionals by city report (admin only)
+app.get('/api/reports/professionals-by-city', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    console.log('🔄 [REPORTS] Generating professionals by city report');
+
+    const result = await pool.query(`
+      SELECT 
+        city,
+        state,
+        COUNT(*) as total_professionals,
+        json_agg(
+          json_build_object(
+            'category_name', COALESCE(category_name, 'Sem categoria'),
+            'count', 1
+          )
+        ) as categories
+      FROM users 
+      WHERE roles::jsonb ? 'professional' 
+        AND city IS NOT NULL 
+        AND city != ''
+      GROUP BY city, state
+      ORDER BY total_professionals DESC, city
+    `);
+
+    // Process categories to group by name
+    const processedResult = result.rows.map(row => {
+      const categoryMap = new Map();
+      
+      row.categories.forEach((cat) => {
+        const name = cat.category_name;
+        if (categoryMap.has(name)) {
+          categoryMap.set(name, categoryMap.get(name) + cat.count);
+        } else {
+          categoryMap.set(name, cat.count);
+        }
+      });
+
+      return {
+        ...row,
+        categories: Array.from(categoryMap.entries()).map(([category_name, count]) => ({
+          category_name,
+          count
+        }))
+      };
+    });
+
+    console.log('✅ [REPORTS] Professionals by city report generated:', processedResult.length);
+    res.json(processedResult);
+  } catch (error) {
+    console.error('❌ [REPORTS] Error generating professionals by city report:', error);
+    res.status(500).json({ message: 'Erro ao gerar relatório de profissionais por cidade' });
   }
 });
 
@@ -2231,406 +2570,6 @@ app.get("/api/consultations/client/:clientId", authenticate, async (req, res) =>
   } catch (error) {
     console.error("❌ Error fetching client consultations:", error);
     res.status(500).json({ message: "Erro ao carregar consultas do cliente" });
-  }
-});
-
-// ========================================
-// REPORTS ROUTES
-// ========================================
-
-// Revenue report for admin
-app.get('/api/reports/revenue', authenticate, authorize(['admin']), async (req, res) => {
-  try {
-    const { start_date, end_date } = req.query;
-
-    console.log('🔄 [REPORTS] Generating revenue report:', { start_date, end_date });
-
-    if (!start_date || !end_date) {
-      return res.status(400).json({ message: 'Data inicial e final são obrigatórias' });
-    }
-
-    // Get revenue by professional (excluding cancelled consultations)
-    const professionalRevenueResult = await pool.query(`
-      SELECT 
-        u.name as professional_name,
-        u.percentage,
-        COUNT(c.id) as consultation_count,
-        SUM(c.value) as revenue,
-        SUM(c.value * (u.percentage / 100.0)) as professional_payment,
-        SUM(c.value * ((100 - u.percentage) / 100.0)) as clinic_revenue
-      FROM consultations c
-      JOIN users u ON c.professional_id = u.id
-      WHERE c.date >= $1 AND c.date <= $2 
-        AND c.status != 'cancelled'
-      GROUP BY u.id, u.name, u.percentage
-      ORDER BY revenue DESC
-    `, [start_date, end_date]);
-
-    // Get revenue by service (excluding cancelled consultations)
-    const serviceRevenueResult = await pool.query(`
-      SELECT 
-        s.name as service_name,
-        COUNT(c.id) as consultation_count,
-        SUM(c.value) as revenue
-      FROM consultations c
-      JOIN services s ON c.service_id = s.id
-      WHERE c.date >= $1 AND c.date <= $2 
-        AND c.status != 'cancelled'
-      GROUP BY s.id, s.name
-      ORDER BY revenue DESC
-    `, [start_date, end_date]);
-
-    // Calculate total revenue (excluding cancelled consultations)
-    const totalRevenueResult = await pool.query(`
-      SELECT COALESCE(SUM(value), 0) as total_revenue
-      FROM consultations
-      WHERE date >= $1 AND date <= $2 
-        AND status != 'cancelled'
-    `, [start_date, end_date]);
-
-    const report = {
-      total_revenue: Number(totalRevenueResult.rows[0].total_revenue) || 0,
-      revenue_by_professional: professionalRevenueResult.rows.map(row => ({
-        professional_name: row.professional_name,
-        percentage: Number(row.percentage) || 50,
-        revenue: Number(row.revenue) || 0,
-        consultation_count: Number(row.consultation_count) || 0,
-        professional_payment: Number(row.professional_payment) || 0,
-        clinic_revenue: Number(row.clinic_revenue) || 0
-      })),
-      revenue_by_service: serviceRevenueResult.rows.map(row => ({
-        service_name: row.service_name,
-        revenue: Number(row.revenue) || 0,
-        consultation_count: Number(row.consultation_count) || 0
-      }))
-    };
-
-    console.log('✅ [REPORTS] Revenue report generated successfully');
-    res.json(report);
-  } catch (error) {
-    console.error('❌ [REPORTS] Error generating revenue report:', error);
-    res.status(500).json({ message: 'Erro ao gerar relatório de receita' });
-  }
-});
-
-// Professional revenue report
-app.get('/api/reports/professional-revenue', authenticate, authorize(['professional']), async (req, res) => {
-  try {
-    const { start_date, end_date } = req.query;
-    const professionalId = req.user.id;
-
-    console.log('🔄 [REPORTS] Generating professional revenue report:', { 
-      professional_id: professionalId, 
-      start_date, 
-      end_date 
-    });
-
-    if (!start_date || !end_date) {
-      return res.status(400).json({ message: 'Data inicial e final são obrigatórias' });
-    }
-
-    // Get professional percentage
-    const professionalResult = await pool.query(
-      'SELECT percentage FROM users WHERE id = $1',
-      [professionalId]
-    );
-
-    const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
-
-    // Get consultations for the period (excluding cancelled consultations)
-    const consultationsResult = await pool.query(`
-      SELECT 
-        c.date,
-        CASE 
-          WHEN c.dependent_id IS NOT NULL THEN d.name
-          WHEN c.private_patient_id IS NOT NULL THEN pp.name
-          ELSE u.name
-        END as client_name,
-        s.name as service_name,
-        c.value as total_value,
-        CASE 
-          WHEN c.private_patient_id IS NOT NULL THEN 0
-          ELSE c.value * ((100 - $3) / 100.0)
-        END as amount_to_pay
-      FROM consultations c
-      LEFT JOIN users u ON c.user_id = u.id
-      LEFT JOIN dependents d ON c.dependent_id = d.id
-      LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
-      LEFT JOIN services s ON c.service_id = s.id
-      WHERE c.professional_id = $1 
-        AND c.date >= $2 AND c.date <= $4
-        AND c.status != 'cancelled'
-      ORDER BY c.date DESC
-    `, [professionalId, start_date, professionalPercentage, end_date]);
-
-    // Calculate summary (excluding cancelled consultations)
-    const summaryResult = await pool.query(`
-      SELECT 
-        COUNT(c.id) as consultation_count,
-        COALESCE(SUM(c.value), 0) as total_revenue,
-        COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN 0 ELSE c.value * ((100 - $3) / 100.0) END), 0) as amount_to_pay
-      FROM consultations c
-      WHERE c.professional_id = $1 
-        AND c.date >= $2 AND c.date <= $4
-        AND c.status != 'cancelled'
-    `, [professionalId, start_date, professionalPercentage, end_date]);
-
-    const summary = summaryResult.rows[0];
-
-    const report = {
-      summary: {
-        percentage: professionalPercentage,
-        total_revenue: Number(summary.total_revenue) || 0,
-        consultation_count: Number(summary.consultation_count) || 0,
-        amount_to_pay: Number(summary.amount_to_pay) || 0
-      },
-      consultations: consultationsResult.rows.map(row => ({
-        date: row.date,
-        client_name: row.client_name,
-        service_name: row.service_name,
-        total_value: Number(row.total_value) || 0,
-        amount_to_pay: Number(row.amount_to_pay) || 0
-      }))
-    };
-
-    console.log('✅ [REPORTS] Professional revenue report generated');
-    res.json(report);
-  } catch (error) {
-    console.error('❌ [REPORTS] Error generating professional revenue report:', error);
-    res.status(500).json({ message: 'Erro ao gerar relatório de receita do profissional' });
-  }
-});
-
-// Professional detailed report
-app.get('/api/reports/professional-detailed', authenticate, authorize(['professional']), async (req, res) => {
-  try {
-    const { start_date, end_date } = req.query;
-    const professionalId = req.user.id;
-
-    console.log('🔄 [REPORTS] Generating detailed professional report:', { 
-      professional_id: professionalId, 
-      start_date, 
-      end_date 
-    });
-
-    if (!start_date || !end_date) {
-      return res.status(400).json({ message: 'Data inicial e final são obrigatórias' });
-    }
-
-    // Get professional percentage
-    const professionalResult = await pool.query(
-      'SELECT percentage FROM users WHERE id = $1',
-      [professionalId]
-    );
-
-    const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
-
-    // Get detailed statistics (excluding cancelled consultations)
-    const statsResult = await pool.query(`
-      SELECT 
-        COUNT(*) as total_consultations,
-        COUNT(CASE WHEN c.private_patient_id IS NOT NULL THEN 1 END) as private_consultations,
-        COUNT(CASE WHEN c.private_patient_id IS NULL THEN 1 END) as convenio_consultations,
-        COALESCE(SUM(c.value), 0) as total_revenue,
-        COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
-        COALESCE(SUM(CASE WHEN c.private_patient_id IS NULL THEN c.value ELSE 0 END), 0) as convenio_revenue,
-        COALESCE(SUM(CASE WHEN c.private_patient_id IS NULL THEN c.value * ((100 - $3) / 100.0) ELSE 0 END), 0) as amount_to_pay
-      FROM consultations c
-      WHERE c.professional_id = $1 
-        AND c.date >= $2 AND c.date <= $4
-        AND c.status != 'cancelled'
-    `, [professionalId, start_date, professionalPercentage, end_date]);
-
-    const stats = statsResult.rows[0];
-
-    const report = {
-      summary: {
-        total_consultations: Number(stats.total_consultations) || 0,
-        convenio_consultations: Number(stats.convenio_consultations) || 0,
-        private_consultations: Number(stats.private_consultations) || 0,
-        total_revenue: Number(stats.total_revenue) || 0,
-        convenio_revenue: Number(stats.convenio_revenue) || 0,
-        private_revenue: Number(stats.private_revenue) || 0,
-        percentage: professionalPercentage,
-        amount_to_pay: Number(stats.amount_to_pay) || 0
-      }
-    };
-
-    console.log('✅ [REPORTS] Detailed professional report generated');
-    res.json(report);
-  } catch (error) {
-    console.error('❌ [REPORTS] Error generating detailed professional report:', error);
-    res.status(500).json({ message: 'Erro ao gerar relatório detalhado do profissional' });
-  }
-});
-
-// Cancelled consultations report - NOVA FUNCIONALIDADE
-app.get('/api/reports/cancelled-consultations', authenticate, async (req, res) => {
-  try {
-    const { start_date, end_date, professional_id } = req.query;
-
-    console.log('🔄 [REPORTS] Generating cancelled consultations report:', { 
-      start_date, 
-      end_date, 
-      professional_id 
-    });
-
-    let query = `
-      SELECT 
-        c.*,
-        u.name as client_name,
-        d.name as dependent_name,
-        pp.name as private_patient_name,
-        s.name as service_name,
-        prof.name as professional_name,
-        al.name as location_name,
-        cancelled_by_user.name as cancelled_by_name,
-        CASE 
-          WHEN c.dependent_id IS NOT NULL THEN d.name
-          WHEN c.private_patient_id IS NOT NULL THEN pp.name
-          ELSE u.name
-        END as patient_name,
-        CASE 
-          WHEN c.dependent_id IS NOT NULL THEN true
-          ELSE false
-        END as is_dependent,
-        CASE 
-          WHEN c.private_patient_id IS NOT NULL THEN 'private'
-          ELSE 'convenio'
-        END as patient_type
-      FROM consultations c
-      LEFT JOIN users u ON c.user_id = u.id
-      LEFT JOIN dependents d ON c.dependent_id = d.id
-      LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
-      LEFT JOIN services s ON c.service_id = s.id
-      LEFT JOIN users prof ON c.professional_id = prof.id
-      LEFT JOIN attendance_locations al ON c.location_id = al.id
-      LEFT JOIN users cancelled_by_user ON c.cancelled_by = cancelled_by_user.id
-      WHERE c.status = 'cancelled'
-    `;
-
-    const queryParams = [];
-    let paramIndex = 1;
-
-    // Add date filters if provided
-    if (start_date) {
-      query += ` AND c.date >= $${paramIndex}`;
-      queryParams.push(start_date);
-      paramIndex++;
-    }
-
-    if (end_date) {
-      query += ` AND c.date <= $${paramIndex}`;
-      queryParams.push(end_date);
-      paramIndex++;
-    }
-
-    // Add professional filter if provided and user is admin
-    if (professional_id && req.user.currentRole === 'admin') {
-      query += ` AND c.professional_id = $${paramIndex}`;
-      queryParams.push(professional_id);
-      paramIndex++;
-    } else if (req.user.currentRole === 'professional') {
-      // If user is professional, only show their own cancelled consultations
-      query += ` AND c.professional_id = $${paramIndex}`;
-      queryParams.push(req.user.id);
-      paramIndex++;
-    }
-
-    query += ' ORDER BY c.cancelled_at DESC, c.date DESC';
-
-    const result = await pool.query(query, queryParams);
-
-    console.log('✅ [REPORTS] Cancelled consultations report generated:', result.rows.length);
-    res.json(result.rows);
-  } catch (error) {
-    console.error('❌ [REPORTS] Error generating cancelled consultations report:', error);
-    res.status(500).json({ message: 'Erro ao gerar relatório de consultas canceladas' });
-  }
-});
-
-// Clients by city report
-app.get('/api/reports/clients-by-city', authenticate, authorize(['admin']), async (req, res) => {
-  try {
-    console.log('🔄 [REPORTS] Generating clients by city report');
-
-    const result = await pool.query(`
-      SELECT 
-        city,
-        state,
-        COUNT(*) as client_count,
-        COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
-        COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
-        COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
-      FROM users 
-      WHERE roles::jsonb ? 'client' 
-        AND city IS NOT NULL 
-        AND city != ''
-      GROUP BY city, state
-      ORDER BY client_count DESC, city
-    `);
-
-    console.log('✅ [REPORTS] Clients by city report generated:', result.rows.length);
-    res.json(result.rows);
-  } catch (error) {
-    console.error('❌ [REPORTS] Error generating clients by city report:', error);
-    res.status(500).json({ message: 'Erro ao gerar relatório de clientes por cidade' });
-  }
-});
-
-// Professionals by city report
-app.get('/api/reports/professionals-by-city', authenticate, authorize(['admin']), async (req, res) => {
-  try {
-    console.log('🔄 [REPORTS] Generating professionals by city report');
-
-    const result = await pool.query(`
-      SELECT 
-        city,
-        state,
-        COUNT(*) as total_professionals,
-        json_agg(
-          json_build_object(
-            'category_name', COALESCE(category_name, 'Sem categoria'),
-            'count', 1
-          )
-        ) as categories
-      FROM users 
-      WHERE roles::jsonb ? 'professional' 
-        AND city IS NOT NULL 
-        AND city != ''
-      GROUP BY city, state
-      ORDER BY total_professionals DESC, city
-    `);
-
-    // Process the categories to group by category_name
-    const processedResult = result.rows.map(row => {
-      const categoryMap = new Map();
-      
-      row.categories.forEach(cat => {
-        const categoryName = cat.category_name;
-        if (categoryMap.has(categoryName)) {
-          categoryMap.set(categoryName, categoryMap.get(categoryName) + cat.count);
-        } else {
-          categoryMap.set(categoryName, cat.count);
-        }
-      });
-
-      return {
-        city: row.city,
-        state: row.state,
-        total_professionals: Number(row.total_professionals),
-        categories: Array.from(categoryMap.entries()).map(([category_name, count]) => ({
-          category_name,
-          count
-        }))
-      };
-    });
-
-    console.log('✅ [REPORTS] Professionals by city report generated:', processedResult.length);
-    res.json(processedResult);
-  } catch (error) {
-    console.error('❌ [REPORTS] Error generating professionals by city report:', error);
-    res.status(500).json({ message: 'Erro ao gerar relatório de profissionais por cidade' });
   }
 });
 
@@ -4922,8 +4861,19 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
 
     const report = {
       total_revenue: totalRevenue,
-      revenue_by_professional: revenueByProfessionalResult.rows,
-      revenue_by_service: revenueByServiceResult.rows,
+      revenue_by_professional: revenueByProfessionalResult.rows.map(row => ({
+        professional_name: row.professional_name,
+        percentage: Number(row.percentage) || 50,
+        revenue: Number(row.revenue) || 0,
+        consultation_count: Number(row.consultation_count) || 0,
+        professional_payment: Number(row.professional_payment) || 0,
+        clinic_revenue: Number(row.clinic_revenue) || 0
+      })),
+      revenue_by_service: revenueByServiceResult.rows.map(row => ({
+        service_name: row.service_name,
+        revenue: Number(row.revenue) || 0,
+        consultation_count: Number(row.consultation_count) || 0
+      }))
     };
 
     console.log("✅ Revenue report generated");
