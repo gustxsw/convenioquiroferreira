@@ -20,13 +20,13 @@ import {
   MessageCircle,
   Settings,
   Repeat,
+  Gift,
 } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import EditConsultationModal from "../../components/EditConsultationModal";
 import SlotCustomizationModal from "../../components/SlotCustomizationModal";
 import RecurringConsultationModal from '../../components/RecurringConsultationModal';
-import SchedulingAccessPayment from '../../components/SchedulingAccessPayment';
 import QuickScheduleModal from '../../components/QuickScheduleModal';
 
 type Consultation = {
@@ -312,7 +312,7 @@ const SchedulingPage: React.FC = () => {
 
       if (patientsResponse.ok) {
         const patientsData = await patientsResponse.json();
-        setPrivatePatients(Array.isArray(patientsData) ? patientsData : []);
+        setPrivatePatients(patientsData);
       }
 
       // Fetch attendance locations
@@ -326,19 +326,10 @@ const SchedulingPage: React.FC = () => {
       if (locationsResponse.ok) {
         const locationsData = await locationsResponse.json();
         setAttendanceLocations(locationsData);
-
-        // Set default location if exists
-        const defaultLocation = locationsData.find((loc: AttendanceLocation) => loc.is_default);
-        if (defaultLocation) {
-          setFormData((prev) => ({
-            ...prev,
-            location_id: defaultLocation.id.toString(),
-          }));
-        }
       }
     } catch (error) {
       console.error("Error fetching data:", error);
-      setError("Não foi possível carregar os dados da agenda");
+      setError("Erro ao carregar dados");
     } finally {
       setIsLoading(false);
     }
@@ -814,12 +805,6 @@ const SchedulingPage: React.FC = () => {
         <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 flex items-center">
           <AlertCircle className="h-5 w-5 mr-2" />
           {error}
-          <button
-            onClick={() => setError('')}
-            className="ml-auto text-red-400 hover:text-red-600"
-          >
-            ×
-          </button>
         </div>
       )}
 
@@ -827,12 +812,6 @@ const SchedulingPage: React.FC = () => {
         <div className="bg-green-50 text-green-600 p-4 rounded-lg mb-6 flex items-center">
           <Check className="h-5 w-5 mr-2" />
           {success}
-          <button
-            onClick={() => setSuccess('')}
-            className="ml-auto text-green-400 hover:text-green-600"
-          >
-            ×
-          </button>
         </div>
       )}
 
@@ -1646,18 +1625,6 @@ const SchedulingPage: React.FC = () => {
         onClose={() => setShowSlotModal(false)}
         onSlotDurationChange={handleSlotDurationChange}
       />
-
-      {/* Recurring Consultation Modal */}
-      {showRecurringModal && (
-        <RecurringConsultationModal
-          isOpen={showRecurringModal}
-          onClose={() => setShowRecurringModal(false)}
-          onSuccess={() => {
-            setShowRecurringModal(false);
-            fetchData();
-          }}
-        />
-      )}
 
       {/* Recurring Consultation Modal */}
       {showRecurringModal && (
