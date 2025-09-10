@@ -1061,6 +1061,9 @@ const ManageUsersPage: React.FC = () => {
                           onChange={handleInputChange}
                           className="input"
                         />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Deixe vazio para definir automaticamente (1 ano) ao ativar
+                        </p>
                       </div>
                     </div>
                   </div>
