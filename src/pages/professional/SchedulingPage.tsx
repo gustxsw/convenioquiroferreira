@@ -26,6 +26,7 @@ import { ptBR } from "date-fns/locale";
 import EditConsultationModal from "../../components/EditConsultationModal";
 import SlotCustomizationModal from "../../components/SlotCustomizationModal";
 import RecurringConsultationModal from '../../components/RecurringConsultationModal';
+import SchedulingAccessPayment from '../../components/SchedulingAccessPayment';
 import QuickScheduleModal from '../../components/QuickScheduleModal';
 
 type Consultation = {
