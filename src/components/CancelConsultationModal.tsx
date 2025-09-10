@@ -31,6 +31,27 @@ const CancelConsultationModal: React.FC<CancelConsultationModalProps> = ({
   const handleConfirm = async () => {
     try {
       setIsSubmitting(true);
+      
+      // Call the cancel API endpoint
+      const token = localStorage.getItem('token');
+      const apiUrl = getApiUrl();
+      
+      const response = await fetch(`${apiUrl}/api/consultations/${consultationData.id}/cancel`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          cancellation_reason: cancellationReason.trim() || null
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erro ao cancelar consulta');
+      }
+      
       await onConfirm(cancellationReason.trim() || undefined);
       setCancellationReason('');
     } catch (error) {
@@ -38,6 +59,17 @@ const CancelConsultationModal: React.FC<CancelConsultationModalProps> = ({
     } finally {
       setIsSubmitting(false);
     }
+  };
+  
+  // Get API URL
+  const getApiUrl = () => {
+    if (
+      window.location.hostname === "cartaoquiroferreira.com.br" ||
+      window.location.hostname === "www.cartaoquiroferreira.com.br"
+    ) {
+      return "https://www.cartaoquiroferreira.com.br";
+    }
+    return "http://localhost:3001";
   };
 
   const handleClose = () => {

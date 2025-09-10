@@ -766,8 +766,53 @@ const SchedulingPage: React.FC = () => {
       />
     );
   }
+  // Show access payment screen if no access
+  if (isCheckingAccess) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Verificando acesso à agenda...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasSchedulingAccess) {
+    return (
+      <SchedulingAccessPayment 
+        professionalName={user?.name || 'Profissional'}
+        onPaymentSuccess={() => {
+          // Refresh access status after payment
+          checkSchedulingAccess();
+        }}
+      />
+    );
+  }
+
   return (
     <div>
+      {/* Access Status Banner */}
+      {hasSchedulingAccess && accessExpiresAt && (
+        <div className="bg-green-50 border-l-4 border-green-600 p-4 mb-6">
+          <div className="flex items-center">
+            <Gift className="h-5 w-5 text-green-600 mr-2" />
+            <div>
+              <p className="text-green-700 font-medium">
+                Acesso à agenda ativo
+              </p>
+              <p className="text-green-600 text-sm">
+                Válido até: {new Date(accessExpiresAt).toLocaleDateString('pt-BR', {
+                  day: '2-digit',
+                  month: 'long',
+                  year: 'numeric'
+                })}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Agenda</h1>
