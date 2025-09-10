@@ -814,6 +814,12 @@ const SchedulingPage: React.FC = () => {
         <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 flex items-center">
           <AlertCircle className="h-5 w-5 mr-2" />
           {error}
+          <button
+            onClick={() => setError('')}
+            className="ml-auto text-red-400 hover:text-red-600"
+          >
+            ×
+          </button>
         </div>
       )}
 
@@ -821,6 +827,12 @@ const SchedulingPage: React.FC = () => {
         <div className="bg-green-50 text-green-600 p-4 rounded-lg mb-6 flex items-center">
           <Check className="h-5 w-5 mr-2" />
           {success}
+          <button
+            onClick={() => setSuccess('')}
+            className="ml-auto text-green-400 hover:text-green-600"
+          >
+            ×
+          </button>
         </div>
       )}
 
