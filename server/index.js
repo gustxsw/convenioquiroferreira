@@ -219,6 +219,28 @@ const initializeDatabase = async () => {
         ) THEN
           ALTER TABLE consultations ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
         END IF;
+        
+        -- Add cancellation fields for audit trail
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'consultations' AND column_name = 'cancelled_at'
+        ) THEN
+          ALTER TABLE consultations ADD COLUMN cancelled_at TIMESTAMP;
+        END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'consultations' AND column_name = 'cancelled_by'
+        ) THEN
+          ALTER TABLE consultations ADD COLUMN cancelled_by INTEGER REFERENCES users(id);
+        END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'consultations' AND column_name = 'cancellation_reason'
+        ) THEN
+          ALTER TABLE consultations ADD COLUMN cancellation_reason TEXT;
+        END IF;
       END $$;
     `);
 
@@ -1628,7 +1650,7 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), che
 });
 
 // PUT /api/consultations/:id - Update consultation
-app.put('/api/consultations/:id', authenticate, authorize(['professional', 'admin']), async (req, res) => {
+app.put('/api/consultations/:id', authenticate, authorize(['professional', 'admin']), checkSchedulingAccess, async (req, res) => {
   try {
     const consultationId = req.params.id;
     const { date, value, location_id, notes, status } = req.body;
