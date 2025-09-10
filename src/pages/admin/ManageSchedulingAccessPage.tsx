@@ -567,15 +567,15 @@ const ManageSchedulingAccessPage: React.FC = () => {
                                   Renovar
                                 </button>
                               ) : (
-                                <button
-                                  onClick={() => openExtendModal(professional)}
-                                  className="text-blue-600 hover:text-blue-900 flex items-center px-2 py-1 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
-                                  title="Estender Acesso"
-                                  disabled={isLoading}
-                                >
-                                  <Clock className="h-4 w-4 mr-1" />
-                                  Estender
-                                </button>
+                              <button
+                                onClick={() => openExtendModal(professional)}
+                                className="text-blue-600 hover:text-blue-900 flex items-center px-2 py-1 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                                title="Estender Acesso"
+                                disabled={isLoading}
+                              >
+                                <Clock className="h-4 w-4 mr-1" />
+                                Estender
+                              </button>
                               )}
                               <button
                                 onClick={() => confirmRevoke(professional)}
@@ -641,7 +641,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {modalMode === 'grant' ? 'Data de Expiração (7 dias padrão) *' : 'Nova Data de Expiração *'}
+                    Data de Expiração *
                   </label>
                   <input
                     type="date"
@@ -652,30 +652,20 @@ const ManageSchedulingAccessPage: React.FC = () => {
                     required
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    {modalMode === 'grant' 
-                      ? 'Período promocional gratuito de 7 dias para teste'
-                      : 'Estender o período de acesso gratuito'
-                    }
+                    O acesso ficará ativo até a data selecionada
                   </p>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Motivo da Concessão/Extensão
+                    Motivo/Observações (opcional)
                   </label>
                   <textarea
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                     className="input min-h-[80px]"
-                    placeholder={modalMode === 'grant' 
-                      ? 'Ex: Campanha de marketing, profissional em teste, parceria especial...'
-                      : 'Ex: Extensão por bom desempenho, parceria especial...'
-                    }
-                    required
+                    placeholder="Ex: Profissional em período de teste, parceria especial, etc."
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Este motivo será registrado no histórico de acesso
-                  </p>
                 </div>
               </div>
 
