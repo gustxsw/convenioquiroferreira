@@ -120,12 +120,12 @@ const ManageSchedulingAccessPage: React.FC = () => {
     setModalMode('grant');
     setSelectedProfessional(professional);
     
-    // Set default expiry to 3 months from now
+    // Set default expiry to 7 days from now
     const defaultExpiry = new Date();
-    defaultExpiry.setMonth(defaultExpiry.getMonth() + 3);
+    defaultExpiry.setDate(defaultExpiry.getDate() + 7);
     setExpiryDate(defaultExpiry.toISOString().split('T')[0]);
     
-    setReason('');
+    setReason('Acesso promocional para teste da agenda');
     setIsModalOpen(true);
   };
 
@@ -133,13 +133,13 @@ const ManageSchedulingAccessPage: React.FC = () => {
     setModalMode('extend');
     setSelectedProfessional(professional);
     
-    // Set default expiry to 3 months from current expiry or now
+    // Set default expiry to 7 days from current expiry or now
     const currentExpiry = professional.access_expires_at ? new Date(professional.access_expires_at) : new Date();
     const defaultExpiry = new Date(currentExpiry);
-    defaultExpiry.setMonth(defaultExpiry.getMonth() + 3);
+    defaultExpiry.setDate(defaultExpiry.getDate() + 7);
     setExpiryDate(defaultExpiry.toISOString().split('T')[0]);
     
-    setReason('');
+    setReason('Extensão do período de teste');
     setIsModalOpen(true);
   };
 
@@ -319,6 +319,51 @@ const ManageSchedulingAccessPage: React.FC = () => {
     };
   };
 
+  // Quick grant access function (7 days default)
+  const quickGrantAccess = async (professional: Professional) => {
+    try {
+      setIsLoading(true);
+      const token = localStorage.getItem('token');
+      const apiUrl = getApiUrl();
+
+      // Set 7 days from now
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + 7);
+
+      console.log('🔄 Quick granting 7-day access to:', professional.name);
+
+      const response = await fetch(`${apiUrl}/api/admin/grant-scheduling-access`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          professional_id: professional.id,
+          expires_at: expiryDate.toISOString().split('T')[0],
+          reason: 'Acesso promocional de 7 dias - Campanha de marketing'
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erro ao conceder acesso');
+      }
+
+      await fetchData();
+      setSuccess(`Acesso de 7 dias concedido para ${professional.name}!`);
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      console.error('Error in quickGrantAccess:', error);
+      setError(error instanceof Error ? error.message : 'Erro ao conceder acesso');
+      setTimeout(() => setError(''), 5000);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const resetFilters = () => {
     setSearchTerm('');
     setFilterStatus('');
@@ -342,7 +387,42 @@ const ManageSchedulingAccessPage: React.FC = () => {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Gerenciar Acesso à Agenda</h1>
-          <p className="text-gray-600">Conceda acesso gratuito à agenda para atrair novos profissionais</p>
+          <p className="text-gray-600">
+            Conceda acesso promocional à agenda (7 dias grátis) para campanhas de marketing. 
+            <span className="font-medium text-red-600">Valor mensal: R$ 24,99</span>
+          </p>
+        </div>
+      </div>
+
+      {/* Marketing Info Banner */}
+      <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-xl p-6 mb-6">
+        <div className="flex items-start">
+          <Gift className="h-6 w-6 text-green-600 mr-3 mt-1 flex-shrink-0" />
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold text-green-900 mb-2">
+              🎯 Estratégia de Marketing - Agenda Gratuita
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <h4 className="font-medium text-green-800 mb-1">Como Funciona:</h4>
+                <ul className="text-green-700 space-y-1">
+                  <li>• Profissionais começam <strong>sem acesso</strong> à agenda</li>
+                  <li>• Admin concede <strong>7 dias gratuitos</strong> para teste</li>
+                  <li>• Após expirar, profissional paga <strong>R$ 24,99/mês</strong></li>
+                  <li>• Admin pode estender período promocional</li>
+                </ul>
+              </div>
+              <div>
+                <h4 className="font-medium text-blue-800 mb-1">Benefícios da Estratégia:</h4>
+                <ul className="text-blue-700 space-y-1">
+                  <li>• Atrai novos profissionais com teste grátis</li>
+                  <li>• Demonstra valor da ferramenta</li>
+                  <li>• Gera receita recorrente após teste</li>
+                  <li>• Controle total sobre campanhas</li>
+                </ul>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -407,6 +487,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
           <p className="text-2xl font-bold text-gray-900">
             {professionals.length}
           </p>
+          <p className="text-xs text-gray-500 mt-1">Cadastrados no sistema</p>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -417,6 +498,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
           <p className="text-2xl font-bold text-gray-900">
             {activeAccessCount}
           </p>
+          <p className="text-xs text-gray-500 mt-1">Usando agenda gratuitamente</p>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -427,6 +509,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
           <p className="text-2xl font-bold text-gray-900">
             {expiredAccessCount}
           </p>
+          <p className="text-xs text-gray-500 mt-1">Podem assinar por R$ 24,99/mês</p>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -437,6 +520,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
           <p className="text-2xl font-bold text-gray-900">
             {noAccessCount}
           </p>
+          <p className="text-xs text-gray-500 mt-1">Potenciais novos usuários</p>
         </div>
       </div>
 
@@ -529,41 +613,72 @@ const ManageSchedulingAccessPage: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {professional.access_granted_by || '-'}
                         {professional.access_reason && (
-                          <div className="text-xs text-gray-400 mt-1">
+                          <div className="text-xs text-gray-400 mt-1 max-w-xs truncate" title={professional.access_reason}>
                             {professional.access_reason}
+                          </div>
+                        )}
+                        {professional.access_granted_at && (
+                          <div className="text-xs text-gray-400 mt-1">
+                            Concedido: {formatDate(professional.access_granted_at)}
                           </div>
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end space-x-2">
                           {!professional.has_scheduling_access ? (
+                            <>
                             <button
-                              onClick={() => openGrantModal(professional)}
-                              className="text-green-600 hover:text-green-900 flex items-center"
-                              title="Conceder Acesso"
+                              onClick={() => quickGrantAccess(professional)}
+                              className="text-green-600 hover:text-green-900 flex items-center px-2 py-1 bg-green-50 rounded-lg hover:bg-green-100 transition-colors text-xs font-medium"
+                              title="Conceder 7 dias de acesso gratuito"
+                              disabled={isLoading}
                             >
                               <Gift className="h-4 w-4 mr-1" />
-                              Conceder
+                              7 dias grátis
                             </button>
+                            <button
+                              onClick={() => openGrantModal(professional)}
+                              className="text-blue-600 hover:text-blue-900 flex items-center px-2 py-1 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors text-xs"
+                              title="Configurar período personalizado"
+                              disabled={isLoading}
+                            >
+                              <Clock className="h-4 w-4 mr-1" />
+                              Personalizar
+                            </button>
+                            </>
                           ) : (
                             <>
+                              {/* Check if access is expired */}
+                              {professional.access_expires_at && new Date(professional.access_expires_at) < new Date() ? (
+                                <button
+                                  onClick={() => openGrantModal(professional)}
+                                  className="text-green-600 hover:text-green-900 flex items-center px-3 py-1 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
+                                  title="Renovar Acesso"
+                                  disabled={isLoading}
+                                >
+                                  <Gift className="h-4 w-4 mr-1" />
+                                  Renovar
+                                </button>
+                              ) : (
                               <button
                                 onClick={() => openExtendModal(professional)}
-                                className="text-blue-600 hover:text-blue-900 flex items-center"
+                                className="text-blue-600 hover:text-blue-900 flex items-center px-2 py-1 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                                 title="Estender Acesso"
+                                disabled={isLoading}
                               >
                                 <Clock className="h-4 w-4 mr-1" />
                                 Estender
                               </button>
+                              )}
                               <button
                                 onClick={() => confirmRevoke(professional)}
-                                className="text-red-600 hover:text-red-900 flex items-center"
+                                className="text-red-600 hover:text-red-900 flex items-center px-2 py-1 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
                                 title="Revogar Acesso"
+                                disabled={isLoading}
                               >
                                 <Trash2 className="h-4 w-4 mr-1" />
                                 Revogar
                               </button>
-                            </>
                           )}
                         </div>
                       </td>
@@ -609,16 +724,21 @@ const ManageSchedulingAccessPage: React.FC = () => {
                 </p>
                 
                 {modalMode === 'extend' && selectedProfessional.access_expires_at && (
-                  <p className="text-gray-700 mb-4">
-                    <span className="font-medium">Expira atualmente em:</span> {formatDate(selectedProfessional.access_expires_at)}
-                  </p>
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                    <p className="text-yellow-800 text-sm">
+                      <strong>⏰ Status Atual:</strong> Expira em {formatDate(selectedProfessional.access_expires_at)}
+                      {new Date(selectedProfessional.access_expires_at) < new Date() && (
+                        <span className="text-red-600 font-medium"> (EXPIRADO)</span>
+                      )}
+                    </p>
+                  </div>
                 )}
               </div>
 
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Data de Expiração *
+                    {modalMode === 'grant' ? 'Data de Expiração (7 dias padrão) *' : 'Nova Data de Expiração *'}
                   </label>
                   <input
                     type="date"
@@ -629,32 +749,53 @@ const ManageSchedulingAccessPage: React.FC = () => {
                     required
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    O acesso ficará ativo até a data selecionada
+                    {modalMode === 'grant' 
+                      ? 'Período promocional gratuito de 7 dias para teste'
+                      : 'Estender o período de acesso gratuito'
+                    }
                   </p>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Motivo/Observações (opcional)
+                    Motivo da Concessão/Extensão
                   </label>
                   <textarea
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                     className="input min-h-[80px]"
-                    placeholder="Ex: Profissional em período de teste, parceria especial, etc."
+                    placeholder={modalMode === 'grant' 
+                      ? 'Ex: Campanha de marketing, profissional em teste, parceria especial...'
+                      : 'Ex: Extensão por bom desempenho, parceria especial...'
+                    }
+                    required
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Este motivo será registrado no histórico de acesso
+                  </p>
                 </div>
               </div>
 
               <div className="bg-blue-50 p-4 rounded-lg mt-4">
-                <h4 className="font-medium text-blue-900 mb-2">O que está incluído:</h4>
+                <h4 className="font-medium text-blue-900 mb-2">
+                  🎁 Acesso Promocional Gratuito - O que está incluído:
+                </h4>
                 <ul className="text-sm text-blue-700 space-y-1">
                   <li>• Acesso completo ao sistema de agendamentos</li>
                   <li>• Gestão de pacientes particulares</li>
                   <li>• Prontuários médicos digitais</li>
                   <li>• Geração de documentos médicos</li>
                   <li>• Relatórios detalhados</li>
+                  <li>• <strong>Período de teste: 7 dias gratuitos</strong></li>
+                  <li>• <strong>Após o período: R$ 24,99/mês</strong></li>
                 </ul>
+                
+                <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-xs text-yellow-700">
+                    <strong>💡 Estratégia de Marketing:</strong> Use este acesso gratuito para demonstrar 
+                    o valor da agenda aos profissionais. Após 7 dias, eles podem assinar por R$ 24,99/mês.
+                  </p>
+                </div>
               </div>
 
               <div className="flex justify-end space-x-3 mt-6">
@@ -681,7 +822,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
                   ) : (
                     <>
                       <Gift className="h-5 w-5 mr-2" />
-                      {modalMode === 'grant' ? 'Conceder Acesso' : 'Estender Acesso'}
+                      {modalMode === 'grant' ? 'Conceder 7 Dias Grátis' : 'Estender Período'}
                     </>
                   )}
                 </button>
@@ -707,9 +848,14 @@ const ManageSchedulingAccessPage: React.FC = () => {
             
             <div className="bg-yellow-50 p-3 rounded-lg mb-6">
               <p className="text-yellow-700 text-sm">
-                <strong>Atenção:</strong> O profissional perderá imediatamente o acesso ao sistema de agendamentos,
-                mas manterá acesso aos outros recursos do sistema.
+                <strong>Atenção:</strong> Esta ação irá:
               </p>
+              <ul className="text-yellow-700 text-sm mt-2 list-disc list-inside">
+                <li>Revogar imediatamente o acesso à agenda</li>
+                <li>Manter acesso aos outros recursos do sistema</li>
+                <li>Permitir que o profissional assine a agenda por R$ 24,99/mês</li>
+                <li>Preservar todos os dados já cadastrados</li>
+              </ul>
             </div>
             
             <div className="flex justify-end space-x-3">
