@@ -82,12 +82,6 @@ const SchedulingPage: React.FC = () => {
     time: string;
   } | null>(null);
 
-  const [showQuickScheduleModal, setShowQuickScheduleModal] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState<{
-    date: string;
-    time: string;
-  } | null>(null);
-
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   // New consultation modal
   const [showNewModal, setShowNewModal] = useState(false);
