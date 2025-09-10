@@ -1139,7 +1139,9 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
         city = $9, state = $10, password = $11, roles = $12, subscription_status = $13,
         subscription_expiry = $14, category_name = $15, percentage = $16, crm = $17, updated_at = $18
       WHERE id = $19
-      RETURNING id, name, cpf, email, phone, roles, subscription_status, subscription_expiry, category_name, percentage, crm
+      RETURNING id, name, cpf, email, phone, birth_date, address, address_number,
+        address_complement, neighborhood, city, state, roles, subscription_status, 
+        subscription_expiry, photo_url, category_name, percentage as professional_percentage, crm, created_at, updated_at
     `,
       [
         updateData.name,
