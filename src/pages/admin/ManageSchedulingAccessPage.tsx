@@ -349,6 +349,38 @@ const ManageSchedulingAccessPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Marketing Info Banner */}
+      <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-xl p-6 mb-6">
+        <div className="flex items-start">
+          <Gift className="h-6 w-6 text-green-600 mr-3 mt-1 flex-shrink-0" />
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold text-green-900 mb-2">
+              🎯 Estratégia de Marketing - Agenda Gratuita
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <h4 className="font-medium text-green-800 mb-1">Como Funciona:</h4>
+                <ul className="text-green-700 space-y-1">
+                  <li>• Profissionais começam <strong>sem acesso</strong> à agenda</li>
+                  <li>• Admin concede <strong>7 dias gratuitos</strong> para teste</li>
+                  <li>• Após expirar, profissional paga <strong>R$ 24,99/mês</strong></li>
+                  <li>• Admin pode estender período promocional</li>
+                </ul>
+              </div>
+              <div>
+                <h4 className="font-medium text-blue-800 mb-1">Benefícios da Estratégia:</h4>
+                <ul className="text-blue-700 space-y-1">
+                  <li>• Atrai novos profissionais com teste grátis</li>
+                  <li>• Demonstra valor da ferramenta</li>
+                  <li>• Gera receita recorrente após teste</li>
+                  <li>• Controle total sobre campanhas</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
         <div className="flex items-center mb-4">
@@ -641,7 +673,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Data de Expiração *
+                    {modalMode === 'grant' ? 'Data de Expiração (7 dias padrão) *' : 'Nova Data de Expiração *'}
                   </label>
                   <input
                     type="date"
@@ -652,20 +684,30 @@ const ManageSchedulingAccessPage: React.FC = () => {
                     required
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    O acesso ficará ativo até a data selecionada
+                    {modalMode === 'grant' 
+                      ? 'Período promocional gratuito de 7 dias para teste'
+                      : 'Estender o período de acesso gratuito'
+                    }
                   </p>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Motivo/Observações (opcional)
+                    Motivo da Concessão/Extensão
                   </label>
                   <textarea
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                     className="input min-h-[80px]"
-                    placeholder="Ex: Profissional em período de teste, parceria especial, etc."
+                    placeholder={modalMode === 'grant' 
+                      ? 'Ex: Campanha de marketing, profissional em teste, parceria especial...'
+                      : 'Ex: Extensão por bom desempenho, parceria especial...'
+                    }
+                    required
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Este motivo será registrado no histórico de acesso
+                  </p>
                 </div>
               </div>
 
