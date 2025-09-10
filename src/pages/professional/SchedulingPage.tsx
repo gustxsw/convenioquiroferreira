@@ -1,149 +1,76 @@
 import React, { useState, useEffect } from "react";
+import { useAuth } from "../../contexts/AuthContext";
 import {
   Calendar,
   Clock,
-  User,
   Plus,
-  Check,
-  X,
-  AlertCircle,
+  Edit,
+  Trash2,
+  User,
+  Users,
+  MapPin,
+  Settings,
+  XCircle,
   ChevronLeft,
   ChevronRight,
-  Users,
-  CheckCircle,
-  XCircle,
-  Search,
-  DollarSign,
-  Edit,
-  MessageCircle,
-  Settings,
   Repeat,
 } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import EditConsultationModal from "../../components/EditConsultationModal";
 import SlotCustomizationModal from "../../components/SlotCustomizationModal";
-import RecurringConsultationModal from '../../components/RecurringConsultationModal';
+import CancelConsultationModal from "../../components/CancelConsultationModal";
+import CancelledConsultationsModal from "../../components/CancelledConsultationsModal";
+import QuickScheduleModal from "../../components/QuickScheduleModal";
+import RecurringConsultationModal from "../../components/RecurringConsultationModal";
+import { validateTimeSlot, type SlotDuration } from "../../utils/timeSlotValidation";
+
+type Appointment = {
+  id: number;
+  date: string;
+  time: string;
+  patient_name: string;
+  service_name: string;
+  professional_name: string;
+  location_name: string | null;
+  status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled';
+  value: number;
+  notes: string | null;
+  is_dependent: boolean;
+  patient_type: 'convenio' | 'private';
+};
 
 type Consultation = {
   id: number;
   date: string;
   client_name: string;
   service_name: string;
-  status: "scheduled" | "confirmed" | "completed" | "cancelled";
+  status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled';
   value: number;
   notes?: string;
   is_dependent: boolean;
-  patient_type: "convenio" | "private";
+  patient_type: 'convenio' | 'private';
   location_name?: string;
 };
 
-type Service = {
-  id: number;
-  name: string;
-  base_price: number;
-};
-
-type AttendanceLocation = {
-  id: number;
-  name: string;
-  address: string;
-  is_default: boolean;
-};
-
-type PrivatePatient = {
-  id: number;
-  name: string;
-  cpf: string;
-};
-
-type SlotDuration = 15 | 30 | 60;
-
 const SchedulingPage: React.FC = () => {
+  const { user } = useAuth();
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [consultations, setConsultations] = useState<Consultation[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
-  const [privatePatients, setPrivatePatients] = useState<PrivatePatient[]>([]);
-  const [attendanceLocations, setAttendanceLocations] = useState<AttendanceLocation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [slotDuration, setSlotDuration] = useState<SlotDuration>(30);
 
-  // Slot customization state
-  const [slotDuration, setSlotDuration] = useState<SlotDuration>(() => {
-    const saved = localStorage.getItem('scheduling-slot-duration');
-    return saved ? (Number(saved) as SlotDuration) : 30;
-  });
-  const [showSlotModal, setShowSlotModal] = useState(false);
-  const [showQuickScheduleModal, setShowQuickScheduleModal] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState<{
-    date: string;
-    time: string;
-  } | null>(null);
-
-  const [showRecurringModal, setShowRecurringModal] = useState(false);
-  // New consultation modal
-  const [showNewModal, setShowNewModal] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
-
-  // Status change modal
-  const [showStatusModal, setShowStatusModal] = useState(false);
-  const [selectedConsultation, setSelectedConsultation] = useState<Consultation | null>(null);
-  const [newStatus, setNewStatus] = useState<"scheduled" | "confirmed" | "completed" | "cancelled">("scheduled");
-  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-
-  // Edit consultation modal
+  // Modal states
   const [showEditModal, setShowEditModal] = useState(false);
-  const [consultationToEdit, setConsultationToEdit] = useState<Consultation | null>(null);
-
-  // Slot customization
-  const [slotDuration2, setSlotDuration2] = useState<SlotDuration>(() => {
-    const saved = localStorage.getItem('scheduling-slot-duration');
-    return (saved ? parseInt(saved) : 30) as SlotDuration;
-  });
-  const [showSlotModal2, setShowSlotModal2] = useState(false);
-
-  // Recurring consultation form state
-  const [recurringFormData, setRecurringFormData] = useState({
-    patient_type: 'convenio' as 'convenio' | 'private',
-    client_cpf: '',
-    private_patient_id: '',
-    service_id: '',
-    value: '',
-    location_id: '',
-    start_date: '',
-    start_time: '',
-    recurrence_type: 'weekly' as 'daily' | 'weekly' | 'monthly',
-    recurrence_interval: 1,
-    weekly_count: 4,
-    selected_weekdays: [] as number[],
-    end_date: '',
-    occurrences: 10,
-    notes: '',
-  });
-
-  // Form state
-  const [formData, setFormData] = useState({
-    patient_type: "private" as "convenio" | "private",
-    client_cpf: "",
-    private_patient_id: "",
-    date: format(new Date(), "yyyy-MM-dd"),
-    time: "",
-    service_id: "",
-    value: "",
-    location_id: "",
-    notes: "",
-    is_recurring: false,
-    recurrence_type: "weekly" as "daily" | "weekly",
-    recurrence_interval: 1,
-    occurrences: 4,
-  });
-
-  // Client search state
-  const [clientSearchResult, setClientSearchResult] = useState<any>(null);
-  const [dependents, setDependents] = useState<any[]>([]);
-  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(null);
-  const [isSearching, setIsSearching] = useState(false);
+  const [showSlotModal, setShowSlotModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showCancelledModal, setShowCancelledModal] = useState(false);
+  const [showQuickScheduleModal, setShowQuickScheduleModal] = useState(false);
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
+  const [selectedConsultation, setSelectedConsultation] = useState<Consultation | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<{ date: string; time: string } | null>(null);
 
   // Get API URL
   const getApiUrl = () => {
@@ -157,565 +84,369 @@ const SchedulingPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchData();
+    fetchAppointments();
   }, [selectedDate]);
 
-  // Handle slot duration change
-  const handleSlotDurationChange = (duration: SlotDuration) => {
-    setSlotDuration(duration);
-    localStorage.setItem('scheduling-slot-duration', duration.toString());
-  };
-
-  const fetchData = async () => {
+  const fetchAppointments = async () => {
     try {
       setIsLoading(true);
-      setError("");
+      setError('');
 
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
-      const dateStr = format(selectedDate, "yyyy-MM-dd");
 
-      console.log("🔄 Fetching consultations for date:", dateStr);
+      const dateStr = selectedDate.toISOString().split('T')[0];
+      console.log('🔄 Fetching appointments for date:', dateStr);
 
-      // Fetch consultations for the selected date
-      const consultationsResponse = await fetch(
-        `${apiUrl}/api/consultations/agenda?date=${dateStr}`,
+      const response = await fetch(
+        `${apiUrl}/api/appointments?date=${dateStr}&professional_id=${user?.id}`,
         {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
+          headers: { Authorization: `Bearer ${token}` },
         }
       );
 
-      if (consultationsResponse.ok) {
-        const consultationsData = await consultationsResponse.json();
-        console.log("✅ Consultations loaded:", consultationsData.length);
-        setConsultations(consultationsData);
+      console.log('📡 Appointments response status:', response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Appointments loaded:', data.length);
+        setAppointments(data);
       } else {
-        console.error("Consultations response error:", consultationsResponse.status);
-        setConsultations([]);
-      }
-
-      // Fetch services
-      const servicesResponse = await fetch(`${apiUrl}/api/services`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (servicesResponse.ok) {
-        const servicesData = await servicesResponse.json();
-        setServices(servicesData);
-      }
-
-      // Fetch private patients
-      const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (patientsResponse.ok) {
-        const patientsData = await patientsResponse.json();
-        setPrivatePatients(Array.isArray(patientsData) ? patientsData : []);
-      }
-
-      // Fetch attendance locations
-      const locationsResponse = await fetch(`${apiUrl}/api/attendance-locations`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (locationsResponse.ok) {
-        const locationsData = await locationsResponse.json();
-        setAttendanceLocations(locationsData);
-
-        // Set default location if exists
-        const defaultLocation = locationsData.find((loc: AttendanceLocation) => loc.is_default);
-        if (defaultLocation) {
-          setFormData((prev) => ({
-            ...prev,
-            location_id: defaultLocation.id.toString(),
-          }));
-        }
+        console.warn('⚠️ Appointments not available:', response.status);
+        setAppointments([]);
       }
     } catch (error) {
-      console.error("Error fetching data:", error);
-      setError("Não foi possível carregar os dados da agenda");
+      console.error('❌ Error fetching appointments:', error);
+      setError('Não foi possível carregar os agendamentos');
+      setAppointments([]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const searchClientByCpf = async () => {
-    if (!formData.client_cpf) return;
+  const generateTimeSlots = () => {
+    const slots = [];
+    const startHour = 7;
+    const endHour = 18;
 
-    try {
-      setIsSearching(true);
-      setError("");
-
-      const token = localStorage.getItem("token");
-      const apiUrl = getApiUrl();
-      const cleanCpf = formData.client_cpf.replace(/\D/g, "");
-
-      // Search for client
-      const clientResponse = await fetch(
-        `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      if (clientResponse.ok) {
-        const clientData = await clientResponse.json();
-        
-        if (clientData.subscription_status !== "active") {
-          setError("Cliente não possui assinatura ativa");
-          return;
-        }
-
-        setClientSearchResult(clientData);
-
-        // Fetch dependents
-        const dependentsResponse = await fetch(
-          `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-
-        if (dependentsResponse.ok) {
-          const dependentsData = await dependentsResponse.json();
-          setDependents(dependentsData);
-        }
-      } else {
-        // Try searching as dependent
-        const dependentResponse = await fetch(
-          `${apiUrl}/api/dependents/search?cpf=${cleanCpf}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-
-        if (dependentResponse.ok) {
-          const dependentData = await dependentResponse.json();
-          
-          if (dependentData.status !== "active") {
-            setError("Dependente não possui status ativo");
-            return;
-          }
-
-          setClientSearchResult({
-            id: dependentData.user_id,
-            name: dependentData.client_name,
-            subscription_status: "active", // Keep for compatibility
-          });
-          setSelectedDependentId(dependentData.id);
-          setDependents([]);
-        } else {
-          setError("Cliente ou dependente não encontrado");
-        }
+    for (let hour = startHour; hour < endHour; hour++) {
+      for (let minute = 0; minute < 60; minute += slotDuration) {
+        const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+        slots.push(timeString);
       }
-    } catch (error) {
-      setError("Erro ao buscar cliente");
-    } finally {
-      setIsSearching(false);
     }
+
+    return slots;
   };
 
-  const createConsultation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    try {
-      setIsCreating(true);
-      const token = localStorage.getItem("token");
-      const apiUrl = getApiUrl();
-
-      if (formData.is_recurring) {
-        // Create recurring consultations
-        const recurringData: any = {
-          service_id: parseInt(formData.service_id),
-          location_id: formData.location_id ? parseInt(formData.location_id) : null,
-          value: parseFloat(formData.value),
-          start_date: formData.date,
-          start_time: formData.time,
-          recurrence_type: formData.recurrence_type,
-          recurrence_interval: formData.recurrence_interval,
-          occurrences: formData.occurrences,
-          notes: formData.notes || null,
-        };
-
-        // Set patient based on type
-        if (formData.patient_type === "private") {
-          recurringData.private_patient_id = parseInt(formData.private_patient_id);
-        } else {
-          if (selectedDependentId) {
-            recurringData.dependent_id = selectedDependentId;
-          } else {
-            recurringData.user_id = clientSearchResult?.id;
-          }
-        }
-
-        const response = await fetch(`${apiUrl}/api/consultations/recurring`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(recurringData),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || "Falha ao criar consultas recorrentes");
-        }
-
-        const result = await response.json();
-        setSuccess(`${result.created_count} consultas recorrentes criadas com sucesso!`);
-      } else {
-        // Create single consultation
-        const consultationData: any = {
-          service_id: parseInt(formData.service_id),
-          location_id: formData.location_id ? parseInt(formData.location_id) : null,
-          value: parseFloat(formData.value),
-          date: new Date(`${formData.date}T${formData.time}`).toISOString(),
-          status: "scheduled",
-          notes: formData.notes || null,
-        };
-
-        // Set patient based on type
-        if (formData.patient_type === "private") {
-          consultationData.private_patient_id = parseInt(formData.private_patient_id);
-        } else {
-          if (selectedDependentId) {
-            consultationData.dependent_id = selectedDependentId;
-          } else {
-            consultationData.user_id = clientSearchResult?.id;
-          }
-        }
-
-        const response = await fetch(`${apiUrl}/api/consultations`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(consultationData),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || "Falha ao criar consulta");
-        }
-
-        setSuccess("Consulta criada com sucesso!");
-      }
-
-      await fetchData();
-      setShowNewModal(false);
-      resetForm();
-      setTimeout(() => setSuccess(""), 3000);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Erro ao criar consulta");
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
-  const resetForm = () => {
-    setFormData({
-      patient_type: "private",
-      client_cpf: "",
-      private_patient_id: "",
-      date: format(selectedDate, "yyyy-MM-dd"),
-      time: "",
-      service_id: "",
-      value: "",
-      location_id: "",
-      notes: "",
-      is_recurring: false,
-      recurrence_type: "weekly",
-      recurrence_interval: 1,
-      occurrences: 4,
+  const getAppointmentForSlot = (time: string) => {
+    return appointments.find(apt => {
+      const aptTime = new Date(apt.date).toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      return aptTime === time;
     });
-    setClientSearchResult(null);
-    setDependents([]);
-    setSelectedDependentId(null);
   };
 
-  const openStatusModal = (consultation: Consultation) => {
-    setSelectedConsultation(consultation);
-    setNewStatus(consultation.status);
-    setShowStatusModal(true);
-  };
-
-  const closeStatusModal = () => {
-    setShowStatusModal(false);
-    setSelectedConsultation(null);
-    setError("");
-  };
-
-  const updateConsultationStatus = async () => {
-    if (!selectedConsultation) return;
-
-    try {
-      setIsUpdatingStatus(true);
-      setError("");
-
-      const token = localStorage.getItem("token");
-      const apiUrl = getApiUrl();
-
-      const response = await fetch(
-        `${apiUrl}/api/consultations/${selectedConsultation.id}/status`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ status: newStatus }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Erro ao atualizar status");
-      }
-
-      await fetchData();
-      setShowStatusModal(false);
-      setSelectedConsultation(null);
-      setSuccess("Status atualizado com sucesso!");
-      setTimeout(() => setSuccess(""), 3000);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Erro ao atualizar status");
-    } finally {
-      setIsUpdatingStatus(false);
+  const handleSlotClick = (time: string) => {
+    const appointment = getAppointmentForSlot(time);
+    
+    if (appointment) {
+      // If slot is occupied, open edit modal
+      const consultation: Consultation = {
+        id: appointment.id,
+        date: appointment.date,
+        client_name: appointment.patient_name,
+        service_name: appointment.service_name,
+        status: appointment.status,
+        value: appointment.value,
+        notes: appointment.notes || undefined,
+        is_dependent: appointment.is_dependent,
+        patient_type: appointment.patient_type,
+        location_name: appointment.location_name || undefined,
+      };
+      setSelectedConsultation(consultation);
+      setShowEditModal(true);
+    } else {
+      // If slot is empty, open quick schedule modal
+      setSelectedSlot({
+        date: selectedDate.toISOString().split('T')[0],
+        time: time
+      });
+      setShowQuickScheduleModal(true);
     }
-  };
-
-  const openEditModal = (consultation: Consultation) => {
-    setConsultationToEdit(consultation);
-    setShowEditModal(true);
-  };
-
-  const closeEditModal = () => {
-    setShowEditModal(false);
-    setConsultationToEdit(null);
   };
 
   const handleEditSuccess = () => {
-    fetchData();
-    setSuccess("Consulta editada com sucesso!");
-    setTimeout(() => setSuccess(""), 3000);
+    fetchAppointments();
+    setShowEditModal(false);
+    setSelectedConsultation(null);
+    setSuccess('Consulta atualizada com sucesso!');
   };
 
-  const openWhatsApp = async (consultation: Consultation) => {
-    try {
-      const token = localStorage.getItem("token");
-      const apiUrl = getApiUrl();
+  const handleQuickScheduleSuccess = () => {
+    fetchAppointments();
+    setShowQuickScheduleModal(false);
+    setSelectedSlot(null);
+    setSuccess('Consulta agendada com sucesso!');
+  };
 
-      const response = await fetch(
-        `${apiUrl}/api/consultations/${consultation.id}/whatsapp`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+  const handleRecurringSuccess = () => {
+    fetchAppointments();
+    setShowRecurringModal(false);
+    setSuccess('Consultas recorrentes criadas com sucesso!');
+  };
 
-      if (!response.ok) {
-        throw new Error("Erro ao gerar link do WhatsApp");
-      }
+  const openCancelModal = (appointment: Appointment) => {
+    const consultation: Consultation = {
+      id: appointment.id,
+      date: appointment.date,
+      client_name: appointment.patient_name,
+      service_name: appointment.service_name,
+      status: appointment.status,
+      value: appointment.value,
+      notes: appointment.notes || undefined,
+      is_dependent: appointment.is_dependent,
+      patient_type: appointment.patient_type,
+      location_name: appointment.location_name || undefined,
+    };
+    setSelectedConsultation(consultation);
+    setShowCancelModal(true);
+  };
 
-      const data = await response.json();
-      window.open(data.whatsapp_url, "_blank");
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Erro ao abrir WhatsApp");
-      setTimeout(() => setError(""), 3000);
+  const handleCancelSuccess = async () => {
+    await fetchAppointments();
+    setShowCancelModal(false);
+    setSelectedConsultation(null);
+    setSuccess('Consulta cancelada com sucesso!');
+  };
+
+  const getSlotStyle = (appointment: Appointment | undefined) => {
+    if (!appointment) {
+      return 'bg-gray-50 hover:bg-blue-100 border-gray-200 hover:border-blue-300 cursor-pointer transition-all duration-200';
+    }
+
+    // Different colors based on patient type
+    if (appointment.patient_type === 'private') {
+      return 'bg-purple-100 border-purple-300 hover:bg-purple-200 cursor-pointer';
+    } else if (appointment.is_dependent) {
+      return 'bg-blue-100 border-blue-300 hover:bg-blue-200 cursor-pointer';
+    } else {
+      return 'bg-green-100 border-green-300 hover:bg-green-200 cursor-pointer';
     }
   };
 
-  const handleSlotDurationChange2 = (duration: SlotDuration) => {
-    setSlotDuration2(duration);
-    localStorage.setItem('scheduling-slot-duration', duration.toString());
-  };
-
-  const formatTime = (dateString: string) => {
-    // Convert UTC date to Brasília timezone for display
-    const utcDate = new Date(dateString);
-    const brasiliaOffset = -3 * 60; // -3 hours in minutes
-    const brasiliaDate = new Date(utcDate.getTime() + (brasiliaOffset * 60 * 1000));
-    
-    return format(brasiliaDate, 'HH:mm');
-  };
-
-  const getStatusInfo = (status: string) => {
-    switch (status) {
-      case "scheduled":
-        return {
-          text: "Agendado",
-          className: "bg-blue-100 text-blue-800 border-blue-200",
-          icon: <Clock className="h-3 w-3 mr-1" />,
-        };
-      case "confirmed":
-        return {
-          text: "Confirmado",
-          className: "bg-green-100 text-green-800 border-green-200",
-          icon: <CheckCircle className="h-3 w-3 mr-1" />,
-        };
-      case "completed":
-        return {
-          text: "Concluído",
-          className: "bg-gray-100 text-gray-800 border-gray-200",
-          icon: <Check className="h-3 w-3 mr-1" />,
-        };
-      case "cancelled":
-        return {
-          text: "Cancelado",
-          className: "bg-red-100 text-red-800 border-red-200",
-          icon: <XCircle className="h-3 w-3 mr-1" />,
-        };
-      default:
-        return {
-          text: "Desconhecido",
-          className: "bg-gray-100 text-gray-800 border-gray-200",
-          icon: <AlertCircle className="h-3 w-3 mr-1" />,
-        };
+  const getPatientTypeBadge = (appointment: Appointment) => {
+    if (appointment.patient_type === 'private') {
+      return (
+        <span className="px-2 py-1 bg-purple-200 text-purple-800 rounded-full text-xs font-medium flex items-center">
+          <User className="h-3 w-3 mr-1" />
+          Particular
+        </span>
+      );
+    } else if (appointment.is_dependent) {
+      return (
+        <span className="px-2 py-1 bg-blue-200 text-blue-800 rounded-full text-xs font-medium flex items-center">
+          <Users className="h-3 w-3 mr-1" />
+          Dependente
+        </span>
+      );
+    } else {
+      return (
+        <span className="px-2 py-1 bg-green-200 text-green-800 rounded-full text-xs font-medium flex items-center">
+          <User className="h-3 w-3 mr-1" />
+          Titular
+        </span>
+      );
     }
   };
 
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
     }).format(value);
   };
 
-  const formatCpf = (value: string) => {
-    if (!value) return "";
-    const numericValue = value.replace(/\D/g, "");
-    return numericValue.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
-  };
-
-  const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const serviceId = e.target.value;
-    setFormData((prev) => ({ ...prev, service_id: serviceId }));
-
-    // Auto-fill value based on service
-    const service = services.find((s) => s.id.toString() === serviceId);
-    if (service) {
-      setFormData((prev) => ({
-        ...prev,
-        value: service.base_price.toString(),
-      }));
-    }
-  };
-
-  const generateTimeSlots = (duration: number = 30) => {
-    const slots = [];
-    for (let hour = 8; hour <= 18; hour++) {
-      for (let minute = 0; minute < 60; minute += duration) {
-        const timeStr = `${hour.toString().padStart(2, "0")}:${minute
-          .toString()
-          .padStart(2, "0")}`;
-        slots.push(timeStr);
-      }
-    }
-    return slots;
-  };
-
-  const timeSlots = generateTimeSlots(slotDuration);
-  
-  // Group consultations by time for display
-  const consultationsByTime = consultations.reduce((acc, consultation) => {
-    const time = format(new Date(consultation.date), "HH:mm");
-    acc[time] = consultation;
-    return acc;
-  }, {} as Record<string, Consultation>);
-
-  // Calculate daily statistics
-  const dailyStats = {
-    scheduled: consultations.filter((c) => c.status === "scheduled").length,
-    confirmed: consultations.filter((c) => c.status === "confirmed").length,
-    completed: consultations.filter((c) => c.status === "completed").length,
-    cancelled: consultations.filter((c) => c.status === "cancelled").length,
-  };
-
-  const getSlotDurationLabel = (duration: SlotDuration) => {
-    switch (duration) {
-      case 15:
-        return "15 min";
-      case 30:
-        return "30 min";
-      case 60:
-        return "60 min";
-      default:
-        return "30 min";
-    }
-  };
+  const timeSlots = generateTimeSlots();
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Agenda</h1>
-          <p className="text-gray-600">Visualize e gerencie suas consultas</p>
+          <p className="text-gray-600">Gerencie seus agendamentos e horários</p>
         </div>
 
-        <div className="flex space-x-2">
+        <div className="flex space-x-3">
           <button
             onClick={() => setShowSlotModal(true)}
             className="btn btn-outline flex items-center"
-            title="Personalizar duração dos slots"
           >
             <Settings className="h-5 w-5 mr-2" />
-            Slots ({getSlotDurationLabel(slotDuration)})
+            Configurar Slots
           </button>
-          
+
           <button
-            onClick={() => setShowNewModal(true)}
-            className="btn btn-primary flex items-center"
-          >
-            <Plus className="h-5 w-5 mr-2" />
-            Nova Consulta
-          </button>
-          
-          <button
-            onClick={() => setShowRecurringModal(true)}
+            onClick={() => setShowCancelledModal(true)}
             className="btn btn-outline flex items-center"
           >
-            <Repeat className="h-5 w-5 mr-2" />
-            Consultas Recorrentes
+            <XCircle className="h-5 w-5 mr-2" />
+            Ver Canceladas
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 flex items-center">
-          <AlertCircle className="h-5 w-5 mr-2" />
+        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6">
           {error}
         </div>
       )}
 
       {success && (
-        <div className="bg-green-50 text-green-600 p-4 rounded-lg mb-6 flex items-center">
-          <Check className="h-5 w-5 mr-2" />
+        <div className="bg-green-50 text-green-600 p-4 rounded-lg mb-6">
           {success}
         </div>
       )}
 
-      {/* Recurring Consultation Section */}
+      {/* Date Navigation */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setSelectedDate(subDays(selectedDate, 1))}
+            className="btn btn-secondary flex items-center"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+
+          <div className="text-center">
+            <h2 className="text-xl font-bold text-gray-900">
+              {format(selectedDate, "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+            </h2>
+            <p className="text-sm text-gray-600">
+              {appointments.length} agendamento(s) para este dia
+            </p>
+          </div>
+
+          <button
+            onClick={() => setSelectedDate(addDays(selectedDate, 1))}
+            className="btn btn-secondary flex items-center"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
+        <h3 className="text-sm font-medium text-gray-700 mb-3">Legenda:</h3>
+        <div className="flex flex-wrap gap-4 text-sm">
           <div className="flex items-center">
-            <Repeat className="h-6 w-6 text-purple-600 mr-2" />
+            <div className="w-4 h-4 bg-green-100 border border-green-300 rounded mr-2"></div>
+            <span>Cliente Titular</span>
+          </div>
+          <div className="flex items-center">
+            <div className="w-4 h-4 bg-blue-100 border border-blue-300 rounded mr-2"></div>
+            <span>Dependente</span>
+          </div>
+          <div className="flex items-center">
+            <div className="w-4 h-4 bg-purple-100 border border-purple-300 rounded mr-2"></div>
+            <span>Paciente Particular</span>
+          </div>
+          <div className="flex items-center">
+            <div className="w-4 h-4 bg-gray-50 border border-gray-200 rounded mr-2"></div>
+            <span>Horário Livre (clique para agendar)</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Schedule Grid */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div className="flex items-center mb-6">
+          <Clock className="h-6 w-6 text-red-600 mr-2" />
+          <h2 className="text-xl font-semibold">Horários do Dia</h2>
+        </div>
+
+        {isLoading ? (
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Carregando agenda...</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {timeSlots.map((time) => {
+              const appointment = getAppointmentForSlot(time);
+              const slotStyle = getSlotStyle(appointment);
+
+              return (
+                <div
+                  key={time}
+                  onClick={() => handleSlotClick(time)}
+                  className={`p-4 rounded-lg border-2 transition-all duration-200 ${slotStyle}`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-medium text-gray-900">{time}</span>
+                    {appointment && (
+                      <div className="flex space-x-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openCancelModal(appointment);
+                          }}
+                          className="p-1 text-red-600 hover:bg-red-100 rounded"
+                          title="Cancelar"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {appointment ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-900">
+                          {appointment.patient_name}
+                        </span>
+                        {getPatientTypeBadge(appointment)}
+                      </div>
+                      
+                      <p className="text-sm text-gray-600">{appointment.service_name}</p>
+                      
+                      {appointment.location_name && (
+                        <div className="flex items-center text-xs text-gray-500">
+                          <MapPin className="h-3 w-3 mr-1" />
+                          {appointment.location_name}
+                        </div>
+                      )}
+                      
+                      <p className="text-sm font-medium text-gray-900">
+                        {formatCurrency(appointment.value)}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4">
+                      <Plus className="h-6 w-6 text-gray-400 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500">Clique para agendar</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Recurring Consultations Section */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center">
+            <Repeat className="h-6 w-6 text-red-600 mr-2" />
             <h2 className="text-xl font-semibold">Consultas Recorrentes</h2>
           </div>
+          
           <button
             onClick={() => setShowRecurringModal(true)}
             className="btn btn-primary flex items-center"
@@ -724,1015 +455,111 @@ const SchedulingPage: React.FC = () => {
             Criar Recorrência
           </button>
         </div>
-        
-        <p className="text-gray-600 text-sm">
-          Configure consultas que se repetem automaticamente em dias específicos da semana ou mensalmente.
-        </p>
-      </div>
 
-      {/* Date Navigation */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => setSelectedDate(subDays(selectedDate, 1))}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-
-          <div className="text-center">
-            <h2 className="text-xl font-semibold text-gray-900">
-              {format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })}
-              <span className="text-sm text-gray-500 ml-2">
-                (Slots de {slotDuration} min)
-              </span>
-            </h2>
-            <div className="flex items-center justify-center space-x-4 text-sm text-gray-600">
-              <span>{consultations.length} consulta(s)</span>
-              <span>•</span>
-              <span>Slots de {getSlotDurationLabel(slotDuration)}</span>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setSelectedDate(addDays(selectedDate, 1))}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ChevronRight className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="flex justify-center mt-4">
-          <button
-            onClick={() => setSelectedDate(new Date())}
-            className="btn btn-secondary"
-          >
-            Hoje
-          </button>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h4 className="font-medium text-blue-900 mb-2">💡 Como funciona:</h4>
+          <ul className="text-sm text-blue-700 space-y-1">
+            <li>• <strong>Diário:</strong> Selecione os dias da semana para repetir</li>
+            <li>• <strong>Semanal:</strong> Escolha quantas semanas seguidas</li>
+            <li>• <strong>Mensal:</strong> Defina o intervalo entre consultas</li>
+            <li>• Todas as consultas são criadas automaticamente na agenda</li>
+          </ul>
         </div>
       </div>
 
-      {/* Daily Statistics */}
-      {consultations.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-200">
-            <div className="text-2xl font-bold text-blue-600">{dailyStats.scheduled}</div>
-            <div className="text-sm text-blue-700 flex items-center justify-center">
-              <Clock className="h-3 w-3 mr-1" />
-              Agendados
-            </div>
-          </div>
-
-          <div className="bg-green-50 p-4 rounded-lg text-center border border-green-200">
-            <div className="text-2xl font-bold text-green-600">{dailyStats.confirmed}</div>
-            <div className="text-sm text-green-700 flex items-center justify-center">
-              <CheckCircle className="h-3 w-3 mr-1" />
-              Confirmados
-            </div>
-          </div>
-
-          <div className="bg-gray-50 p-4 rounded-lg text-center border border-gray-200">
-            <div className="text-2xl font-bold text-gray-600">{dailyStats.completed}</div>
-            <div className="text-sm text-gray-700 flex items-center justify-center">
-              <Check className="h-3 w-3 mr-1" />
-              Concluídos
-            </div>
-          </div>
-
-          <div className="bg-red-50 p-4 rounded-lg text-center border border-red-200">
-            <div className="text-2xl font-bold text-red-600">{dailyStats.cancelled}</div>
-            <div className="text-sm text-red-700 flex items-center justify-center">
-              <XCircle className="h-3 w-3 mr-1" />
-              Cancelados
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Agenda View */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-        {isLoading ? (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Carregando agenda...</p>
-          </div>
-        ) : (
-          <div className="flex">
-            {/* Time Column */}
-            <div className="w-24 bg-gray-50 border-r border-gray-200">
-              <div className="sticky top-0 bg-gray-100 p-3 border-b border-gray-200">
-                <div className="text-xs font-medium text-gray-600 text-center">HORÁRIO</div>
-              </div>
-              <div className="space-y-0">
-                {timeSlots.map((timeSlot) => (
-                  <div
-                    key={timeSlot}
-                    className={`${
-                      slotDuration === 15 ? 'h-12' : 
-                      slotDuration === 30 ? 'h-20' : 
-                      'h-32'
-                    } flex items-center justify-center border-b border-gray-100 text-sm font-medium text-gray-700`}
-                  >
-                    {timeSlot}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Consultations Column */}
-            <div className="flex-1">
-              <div className="sticky top-0 bg-gray-100 p-3 border-b border-gray-200">
-                <div className="text-xs font-medium text-gray-600 text-center">CONSULTAS</div>
-              </div>
-              <div className="relative">
-                {timeSlots.map((timeSlot) => {
-                  const consultation = consultationsByTime[timeSlot];
-
-                  return (
-                    <div
-                      key={timeSlot}
-                      className={`${
-                        slotDuration === 15 ? 'h-12' : 
-                        slotDuration === 30 ? 'h-20' : 
-                        'h-32'
-                      } border-b border-gray-100 flex items-center px-4 hover:bg-gray-50 transition-colors`}
-                    >
-                      {consultation ? (
-                        <div className="flex items-center justify-between w-full">
-                          <div className="flex items-center space-x-3 flex-1">
-                            <div className="flex-1">
-                              <div className="flex items-center mb-1">
-                                {consultation.is_dependent ? (
-                                  <Users className="h-4 w-4 text-blue-600 mr-2" />
-                                ) : consultation.patient_type === "private" ? (
-                                  <User className="h-4 w-4 text-purple-600 mr-2" />
-                                ) : (
-                                  <User className="h-4 w-4 text-green-600 mr-2" />
-                                )}
-                                <span className="font-medium text-gray-900 text-sm">
-                                  {consultation.client_name}
-                                </span>
-                                {consultation.is_dependent && (
-                                  <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
-                                    Dependente
-                                  </span>
-                                )}
-                                {consultation.patient_type === "private" && (
-                                  <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs">
-                                    Particular
-                                  </span>
-                                )}
-                                
-                                {/* WhatsApp Button */}
-                                <button
-                                  onClick={() => openWhatsApp(consultation)}
-                                  className="ml-2 p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
-                                  title="Enviar mensagem no WhatsApp"
-                                >
-                                  <MessageCircle className="h-4 w-4" />
-                                </button>
-                              </div>
-                              <div className="flex items-center space-x-4">
-                                <p className="text-xs text-gray-600">
-                                  {consultation.service_name}
-                                </p>
-                                <p className="text-xs font-medium text-green-600">
-                                  {formatCurrency(consultation.value)}
-                                </p>
-                                {consultation.location_name && (
-                                  <p className="text-xs text-gray-500">
-                                    {consultation.location_name}
-                                  </p>
-                                )}
-                              </div>
-                              {consultation.notes && (
-                                <p className="text-xs text-gray-500 mt-1 italic truncate">
-                                  "{consultation.notes}"
-                                </p>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Action Buttons */}
-                          <div className="flex items-center space-x-2">
-                            {/* Edit Button */}
-                            <button
-                              onClick={() => openEditModal(consultation)}
-                              className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
-                              title="Editar consulta"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </button>
-
-                            {/* Status Button */}
-                            <button
-                              onClick={() => openStatusModal(consultation)}
-                              className={`px-2 py-1 rounded text-xs font-medium flex items-center border transition-all hover:shadow-sm ${
-                                getStatusInfo(consultation.status).className
-                              }`}
-                              title="Clique para alterar o status"
-                            >
-                              {getStatusInfo(consultation.status).icon}
-                              {getStatusInfo(consultation.status).text}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-xs text-gray-400 italic">Horário livre</div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!isLoading && consultations.length === 0 && (
-          <div className="text-center py-12">
-            <Calendar className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Nenhuma consulta para este dia
-            </h3>
-            <p className="text-gray-600 mb-4">
-              Sua agenda está livre para {format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}
-            </p>
-            <button
-              onClick={() => setShowNewModal(true)}
-              className="btn btn-primary inline-flex items-center"
-            >
-              <Plus className="h-5 w-5 mr-2" />
-              Agendar Consulta
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* New Consultation Modal */}
-      {showNewModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold flex items-center">
-                  <Plus className="h-6 w-6 text-red-600 mr-2" />
-                  Nova Consulta
-                </h2>
-                <button
-                  onClick={() => setShowNewModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-            </div>
-
-            <form onSubmit={createConsultation} className="p-6">
-              <div className="space-y-6">
-                {/* Patient Type */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tipo de Paciente *
-                  </label>
-                  <select
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        patient_type: e.target.value as "convenio" | "private",
-                        client_cpf: "",
-                        private_patient_id: "",
-                      }))
-                    }
-                    className="input"
-                    required
-                  >
-                    <option value="private">Paciente Particular</option>
-                    <option value="convenio">Cliente do Convênio</option>
-                  </select>
-                </div>
-
-                {/* Private Patient Selection */}
-                {formData.patient_type === "private" && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Paciente Particular *
-                    </label>
-                    <select
-                      value={formData.private_patient_id}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          private_patient_id: e.target.value,
-                        }))
-                      }
-                      className="input"
-                      required
-                    >
-                      <option value="">Selecione um paciente</option>
-                      {privatePatients.map((patient) => (
-                        <option key={patient.id} value={patient.id}>
-                          {patient.name} - {patient.cpf ? formatCpf(patient.cpf) : "CPF não informado"}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {/* Convenio Client Search */}
-                {formData.patient_type === "convenio" && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      CPF do Cliente *
-                    </label>
-                    <div className="flex space-x-2">
-                      <input
-                        type="text"
-                        value={formatCpf(formData.client_cpf)}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            client_cpf: e.target.value.replace(/\D/g, ""),
-                          }))
-                        }
-                        className="input flex-1"
-                        placeholder="000.000.000-00"
-                      />
-                      <button
-                        type="button"
-                        onClick={searchClientByCpf}
-                        className="btn btn-secondary"
-                        disabled={isSearching}
-                      >
-                        {isSearching ? "Buscando..." : "Buscar"}
-                      </button>
-                    </div>
-
-                    {/* Client Search Result */}
-                    {clientSearchResult && (
-                      <div className="mt-3 p-3 bg-green-50 rounded-lg">
-                        <p className="font-medium text-green-800">
-                          Cliente: {clientSearchResult.name}
-                        </p>
-                        
-                        {/* Dependent Selection */}
-                        {dependents.length > 0 && (
-                          <div className="mt-2">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Dependente (opcional)
-                            </label>
-                            <select
-                              value={selectedDependentId || ""}
-                              onChange={(e) =>
-                                setSelectedDependentId(e.target.value ? Number(e.target.value) : null)
-                              }
-                              className="input"
-                            >
-                              <option value="">Consulta para o titular</option>
-                              {dependents.map((dependent) => (
-                                <option key={dependent.id} value={dependent.id}>
-                                  {dependent.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Recurring Consultation Checkbox */}
-                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={formData.is_recurring}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, is_recurring: e.target.checked }))
-                      }
-                      className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                    />
-                    <span className="ml-3 flex items-center">
-                      <Calendar className="h-4 w-4 text-blue-600 mr-2" />
-                      <span className="font-medium text-blue-900">Consulta Recorrente</span>
-                    </span>
-                  </label>
-                  
-                  {formData.is_recurring && (
-                    <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-blue-700 mb-1">
-                          Tipo de Recorrência
-                        </label>
-                        <select
-                          value={formData.recurrence_type}
-                          onChange={(e) =>
-                            setFormData((prev) => ({
-                              ...prev,
-                              recurrence_type: e.target.value as "daily" | "weekly",
-                            }))
-                          }
-                          className="input"
-                        >
-                          <option value="daily">Diário</option>
-                          <option value="weekly">Semanal</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-blue-700 mb-1">
-                          Intervalo
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="30"
-                          value={formData.recurrence_interval}
-                          onChange={(e) =>
-                            setFormData((prev) => ({
-                              ...prev,
-                              recurrence_interval: parseInt(e.target.value),
-                            }))
-                          }
-                          className="input"
-                        />
-                        <p className="text-xs text-blue-600 mt-1">
-                          {formData.recurrence_type === "daily" ? "A cada quantos dias" : "A cada quantas semanas"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-blue-700 mb-1">
-                          Quantidade
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="52"
-                          value={formData.occurrences}
-                          onChange={(e) =>
-                            setFormData((prev) => ({
-                              ...prev,
-                              occurrences: parseInt(e.target.value),
-                            }))
-                          }
-                          className="input"
-                        />
-                        <p className="text-xs text-blue-600 mt-1">
-                          Número de consultas
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Date and Time */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Data {formData.is_recurring ? "de Início" : ""} *
-                    </label>
-                    <input
-                      type="date"
-                      value={formData.date}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, date: e.target.value }))
-                      }
-                      className="input"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Horário *
-                    </label>
-                    <input
-                      type="time"
-                      value={formData.time}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, time: e.target.value }))
-                      }
-                      className="input"
-                      step="60"
-                      required
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Digite o horário desejado (ex: 09:30)
-                    </p>
-                  </div>
-                </div>
-
-                {/* Service and Value */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Serviço *
-                    </label>
-                    <select
-                      value={formData.service_id}
-                      onChange={handleServiceChange}
-                      className="input"
-                      required
-                    >
-                      <option value="">Selecione um serviço</option>
-                      {services.map((service) => (
-                        <option key={service.id} value={service.id}>
-                          {service.name} - {formatCurrency(service.base_price)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Valor (R$) *
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={formData.value}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, value: e.target.value }))
-                      }
-                      className="input"
-                      required
-                    />
-                  </div>
-                </div>
-
-                {/* Location */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Local de Atendimento
-                  </label>
-                  <select
-                    value={formData.location_id}
-                    onChange={(e) =>
-                      setFormData(prev => ({ ...prev, location_id: e.target.value }))
-                    }
-                    className="input"
-                  >
-                    <option value="">Selecione um local</option>
-                    {attendanceLocations.map((location) => (
-                      <option key={location.id} value={location.id}>
-                        {location.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Notes */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Observações
-                  </label>
-                  <textarea
-                    value={formData.notes}
-                    onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, notes: e.target.value }))
-                    }
-                    className="input"
-                    rows={3}
-                    placeholder="Observações sobre a consulta..."
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-3 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setShowNewModal(false)}
-                  className="btn btn-secondary"
-                  disabled={isCreating}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className={`btn btn-primary ${
-                    isCreating ? "opacity-70 cursor-not-allowed" : ""
-                  }`}
-                  disabled={isCreating}
-                >
-                  {isCreating ? (
-                    formData.is_recurring ? "Criando Consultas..." : "Criando..."
-                  ) : (
-                    formData.is_recurring ? "Criar Consultas Recorrentes" : "Criar Consulta"
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Status Change Modal */}
-      {showStatusModal && selectedConsultation && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-md">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold">Alterar Status</h2>
-                <button
-                  onClick={closeStatusModal}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6">
-              {/* Consultation Info */}
-              <div className="bg-gray-50 p-4 rounded-lg mb-6">
-                <div className="flex items-center mb-2">
-                  {selectedConsultation.is_dependent ? (
-                    <Users className="h-4 w-4 text-blue-600 mr-2" />
-                  ) : (
-                    <User className="h-4 w-4 text-green-600 mr-2" />
-                  )}
-                  <span className="font-medium">{selectedConsultation.client_name}</span>
-                </div>
-                <p className="text-sm text-gray-600 mb-1">
-                  <strong>Serviço:</strong> {selectedConsultation.service_name}
-                </p>
-                <p className="text-sm text-gray-600 mb-1">
-                  <strong>Data/Hora:</strong>{" "}
-                  {format(new Date(selectedConsultation.date), "dd/MM/yyyy 'às' HH:mm")}
-                </p>
-                <p className="text-sm text-gray-600">
-                  <strong>Valor:</strong> {formatCurrency(selectedConsultation.value)}
-                </p>
-              </div>
-
-              {/* Status Selection */}
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Selecione o novo status:
-                </label>
-
-                <div className="space-y-2">
-                  {[
-                    { value: "scheduled", label: "Agendado", icon: <Clock className="h-4 w-4" />, color: "blue" },
-                    { value: "confirmed", label: "Confirmado", icon: <CheckCircle className="h-4 w-4" />, color: "green" },
-                    { value: "completed", label: "Concluído", icon: <Check className="h-4 w-4" />, color: "gray" },
-                    { value: "cancelled", label: "Cancelado", icon: <XCircle className="h-4 w-4" />, color: "red" },
-                  ].map((status) => (
-                    <label
-                      key={status.value}
-                      className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
-                        newStatus === status.value
-                          ? `border-${status.color}-300 bg-${status.color}-50`
-                          : "border-gray-200 hover:bg-gray-50"
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="status"
-                        value={status.value}
-                        checked={newStatus === status.value}
-                        onChange={(e) => setNewStatus(e.target.value as any)}
-                        className={`text-${status.color}-600 focus:ring-${status.color}-500`}
-                      />
-                      <div className="ml-3 flex items-center">
-                        <div className={`text-${status.color}-600 mr-2`}>
-                          {status.icon}
-                        </div>
-                        <div>
-                          <div className="font-medium text-gray-900">{status.label}</div>
-                        </div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-3 mt-6">
-                <button
-                  type="button"
-                  onClick={closeStatusModal}
-                  className="btn btn-secondary"
-                  disabled={isUpdatingStatus}
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={updateConsultationStatus}
-                  className={`btn btn-primary ${
-                    isUpdatingStatus ? "opacity-70 cursor-not-allowed" : ""
-                  }`}
-                  disabled={isUpdatingStatus || newStatus === selectedConsultation.status}
-                >
-                  {isUpdatingStatus ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Atualizando...
-                    </>
-                  ) : (
-                    <>
-                      <Check className="h-4 w-4 mr-2" />
-                      Atualizar Status
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Consultation Modal */}
+      {/* Modals */}
       <EditConsultationModal
         isOpen={showEditModal}
-        consultation={consultationToEdit}
-        onClose={closeEditModal}
+        consultation={selectedConsultation}
+        onClose={() => {
+          setShowEditModal(false);
+          setSelectedConsultation(null);
+        }}
         onSuccess={handleEditSuccess}
       />
 
-      {/* Slot Customization Modal */}
       <SlotCustomizationModal
         isOpen={showSlotModal}
         currentSlotDuration={slotDuration}
         onClose={() => setShowSlotModal(false)}
-        onSlotDurationChange={handleSlotDurationChange}
-      />
-
-      {/* Recurring Consultation Modal */}
-      {showRecurringModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold flex items-center">
-                  <Repeat className="h-6 w-6 text-purple-600 mr-2" />
-                  Criar Consultas Recorrentes
-                </h2>
-                <button
-                  onClick={() => setShowRecurringModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-            </div>
-
-            <form className="p-6">
-              <div className="space-y-6">
-                {/* Recurrence Type Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">
-                    Tipo de Recorrência *
-                  </label>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {[
-                      { value: 'daily', label: 'Diário', icon: '📅', desc: 'Escolha os dias da semana' },
-                      { value: 'weekly', label: 'Semanal', icon: '📆', desc: 'Mesmo dia, várias semanas' },
-                      { value: 'monthly', label: 'Mensal', icon: '🗓️', desc: 'Mesmo dia do mês' }
-                    ].map((option) => (
-                      <label
-                        key={option.value}
-                        className={`
-                          flex flex-col items-center p-4 rounded-xl border-2 cursor-pointer transition-all
-                          ${recurringFormData.recurrence_type === option.value
-                            ? 'border-purple-500 bg-purple-50 text-purple-700'
-                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                          }
-                        `}
-                      >
-                        <input
-                          type="radio"
-                          name="recurrence_type"
-                          value={option.value}
-                          checked={recurringFormData.recurrence_type === option.value}
-                          onChange={(e) =>
-                            setRecurringFormData(prev => ({
-                              ...prev,
-                              recurrence_type: e.target.value as 'daily' | 'weekly' | 'monthly',
-                              selected_weekdays: e.target.value === 'daily' ? [] : prev.selected_weekdays,
-                              weekly_count: e.target.value === 'weekly' ? 4 : prev.weekly_count,
-                            }))
-                          }
-                          className="sr-only"
-                        />
-                        <div className="text-3xl mb-2">{option.icon}</div>
-                        <span className="font-medium">{option.label}</span>
-                        <span className="text-xs text-center mt-1 opacity-75">{option.desc}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Daily Recurrence - Weekday Selection */}
-                {recurringFormData.recurrence_type === 'daily' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-3">
-                      Selecione os dias da semana *
-                    </label>
-                    <div className="grid grid-cols-3 md:grid-cols-7 gap-2">
-                      {[
-                        { value: 1, label: 'Segunda', short: 'SEG', color: 'blue' },
-                        { value: 2, label: 'Terça', short: 'TER', color: 'green' },
-                        { value: 3, label: 'Quarta', short: 'QUA', color: 'yellow' },
-                        { value: 4, label: 'Quinta', short: 'QUI', color: 'purple' },
-                        { value: 5, label: 'Sexta', short: 'SEX', color: 'pink' },
-                        { value: 6, label: 'Sábado', short: 'SÁB', color: 'indigo' },
-                        { value: 0, label: 'Domingo', short: 'DOM', color: 'red' }
-                      ].map((day) => (
-                        <label
-                          key={day.value}
-                          className={`
-                            flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all transform hover:scale-105
-                            ${recurringFormData.selected_weekdays.includes(day.value)
-                              ? 'border-purple-500 bg-purple-50 text-purple-700 shadow-md'
-                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm'
-                            }
-                          `}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={recurringFormData.selected_weekdays.includes(day.value)}
-                            onChange={(e) => {
-                              const isChecked = e.target.checked;
-                              setRecurringFormData(prev => ({
-                                ...prev,
-                                selected_weekdays: isChecked
-                                  ? [...prev.selected_weekdays, day.value]
-                                  : prev.selected_weekdays.filter(d => d !== day.value)
-                              }));
-                            }}
-                            className="sr-only"
-                          />
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-2 ${
-                            recurringFormData.selected_weekdays.includes(day.value)
-                              ? 'bg-purple-500 text-white'
-                              : 'bg-gray-100 text-gray-600'
-                          }`}>
-                            <span className="text-xs font-bold">{day.short.charAt(0)}</span>
-                          </div>
-                          <span className="text-xs font-medium text-center">{day.short}</span>
-                        </label>
-                      ))}
-                    </div>
-                    {recurringFormData.selected_weekdays.length === 0 && (
-                      <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                        <p className="text-sm text-red-600 font-medium">
-                          ⚠️ Selecione pelo menos um dia da semana
-                        </p>
-                      </div>
-                    )}
-                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-xs text-blue-700">
-                        💡 <strong>Dica:</strong> As consultas serão criadas apenas nos dias selecionados. 
-                        Você pode escolher múltiplos dias para maior flexibilidade.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Weekly Recurrence - Number of Weeks */}
-                {recurringFormData.recurrence_type === 'weekly' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-3">
-                      Quantas semanas seguidas? *
-                    </label>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      {[
-                        { value: 1, label: '1 semana', desc: 'Apenas 1 vez' },
-                        { value: 2, label: '2 semanas', desc: '2 consultas' },
-                        { value: 3, label: '3 semanas', desc: '3 consultas' },
-                        { value: 4, label: '4 semanas', desc: '1 mês' },
-                        { value: 6, label: '6 semanas', desc: '1,5 mês' },
-                        { value: 8, label: '8 semanas', desc: '2 meses' },
-                        { value: 12, label: '12 semanas', desc: '3 meses' },
-                        { value: 24, label: '24 semanas', desc: '6 meses' }
-                      ].map((option) => (
-                        <label
-                          key={option.value}
-                          className={`
-                            flex flex-col items-center p-4 rounded-xl border-2 cursor-pointer transition-all transform hover:scale-105
-                            ${recurringFormData.weekly_count === option.value
-                              ? 'border-purple-500 bg-purple-50 text-purple-700 shadow-md'
-                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm'
-                            }
-                          `}
-                        >
-                          <input
-                            type="radio"
-                            name="weekly_count"
-                            value={option.value}
-                            checked={recurringFormData.weekly_count === option.value}
-                            onChange={(e) =>
-                              setRecurringFormData(prev => ({
-                                ...prev,
-                                weekly_count: parseInt(e.target.value),
-                              }))
-                            }
-                            className="sr-only"
-                          />
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${
-                            recurringFormData.weekly_count === option.value
-                              ? 'bg-purple-500 text-white'
-                              : 'bg-gray-100 text-gray-600'
-                          }`}>
-                            <span className="text-sm font-bold">{option.value}</span>
-                          </div>
-                          <span className="text-xs font-medium text-center">{option.label}</span>
-                          <span className="text-xs text-center opacity-75">{option.desc}</span>
-                        </label>
-                      ))}
-                    </div>
-                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-xs text-blue-700">
-                        📅 <strong>Como funciona:</strong> A consulta será repetida no mesmo dia da semana 
-                        por {recurringFormData.weekly_count} semana{recurringFormData.weekly_count > 1 ? 's' : ''} seguida{recurringFormData.weekly_count > 1 ? 's' : ''}.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Preview of recurrence pattern */}
-                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-4">
-                  <h4 className="font-medium text-purple-900 mb-3 flex items-center">
-                    📅 <span className="ml-2">Resumo da Recorrência:</span>
-                  </h4>
-                  <div className="text-sm text-purple-700 space-y-2">
-                    {recurringFormData.recurrence_type === 'daily' && recurringFormData.selected_weekdays.length > 0 && (
-                      <>
-                        <p className="font-medium">
-                          🔄 Consultas serão criadas {recurringFormData.selected_weekdays.length === 7 ? 'todos os dias' : 
-                          `nas ${['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
-                            .filter((_, index) => recurringFormData.selected_weekdays.includes(index))
-                            .join(', ')}`}
-                        </p>
-                        <p>📊 Estimativa: {recurringFormData.selected_weekdays.length} consulta{recurringFormData.selected_weekdays.length > 1 ? 's' : ''} por semana</p>
-                      </>
-                    )}
-                    {recurringFormData.recurrence_type === 'weekly' && (
-                      <>
-                        <p className="font-medium">
-                          🔄 Consultas semanais por {recurringFormData.weekly_count} semana{recurringFormData.weekly_count > 1 ? 's' : ''}
-                        </p>
-                        <p>📊 Total: {recurringFormData.weekly_count} consulta{recurringFormData.weekly_count > 1 ? 's' : ''}</p>
-                      </>
-                    )}
-                    <div className="border-t border-purple-300 pt-2 mt-3">
-                      <p className="font-medium">
-                        🎯 <strong>Máximo:</strong> {recurringFormData.occurrences} consultas
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-3 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setShowRecurringModal(false)}
-                  className="btn btn-secondary"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={recurringFormData.recurrence_type === 'daily' && recurringFormData.selected_weekdays.length === 0}
-                >
-                  <Repeat className="h-5 w-5 mr-2" />
-                  Criar Consultas Recorrentes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Recurring Consultation Modal */}
-      <RecurringConsultationModal
-        isOpen={showRecurringModal}
-        onClose={() => setShowRecurringModal(false)}
-        onSuccess={() => {
-          setShowRecurringModal(false);
-          fetchData();
+        onSlotDurationChange={(duration) => {
+          setSlotDuration(duration);
+          setShowSlotModal(false);
+          setSuccess(`Duração dos slots alterada para ${duration} minutos`);
         }}
       />
 
-      {/* Quick Schedule Modal */}
+      <CancelConsultationModal
+        isOpen={showCancelModal}
+        onClose={() => {
+          setShowCancelModal(false);
+          setSelectedConsultation(null);
+        }}
+        onConfirm={async (reason) => {
+          if (!selectedConsultation) return;
+
+          try {
+            const token = localStorage.getItem('token');
+            const apiUrl = getApiUrl();
+
+            const response = await fetch(
+              `${apiUrl}/api/appointments/${selectedConsultation.id}/cancel`,
+              {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  cancellation_reason: reason || null,
+                }),
+              }
+            );
+
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.message || 'Erro ao cancelar consulta');
+            }
+
+            await handleCancelSuccess();
+          } catch (error) {
+            setError(error instanceof Error ? error.message : 'Erro ao cancelar consulta');
+          }
+        }}
+        consultationData={
+          selectedConsultation
+            ? {
+                id: selectedConsultation.id,
+                patient_name: selectedConsultation.client_name,
+                service_name: selectedConsultation.service_name,
+                date: selectedConsultation.date,
+                is_dependent: selectedConsultation.is_dependent,
+                patient_type: selectedConsultation.patient_type,
+                location_name: selectedConsultation.location_name,
+              }
+            : null
+        }
+      />
+
+      <CancelledConsultationsModal
+        isOpen={showCancelledModal}
+        onClose={() => setShowCancelledModal(false)}
+      />
+
       <QuickScheduleModal
         isOpen={showQuickScheduleModal}
-        onClose={closeQuickScheduleModal}
+        onClose={() => {
+          setShowQuickScheduleModal(false);
+          setSelectedSlot(null);
+        }}
         onSuccess={handleQuickScheduleSuccess}
         selectedSlot={selectedSlot}
       />
 
-      {/* Slot Customization Modal */}
-      <SlotCustomizationModal
-        isOpen={showSlotModal2}
-        currentSlotDuration={slotDuration2}
-        onClose={() => setShowSlotModal2(false)}
-        onSlotDurationChange={handleSlotDurationChange2}
+      <RecurringConsultationModal
+        isOpen={showRecurringModal}
+        onClose={() => setShowRecurringModal(false)}
+        onSuccess={handleRecurringSuccess}
       />
     </div>
   );
