@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { useAuth } from "../../contexts/AuthContext";
+import SchedulingAccessPayment from "../../components/SchedulingAccessPayment";
 import {
   Calendar,
   Clock,
@@ -61,6 +63,7 @@ type PrivatePatient = {
 type SlotDuration = 15 | 30 | 60;
 
 const SchedulingPage: React.FC = () => {
+  const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [consultations, setConsultations] = useState<Consultation[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -69,6 +72,11 @@ const SchedulingPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  
+  // Scheduling access state
+  const [hasSchedulingAccess, setHasSchedulingAccess] = useState<boolean | null>(null);
+  const [accessExpiresAt, setAccessExpiresAt] = useState<string | null>(null);
+  const [isCheckingAccess, setIsCheckingAccess] = useState(true);
 
   // Slot customization state
   const [slotDuration, setSlotDuration] = useState<SlotDuration>(() => {
@@ -158,9 +166,43 @@ const SchedulingPage: React.FC = () => {
   };
 
   useEffect(() => {
+    checkSchedulingAccess();
     fetchData();
   }, [selectedDate]);
+  
+  const checkSchedulingAccess = async () => {
+    try {
+      setIsCheckingAccess(true);
+      const token = localStorage.getItem('token');
+      const apiUrl = getApiUrl();
 
+      console.log('🔍 Checking scheduling access...');
+
+      const response = await fetch(`${apiUrl}/api/professional/scheduling-access`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const accessData = await response.json();
+        console.log('✅ Access data received:', accessData);
+        setHasSchedulingAccess(accessData.hasAccess);
+        setAccessExpiresAt(accessData.expiresAt);
+      } else {
+        console.warn('⚠️ Could not check access, assuming no access');
+        setHasSchedulingAccess(false);
+        setAccessExpiresAt(null);
+      }
+    } catch (error) {
+      console.error('❌ Error checking scheduling access:', error);
+      setHasSchedulingAccess(false);
+      setAccessExpiresAt(null);
+    } finally {
+      setIsCheckingAccess(false);
+    }
+  };
   // Handle slot duration change
   const handleSlotDurationChange = (duration: SlotDuration) => {
     setSlotDuration(duration);
@@ -228,7 +270,16 @@ const SchedulingPage: React.FC = () => {
         }
       );
 
-      if (consultationsResponse.ok) {
+      if (consultationsResponse.status === 403) {
+        // No scheduling access
+        const errorData = await consultationsResponse.json();
+        if (errorData.code === 'NO_SCHEDULING_ACCESS') {
+          console.log('❌ No scheduling access detected');
+          setHasSchedulingAccess(false);
+          setConsultations([]);
+          return;
+        }
+      } else if (consultationsResponse.ok) {
         const consultationsData = await consultationsResponse.json();
         console.log("✅ Consultations loaded:", consultationsData.length);
         setConsultations(consultationsData);
@@ -699,12 +750,43 @@ const SchedulingPage: React.FC = () => {
     }
   };
 
+  // Show loading while checking access
+  if (isCheckingAccess) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Verificando acesso à agenda...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show payment screen if no access
+  if (hasSchedulingAccess === false) {
+    return (
+      <SchedulingAccessPayment 
+        professionalName={user?.name || 'Profissional'}
+        onPaymentSuccess={() => {
+          // Refresh access status after payment
+          checkSchedulingAccess();
+        }}
+      />
+    );
+  }
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Agenda</h1>
-          <p className="text-gray-600">Visualize e gerencie suas consultas</p>
+          <p className="text-gray-600">
+            Visualize e gerencie suas consultas
+            {accessExpiresAt && (
+              <span className="ml-2 text-sm text-green-600">
+                • Acesso ativo até {new Date(accessExpiresAt).toLocaleDateString('pt-BR')}
+              </span>
+            )}
+          </p>
         </div>
 
         <div className="flex space-x-2">
@@ -763,6 +845,26 @@ const SchedulingPage: React.FC = () => {
       </div>
 
       {/* Date Navigation */}
+      {hasSchedulingAccess && accessExpiresAt && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
+          <div className="flex items-center">
+            <Gift className="h-5 w-5 text-green-600 mr-2" />
+            <div>
+              <p className="text-green-800 font-medium">
+                Acesso à agenda ativo
+              </p>
+              <p className="text-green-700 text-sm">
+                Válido até: {new Date(accessExpiresAt).toLocaleDateString('pt-BR', {
+                  day: '2-digit',
+                  month: 'long',
+                  year: 'numeric'
+                })}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
         <div className="flex items-center justify-between">
           <button

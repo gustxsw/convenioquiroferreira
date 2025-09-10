@@ -13,6 +13,7 @@ import { generateDocumentPDF } from "./utils/documentGenerator.js";
 import { MercadoPagoConfig, Preference } from "mercadopago";
 import documentsRoutes from "./routes/documents.js";
 import pdfRoutes from "./routes/pdf.js";
+import { checkSchedulingAccess, getSchedulingAccessStatus } from "./middleware/schedulingAccess.js";
 
 // ES6 module compatibility
 const __filename = fileURLToPath(import.meta.url);
@@ -1302,7 +1303,7 @@ app.delete("/api/users/:id", authenticate, authorize(["admin"]), async (req, res
 // ===== CONSULTATIONS ROUTES (MAIN AGENDA SYSTEM) =====
 
 // Get consultations for professional agenda (by date)
-app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), async (req, res) => {
+app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), checkSchedulingAccess, async (req, res) => {
   try {
     const { date } = req.query;
     const professionalId = req.user.id;
@@ -1362,7 +1363,7 @@ app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), 
 });
 
 // Create new consultation
-app.post("/api/consultations", authenticate, authorize(["professional"]), async (req, res) => {
+app.post("/api/consultations", authenticate, authorize(["professional"]), checkSchedulingAccess, async (req, res) => {
   try {
     const {
       user_id,
@@ -1488,7 +1489,7 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), async 
 });
 
 // Update consultation status
-app.put("/api/consultations/:id/status", authenticate, authorize(["professional"]), async (req, res) => {
+app.put("/api/consultations/:id/status", authenticate, authorize(["professional"]), checkSchedulingAccess, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -1532,7 +1533,7 @@ app.put("/api/consultations/:id/status", authenticate, authorize(["professional"
 });
 
 // Update consultation (full update)
-app.put("/api/consultations/:id", authenticate, authorize(["professional"]), async (req, res) => {
+app.put("/api/consultations/:id", authenticate, authorize(["professional"]), checkSchedulingAccess, async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -1670,7 +1671,7 @@ app.put('/api/consultations/:id', authenticate, authorize(['professional', 'admi
 });
 
 // POST /api/consultations/recurring - Create recurring consultations
-app.post('/api/consultations/recurring', authenticate, authorize(['professional', 'admin']), async (req, res) => {
+app.post('/api/consultations/recurring', authenticate, authorize(['professional', 'admin']), checkSchedulingAccess, async (req, res) => {
   try {
     const {
       user_id,
@@ -1767,7 +1768,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
 });
 
 // GET /api/consultations/:id/whatsapp - Get WhatsApp URL for consultation
-app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professional', 'admin']), async (req, res) => {
+app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professional', 'admin']), checkSchedulingAccess, async (req, res) => {
   try {
     const consultationId = req.params.id;
 
@@ -1836,7 +1837,7 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
 });
 
 // Delete consultation
-app.delete("/api/consultations/:id", authenticate, authorize(["professional"]), async (req, res) => {
+app.delete("/api/consultations/:id", authenticate, authorize(["professional"]), checkSchedulingAccess, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -3503,6 +3504,24 @@ app.delete("/api/documents/medical/:id", authenticate, authorize(["professional"
 });
 
 // ===== SCHEDULING ACCESS ROUTES =====
+
+// Get scheduling access status for current professional
+app.get("/api/professional/scheduling-access", authenticate, authorize(["professional"]), async (req, res) => {
+  try {
+    const professionalId = req.user.id;
+    
+    console.log('🔍 [ACCESS-CHECK] Checking scheduling access for professional:', professionalId);
+    
+    const accessStatus = await getSchedulingAccessStatus(professionalId);
+    
+    console.log('✅ [ACCESS-CHECK] Access status:', accessStatus);
+    
+    res.json(accessStatus);
+  } catch (error) {
+    console.error('❌ [ACCESS-CHECK] Error checking access:', error);
+    res.status(500).json({ message: 'Erro ao verificar acesso à agenda' });
+  }
+});
 
 app.get("/api/admin/professionals-scheduling-access", authenticate, authorize(["admin"]), async (req, res) => {
   try {
