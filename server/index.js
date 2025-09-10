@@ -219,6 +219,27 @@ const initializeDatabase = async () => {
         ) THEN
           ALTER TABLE consultations ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
         END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'consultations' AND column_name = 'cancelled_at'
+        ) THEN
+          ALTER TABLE consultations ADD COLUMN cancelled_at TIMESTAMP;
+        END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'consultations' AND column_name = 'cancelled_by'
+        ) THEN
+          ALTER TABLE consultations ADD COLUMN cancelled_by INTEGER REFERENCES users(id);
+        END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'consultations' AND column_name = 'cancellation_reason'
+        ) THEN
+          ALTER TABLE consultations ADD COLUMN cancellation_reason TEXT;
+        END IF;
       END $$;
     `);
 
@@ -1318,6 +1339,9 @@ app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), 
         c.status,
         c.notes,
         c.created_at,
+        c.cancelled_at,
+        c.cancellation_reason,
+        cancelled_by_user.name as cancelled_by_name,
         s.name as service_name,
         al.name as location_name,
         CASE 
@@ -1340,6 +1364,7 @@ app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), 
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
+      LEFT JOIN users cancelled_by_user ON c.cancelled_by = cancelled_by_user.id
       WHERE c.professional_id = $1
     `;
 
@@ -1492,7 +1517,7 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
 app.put("/api/consultations/:id/status", authenticate, authorize(["professional"]), checkSchedulingAccess, async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, cancellation_reason } = req.body;
 
     console.log("🔄 Updating consultation status:", id, "to:", status);
 
@@ -1506,21 +1531,41 @@ app.put("/api/consultations/:id/status", authenticate, authorize(["professional"
       return res.status(400).json({ message: "Status inválido" });
     }
 
-    const result = await pool.query(
-      `
-      UPDATE consultations 
-      SET status = $1, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2 AND professional_id = $3
-      RETURNING *
-    `,
-      [status, id, req.user.id]
-    );
+    let updateQuery;
+    let updateParams;
+
+    if (status === 'cancelled') {
+      // When cancelling, record cancellation details
+      updateQuery = `
+        UPDATE consultations 
+        SET status = $1, cancelled_at = CURRENT_TIMESTAMP, cancelled_by = $2, 
+            cancellation_reason = $3, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $4 AND professional_id = $5
+        RETURNING *
+      `;
+      updateParams = [status, req.user.id, cancellation_reason?.trim() || null, id, req.user.id];
+    } else {
+      // For other status changes, clear cancellation data if it was previously cancelled
+      updateQuery = `
+        UPDATE consultations 
+        SET status = $1, cancelled_at = NULL, cancelled_by = NULL, 
+            cancellation_reason = NULL, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2 AND professional_id = $3
+        RETURNING *
+      `;
+      updateParams = [status, id, req.user.id];
+    }
+    const result = await pool.query(updateQuery, updateParams);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: "Consulta não encontrada" });
     }
 
-    console.log("✅ Consultation status updated:", id);
+    console.log("✅ Consultation status updated:", id, "New status:", status);
+    
+    if (status === 'cancelled') {
+      console.log("🗑️ Consultation cancelled - excluded from revenue calculations");
+    }
 
     res.json({
       message: "Status da consulta atualizado com sucesso",
@@ -4301,10 +4346,11 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
         c.id,
         c.date,
         c.value,
-        c.notes as cancellation_reason,
-        c.updated_at as cancelled_at,
+        c.cancellation_reason,
+        c.cancelled_at,
         s.name as service_name,
         prof.name as professional_name,
+        cancelled_by_user.name as cancelled_by_name,
         CASE 
           WHEN c.user_id IS NOT NULL THEN u.name
           WHEN c.dependent_id IS NOT NULL THEN d.name
@@ -4319,11 +4365,11 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
           WHEN c.private_patient_id IS NOT NULL THEN 'private'
           ELSE 'convenio'
         END as patient_type,
-        al.name as location_name,
-        'Sistema' as cancelled_by_name
+        al.name as location_name
       FROM consultations c
       JOIN services s ON c.service_id = s.id
       JOIN users prof ON c.professional_id = prof.id
+      LEFT JOIN users cancelled_by_user ON c.cancelled_by = cancelled_by_user.id
       LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
@@ -4340,7 +4386,7 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
       params.push(req.user.id);
     }
 
-    query += " ORDER BY c.updated_at DESC";
+    query += " ORDER BY c.cancelled_at DESC";
 
     const result = await pool.query(query, params);
 
@@ -4371,6 +4417,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       FROM consultations c
       WHERE c.date >= $1 AND c.date <= $2
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
+        AND c.status != 'cancelled'
     `,
       [start_date, end_date]
     );
@@ -4391,6 +4438,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       LEFT JOIN consultations c ON u.id = c.professional_id 
         AND c.date >= $1 AND c.date <= $2
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
+        AND c.status != 'cancelled'
       WHERE 'professional' = ANY(u.roles)
       GROUP BY u.id, u.name, u.percentage
       HAVING COUNT(c.id) > 0
@@ -4410,6 +4458,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       LEFT JOIN consultations c ON s.id = c.service_id 
         AND c.date >= $1 AND c.date <= $2
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
+        AND c.status != 'cancelled'
       GROUP BY s.id, s.name
       HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
@@ -4473,6 +4522,7 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4
+        AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `,
       [req.user.id, start_date, 100 - professionalPercentage, end_date]
@@ -4543,6 +4593,7 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
       WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4
+        AND c.status != 'cancelled'
     `,
       [req.user.id, start_date, 100 - professionalPercentage, end_date]
     );
