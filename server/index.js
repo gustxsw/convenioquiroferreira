@@ -1128,6 +1128,56 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
       if (crm !== undefined) updateData.crm = crm?.trim() || null;
     }
 
+    // Add activate client route
+    app.post("/api/users/:id/activate", authenticate, authorize(["admin"]), async (req, res) => {
+      try {
+        const { id } = req.params;
+        
+        console.log("🔄 Activating client:", id);
+        
+        // Get user data
+        const userResult = await pool.query(
+          "SELECT * FROM users WHERE id = $1 AND 'client' = ANY(roles)",
+          [id]
+        );
+        
+        if (userResult.rows.length === 0) {
+          return res.status(404).json({ message: "Cliente não encontrado" });
+        }
+        
+        // Set expiry date to 1 year from now
+        const expiryDate = new Date();
+        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+        
+        // Update subscription status and expiry
+        const updatedUserResult = await pool.query(
+          `UPDATE users 
+           SET subscription_status = 'active', 
+               subscription_expiry = $1,
+               updated_at = NOW()
+           WHERE id = $2
+           RETURNING 
+             id, name, cpf, email, phone, 
+             birth_date::text as birth_date,
+             address, address_number, address_complement, neighborhood, city, state,
+             roles, subscription_status, 
+             subscription_expiry::text as subscription_expiry,
+             photo_url, category_name, percentage, crm, 
+             created_at::text as created_at, updated_at::text as updated_at`,
+          [expiryDate, id]
+        );
+        
+        console.log("✅ Client activated successfully:", id);
+        
+        res.json({
+          message: "Cliente ativado com sucesso",
+          user: updatedUserResult.rows[0]
+        });
+      } catch (error) {
+        console.error("❌ Error activating client:", error);
+        res.status(500).json({ message: "Erro ao ativar cliente" });
+      }
+    });
     updateData.updated_at = new Date();
 
     // Update user

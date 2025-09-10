@@ -36,7 +36,7 @@ type User = {
   updated_at: string;
   photo_url: string;
   category_name: string;
-  professional_percentage: number;
+  percentage: number;
   crm: string;
 };
 
@@ -190,7 +190,7 @@ const ManageUsersPage: React.FC = () => {
       subscription_status: 'pending',
       subscription_expiry: '',
       category_name: '',
-      professional_percentage: 50,
+      percentage: 50,
       crm: ''
     });
     setSelectedUser(null);
@@ -199,12 +199,39 @@ const ManageUsersPage: React.FC = () => {
 
   const openEditModal = (user: User) => {
     setModalMode('edit');
+    
+    // Format birth_date for input field (YYYY-MM-DD)
+    let formattedBirthDate = '';
+    if (user.birth_date) {
+      try {
+        const date = new Date(user.birth_date);
+        if (!isNaN(date.getTime())) {
+          formattedBirthDate = date.toISOString().split('T')[0];
+        }
+      } catch (error) {
+        console.warn('Error formatting birth date:', error);
+      }
+    }
+    
+    // Format subscription_expiry for input field (YYYY-MM-DD)
+    let formattedExpiryDate = '';
+    if (user.subscription_expiry) {
+      try {
+        const date = new Date(user.subscription_expiry);
+        if (!isNaN(date.getTime())) {
+          formattedExpiryDate = date.toISOString().split('T')[0];
+        }
+      } catch (error) {
+        console.warn('Error formatting expiry date:', error);
+      }
+    }
+    
     setFormData({
       name: user.name || '',
       cpf: user.cpf || '',
       email: user.email || '',
       phone: user.phone || '',
-      birth_date: user.birth_date || '',
+      birth_date: formattedBirthDate,
       address: user.address || '',
       address_number: user.address_number || '',
       address_complement: user.address_complement || '',
@@ -214,9 +241,9 @@ const ManageUsersPage: React.FC = () => {
       roles: user.roles || [],
       password: '',
       subscription_status: user.subscription_status || 'pending',
-      subscription_expiry: user.subscription_expiry || '',
+      subscription_expiry: formattedExpiryDate,
       category_name: user.category_name || '',
-      professional_percentage: user.professional_percentage || 50,
+      percentage: user.percentage || 50,
       crm: user.crm || ''
     });
     setSelectedUser(user);
