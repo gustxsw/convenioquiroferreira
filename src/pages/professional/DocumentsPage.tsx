@@ -164,6 +164,32 @@ const DocumentsPage: React.FC = () => {
         const documentsData = await documentsResponse.json();
         console.log('✅ [DOCUMENTS] Medical documents loaded:', documentsData.length);
         setDocuments(documentsData);
+      } else {
+        const errorData = await documentsResponse.json();
+        throw new Error(errorData.message || 'Erro ao carregar documentos');
+      }
+
+      // Fetch patients
+      const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (patientsResponse.ok) {
+        const patientsData = await patientsResponse.json();
+        console.log('✅ [DOCUMENTS] Private patients loaded:', patientsData.length);
+        setPatients(patientsData);
+      } else {
+        console.warn('Could not load patients');
+      }
+
+    } catch (error) {
+      console.error('❌ [DOCUMENTS] Error fetching data:', error);
+      setError(error instanceof Error ? error.message : 'Erro ao carregar dados');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString("pt-BR", {
@@ -306,6 +332,14 @@ const DocumentsPage: React.FC = () => {
       } catch (signatureError) {
         console.warn('Could not load signature:', signatureError);
       }
+
+      // Enhanced form data with patient info
+      const enhancedFormData = {
+        ...formData,
+        patientName: selectedPatient.name,
+        patientCpf: selectedPatient.cpf,
+        signatureUrl: signatureUrl
+      };
 
       // Generate HTML content directly
       // Generate HTML content using inline templates (same as medical records)
@@ -2155,10 +2189,7 @@ const DocumentsPage: React.FC = () => {
                   ${data.signatureUrl ? 
                     `<img src="${data.signatureUrl}" alt="Assinatura" style="max-width: 150px; max-height: 50px; margin: 20px auto 10px; display: block;" />` : 
                     '<div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>'
-                 
-    }
-  }
-} }
+                  }
                   <div>
                       <strong>Profissional Responsável</strong><br>
                       ${data.professionalName}<br>
@@ -2196,6 +2227,142 @@ const DocumentsPage: React.FC = () => {
     }
   };
 
+  return (
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center">
+            <FileText className="h-8 w-8 text-red-600 mr-3" />
+            Documentos Médicos
+          </h1>
+          <p className="text-gray-600 mt-1">
+            Gerencie atestados, receituários e outros documentos médicos
+          </p>
+        </div>
+        <button
+          onClick={openCreateModal}
+          className="btn btn-primary flex items-center"
+        >
+          <Plus className="h-5 w-5 mr-2" />
+          Novo Documento
+        </button>
+      </div>
+
+      {/* Success/Error Messages */}
+      {success && (
+        <div className="mb-4 bg-green-50 text-green-600 p-3 rounded-lg flex items-center">
+          <Check className="h-5 w-5 mr-2 flex-shrink-0" />
+          {success}
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-4 bg-red-50 text-red-600 p-3 rounded-lg flex items-center">
+          <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
+          {error}
+        </div>
+      )}
+
+      {pdfError && (
+        <div className="mb-4 bg-red-50 text-red-600 p-3 rounded-lg flex items-center">
+          <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
+          {pdfError}
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <input
+              type="text"
+              placeholder="Buscar por título ou paciente..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="input pl-10"
+            />
+          </div>
+          <select
+            value={selectedType}
+            onChange={(e) => setSelectedType(e.target.value as DocumentType | "")}
+            className="input"
+          >
+            <option value="">Todos os tipos</option>
+            {documentTypes.map((type) => (
+              <option key={type.value} value={type.value}>
+                {type.icon} {type.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Documents List */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+            <span className="ml-3 text-gray-600">Carregando documentos...</span>
+          </div>
+        ) : filteredDocuments.length === 0 ? (
+          <div className="text-center py-12">
+            <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              Nenhum documento encontrado
+            </h3>
+            <p className="text-gray-600 mb-4">
+              {searchTerm || selectedType
+                ? "Tente ajustar os filtros de busca"
+                : "Comece criando seu primeiro documento médico"}
+            </p>
+            {!searchTerm && !selectedType && (
+              <button
+                onClick={openCreateModal}
+                className="btn btn-primary"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Criar Primeiro Documento
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Documento
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Paciente
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Tipo
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Data
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Ações
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredDocuments.map((document) => {
+                  const typeInfo = documentTypes.find(t => t.value === document.document_type) || 
+                    { icon: "📄", label: "Documento" };
+                  
+                  return (
+                    <tr key={document.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <FileText className="h-4 w-4 text-gray-400 mr-2" />
+                          <div className="text-sm font-medium text-gray-900">
+                            {document.title}
+                          </div>
+                        </div>
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <User className="h-4 w-4 text-gray-400 mr-2" />
