@@ -1362,7 +1362,7 @@ app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), 
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
-      WHERE c.professional_id = $1
+      WHERE c.professional_id = $1 AND c.status != 'cancelled'
     `;
 
     const params = [professionalId];
@@ -1908,6 +1908,7 @@ app.get("/api/consultations", authenticate, authorize(["admin"]), async (req, re
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
+      WHERE c.status != 'cancelled'
       ORDER BY c.date DESC
     `);
 
@@ -1956,7 +1957,7 @@ app.get("/api/consultations/client/:clientId", authenticate, async (req, res) =>
       LEFT JOIN attendance_locations al ON c.location_id = al.id
       WHERE (c.user_id = $1 OR c.dependent_id IN (
         SELECT id FROM dependents WHERE user_id = $1
-      ))
+      )) AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `,
       [clientId]
@@ -4393,6 +4394,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       FROM consultations c
       WHERE c.date >= $1 AND c.date <= $2
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
+        AND c.status != 'cancelled'
     `,
       [start_date, end_date]
     );
@@ -4413,6 +4415,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       LEFT JOIN consultations c ON u.id = c.professional_id 
         AND c.date >= $1 AND c.date <= $2
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
+        AND c.status != 'cancelled'
       WHERE 'professional' = ANY(u.roles)
       GROUP BY u.id, u.name, u.percentage
       HAVING COUNT(c.id) > 0
@@ -4432,6 +4435,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       LEFT JOIN consultations c ON s.id = c.service_id 
         AND c.date >= $1 AND c.date <= $2
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
+        AND c.status != 'cancelled'
       GROUP BY s.id, s.name
       HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
@@ -4494,7 +4498,7 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
-      WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4
+      WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4 AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `,
       [req.user.id, start_date, 100 - professionalPercentage, end_date]
@@ -4564,7 +4568,7 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
         COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
-      WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4
+      WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4 AND c.status != 'cancelled'
     `,
       [req.user.id, start_date, 100 - professionalPercentage, end_date]
     );
