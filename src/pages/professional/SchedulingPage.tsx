@@ -1,91 +1,160 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
+import React, { useState, useEffect } from "react";
+import { useAuth } from "../../contexts/AuthContext";
 import {
   Calendar,
   Clock,
-  Plus,
-  Edit,
-  Trash2,
   User,
-  Users,
-  Search,
-  Filter,
+  Plus,
+  Check,
+  X,
+  AlertCircle,
   ChevronLeft,
   ChevronRight,
+  Users,
   CheckCircle,
   XCircle,
-  AlertCircle,
+  Search,
+  DollarSign,
+  Edit,
+  MessageCircle,
   Settings,
   Repeat,
-  Eye,
-  RefreshCw,
-  MapPin,
-  Phone
-} from 'lucide-react';
+  Gift,
+} from "lucide-react";
+import { format, addDays, subDays } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import EditConsultationModal from "../../components/EditConsultationModal";
+import SlotCustomizationModal from "../../components/SlotCustomizationModal";
+import RecurringConsultationModal from '../../components/RecurringConsultationModal';
 import SchedulingAccessPayment from '../../components/SchedulingAccessPayment';
 import QuickScheduleModal from '../../components/QuickScheduleModal';
-import EditConsultationModal from '../../components/EditConsultationModal';
-import CancelConsultationModal from '../../components/CancelConsultationModal';
-import RecurringConsultationModal from '../../components/RecurringConsultationModal';
-import SlotCustomizationModal from '../../components/SlotCustomizationModal';
-import CancelledConsultationsModal from '../../components/CancelledConsultationsModal';
-import { validateTimeSlot, getValidTimeSlots, type SlotDuration } from '../../utils/timeSlotValidation';
 
 type Consultation = {
   id: number;
   date: string;
   client_name: string;
   service_name: string;
-  status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled';
+  status: "scheduled" | "confirmed" | "completed" | "cancelled";
   value: number;
   notes?: string;
   is_dependent: boolean;
-  patient_type: 'convenio' | 'private';
+  patient_type: "convenio" | "private";
   location_name?: string;
 };
 
-type SchedulingAccess = {
-  hasAccess: boolean;
-  expiresAt: string | null;
-  reason: string | null;
+type Service = {
+  id: number;
+  name: string;
+  base_price: number;
 };
+
+type AttendanceLocation = {
+  id: number;
+  name: string;
+  address: string;
+  is_default: boolean;
+};
+
+type PrivatePatient = {
+  id: number;
+  name: string;
+  cpf: string;
+};
+
+type SlotDuration = 15 | 30 | 60;
 
 const SchedulingPage: React.FC = () => {
   const { user } = useAuth();
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [consultations, setConsultations] = useState<Consultation[]>([]);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [selectedView, setSelectedView] = useState<'day' | 'week' | 'month'>('day');
+  const [services, setServices] = useState<Service[]>([]);
+  const [privatePatients, setPrivatePatients] = useState<PrivatePatient[]>([]);
+  const [attendanceLocations, setAttendanceLocations] = useState<AttendanceLocation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   
-  // Access control state
-  const [schedulingAccess, setSchedulingAccess] = useState<SchedulingAccess>({
-    hasAccess: false,
-    expiresAt: null,
-    reason: null
-  });
+  // Scheduling access state
+  const [hasSchedulingAccess, setHasSchedulingAccess] = useState<boolean | null>(null);
+  const [accessExpiresAt, setAccessExpiresAt] = useState<string | null>(null);
   const [isCheckingAccess, setIsCheckingAccess] = useState(true);
   const [accessError, setAccessError] = useState('');
 
-  // Modal states
-  const [showQuickSchedule, setShowQuickSchedule] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showCancelModal, setShowCancelModal] = useState(false);
+  // Slot customization state
+  const [slotDuration, setSlotDuration] = useState<SlotDuration>(() => {
+    const saved = localStorage.getItem('scheduling-slot-duration');
+    return saved ? (Number(saved) as SlotDuration) : 30;
+  });
+  const [showSlotModal, setShowSlotModal] = useState(false);
+  const [showQuickScheduleModal, setShowQuickScheduleModal] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<{
+    date: string;
+    time: string;
+  } | null>(null);
+
   const [showRecurringModal, setShowRecurringModal] = useState(false);
-  const [showSlotCustomization, setShowSlotCustomization] = useState(false);
-  const [showCancelledModal, setShowCancelledModal] = useState(false);
-  
-  // Selected items
+  // New consultation modal
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+
+  // Status change modal
+  const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedConsultation, setSelectedConsultation] = useState<Consultation | null>(null);
-  const [selectedSlot, setSelectedSlot] = useState<{ date: string; time: string } | null>(null);
-  
-  // Slot configuration
-  const [slotDuration, setSlotDuration] = useState<SlotDuration>(30);
-  
-  // Filters
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [patientTypeFilter, setPatientTypeFilter] = useState<string>('');
+  const [newStatus, setNewStatus] = useState<"scheduled" | "confirmed" | "completed" | "cancelled">("scheduled");
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  // Edit consultation modal
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [consultationToEdit, setConsultationToEdit] = useState<Consultation | null>(null);
+
+  // Slot customization
+  const [slotDuration2, setSlotDuration2] = useState<SlotDuration>(() => {
+    const saved = localStorage.getItem('scheduling-slot-duration');
+    return (saved ? parseInt(saved) : 30) as SlotDuration;
+  });
+  const [showSlotModal2, setShowSlotModal2] = useState(false);
+
+  // Recurring consultation form state
+  const [recurringFormData, setRecurringFormData] = useState({
+    patient_type: 'convenio' as 'convenio' | 'private',
+    client_cpf: '',
+    private_patient_id: '',
+    service_id: '',
+    value: '',
+    location_id: '',
+    start_date: '',
+    start_time: '',
+    recurrence_type: 'weekly' as 'daily' | 'weekly' | 'monthly',
+    recurrence_interval: 1,
+    weekly_count: 4,
+    selected_weekdays: [] as number[],
+    end_date: '',
+    occurrences: 10,
+    notes: '',
+  });
+
+  // Form state
+  const [formData, setFormData] = useState({
+    patient_type: "private" as "convenio" | "private",
+    client_cpf: "",
+    private_patient_id: "",
+    date: format(new Date(), "yyyy-MM-dd"),
+    time: "",
+    service_id: "",
+    value: "",
+    location_id: "",
+    notes: "",
+    is_recurring: false,
+    recurrence_type: "weekly" as "daily" | "weekly",
+    recurrence_interval: 1,
+    occurrences: 4,
+  });
+
+  // Client search state
+  const [clientSearchResult, setClientSearchResult] = useState<any>(null);
+  const [dependents, setDependents] = useState<any[]>([]);
+  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
 
   // Get API URL
   const getApiUrl = () => {
@@ -98,270 +167,583 @@ const SchedulingPage: React.FC = () => {
     return "http://localhost:3001";
   };
 
-  // Check scheduling access on component mount
   useEffect(() => {
     checkSchedulingAccess();
-  }, []);
-
-  // Fetch consultations when access is confirmed and date changes
-  useEffect(() => {
-    if (schedulingAccess.hasAccess && selectedDate) {
-      fetchConsultations();
-    }
-  }, [schedulingAccess.hasAccess, selectedDate]);
-
+    fetchData();
+  }, [selectedDate]);
+  
   const checkSchedulingAccess = async () => {
     try {
       setIsCheckingAccess(true);
       setAccessError('');
-
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
 
       console.log('🔍 Checking scheduling access...');
 
       const response = await fetch(`${apiUrl}/api/professional/scheduling-access`, {
-        method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
 
-      console.log('📡 Access check response status:', response.status);
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          // No access - this is expected for professionals without subscription
-          setSchedulingAccess({
-            hasAccess: false,
-            expiresAt: null,
-            reason: 'Acesso não autorizado'
-          });
-          return;
-        }
-        
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Erro ao verificar acesso');
+      if (response.ok) {
+        const accessData = await response.json();
+        console.log('✅ Access status received:', accessData);
+        setHasSchedulingAccess(accessData.hasAccess);
+        setAccessExpiresAt(accessData.expiresAt);
+      } else {
+        console.warn('⚠️ Access check failed:', response.status);
+        setHasSchedulingAccess(false);
+        setAccessExpiresAt(null);
       }
-
-      const accessData = await response.json();
-      console.log('✅ Access data received:', accessData);
-
-      setSchedulingAccess(accessData);
     } catch (error) {
-      console.error('❌ Error checking scheduling access:', error);
-      setAccessError(error instanceof Error ? error.message : 'Erro ao verificar acesso à agenda');
-      setSchedulingAccess({
-        hasAccess: false,
-        expiresAt: null,
-        reason: null
-      });
+      console.error('❌ Error checking access:', error);
+      setAccessError('Erro ao verificar acesso à agenda');
+      setHasSchedulingAccess(false);
+      setAccessExpiresAt(null);
     } finally {
       setIsCheckingAccess(false);
     }
   };
+  // Handle slot duration change
+  const handleSlotDurationChange = (duration: SlotDuration) => {
+    setSlotDuration(duration);
+    localStorage.setItem('scheduling-slot-duration', duration.toString());
+  };
 
-  const fetchConsultations = async () => {
+  // Handle slot click for quick scheduling
+  const handleSlotClick = (timeSlot: string) => {
+    const consultation = consultationsByTime[timeSlot];
+    
+    if (consultation) {
+      // If slot is occupied, open edit modal
+      openEditModal(consultation);
+    } else {
+      // If slot is empty, open quick schedule modal
+      setSelectedSlot({
+        date: format(selectedDate, 'yyyy-MM-dd'),
+        time: timeSlot
+      });
+      setShowQuickScheduleModal(true);
+    }
+  };
+
+  const closeQuickScheduleModal = () => {
+    setShowQuickScheduleModal(false);
+    setSelectedSlot(null);
+  };
+
+  const handleQuickScheduleSuccess = () => {
+    fetchData();
+    setSuccess("Consulta agendada com sucesso!");
+    setTimeout(() => setSuccess(""), 3000);
+  };
+
+  // Get slot styling based on patient type
+  const getSlotStyling = (consultation: Consultation) => {
+    if (consultation.patient_type === 'private') {
+      return 'bg-purple-50 border-l-4 border-purple-500 hover:bg-purple-100';
+    } else if (consultation.is_dependent) {
+      return 'bg-blue-50 border-l-4 border-blue-500 hover:bg-blue-100';
+    } else {
+      return 'bg-green-50 border-l-4 border-green-500 hover:bg-green-100';
+    }
+  };
+
+  const fetchData = async () => {
     try {
       setIsLoading(true);
-      setError('');
+      setError("");
 
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
+      const dateStr = format(selectedDate, "yyyy-MM-dd");
 
-      console.log('🔄 Fetching consultations for date:', selectedDate);
+      console.log("🔄 Fetching consultations for date:", dateStr);
 
-      const response = await fetch(`${apiUrl}/api/consultations/agenda?date=${selectedDate}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+      // Fetch consultations for the selected date
+      const consultationsResponse = await fetch(
+        `${apiUrl}/api/consultations/agenda?date=${dateStr}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
         }
-      });
+      );
 
-      console.log('📡 Consultations response status:', response.status);
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Erro ao carregar consultas');
+      if (consultationsResponse.status === 403) {
+        // No scheduling access
+        const errorData = await consultationsResponse.json();
+        if (errorData.code === 'NO_SCHEDULING_ACCESS') {
+          console.log('❌ No scheduling access detected');
+          setHasSchedulingAccess(false);
+          setConsultations([]);
+          return;
+        }
+      } else if (consultationsResponse.ok) {
+        const consultationsData = await consultationsResponse.json();
+        console.log("✅ Consultations loaded:", consultationsData.length);
+        setConsultations(consultationsData);
+      } else {
+        console.error("Consultations response error:", consultationsResponse.status);
+        setConsultations([]);
       }
 
-      const data = await response.json();
-      console.log('✅ Consultations loaded:', data.length);
-      setConsultations(data);
+      // Fetch services
+      const servicesResponse = await fetch(`${apiUrl}/api/services`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (servicesResponse.ok) {
+        const servicesData = await servicesResponse.json();
+        setServices(servicesData);
+      }
+
+      // Fetch private patients
+      const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (patientsResponse.ok) {
+        const patientsData = await patientsResponse.json();
+        setPrivatePatients(patientsData);
+      }
+
+      // Fetch attendance locations
+      const locationsResponse = await fetch(`${apiUrl}/api/attendance-locations`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (locationsResponse.ok) {
+        const locationsData = await locationsResponse.json();
+        setAttendanceLocations(locationsData);
+      }
     } catch (error) {
-      console.error('❌ Error fetching consultations:', error);
-      setError(error instanceof Error ? error.message : 'Erro ao carregar consultas');
-      setConsultations([]);
+      console.error("Error fetching data:", error);
+      setError("Erro ao carregar dados");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSlotClick = (time: string) => {
-    // Check if slot is available (no consultation at this time)
-    const existingConsultation = consultations.find(consultation => {
-      const consultationTime = new Date(consultation.date).toLocaleTimeString('pt-BR', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      });
-      return consultationTime === time;
-    });
+  const searchClientByCpf = async () => {
+    if (!formData.client_cpf) return;
 
-    if (existingConsultation) {
-      // Open edit modal for existing consultation
-      setSelectedConsultation(existingConsultation);
-      setShowEditModal(true);
-    } else {
-      // Open quick schedule modal for empty slot
-      setSelectedSlot({ date: selectedDate, time });
-      setShowQuickSchedule(true);
+    try {
+      setIsSearching(true);
+      setError("");
+
+      const token = localStorage.getItem("token");
+      const apiUrl = getApiUrl();
+      const cleanCpf = formData.client_cpf.replace(/\D/g, "");
+
+      // Search for client
+      const clientResponse = await fetch(
+        `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (clientResponse.ok) {
+        const clientData = await clientResponse.json();
+        
+        if (clientData.subscription_status !== "active") {
+          setError("Cliente não possui assinatura ativa");
+          return;
+        }
+
+        setClientSearchResult(clientData);
+
+        // Fetch dependents
+        const dependentsResponse = await fetch(
+          `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        if (dependentsResponse.ok) {
+          const dependentsData = await dependentsResponse.json();
+          setDependents(dependentsData);
+        }
+      } else {
+        // Try searching as dependent
+        const dependentResponse = await fetch(
+          `${apiUrl}/api/dependents/search?cpf=${cleanCpf}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        if (dependentResponse.ok) {
+          const dependentData = await dependentResponse.json();
+          
+          if (dependentData.status !== "active") {
+            setError("Dependente não possui status ativo");
+            return;
+          }
+
+          setClientSearchResult({
+            id: dependentData.user_id,
+            name: dependentData.client_name,
+            subscription_status: "active", // Keep for compatibility
+          });
+          setSelectedDependentId(dependentData.id);
+          setDependents([]);
+        } else {
+          setError("Cliente ou dependente não encontrado");
+        }
+      }
+    } catch (error) {
+      setError("Erro ao buscar cliente");
+    } finally {
+      setIsSearching(false);
     }
   };
 
-  const handleEditConsultation = (consultation: Consultation) => {
-    setSelectedConsultation(consultation);
-    setShowEditModal(true);
+  const createConsultation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    try {
+      setIsCreating(true);
+      const token = localStorage.getItem("token");
+      const apiUrl = getApiUrl();
+
+      if (formData.is_recurring) {
+        // Create recurring consultations
+        const recurringData: any = {
+          service_id: parseInt(formData.service_id),
+          location_id: formData.location_id ? parseInt(formData.location_id) : null,
+          value: parseFloat(formData.value),
+          start_date: formData.date,
+          start_time: formData.time,
+          recurrence_type: formData.recurrence_type,
+          recurrence_interval: formData.recurrence_interval,
+          occurrences: formData.occurrences,
+          notes: formData.notes || null,
+        };
+
+        // Set patient based on type
+        if (formData.patient_type === "private") {
+          recurringData.private_patient_id = parseInt(formData.private_patient_id);
+        } else {
+          if (selectedDependentId) {
+            recurringData.dependent_id = selectedDependentId;
+          } else {
+            recurringData.user_id = clientSearchResult?.id;
+          }
+        }
+
+        const response = await fetch(`${apiUrl}/api/consultations/recurring`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(recurringData),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Falha ao criar consultas recorrentes");
+        }
+
+        const result = await response.json();
+        setSuccess(`${result.created_count} consultas recorrentes criadas com sucesso!`);
+      } else {
+        // Create single consultation
+        const consultationData: any = {
+          service_id: parseInt(formData.service_id),
+          location_id: formData.location_id ? parseInt(formData.location_id) : null,
+          value: parseFloat(formData.value),
+          date: new Date(`${formData.date}T${formData.time}`).toISOString(),
+          status: "scheduled",
+          notes: formData.notes || null,
+        };
+
+        // Set patient based on type
+        if (formData.patient_type === "private") {
+          consultationData.private_patient_id = parseInt(formData.private_patient_id);
+        } else {
+          if (selectedDependentId) {
+            consultationData.dependent_id = selectedDependentId;
+          } else {
+            consultationData.user_id = clientSearchResult?.id;
+          }
+        }
+
+        const response = await fetch(`${apiUrl}/api/consultations`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(consultationData),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Falha ao criar consulta");
+        }
+
+        setSuccess("Consulta criada com sucesso!");
+      }
+
+      await fetchData();
+      setShowNewModal(false);
+      resetForm();
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Erro ao criar consulta");
+    } finally {
+      setIsCreating(false);
+    }
   };
 
-  const handleCancelConsultation = (consultation: Consultation) => {
-    setSelectedConsultation(consultation);
-    setShowCancelModal(true);
+  const resetForm = () => {
+    setFormData({
+      patient_type: "private",
+      client_cpf: "",
+      private_patient_id: "",
+      date: format(selectedDate, "yyyy-MM-dd"),
+      time: "",
+      service_id: "",
+      value: "",
+      location_id: "",
+      notes: "",
+      is_recurring: false,
+      recurrence_type: "weekly",
+      recurrence_interval: 1,
+      occurrences: 4,
+    });
+    setClientSearchResult(null);
+    setDependents([]);
+    setSelectedDependentId(null);
   };
 
-  const handleCancelConfirm = async (reason?: string) => {
+  const openStatusModal = (consultation: Consultation) => {
+    setSelectedConsultation(consultation);
+    setNewStatus(consultation.status);
+    setShowStatusModal(true);
+  };
+
+  const closeStatusModal = () => {
+    setShowStatusModal(false);
+    setSelectedConsultation(null);
+    setError("");
+  };
+
+  const updateConsultationStatus = async () => {
     if (!selectedConsultation) return;
 
     try {
-      const token = localStorage.getItem('token');
+      setIsUpdatingStatus(true);
+      setError("");
+
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      console.log('🔄 Cancelling consultation:', selectedConsultation.id);
-
-      const response = await fetch(`${apiUrl}/api/consultations/${selectedConsultation.id}/cancel`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          cancellation_reason: reason || null
-        })
-      });
+      const response = await fetch(
+        `${apiUrl}/api/consultations/${selectedConsultation.id}/status`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ status: newStatus }),
+        }
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Erro ao cancelar consulta');
+        throw new Error(errorData.message || "Erro ao atualizar status");
       }
 
-      console.log('✅ Consultation cancelled successfully');
-      setSuccess('Consulta cancelada com sucesso! O horário foi liberado.');
-      
-      // Refresh consultations
-      await fetchConsultations();
-      
-      // Close modal
-      setShowCancelModal(false);
+      await fetchData();
+      setShowStatusModal(false);
       setSelectedConsultation(null);
-
-      // Clear success message after 3 seconds
-      setTimeout(() => setSuccess(''), 3000);
+      setSuccess("Status atualizado com sucesso!");
+      setTimeout(() => setSuccess(""), 3000);
     } catch (error) {
-      console.error('❌ Error cancelling consultation:', error);
-      setError(error instanceof Error ? error.message : 'Erro ao cancelar consulta');
+      setError(error instanceof Error ? error.message : "Erro ao atualizar status");
+    } finally {
+      setIsUpdatingStatus(false);
     }
   };
 
-  const handleModalSuccess = () => {
-    fetchConsultations();
-    setShowQuickSchedule(false);
+  const openEditModal = (consultation: Consultation) => {
+    setConsultationToEdit(consultation);
+    setShowEditModal(true);
+  };
+
+  const closeEditModal = () => {
     setShowEditModal(false);
-    setShowRecurringModal(false);
-    setSelectedSlot(null);
-    setSelectedConsultation(null);
-    setSuccess('Operação realizada com sucesso!');
-    setTimeout(() => setSuccess(''), 3000);
+    setConsultationToEdit(null);
   };
 
-  const generateTimeSlots = () => {
-    return getValidTimeSlots(slotDuration, 7, 18); // 7 AM to 6 PM
+  const handleEditSuccess = () => {
+    fetchData();
+    setSuccess("Consulta editada com sucesso!");
+    setTimeout(() => setSuccess(""), 3000);
   };
 
-  const getConsultationAtTime = (time: string) => {
-    return consultations.find(consultation => {
-      const consultationTime = new Date(consultation.date).toLocaleTimeString('pt-BR', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      });
-      return consultationTime === time;
-    });
+  const openWhatsApp = async (consultation: Consultation) => {
+    try {
+      const token = localStorage.getItem("token");
+      const apiUrl = getApiUrl();
+
+      const response = await fetch(
+        `${apiUrl}/api/consultations/${consultation.id}/whatsapp`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Erro ao gerar link do WhatsApp");
+      }
+
+      const data = await response.json();
+      window.open(data.whatsapp_url, "_blank");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Erro ao abrir WhatsApp");
+      setTimeout(() => setError(""), 3000);
+    }
   };
 
-  const getStatusColor = (status: string) => {
+  const handleSlotDurationChange2 = (duration: SlotDuration) => {
+    setSlotDuration2(duration);
+    localStorage.setItem('scheduling-slot-duration', duration.toString());
+  };
+
+  const formatTime = (dateString: string) => {
+    // Convert UTC date to Brasília timezone for display
+    const utcDate = new Date(dateString);
+    const brasiliaOffset = -3 * 60; // -3 hours in minutes
+    const brasiliaDate = new Date(utcDate.getTime() + (brasiliaOffset * 60 * 1000));
+    
+    return format(brasiliaDate, 'HH:mm');
+  };
+
+  const getStatusInfo = (status: string) => {
     switch (status) {
-      case 'scheduled':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'confirmed':
-        return 'bg-green-100 text-green-800 border-green-200';
-      case 'completed':
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-      case 'cancelled':
-        return 'bg-red-100 text-red-800 border-red-200';
+      case "scheduled":
+        return {
+          text: "Agendado",
+          className: "bg-blue-100 text-blue-800 border-blue-200",
+          icon: <Clock className="h-3 w-3 mr-1" />,
+        };
+      case "confirmed":
+        return {
+          text: "Confirmado",
+          className: "bg-green-100 text-green-800 border-green-200",
+          icon: <CheckCircle className="h-3 w-3 mr-1" />,
+        };
+      case "completed":
+        return {
+          text: "Concluído",
+          className: "bg-gray-100 text-gray-800 border-gray-200",
+          icon: <Check className="h-3 w-3 mr-1" />,
+        };
+      case "cancelled":
+        return {
+          text: "Cancelado",
+          className: "bg-red-100 text-red-800 border-red-200",
+          icon: <XCircle className="h-3 w-3 mr-1" />,
+        };
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
+        return {
+          text: "Desconhecido",
+          className: "bg-gray-100 text-gray-800 border-gray-200",
+          icon: <AlertCircle className="h-3 w-3 mr-1" />,
+        };
     }
-  };
-
-  const getPatientTypeIcon = (consultation: Consultation) => {
-    if (consultation.patient_type === 'private') {
-      return <User className="h-4 w-4 text-purple-600" />;
-    } else if (consultation.is_dependent) {
-      return <Users className="h-4 w-4 text-blue-600" />;
-    } else {
-      return <User className="h-4 w-4 text-green-600" />;
-    }
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('pt-BR', {
-      weekday: 'long',
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric'
-    });
   };
 
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
     }).format(value);
   };
 
-  const navigateDate = (direction: 'prev' | 'next') => {
-    const currentDate = new Date(selectedDate);
-    if (direction === 'prev') {
-      currentDate.setDate(currentDate.getDate() - 1);
-    } else {
-      currentDate.setDate(currentDate.getDate() + 1);
+  const formatCpf = (value: string) => {
+    if (!value) return "";
+    const numericValue = value.replace(/\D/g, "");
+    return numericValue.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  };
+
+  const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const serviceId = e.target.value;
+    setFormData((prev) => ({ ...prev, service_id: serviceId }));
+
+    // Auto-fill value based on service
+    const service = services.find((s) => s.id.toString() === serviceId);
+    if (service) {
+      setFormData((prev) => ({
+        ...prev,
+        value: service.base_price.toString(),
+      }));
     }
-    setSelectedDate(currentDate.toISOString().split('T')[0]);
   };
 
-  const goToToday = () => {
-    setSelectedDate(new Date().toISOString().split('T')[0]);
+  const generateTimeSlots = (duration: number = 30) => {
+    const slots = [];
+    for (let hour = 8; hour <= 18; hour++) {
+      for (let minute = 0; minute < 60; minute += duration) {
+        const timeStr = `${hour.toString().padStart(2, "0")}:${minute
+          .toString()
+          .padStart(2, "0")}`;
+        slots.push(timeStr);
+      }
+    }
+    return slots;
   };
 
-  // Filter consultations based on filters
-  const filteredConsultations = consultations.filter(consultation => {
-    if (statusFilter && consultation.status !== statusFilter) return false;
-    if (patientTypeFilter && consultation.patient_type !== patientTypeFilter) return false;
-    return true;
-  });
+  const timeSlots = generateTimeSlots(slotDuration);
+  
+  // Group consultations by time for display
+  const consultationsByTime = consultations.reduce((acc, consultation) => {
+    const time = format(new Date(consultation.date), "HH:mm");
+    acc[time] = consultation;
+    return acc;
+  }, {} as Record<string, Consultation>);
+
+  // Calculate daily statistics
+  const dailyStats = {
+    scheduled: consultations.filter((c) => c.status === "scheduled").length,
+    confirmed: consultations.filter((c) => c.status === "confirmed").length,
+    completed: consultations.filter((c) => c.status === "completed").length,
+    cancelled: consultations.filter((c) => c.status === "cancelled").length,
+  };
+
+  const getSlotDurationLabel = (duration: SlotDuration) => {
+    switch (duration) {
+      case 15:
+        return "15 min";
+      case 30:
+        return "30 min";
+      case 60:
+        return "60 min";
+      default:
+        return "30 min";
+    }
+  };
 
   // Show loading while checking access
   if (isCheckingAccess) {
@@ -369,8 +751,7 @@ const SchedulingPage: React.FC = () => {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 font-medium">Verificando acesso à agenda...</p>
-          <p className="text-sm text-gray-500 mt-2">Aguarde um momento</p>
+          <p className="text-gray-600">Verificando acesso à agenda...</p>
         </div>
       </div>
     );
@@ -379,410 +760,998 @@ const SchedulingPage: React.FC = () => {
   // Show error if access check failed
   if (accessError) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="max-w-md w-full">
-          <div className="bg-white rounded-xl shadow-lg p-8 text-center">
-            <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Erro de Conexão</h2>
-            <p className="text-gray-600 mb-6">{accessError}</p>
-            <button
-              onClick={checkSchedulingAccess}
-              className="btn btn-primary flex items-center mx-auto"
-            >
-              <RefreshCw className="h-5 w-5 mr-2" />
-              Tentar Novamente
-            </button>
-          </div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="h-16 w-16 text-red-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Erro de Conexão</h3>
+          <p className="text-gray-600 mb-4">{accessError}</p>
+          <button
+            onClick={checkSchedulingAccess}
+            className="btn btn-primary"
+          >
+            Tentar Novamente
+          </button>
         </div>
       </div>
     );
   }
 
   // Show payment screen if no access
-  if (!schedulingAccess.hasAccess) {
+  if (hasSchedulingAccess === false) {
     return (
       <SchedulingAccessPayment 
         professionalName={user?.name || 'Profissional'}
-        onPaymentSuccess={checkSchedulingAccess}
+        onPaymentSuccess={() => {
+          // Refresh access status after payment
+          checkSchedulingAccess();
+        }}
+      />
+    );
+  }
+  // Show access payment screen if no access
+  if (isCheckingAccess) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Verificando acesso à agenda...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasSchedulingAccess) {
+    return (
+      <SchedulingAccessPayment 
+        professionalName={user?.name || 'Profissional'}
+        onPaymentSuccess={() => {
+          // Refresh access status after payment
+          checkSchedulingAccess();
+        }}
       />
     );
   }
 
-  // Main agenda interface
-  return (
-    <div>
-      {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Agenda</h1>
-          <p className="text-gray-600">Gerencie seus agendamentos e consultas</p>
-          
-          {/* Access status banner */}
-          {schedulingAccess.expiresAt && (
-            <div className="mt-2 inline-flex items-center px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">
-              <CheckCircle className="h-4 w-4 mr-2" />
-              Acesso ativo até {new Date(schedulingAccess.expiresAt).toLocaleDateString('pt-BR')}
+  // Main agenda interface (only shown when access is confirmed)
+  if (hasSchedulingAccess === true) {
+    return (
+      <div>
+        {/* Access Status Banner */}
+        {hasSchedulingAccess && accessExpiresAt && (
+          <div className="bg-green-50 border-l-4 border-green-600 p-4 mb-6">
+            <div className="flex items-center">
+              <Gift className="h-5 w-5 text-green-600 mr-2" />
+              <div>
+                <p className="text-green-700 font-medium">
+                  Acesso à agenda ativo
+                </p>
+                <p className="text-green-600 text-sm">
+                  Válido até: {new Date(accessExpiresAt).toLocaleDateString('pt-BR', {
+                    day: '2-digit',
+                    month: 'long',
+                    year: 'numeric'
+                  })}
+                </p>
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        <div className="flex space-x-2">
-          <button
-            onClick={() => setShowCancelledModal(true)}
-            className="btn btn-outline flex items-center"
-          >
-            <XCircle className="h-5 w-5 mr-2" />
-            Cancelamentos
-          </button>
-          
-          <button
-            onClick={() => setShowSlotCustomization(true)}
-            className="btn btn-secondary flex items-center"
-          >
-            <Settings className="h-5 w-5 mr-2" />
-            Configurar Slots
-          </button>
-          
-          <button
-            onClick={() => setShowRecurringModal(true)}
-            className="btn btn-outline flex items-center"
-          >
-            <Repeat className="h-5 w-5 mr-2" />
-            Consultas Recorrentes
-          </button>
-          
-          <button
-            onClick={() => setShowQuickSchedule(true)}
-            className="btn btn-primary flex items-center"
-          >
-            <Plus className="h-5 w-5 mr-2" />
-            Nova Consulta
-          </button>
-        </div>
-      </div>
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Agenda</h1>
+            <p className="text-gray-600">
+              Visualize e gerencie suas consultas
+              {accessExpiresAt && (
+                <span className="ml-2 text-sm text-green-600">
+                  • Acesso ativo até {new Date(accessExpiresAt).toLocaleDateString('pt-BR')}
+                </span>
+              )}
+            </p>
+          </div>
 
-      {/* Feedback Messages */}
-      {error && (
-        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 flex items-center">
-          <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
-          {error}
-        </div>
-      )}
-
-      {success && (
-        <div className="bg-green-50 text-green-600 p-4 rounded-lg mb-6 flex items-center">
-          <CheckCircle className="h-5 w-5 mr-2 flex-shrink-0" />
-          {success}
-        </div>
-      )}
-
-      {/* Date Navigation */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-4">
+          <div className="flex space-x-2">
             <button
-              onClick={() => navigateDate('prev')}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              onClick={() => setShowNewModal(true)}
+              className="btn btn-primary flex items-center"
             >
-              <ChevronLeft className="h-5 w-5 text-gray-600" />
+              <Plus className="h-5 w-5 mr-2" />
+              Nova Consulta
             </button>
             
-            <div className="text-center">
-              <h2 className="text-xl font-semibold text-gray-900">
-                {formatDate(selectedDate)}
-              </h2>
-              <p className="text-sm text-gray-500">
-                {consultations.length} consulta{consultations.length !== 1 ? 's' : ''} agendada{consultations.length !== 1 ? 's' : ''}
-              </p>
-            </div>
-            
             <button
-              onClick={() => navigateDate('next')}
+              onClick={() => setShowSlotModal(true)}
+              className="btn btn-outline flex items-center"
+              title="Personalizar duração dos slots"
+            >
+              <Settings className="h-5 w-5 mr-2" />
+              Slots ({getSlotDurationLabel(slotDuration)})
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 flex items-center">
+            <AlertCircle className="h-5 w-5 mr-2" />
+            {error}
+          </div>
+        )}
+
+        {success && (
+          <div className="bg-green-50 text-green-600 p-4 rounded-lg mb-6 flex items-center">
+            <Check className="h-5 w-5 mr-2" />
+            {success}
+          </div>
+        )}
+
+        {/* Recurring Consultation Section */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center">
+              <Repeat className="h-6 w-6 text-purple-600 mr-2" />
+              <h2 className="text-xl font-semibold">Consultas Recorrentes</h2>
+            </div>
+            <button
+              onClick={() => setShowRecurringModal(true)}
+              className="btn btn-primary flex items-center"
+            >
+              <Plus className="h-5 w-5 mr-2" />
+              Criar Recorrência
+            </button>
+          </div>
+          
+          <p className="text-gray-600 text-sm">
+            Configure consultas que se repetem automaticamente em dias específicos da semana ou mensalmente.
+          </p>
+        </div>
+
+        {/* Date Navigation */}
+        {hasSchedulingAccess && accessExpiresAt && (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
+            <div className="flex items-center">
+              <Gift className="h-5 w-5 text-green-600 mr-2" />
+              <div>
+                <p className="text-green-800 font-medium">
+                  Acesso à agenda ativo
+                </p>
+                <p className="text-green-700 text-sm">
+                  Válido até: {new Date(accessExpiresAt).toLocaleDateString('pt-BR', {
+                    day: '2-digit',
+                    month: 'long',
+                    year: 'numeric'
+                  })}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setSelectedDate(subDays(selectedDate, 1))}
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <ChevronRight className="h-5 w-5 text-gray-600" />
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+
+            <div className="text-center">
+              <h2 className="text-xl font-semibold text-gray-900">
+                {format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                <span className="text-sm text-gray-500 ml-2">
+                  (Slots de {slotDuration} min)
+                </span>
+              </h2>
+              <div className="flex items-center justify-center space-x-4 text-sm text-gray-600">
+                <span>{consultations.length} consulta(s)</span>
+                <span>•</span>
+                <span>Slots de {getSlotDurationLabel(slotDuration)}</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setSelectedDate(addDays(selectedDate, 1))}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <ChevronRight className="h-5 w-5" />
             </button>
           </div>
 
-          <div className="flex items-center space-x-3">
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="input w-auto"
-            />
-            
+          <div className="flex justify-center mt-4">
             <button
-              onClick={goToToday}
+              onClick={() => setSelectedDate(new Date())}
               className="btn btn-secondary"
             >
               Hoje
             </button>
-            
-            <button
-              onClick={fetchConsultations}
-              className={`btn btn-outline flex items-center ${
-                isLoading ? 'opacity-70 cursor-not-allowed' : ''
-              }`}
-              disabled={isLoading}
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-              Atualizar
-            </button>
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2">
-            <Filter className="h-4 w-4 text-gray-500" />
-            <span className="text-sm font-medium text-gray-700">Filtros:</span>
-          </div>
-          
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="input w-auto"
-          >
-            <option value="">Todos os status</option>
-            <option value="scheduled">Agendado</option>
-            <option value="confirmed">Confirmado</option>
-            <option value="completed">Concluído</option>
-          </select>
-          
-          <select
-            value={patientTypeFilter}
-            onChange={(e) => setPatientTypeFilter(e.target.value)}
-            className="input w-auto"
-          >
-            <option value="">Todos os tipos</option>
-            <option value="convenio">Convênio</option>
-            <option value="private">Particular</option>
-          </select>
-          
-          {(statusFilter || patientTypeFilter) && (
-            <button
-              onClick={() => {
-                setStatusFilter('');
-                setPatientTypeFilter('');
-              }}
-              className="text-sm text-red-600 hover:text-red-700"
-            >
-              Limpar filtros
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Time Slots Grid */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center">
-            <Clock className="h-6 w-6 text-red-600 mr-2" />
-            <h2 className="text-xl font-semibold">Horários do Dia</h2>
-          </div>
-          
-          <div className="text-sm text-gray-600">
-            Slots de {slotDuration} minutos
-          </div>
-        </div>
-
-        {isLoading ? (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Carregando agenda...</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {generateTimeSlots().map((time) => {
-              const consultation = getConsultationAtTime(time);
-              const isFiltered = consultation && (
-                (statusFilter && consultation.status !== statusFilter) ||
-                (patientTypeFilter && consultation.patient_type !== patientTypeFilter)
-              );
-
-              if (isFiltered) return null;
-
-              return (
-                <div
-                  key={time}
-                  onClick={() => handleSlotClick(time)}
-                  className={`
-                    p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 hover:shadow-md
-                    ${consultation 
-                      ? `${getStatusColor(consultation.status)} hover:scale-105`
-                      : 'border-gray-200 hover:border-red-300 hover:bg-red-50'
-                    }
-                  `}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-gray-900">{time}</span>
-                    {consultation && getPatientTypeIcon(consultation)}
-                  </div>
-
-                  {consultation ? (
-                    <div className="space-y-1">
-                      <p className="font-medium text-gray-900 truncate">
-                        {consultation.client_name}
-                      </p>
-                      <p className="text-sm text-gray-600 truncate">
-                        {consultation.service_name}
-                      </p>
-                      <p className="text-sm font-medium text-gray-900">
-                        {formatCurrency(consultation.value)}
-                      </p>
-                      {consultation.location_name && (
-                        <div className="flex items-center text-xs text-gray-500">
-                          <MapPin className="h-3 w-3 mr-1" />
-                          {consultation.location_name}
-                        </div>
-                      )}
-                      
-                      {/* Action buttons */}
-                      <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-200">
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(consultation.status)}`}>
-                          {consultation.status === 'scheduled' && 'Agendado'}
-                          {consultation.status === 'confirmed' && 'Confirmado'}
-                          {consultation.status === 'completed' && 'Concluído'}
-                          {consultation.status === 'cancelled' && 'Cancelado'}
-                        </span>
-                        
-                        <div className="flex space-x-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleEditConsultation(consultation);
-                            }}
-                            className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                            title="Editar"
-                          >
-                            <Edit className="h-3 w-3" />
-                          </button>
-                          
-                          {consultation.status !== 'cancelled' && consultation.status !== 'completed' && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleCancelConsultation(consultation);
-                              }}
-                              className="p-1 text-red-600 hover:bg-red-50 rounded"
-                              title="Cancelar"
-                            >
-                              <XCircle className="h-3 w-3" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-center py-4">
-                      <Plus className="h-6 w-6 text-gray-400 mx-auto mb-2" />
-                      <p className="text-sm text-gray-500">Horário livre</p>
-                      <p className="text-xs text-gray-400">Clique para agendar</p>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Summary */}
+        {/* Daily Statistics */}
         {consultations.length > 0 && (
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <div className="text-2xl font-bold text-blue-600">
-                  {consultations.filter(c => c.status === 'scheduled').length}
-                </div>
-                <div className="text-sm text-blue-700">Agendadas</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-200">
+              <div className="text-2xl font-bold text-blue-600">{dailyStats.scheduled}</div>
+              <div className="text-sm text-blue-700 flex items-center justify-center">
+                <Clock className="h-3 w-3 mr-1" />
+                Agendados
               </div>
-              
-              <div className="bg-green-50 p-4 rounded-lg">
-                <div className="text-2xl font-bold text-green-600">
-                  {consultations.filter(c => c.status === 'confirmed').length}
-                </div>
-                <div className="text-sm text-green-700">Confirmadas</div>
+            </div>
+
+            <div className="bg-green-50 p-4 rounded-lg text-center border border-green-200">
+              <div className="text-2xl font-bold text-green-600">{dailyStats.confirmed}</div>
+              <div className="text-sm text-green-700 flex items-center justify-center">
+                <CheckCircle className="h-3 w-3 mr-1" />
+                Confirmados
               </div>
-              
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <div className="text-2xl font-bold text-gray-600">
-                  {consultations.filter(c => c.status === 'completed').length}
-                </div>
-                <div className="text-sm text-gray-700">Concluídas</div>
+            </div>
+
+            <div className="bg-gray-50 p-4 rounded-lg text-center border border-gray-200">
+              <div className="text-2xl font-bold text-gray-600">{dailyStats.completed}</div>
+              <div className="text-sm text-gray-700 flex items-center justify-center">
+                <Check className="h-3 w-3 mr-1" />
+                Concluídos
               </div>
-              
-              <div className="bg-purple-50 p-4 rounded-lg">
-                <div className="text-2xl font-bold text-purple-600">
-                  {formatCurrency(consultations.reduce((sum, c) => sum + c.value, 0))}
-                </div>
-                <div className="text-sm text-purple-700">Total do Dia</div>
+            </div>
+
+            <div className="bg-red-50 p-4 rounded-lg text-center border border-red-200">
+              <div className="text-2xl font-bold text-red-600">{dailyStats.cancelled}</div>
+              <div className="text-sm text-red-700 flex items-center justify-center">
+                <XCircle className="h-3 w-3 mr-1" />
+                Cancelados
               </div>
             </div>
           </div>
         )}
+
+        {/* Agenda View */}
+        {/* Legend */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-gray-700">Legenda:</h3>
+            <div className="flex items-center space-x-6 text-xs">
+              <div className="flex items-center">
+                <div className="w-4 h-4 bg-green-100 border-l-2 border-green-500 rounded mr-2"></div>
+                <span>Cliente Titular</span>
+              </div>
+              <div className="flex items-center">
+                <div className="w-4 h-4 bg-blue-100 border-l-2 border-blue-500 rounded mr-2"></div>
+                <span>Dependente</span>
+              </div>
+              <div className="flex items-center">
+                <div className="w-4 h-4 bg-purple-100 border-l-2 border-purple-500 rounded mr-2"></div>
+                <span>Particular</span>
+              </div>
+              <div className="flex items-center">
+                <div className="w-4 h-4 bg-gray-50 border border-gray-200 rounded mr-2"></div>
+                <span>Slot Livre (clique para agendar)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          {isLoading ? (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
+              <p className="text-gray-600">Carregando agenda...</p>
+            </div>
+          ) : (
+            <div className="flex">
+              {/* Time Column */}
+              <div className="w-24 bg-gray-50 border-r border-gray-200">
+                <div className="sticky top-0 bg-gray-100 p-3 border-b border-gray-200">
+                  <div className="text-xs font-medium text-gray-600 text-center">HORÁRIO</div>
+                </div>
+                <div className="space-y-0">
+                  {timeSlots.map((timeSlot) => (
+                    <div
+                      key={timeSlot}
+                      className={`${
+                        slotDuration === 15 ? 'h-12' : 
+                        slotDuration === 30 ? 'h-20' : 
+                        'h-32'
+                      } flex items-center justify-center border-b border-gray-100 text-sm font-medium text-gray-700`}
+                    >
+                      {timeSlot}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Consultations Column */}
+              <div className="flex-1">
+                <div className="sticky top-0 bg-gray-100 p-3 border-b border-gray-200">
+                  <div className="text-xs font-medium text-gray-600 text-center">CONSULTAS</div>
+                </div>
+                <div className="relative">
+                  {timeSlots.map((timeSlot) => {
+                    const consultation = consultationsByTime[timeSlot];
+                    const isOccupied = !!consultation;
+
+                    return (
+                      <div
+                        key={timeSlot}
+                        onClick={() => handleSlotClick(timeSlot)}
+                        className={`${
+                          slotDuration === 15 ? 'h-12' : 
+                          slotDuration === 30 ? 'h-20' : 
+                          'h-32'
+                        } border-b border-gray-100 flex items-center px-4 transition-all cursor-pointer ${
+                          isOccupied 
+                            ? `${getSlotStyling(consultation)} hover:shadow-sm` 
+                            : 'hover:bg-blue-50 hover:border-l-4 hover:border-blue-300'
+                        }`}
+                        title={isOccupied ? 'Clique para editar' : 'Clique para agendar'}
+                      >
+                        {consultation ? (
+                          <div className="flex items-center justify-between w-full">
+                            <div className="flex items-center space-x-3 flex-1">
+                              <div className="flex-1">
+                                <div className="flex items-center mb-1">
+                                  {consultation.is_dependent ? (
+                                    <Users className="h-4 w-4 text-blue-600 mr-2" />
+                                  ) : consultation.patient_type === "private" ? (
+                                    <User className="h-4 w-4 text-purple-600 mr-2" />
+                                  ) : (
+                                    <User className="h-4 w-4 text-green-600 mr-2" />
+                                  )}
+                                  <span className="font-medium text-gray-900 text-sm">
+                                    {consultation.client_name}
+                                  </span>
+                                  {consultation.is_dependent && (
+                                    <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                                      Dependente
+                                    </span>
+                                  )}
+                                  {consultation.patient_type === "private" && (
+                                    <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs">
+                                      Particular
+                                    </span>
+                                  )}
+                                  {consultation.patient_type === "convenio" && !consultation.is_dependent && (
+                                    <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
+                                      Titular
+                                    </span>
+                                  )}
+                                  
+                                  {/* WhatsApp Button */}
+                                  <button
+                                    onClick={() => openWhatsApp(consultation)}
+                                    className="ml-2 p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
+                                    title="Enviar mensagem no WhatsApp"
+                                  >
+                                    <MessageCircle className="h-4 w-4" />
+                                  </button>
+                                </div>
+                                <div className="flex items-center space-x-4">
+                                  <p className="text-xs text-gray-600">
+                                    {consultation.service_name}
+                                  </p>
+                                  <p className="text-xs font-medium text-green-600">
+                                    {formatCurrency(consultation.value)}
+                                  </p>
+                                  {consultation.location_name && (
+                                    <p className="text-xs text-gray-500">
+                                      {consultation.location_name}
+                                    </p>
+                                  )}
+                                </div>
+                                {consultation.notes && (
+                                  <p className="text-xs text-gray-500 mt-1 italic truncate">
+                                    "{consultation.notes}"
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex items-center space-x-2">
+                              {/* Edit Button */}
+                              <button
+                                onClick={() => openEditModal(consultation)}
+                                className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                                title="Editar consulta"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </button>
+
+                              {/* Status Button */}
+                              <button
+                                onClick={() => openStatusModal(consultation)}
+                                className={`px-2 py-1 rounded text-xs font-medium flex items-center border transition-all hover:shadow-sm ${
+                                  getStatusInfo(consultation.status).className
+                                }`}
+                                title="Clique para alterar o status"
+                              >
+                                {getStatusInfo(consultation.status).icon}
+                                {getStatusInfo(consultation.status).text}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-gray-400 italic flex items-center">
+                            <Plus className="h-3 w-3 mr-1" />
+                            Clique para agendar
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!isLoading && consultations.length === 0 && (
+            <div className="text-center py-12">
+              <Calendar className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Nenhuma consulta para este dia
+              </h3>
+              <p className="text-gray-600 mb-4">
+                Sua agenda está livre para {format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}
+              </p>
+              <button
+                onClick={() => setShowNewModal(true)}
+                className="btn btn-primary inline-flex items-center"
+              >
+                <Plus className="h-5 w-5 mr-2" />
+                Agendar Consulta
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* New Consultation Modal */}
+        {showNewModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-bold flex items-center">
+                    <Plus className="h-6 w-6 text-red-600 mr-2" />
+                    Nova Consulta
+                  </h2>
+                  <button
+                    onClick={() => setShowNewModal(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+              </div>
+
+              <form onSubmit={createConsultation} className="p-6">
+                <div className="space-y-6">
+                  {/* Patient Type */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Tipo de Paciente *
+                    </label>
+                    <select
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          patient_type: e.target.value as "convenio" | "private",
+                          client_cpf: "",
+                          private_patient_id: "",
+                        }))
+                      }
+                      className="input"
+                      required
+                    >
+                      <option value="private">Paciente Particular</option>
+                      <option value="convenio">Cliente do Convênio</option>
+                    </select>
+                  </div>
+
+                  {/* Private Patient Selection */}
+                  {formData.patient_type === "private" && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Paciente Particular *
+                      </label>
+                      <select
+                        value={formData.private_patient_id}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            private_patient_id: e.target.value,
+                          }))
+                        }
+                        className="input"
+                        required
+                      >
+                        <option value="">Selecione um paciente</option>
+                        {privatePatients.map((patient) => (
+                          <option key={patient.id} value={patient.id}>
+                            {patient.name} - {patient.cpf ? formatCpf(patient.cpf) : "CPF não informado"}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Convenio Client Search */}
+                  {formData.patient_type === "convenio" && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        CPF do Cliente *
+                      </label>
+                      <div className="flex space-x-2">
+                        <input
+                          type="text"
+                          value={formatCpf(formData.client_cpf)}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              client_cpf: e.target.value.replace(/\D/g, ""),
+                            }))
+                          }
+                          className="input flex-1"
+                          placeholder="000.000.000-00"
+                        />
+                        <button
+                          type="button"
+                          onClick={searchClientByCpf}
+                          className="btn btn-secondary"
+                          disabled={isSearching}
+                        >
+                          {isSearching ? "Buscando..." : "Buscar"}
+                        </button>
+                      </div>
+
+                      {/* Client Search Result */}
+                      {clientSearchResult && (
+                        <div className="mt-3 p-3 bg-green-50 rounded-lg">
+                          <p className="font-medium text-green-800">
+                            Cliente: {clientSearchResult.name}
+                          </p>
+                          
+                          {/* Dependent Selection */}
+                          {dependents.length > 0 && (
+                            <div className="mt-2">
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Dependente (opcional)
+                              </label>
+                              <select
+                                value={selectedDependentId || ""}
+                                onChange={(e) =>
+                                  setSelectedDependentId(e.target.value ? Number(e.target.value) : null)
+                                }
+                                className="input"
+                              >
+                                <option value="">Consulta para o titular</option>
+                                {dependents.map((dependent) => (
+                                  <option key={dependent.id} value={dependent.id}>
+                                    {dependent.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Recurring Consultation Checkbox */}
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={formData.is_recurring}
+                        onChange={(e) =>
+                          setFormData((prev) => ({ ...prev, is_recurring: e.target.checked }))
+                        }
+                        className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                      />
+                      <span className="ml-3 flex items-center">
+                        <Calendar className="h-4 w-4 text-blue-600 mr-2" />
+                        <span className="font-medium text-blue-900">Consulta Recorrente</span>
+                      </span>
+                    </label>
+                    
+                    {formData.is_recurring && (
+                      <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-blue-700 mb-1">
+                            Tipo de Recorrência
+                          </label>
+                          <select
+                            value={formData.recurrence_type}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                recurrence_type: e.target.value as "daily" | "weekly",
+                              }))
+                            }
+                            className="input"
+                          >
+                            <option value="daily">Diário</option>
+                            <option value="weekly">Semanal</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-blue-700 mb-1">
+                            Intervalo
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="30"
+                            value={formData.recurrence_interval}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                recurrence_interval: parseInt(e.target.value),
+                              }))
+                            }
+                            className="input"
+                          />
+                          <p className="text-xs text-blue-600 mt-1">
+                            {formData.recurrence_type === "daily" ? "A cada quantos dias" : "A cada quantas semanas"}
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-blue-700 mb-1">
+                            Quantidade
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="52"
+                            value={formData.occurrences}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                occurrences: parseInt(e.target.value),
+                              }))
+                            }
+                            className="input"
+                          />
+                          <p className="text-xs text-blue-600 mt-1">
+                            Número de consultas
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Date and Time */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Data {formData.is_recurring ? "de Início" : ""} *
+                      </label>
+                      <input
+                        type="date"
+                        value={formData.date}
+                        onChange={(e) =>
+                          setFormData((prev) => ({ ...prev, date: e.target.value }))
+                        }
+                        className="input"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Horário *
+                      </label>
+                      <input
+                        type="time"
+                        value={formData.time}
+                        onChange={(e) =>
+                          setFormData((prev) => ({ ...prev, time: e.target.value }))
+                        }
+                        className="input"
+                        step="60"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Digite o horário desejado (ex: 09:30)
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Service and Value */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Serviço *
+                      </label>
+                      <select
+                        value={formData.service_id}
+                        onChange={handleServiceChange}
+                        className="input"
+                        required
+                      >
+                        <option value="">Selecione um serviço</option>
+                        {services.map((service) => (
+                          <option key={service.id} value={service.id}>
+                            {service.name} - {formatCurrency(service.base_price)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Valor (R$) *
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formData.value}
+                        onChange={(e) =>
+                          setFormData((prev) => ({ ...prev, value: e.target.value }))
+                        }
+                        className="input"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Location */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Local de Atendimento
+                    </label>
+                    <select
+                      value={formData.location_id}
+                      onChange={(e) =>
+                        setFormData(prev => ({ ...prev, location_id: e.target.value }))
+                      }
+                      className="input"
+                    >
+                      <option value="">Selecione um local</option>
+                      {attendanceLocations.map((location) => (
+                        <option key={location.id} value={location.id}>
+                          {location.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Notes */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Observações
+                    </label>
+                    <textarea
+                      value={formData.notes}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, notes: e.target.value }))
+                      }
+                      className="input"
+                      rows={3}
+                      placeholder="Observações sobre a consulta..."
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setShowNewModal(false)}
+                    className="btn btn-secondary"
+                    disabled={isCreating}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className={`btn btn-primary ${
+                      isCreating ? "opacity-70 cursor-not-allowed" : ""
+                    }`}
+                    disabled={isCreating}
+                  >
+                    {isCreating ? (
+                      formData.is_recurring ? "Criando Consultas..." : "Criando..."
+                    ) : (
+                      formData.is_recurring ? "Criar Consultas Recorrentes" : "Criar Consulta"
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Status Change Modal */}
+        {showStatusModal && selectedConsultation && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl w-full max-w-md">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-bold">Alterar Status</h2>
+                  <button
+                    onClick={closeStatusModal}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6">
+                {/* Consultation Info */}
+                <div className="bg-gray-50 p-4 rounded-lg mb-6">
+                  <div className="flex items-center mb-2">
+                    {selectedConsultation.is_dependent ? (
+                      <Users className="h-4 w-4 text-blue-600 mr-2" />
+                    ) : (
+                      <User className="h-4 w-4 text-green-600 mr-2" />
+                    )}
+                    <span className="font-medium">{selectedConsultation.client_name}</span>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-1">
+                    <strong>Serviço:</strong> {selectedConsultation.service_name}
+                  </p>
+                  <p className="text-sm text-gray-600 mb-1">
+                    <strong>Data/Hora:</strong>{" "}
+                    {format(new Date(selectedConsultation.date), "dd/MM/yyyy 'às' HH:mm")}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <strong>Valor:</strong> {formatCurrency(selectedConsultation.value)}
+                  </p>
+                </div>
+
+                {/* Status Selection */}
+                <div className="space-y-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-3">
+                    Selecione o novo status:
+                  </label>
+
+                  <div className="space-y-2">
+                    {[
+                      { value: "scheduled", label: "Agendado", icon: <Clock className="h-4 w-4" />, color: "blue" },
+                      { value: "confirmed", label: "Confirmado", icon: <CheckCircle className="h-4 w-4" />, color: "green" },
+                      { value: "completed", label: "Concluído", icon: <Check className="h-4 w-4" />, color: "gray" },
+                      { value: "cancelled", label: "Cancelado", icon: <XCircle className="h-4 w-4" />, color: "red" },
+                    ].map((status) => (
+                      <label
+                        key={status.value}
+                        className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                          newStatus === status.value
+                            ? `border-${status.color}-300 bg-${status.color}-50`
+                            : "border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="status"
+                          value={status.value}
+                          checked={newStatus === status.value}
+                          onChange={(e) => setNewStatus(e.target.value as any)}
+                          className={`text-${status.color}-600 focus:ring-${status.color}-500`}
+                        />
+                        <div className="ml-3 flex items-center">
+                          <div className={`text-${status.color}-600 mr-2`}>
+                            {status.icon}
+                          </div>
+                          <div>
+                            <div className="font-medium text-gray-900">{status.label}</div>
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                    type="button"
+                    onClick={closeStatusModal}
+                    className="btn btn-secondary"
+                    disabled={isUpdatingStatus}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={updateConsultationStatus}
+                    className={`btn btn-primary ${
+                      isUpdatingStatus ? "opacity-70 cursor-not-allowed" : ""
+                    }`}
+                    disabled={isUpdatingStatus || newStatus === selectedConsultation.status}
+                  >
+                    {isUpdatingStatus ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Atualizando...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="h-4 w-4 mr-2" />
+                        Atualizar Status
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Consultation Modal */}
+        <EditConsultationModal
+          isOpen={showEditModal}
+          consultation={consultationToEdit}
+          onClose={closeEditModal}
+          onSuccess={handleEditSuccess}
+        />
+
+        {/* Cancel Consultation Modal */}
+        <CancelConsultationModal
+          isOpen={showCancelModal}
+          onClose={closeModals}
+          onConfirm={handleCancelConsultation}
+          consultationData={selectedConsultation ? {
+            id: selectedConsultation.id,
+            patient_name: selectedConsultation.client_name,
+            service_name: selectedConsultation.service_name,
+            date: selectedConsultation.date,
+            professional_name: user?.name || '',
+            location_name: selectedConsultation.location_name || '',
+            is_dependent: selectedConsultation.is_dependent,
+            patient_type: selectedConsultation.patient_type
+          } : null}
+        />
+
+        {/* Slot Customization Modal */}
+        <SlotCustomizationModal
+          isOpen={showSlotModal}
+          currentSlotDuration={slotDuration}
+          onClose={() => setShowSlotModal(false)}
+          onSlotDurationChange={handleSlotDurationChange}
+        />
+
+        {/* Recurring Consultation Modal */}
+        {showRecurringModal && (
+          <RecurringConsultationModal
+            isOpen={showRecurringModal}
+            onClose={() => setShowRecurringModal(false)}
+            onSuccess={() => {
+              setShowRecurringModal(false);
+              fetchData();
+            }}
+          />
+        )}
+
+        {/* Quick Schedule Modal */}
+        {showQuickScheduleModal && (
+          <QuickScheduleModal
+            isOpen={showQuickScheduleModal}
+            onClose={closeQuickScheduleModal}
+            onSuccess={handleQuickScheduleSuccess}
+            selectedSlot={selectedSlot}
+          />
+        )}
+
+        {/* Slot Customization Modal */}
+        <SlotCustomizationModal
+          isOpen={showSlotModal2}
+          currentSlotDuration={slotDuration2}
+          onClose={() => setShowSlotModal2(false)}
+          onSlotDurationChange={handleSlotDurationChange2}
+        />
       </div>
+    );
+  }
 
-      {/* Modals */}
-      <QuickScheduleModal
-        isOpen={showQuickSchedule}
-        onClose={() => {
-          setShowQuickSchedule(false);
-          setSelectedSlot(null);
-        }}
-        onSuccess={handleModalSuccess}
-        selectedSlot={selectedSlot}
-      />
-
-      <EditConsultationModal
-        isOpen={showEditModal}
-        consultation={selectedConsultation}
-        onClose={() => {
-          setShowEditModal(false);
-          setSelectedConsultation(null);
-        }}
-        onSuccess={handleModalSuccess}
-      />
-
-      <CancelConsultationModal
-        isOpen={showCancelModal}
-        onClose={() => {
-          setShowCancelModal(false);
-          setSelectedConsultation(null);
-        }}
-        onConfirm={handleCancelConfirm}
-        consultationData={selectedConsultation ? {
-          id: selectedConsultation.id,
-          patient_name: selectedConsultation.client_name,
-          service_name: selectedConsultation.service_name,
-          date: selectedConsultation.date,
-          is_dependent: selectedConsultation.is_dependent,
-          patient_type: selectedConsultation.patient_type,
-          location_name: selectedConsultation.location_name
-        } : null}
-      />
-
-      <RecurringConsultationModal
-        isOpen={showRecurringModal}
-        onClose={() => setShowRecurringModal(false)}
-        onSuccess={handleModalSuccess}
-      />
-
-      <SlotCustomizationModal
-        isOpen={showSlotCustomization}
-        currentSlotDuration={slotDuration}
-        onClose={() => setShowSlotCustomization(false)}
-        onSlotDurationChange={(duration) => {
-          setSlotDuration(duration);
-          setShowSlotCustomization(false);
-        }}
-      />
-
-      <CancelledConsultationsModal
-        isOpen={showCancelledModal}
-        onClose={() => setShowCancelledModal(false)}
-        autoRefresh={success.includes('cancelada')}
-      />
+  // Fallback loading state
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
+        <p className="text-gray-600">Carregando agenda...</p>
+      </div>
     </div>
   );
 };
