@@ -2155,7 +2155,10 @@ const DocumentsPage: React.FC = () => {
                   ${data.signatureUrl ? 
                     `<img src="${data.signatureUrl}" alt="Assinatura" style="max-width: 150px; max-height: 50px; margin: 20px auto 10px; display: block;" />` : 
                     '<div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>'
-                  }
+                 
+    }
+  }
+} }
                   <div>
                       <strong>Profissional Responsável</strong><br>
                       ${data.professionalName}<br>
