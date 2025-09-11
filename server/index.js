@@ -1605,6 +1605,9 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
       if (user_id) {
         const clientResult = await pool.query(
           `
+  }
+}
+)
           SELECT subscription_status FROM users WHERE id = $1 AND 'client' = ANY(roles)
         `,
           [user_id]
