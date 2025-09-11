@@ -286,6 +286,9 @@ const initializeDatabase = async () => {
         id SERIAL PRIMARY KEY,
         professional_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         private_patient_id INTEGER REFERENCES private_patients(id) ON DELETE CASCADE,
+        patient_name VARCHAR(255),
+        patient_cpf VARCHAR(11),
+        patient_type VARCHAR(20) DEFAULT 'private',
         chief_complaint TEXT,
         history_present_illness TEXT,
         past_medical_history TEXT,
@@ -301,18 +304,95 @@ const initializeDatabase = async () => {
       )
     `);
 
+    // Add columns to medical_records if they don't exist
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'medical_records' AND column_name = 'patient_name'
+        ) THEN
+          ALTER TABLE medical_records ADD COLUMN patient_name VARCHAR(255);
+        END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'medical_records' AND column_name = 'patient_cpf'
+        ) THEN
+          ALTER TABLE medical_records ADD COLUMN patient_cpf VARCHAR(11);
+        END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'medical_records' AND column_name = 'patient_type'
+        ) THEN
+          ALTER TABLE medical_records ADD COLUMN patient_type VARCHAR(20) DEFAULT 'private';
+        END IF;
+      END $$;
+    `);
+
+    // Drop existing constraint if it exists and create new one
+    await pool.query(`
+      DO $$
+      BEGIN
+        -- Drop existing constraint if it exists
+        IF EXISTS (
+          SELECT 1 FROM information_schema.table_constraints 
+          WHERE table_name = 'medical_records' AND constraint_name = 'medical_records_check'
+        ) THEN
+          ALTER TABLE medical_records DROP CONSTRAINT medical_records_check;
+        END IF;
+        
+        -- Add new constraint that allows either private_patient_id OR patient_name
+        ALTER TABLE medical_records ADD CONSTRAINT medical_records_patient_check CHECK (
+          (private_patient_id IS NOT NULL AND patient_name IS NULL AND patient_cpf IS NULL) OR
+          (private_patient_id IS NULL AND patient_name IS NOT NULL)
+        );
+      END $$;
+    `);
+
     // Medical documents table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS medical_documents (
         id SERIAL PRIMARY KEY,
         professional_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         private_patient_id INTEGER REFERENCES private_patients(id),
+        patient_name VARCHAR(255),
+        patient_cpf VARCHAR(11),
         title VARCHAR(255) NOT NULL,
         document_type VARCHAR(50) NOT NULL,
         document_url TEXT NOT NULL,
         template_data JSONB,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
+    `);
+
+    // Add columns to medical_documents if they don't exist
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'medical_documents' AND column_name = 'patient_name'
+        ) THEN
+          ALTER TABLE medical_documents ADD COLUMN patient_name VARCHAR(255);
+        END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'medical_documents' AND column_name = 'patient_cpf'
+        ) THEN
+          ALTER TABLE medical_documents ADD COLUMN patient_cpf VARCHAR(11);
+        END IF;
+      END $$;
+    `);
+
+    // Add indexes for better performance
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_medical_records_patient_name ON medical_records(patient_name);
+      CREATE INDEX IF NOT EXISTS idx_medical_records_patient_cpf ON medical_records(patient_cpf);
+      CREATE INDEX IF NOT EXISTS idx_medical_documents_patient_name ON medical_documents(patient_name);
+      CREATE INDEX IF NOT EXISTS idx_medical_documents_patient_cpf ON medical_documents(patient_cpf);
     `);
 
     // Add columns for convenio patients to medical_documents table
@@ -3211,6 +3291,8 @@ app.get("/api/medical-records", authenticate, authorize(["professional"]), async
         mr.*,
         COALESCE(pp.name, mr.patient_name) as patient_name,
         COALESCE(pp.cpf, mr.patient_cpf) as patient_cpf
+        COALESCE(pp.name, mr.patient_name) as patient_name,
+        COALESCE(pp.cpf, mr.patient_cpf) as patient_cpf
       FROM medical_records mr
       LEFT JOIN private_patients pp ON mr.private_patient_id = pp.id
       WHERE mr.professional_id = $1
@@ -3254,34 +3336,39 @@ app.post("/api/medical-records", authenticate, authorize(["professional"]), asyn
       // Validate patient belongs to professional
       const patientResult = await pool.query(
         `SELECT id FROM private_patients WHERE id = $1 AND professional_id = $2`,
+    // Validate patient data - either private_patient_id OR patient_name is required
+    if (!private_patient_id && !patient_name) {
+      return res.status(400).json({ message: "É necessário informar um paciente particular ou dados do paciente do convênio" });
+
+      if (patientResult.rows.length === 0) {
+    // Validate patient belongs to professional (only for private patients)
+    if (private_patient_id) {
+      const patientResult = await pool.query(
+        `SELECT id FROM private_patients WHERE id = $1 AND professional_id = $2`,
         [private_patient_id, req.user.id]
       );
 
       if (patientResult.rows.length === 0) {
-        return res.status(404).json({ message: "Paciente não encontrado" });
+        return res.status(404).json({ message: "Paciente particular não encontrado" });
       }
-    } else {
-      // Convenio patient
-      if (!patient_name) {
-        return res.status(400).json({ message: "Nome do paciente é obrigatório" });
-      }
-    }
-
-    const recordResult = await pool.query(
       `
       INSERT INTO medical_records (
         professional_id, private_patient_id, patient_name, patient_cpf, patient_type,
         chief_complaint, history_present_illness, past_medical_history, medications, 
         allergies, physical_examination, diagnosis, treatment_plan, notes, vital_signs
-      )
+        professional_id, private_patient_id, patient_name, patient_cpf, patient_type,
+        chief_complaint, history_present_illness,
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *
     `,
-      [
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         req.user.id,
         private_patient_id || null,
         patient_name?.trim() || null,
         patient_cpf?.replace(/\D/g, '') || null,
+        patient_type,
+        patient_name || null,
+        patient_cpf || null,
         patient_type,
         chief_complaint?.trim() || null,
         history_present_illness?.trim() || null,
@@ -3425,7 +3512,7 @@ app.post("/api/medical-records/generate-document", authenticate, authorize(["pro
       `
       SELECT mr.*, pp.name as patient_name, pp.cpf as patient_cpf
       FROM medical_records mr
-      JOIN private_patients pp ON mr.private_patient_id = pp.id
+      LEFT JOIN private_patients pp ON mr.private_patient_id = pp.id
       WHERE mr.id = $1 AND mr.professional_id = $2
     `,
       [record_id, req.user.id]
@@ -3521,6 +3608,9 @@ app.post("/api/documents/medical", authenticate, authorize(["professional"]), as
       title,
       document_type,
       private_patient_id,
+      patient_name,
+      patient_cpf,
+      patient_type = 'private',
       patient_name,
       patient_cpf,
       professional_id: professionalId,
