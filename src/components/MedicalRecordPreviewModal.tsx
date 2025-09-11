@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { FileText, Download, Save, X, Eye, AlertCircle, CheckCircle, Printer } from 'lucide-react';
 
 declare global {
@@ -43,6 +44,7 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
+  const { user } = useAuth();
   const { user } = useAuth();
 
   // Get API URL
