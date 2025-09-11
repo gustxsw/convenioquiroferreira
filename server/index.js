@@ -2817,7 +2817,10 @@ app.delete('/api/professionals/:id/signature', authenticate, async (req, res) =>
     // Get current signature URL for cleanup
     const currentResult = await pool.query(
       'SELECT signature_url FROM users WHERE id = $1',
-      [professionalId]
+    
+  }
+}
+)  [professionalId]
     );
 
     // Remove signature URL from database
