@@ -154,10 +154,12 @@ const DocumentsPage: React.FC = () => {
       console.log('🔄 [DOCUMENTS] Fetching medical documents from:', `${apiUrl}/api/documents/medical`);
 
       // Fetch documents
-      const response = await fetch(`${apiUrl}/api/documents/saved`, {
-      console.log('📡 [DOCUMENTS] Documents response status:', documentsResponse.status);
+      let response = await fetch(`${apiUrl}/api/documents/medical`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      console.log('📡 [DOCUMENTS] Documents response status:', response.status);
 
-      if (documentsResponse.ok) {
       // If first route fails, try the saved documents route
       if (!response.ok) {
         console.log('🔄 Trying saved documents route...');
@@ -166,13 +168,13 @@ const DocumentsPage: React.FC = () => {
         });
       }
 
-        const documentsData = await documentsResponse.json();
-        console.log('✅ [DOCUMENTS] Medical documents loaded:', documentsData.length);
+      if (response.ok) {
+        const documentsData = await response.json();
         console.log('✅ Documents loaded:', documentsData.length);
         setDocuments(documentsData);
       } else {
         console.warn('⚠️ Documents not available:', response.status);
-        const errorData = await documentsResponse.json();
+        const errorData = await response.json();
         throw new Error(errorData.message || 'Erro ao carregar documentos');
       }
 
@@ -317,7 +319,7 @@ const DocumentsPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
       
-      console.log('🔄 [DOCUMENTS] Deleting saved document:', documentToDelete.id);
+      // Get selected patient
       const selectedPatient = patients.find(p => p.id.toString() === formData.patient_id);
       if (!selectedPatient) {
         setError('Paciente selecionado não encontrado');
@@ -332,9 +334,11 @@ const DocumentsPage: React.FC = () => {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
-        console.log('🔄 [DOCUMENTS] Fetching saved documents from:', `${apiUrl}/api/documents/saved`);
-        
-        // Fetch saved documents (not medical records)
+        if (signatureResponse.ok) {
+          const signatureData = await signatureResponse.json();
+          signatureUrl = signatureData.signature_url;
+        }
+      } catch (signatureError) {
         console.warn('Could not load signature:', signatureError);
       }
 
@@ -346,7 +350,6 @@ const DocumentsPage: React.FC = () => {
         signatureUrl: signatureUrl
       };
 
-      // Generate HTML content directly
       // Generate HTML content using inline templates (same as medical records)
       const htmlContent = generateDocumentHTMLInline(formData.document_type, enhancedFormData);
 
@@ -1692,23 +1695,38 @@ const DocumentsPage: React.FC = () => {
       };
       script.onerror = () => {
         console.error('❌ Failed to load html2pdf.js');
-      const response = await fetch(`${apiUrl}/api/documents/saved/${documentToDelete.id}`, {
+        reject(new Error('Falha ao carregar biblioteca de PDF'));
       };
       document.head.appendChild(script);
     });
   };
-      console.log('📡 [DOCUMENTS] Delete saved document response status:', response.status);
+
+  const deleteDocument = async () => {
+    if (!documentToDelete) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const apiUrl = getApiUrl();
+
+      console.log('🔄 [DOCUMENTS] Deleting document:', documentToDelete.id);
+
+      const response = await fetch(`${apiUrl}/api/documents/medical/${documentToDelete.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      console.log('📡 [DOCUMENTS] Delete response:', response.status);
 
       if (!response.ok) {
-        console.error('❌ [DOCUMENTS] Delete saved document error:', errorData);
-        throw new Error(`Falha ao carregar documentos salvos: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erro ao excluir documento');
       }
 
-      console.log('✅ [DOCUMENTS] Saved document deleted successfully');
-      console.log('✅ [DOCUMENTS] Saved documents loaded:', data.length);
+      console.log('✅ [DOCUMENTS] Document deleted successfully');
+      await fetchData();
       setSuccess('Documento excluído com sucesso!');
     } catch (error) {
-      console.error('❌ [DOCUMENTS] Error deleting saved document:', error);
+      console.error('❌ [DOCUMENTS] Error deleting document:', error);
       setError(error instanceof Error ? error.message : 'Erro ao excluir documento');
     } finally {
       setDocumentToDelete(null);
@@ -2399,13 +2417,6 @@ const DocumentsPage: React.FC = () => {
                           >
                             <Download className="h-4 w-4" />
                           </button>
-                          <SimplePDFGenerator
-                            htmlContent={document.document_url}
-                            fileName={document.title}
-                            title={document.title}
-                            onSuccess={() => setSuccess('PDF gerado com sucesso!')}
-                            onError={(error) => setPdfError(error)}
-                          />
                           <SimplePDFGenerator
                             htmlContent={document.document_url}
                             fileName={document.title}
