@@ -854,6 +854,7 @@ ${data.content}
 
     <div class="signature">
         ${data.signatureUrl ? 
+}
 </body>
 </html>`
 };
