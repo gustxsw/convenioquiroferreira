@@ -154,10 +154,6 @@ const DocumentsPage: React.FC = () => {
       console.log('🔄 [DOCUMENTS] Fetching medical documents from:', `${apiUrl}/api/documents/medical`);
 
       // Fetch documents
-      const documentsResponse = await fetch(`${apiUrl}/api/documents/medical`, {
-      console.log('🔄 [DOCUMENTS] Fetching saved documents from:', `${apiUrl}/api/documents/saved`);
-      });
-      // Fetch saved documents (not medical records)
       const response = await fetch(`${apiUrl}/api/documents/saved`, {
       console.log('📡 [DOCUMENTS] Documents response status:', documentsResponse.status);
 
