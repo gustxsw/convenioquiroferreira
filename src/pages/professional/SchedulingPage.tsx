@@ -889,11 +889,6 @@ const SchedulingPage: React.FC = () => {
             <h1 className="text-2xl font-bold text-gray-900">Agenda</h1>
             <p className="text-gray-600">
               Visualize e gerencie suas consultas
-              {accessExpiresAt && (
-                <span className="ml-2 text-sm text-green-600">
-                  • Acesso ativo até {new Date(accessExpiresAt).toLocaleDateString('pt-BR')}
-                </span>
-              )}
             </p>
           </div>
 
@@ -931,47 +926,8 @@ const SchedulingPage: React.FC = () => {
           </div>
         )}
 
-        {/* Recurring Consultation Section */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center">
-              <Repeat className="h-6 w-6 text-purple-600 mr-2" />
-              <h2 className="text-xl font-semibold">Consultas Recorrentes</h2>
-            </div>
-            <button
-              onClick={() => setShowRecurringModal(true)}
-              className="btn btn-primary flex items-center"
-            >
-              <Plus className="h-5 w-5 mr-2" />
-              Criar Recorrência
-            </button>
-          </div>
-          
-          <p className="text-gray-600 text-sm">
-            Configure consultas que se repetem automaticamente em dias específicos da semana ou mensalmente.
-          </p>
-        </div>
 
         {/* Date Navigation */}
-        {hasSchedulingAccess && accessExpiresAt && (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
-            <div className="flex items-center">
-              <Gift className="h-5 w-5 text-green-600 mr-2" />
-              <div>
-                <p className="text-green-800 font-medium">
-                  Acesso à agenda ativo
-                </p>
-                <p className="text-green-700 text-sm">
-                  Válido até: {new Date(accessExpiresAt).toLocaleDateString('pt-BR', {
-                    day: '2-digit',
-                    month: 'long',
-                    year: 'numeric'
-                  })}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
           <div className="flex items-center justify-between">
@@ -1402,7 +1358,64 @@ const SchedulingPage: React.FC = () => {
                     </label>
                     
                     {formData.is_recurring && (
-                      <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="mt-4 space-y-4">
+                        {/* Weekday Selection for Daily Recurrence */}
+                        {formData.recurrence_type === 'daily' && (
+                          <div>
+                            <label className="block text-sm font-medium text-blue-700 mb-3">
+                              Selecione os dias da semana *
+                            </label>
+                            <div className="grid grid-cols-7 gap-2">
+                              {[
+                                { value: 1, label: 'Segunda', short: 'SEG', color: 'blue' },
+                                { value: 2, label: 'Terça', short: 'TER', color: 'green' },
+                                { value: 3, label: 'Quarta', short: 'QUA', color: 'yellow' },
+                                { value: 4, label: 'Quinta', short: 'QUI', color: 'purple' },
+                                { value: 5, label: 'Sexta', short: 'SEX', color: 'pink' },
+                                { value: 6, label: 'Sábado', short: 'SÁB', color: 'indigo' },
+                                { value: 0, label: 'Domingo', short: 'DOM', color: 'red' }
+                              ].map((day) => (
+                                <label
+                                  key={day.value}
+                                  className={`
+                                    flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all transform hover:scale-105
+                                    ${recurringFormData.selected_weekdays.includes(day.value)
+                                      ? `border-${day.color}-500 bg-${day.color}-50 text-${day.color}-700 shadow-md`
+                                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm'
+                                    }
+                                  `}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={recurringFormData.selected_weekdays.includes(day.value)}
+                                    onChange={(e) => {
+                                      const isChecked = e.target.checked;
+                                      setRecurringFormData(prev => ({
+                                        ...prev,
+                                        selected_weekdays: isChecked
+                                          ? [...prev.selected_weekdays, day.value]
+                                          : prev.selected_weekdays.filter(d => d !== day.value)
+                                      }));
+                                    }}
+                                    className="sr-only"
+                                  />
+                                  <div className="text-center">
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-2 ${
+                                      recurringFormData.selected_weekdays.includes(day.value)
+                                        ? `bg-${day.color}-500 text-white`
+                                        : 'bg-gray-100 text-gray-600'
+                                    }`}>
+                                      <span className="text-xs font-bold">{day.short.charAt(0)}</span>
+                                    </div>
+                                    <span className="text-xs font-medium">{day.short}</span>
+                                  </div>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-blue-700 mb-1">
                             Tipo de Recorrência
@@ -1464,6 +1477,7 @@ const SchedulingPage: React.FC = () => {
                           <p className="text-xs text-blue-600 mt-1">
                             Número de consultas
                           </p>
+                        </div>
                         </div>
                       </div>
                     )}
@@ -1759,17 +1773,6 @@ const SchedulingPage: React.FC = () => {
           onSlotDurationChange={handleSlotDurationChange}
         />
 
-        {/* Recurring Consultation Modal */}
-        {showRecurringModal && (
-          <RecurringConsultationModal
-            isOpen={showRecurringModal}
-            onClose={() => setShowRecurringModal(false)}
-            onSuccess={() => {
-              setShowRecurringModal(false);
-              fetchData();
-            }}
-          />
-        )}
 
         {/* Quick Schedule Modal */}
         {showQuickScheduleModal && (
@@ -1781,13 +1784,6 @@ const SchedulingPage: React.FC = () => {
           />
         )}
 
-        {/* Slot Customization Modal */}
-        <SlotCustomizationModal
-          isOpen={showSlotModal2}
-          currentSlotDuration={slotDuration2}
-          onClose={() => setShowSlotModal2(false)}
-          onSlotDurationChange={handleSlotDurationChange2}
-        />
       </div>
     );
   }
