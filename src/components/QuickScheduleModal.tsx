@@ -172,7 +172,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
 
       // First, try to find a dependent
       const dependentResponse = await fetch(
-        `${apiUrl}/api/dependents/lookup?cpf=${cleanCpf}`,
+        `${apiUrl}/api/dependents/search?cpf=${cleanCpf}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
