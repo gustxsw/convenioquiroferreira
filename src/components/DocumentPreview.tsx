@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
-import MedicalRecordPreviewModal from "../../components/MedicalRecordPreviewModal";
+import { useAuth } from '../contexts/AuthContext';
 import SimplePDFGenerator from './SimplePDFGenerator';
 import {
   Stethoscope,
