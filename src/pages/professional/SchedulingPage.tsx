@@ -1663,6 +1663,23 @@ const SchedulingPage: React.FC = () => {
         onSuccess={handleEditSuccess}
       />
 
+      {/* Cancel Consultation Modal */}
+      <CancelConsultationModal
+        isOpen={showCancelModal}
+        onClose={closeModals}
+        onConfirm={handleCancelConsultation}
+        consultationData={selectedConsultation ? {
+          id: selectedConsultation.id,
+          patient_name: selectedConsultation.client_name,
+          service_name: selectedConsultation.service_name,
+          date: selectedConsultation.date,
+          professional_name: user?.name || '',
+          location_name: selectedConsultation.location_name || '',
+          is_dependent: selectedConsultation.is_dependent,
+          patient_type: selectedConsultation.patient_type
+        } : null}
+      />
+
       {/* Slot Customization Modal */}
       <SlotCustomizationModal
         isOpen={showSlotModal}
