@@ -157,11 +157,14 @@ const DocumentsPage: React.FC = () => {
       let documentsResponse = await fetch(`${apiUrl}/api/documents/medical`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      
       console.log('🔄 [DOCUMENTS] Fetching saved documents from:', `${apiUrl}/api/documents/saved`);
+      
       // Fetch saved documents (not medical records)
       let response = await fetch(`${apiUrl}/api/documents/saved`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      
       console.log('📡 [DOCUMENTS] Documents response status:', documentsResponse.status);
 
       if (documentsResponse.ok) {
@@ -1576,43 +1579,6 @@ const DocumentsPage: React.FC = () => {
     setShowDeleteConfirm(false);
   };
 
-  const deleteDocument = async () => {
-    if (!documentToDelete) return;
-
-    try {
-      const token = localStorage.getItem('token');
-      const apiUrl = getApiUrl();
-      
-      console.log('🔄 [DOCUMENTS] Deleting saved document:', documentToDelete.id);
-      
-      const response = await fetch(`${apiUrl}/api/documents/saved/${documentToDelete.id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      console.log('📡 [DOCUMENTS] Delete saved document response status:', response.status);
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('❌ [DOCUMENTS] Delete saved document error:', errorData);
-        throw new Error(errorData.message || 'Erro ao excluir documento');
-      }
-
-      console.log('✅ [DOCUMENTS] Saved document deleted successfully');
-      
-      // Refresh documents list
-      await fetchData();
-      
-      setSuccess('Documento excluído com sucesso!');
-    } catch (error) {
-      console.error('❌ [DOCUMENTS] Error deleting saved document:', error);
-      setError(error instanceof Error ? error.message : 'Erro ao excluir documento');
-    } finally {
-      setDocumentToDelete(null);
-      setShowDeleteConfirm(false);
-    }
-  };
-
   const generatePDFFromDocument = async (document: MedicalDocument) => {
     try {
       setIsGeneratingPdf(document.id);
@@ -1746,6 +1712,43 @@ const DocumentsPage: React.FC = () => {
       };
       document.head.appendChild(script);
     });
+  };
+
+  const deleteDocument = async () => {
+    if (!documentToDelete) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const apiUrl = getApiUrl();
+      
+      console.log('🔄 [DOCUMENTS] Deleting saved document:', documentToDelete.id);
+      
+      const response = await fetch(`${apiUrl}/api/documents/saved/${documentToDelete.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      console.log('📡 [DOCUMENTS] Delete saved document response status:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('❌ [DOCUMENTS] Delete saved document error:', errorData);
+        throw new Error(errorData.message || 'Erro ao excluir documento');
+      }
+
+      console.log('✅ [DOCUMENTS] Saved document deleted successfully');
+      
+      // Refresh documents list
+      await fetchData();
+      
+      setSuccess('Documento excluído com sucesso!');
+    } catch (error) {
+      console.error('❌ [DOCUMENTS] Error deleting saved document:', error);
+      setError(error instanceof Error ? error.message : 'Erro ao excluir documento');
+    } finally {
+      setDocumentToDelete(null);
+      setShowDeleteConfirm(false);
+    }
   };
 
   const renderFormFields = () => {
