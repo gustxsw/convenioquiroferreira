@@ -315,6 +315,53 @@ const initializeDatabase = async () => {
       )
     `);
 
+    // Add columns for convenio patients to medical_documents table
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'medical_documents' AND column_name = 'patient_name'
+        ) THEN
+          ALTER TABLE medical_documents ADD COLUMN patient_name TEXT;
+        END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'medical_documents' AND column_name = 'patient_cpf'
+        ) THEN
+          ALTER TABLE medical_documents ADD COLUMN patient_cpf TEXT;
+        END IF;
+      END $$;
+    `);
+
+    // Add columns for convenio patients to medical_records table
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'medical_records' AND column_name = 'patient_name'
+        ) THEN
+          ALTER TABLE medical_records ADD COLUMN patient_name TEXT;
+        END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'medical_records' AND column_name = 'patient_cpf'
+        ) THEN
+          ALTER TABLE medical_records ADD COLUMN patient_cpf TEXT;
+        END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'medical_records' AND column_name = 'patient_type'
+        ) THEN
+          ALTER TABLE medical_records ADD COLUMN patient_type VARCHAR(20) DEFAULT 'private';
+        END IF;
+      END $$;
+    `);
+
     // Scheduling access table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS scheduling_access (
@@ -443,6 +490,10 @@ const initializeDatabase = async () => {
       CREATE INDEX IF NOT EXISTS idx_scheduling_access_professional_id ON scheduling_access(professional_id);
       CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
       CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
+      CREATE INDEX IF NOT EXISTS idx_medical_documents_patient_name ON medical_documents(patient_name);
+      CREATE INDEX IF NOT EXISTS idx_medical_documents_patient_cpf ON medical_documents(patient_cpf);
+      CREATE INDEX IF NOT EXISTS idx_medical_records_patient_name ON medical_records(patient_name);
+      CREATE INDEX IF NOT EXISTS idx_medical_records_patient_cpf ON medical_records(patient_cpf);
     `);
 
     // Insert default service categories if they don't exist
@@ -3157,9 +3208,11 @@ app.get("/api/medical-records", authenticate, authorize(["professional"]), async
     const recordsResult = await pool.query(
       `
       SELECT 
-        mr.*, pp.name as patient_name
+        mr.*,
+        COALESCE(pp.name, mr.patient_name) as patient_name,
+        COALESCE(pp.cpf, mr.patient_cpf) as patient_cpf
       FROM medical_records mr
-      JOIN private_patients pp ON mr.private_patient_id = pp.id
+      LEFT JOIN private_patients pp ON mr.private_patient_id = pp.id
       WHERE mr.professional_id = $1
       ORDER BY mr.created_at DESC
     `,
@@ -3176,6 +3229,9 @@ app.get("/api/medical-records", authenticate, authorize(["professional"]), async
 app.post("/api/medical-records", authenticate, authorize(["professional"]), async (req, res) => {
   try {
     const {
+      patient_type = 'private',
+      patient_name,
+      patient_cpf,
       private_patient_id,
       chief_complaint,
       history_present_illness,
@@ -3189,35 +3245,44 @@ app.post("/api/medical-records", authenticate, authorize(["professional"]), asyn
       vital_signs,
     } = req.body;
 
-    if (!private_patient_id) {
-      return res.status(400).json({ message: "Paciente é obrigatório" });
-    }
+    // Validate patient data based on type
+    if (patient_type === 'private') {
+      if (!private_patient_id) {
+        return res.status(400).json({ message: "Paciente particular é obrigatório" });
+      }
+      
+      // Validate patient belongs to professional
+      const patientResult = await pool.query(
+        `SELECT id FROM private_patients WHERE id = $1 AND professional_id = $2`,
+        [private_patient_id, req.user.id]
+      );
 
-    // Validate patient belongs to professional
-    const patientResult = await pool.query(
-      `
-      SELECT id FROM private_patients WHERE id = $1 AND professional_id = $2
-    `,
-      [private_patient_id, req.user.id]
-    );
-
-    if (patientResult.rows.length === 0) {
-      return res.status(404).json({ message: "Paciente não encontrado" });
+      if (patientResult.rows.length === 0) {
+        return res.status(404).json({ message: "Paciente não encontrado" });
+      }
+    } else {
+      // Convenio patient
+      if (!patient_name) {
+        return res.status(400).json({ message: "Nome do paciente é obrigatório" });
+      }
     }
 
     const recordResult = await pool.query(
       `
       INSERT INTO medical_records (
-        professional_id, private_patient_id, chief_complaint, history_present_illness,
-        past_medical_history, medications, allergies, physical_examination,
-        diagnosis, treatment_plan, notes, vital_signs
+        professional_id, private_patient_id, patient_name, patient_cpf, patient_type,
+        chief_complaint, history_present_illness, past_medical_history, medications, 
+        allergies, physical_examination, diagnosis, treatment_plan, notes, vital_signs
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *
     `,
       [
         req.user.id,
-        private_patient_id,
+        private_patient_id || null,
+        patient_name?.trim() || null,
+        patient_cpf?.replace(/\D/g, '') || null,
+        patient_type,
         chief_complaint?.trim() || null,
         history_present_illness?.trim() || null,
         past_medical_history?.trim() || null,
@@ -3427,8 +3492,8 @@ app.get("/api/documents/medical", authenticate, authorize(["professional"]), asy
         md.document_type,
         md.document_url,
         md.created_at,
-        pp.name as patient_name,
-        pp.cpf as patient_cpf
+        COALESCE(pp.name, md.patient_name) as patient_name,
+        COALESCE(pp.cpf, md.patient_cpf) as patient_cpf
       FROM medical_documents md
       LEFT JOIN private_patients pp ON md.private_patient_id = pp.id
       WHERE md.professional_id = $1
@@ -3449,37 +3514,57 @@ app.get("/api/documents/medical", authenticate, authorize(["professional"]), asy
 
 app.post("/api/documents/medical", authenticate, authorize(["professional"]), async (req, res) => {
   try {
-    const { title, document_type, private_patient_id, template_data } = req.body;
+    const { title, document_type, private_patient_id, patient_name, patient_cpf, template_data } = req.body;
     const professionalId = req.user.id;
 
     console.log("🔄 Creating medical document:", {
       title,
       document_type,
       private_patient_id,
+      patient_name,
+      patient_cpf,
       professional_id: professionalId,
     });
 
     // Validate required fields
-    if (!title || !document_type || !private_patient_id) {
+    if (!title || !document_type || !template_data) {
       console.log("❌ Missing required fields");
       return res
         .status(400)
-        .json({ message: "Título, tipo e paciente são obrigatórios" });
+        .json({ message: "Título, tipo de documento e dados do template são obrigatórios" });
     }
 
-    // Verify patient belongs to professional
-    const patientCheck = await pool.query(
-      "SELECT id, name, cpf FROM private_patients WHERE id = $1 AND professional_id = $2",
-      [private_patient_id, professionalId]
-    );
-
-    if (patientCheck.rows.length === 0) {
-      console.log("❌ Patient not found or not owned by professional");
-      return res.status(404).json({ message: "Paciente não encontrado" });
+    // Validate patient data - either private_patient_id OR patient_name is required
+    if (!private_patient_id && !patient_name) {
+      return res.status(400).json({ 
+        message: "É necessário informar um paciente particular ou dados do paciente do convênio" 
+      });
     }
 
-    const patient = patientCheck.rows[0];
-    console.log("✅ Patient verified:", patient.name);
+    let patientData = { name: '', cpf: '' };
+    
+    if (private_patient_id) {
+      // Verify patient belongs to professional
+      const patientCheck = await pool.query(
+        "SELECT id, name, cpf FROM private_patients WHERE id = $1 AND professional_id = $2",
+        [private_patient_id, professionalId]
+      );
+
+      if (patientCheck.rows.length === 0) {
+        console.log("❌ Patient not found or not owned by professional");
+        return res.status(404).json({ message: "Paciente não encontrado" });
+      }
+      
+      patientData = patientCheck.rows[0];
+    } else {
+      // Convenio patient data
+      patientData = {
+        name: patient_name,
+        cpf: patient_cpf || ''
+      };
+    }
+
+    console.log("✅ Patient data:", patientData.name);
 
     // Generate document using the document generator
     try {
@@ -3488,8 +3573,8 @@ app.post("/api/documents/medical", authenticate, authorize(["professional"]), as
       // Prepare complete template data
       const completeTemplateData = {
         ...template_data,
-        patientName: patient.name,
-        patientCpf: patient.cpf || "",
+        patientName: patientData.name,
+        patientCpf: patientData.cpf || "",
         professionalName: template_data.professionalName || req.user.name,
         professionalSpecialty: template_data.professionalSpecialty || "",
         crm: template_data.crm || "",
@@ -3502,13 +3587,15 @@ app.post("/api/documents/medical", authenticate, authorize(["professional"]), as
       // Save document record to database
       const result = await pool.query(
         `INSERT INTO medical_documents (
-          professional_id, private_patient_id, title, document_type, 
+          professional_id, private_patient_id, patient_name, patient_cpf, title, document_type, 
           document_url, created_at
-        ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP) 
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP) 
         RETURNING *`,
         [
           professionalId,
-          private_patient_id,
+          private_patient_id || null,
+          patientData.name,
+          patientData.cpf || null,
           title,
           document_type,
           documentResult.url,

@@ -787,12 +787,14 @@ const PrivatePatientsPage: React.FC = () => {
                         <button
                           onClick={() => openEditModal(patient)}
                           className="text-blue-600 hover:text-blue-900"
+                          title="Editar"
                         >
                           <Edit className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => confirmDelete(patient)}
                           className="text-red-600 hover:text-red-900"
+                          title="Excluir"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
