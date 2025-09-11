@@ -2499,6 +2499,10 @@ app.get("/api/services", authenticate, async (req, res) => {
     const servicesResult = await pool.query(`
       SELECT 
         s.*, sc.name as category_name
+    )
+  }
+}
+)
       FROM services s
       LEFT JOIN service_categories sc ON s.category_id = sc.id
       ORDER BY sc.name, s.name
