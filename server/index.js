@@ -2503,9 +2503,11 @@ app.get("/api/services", authenticate, async (req, res) => {
       SELECT 
         s.*, sc.name as category_name
     )
+  } catch (error) {
+    console.error("❌ Error looking up client:", error);
+    res.status(500).json({ message: "Erro ao buscar cliente" });
   }
-}
-)
+});
       FROM services s
       LEFT JOIN service_categories sc ON s.category_id = sc.id
       ORDER BY sc.name, s.name
