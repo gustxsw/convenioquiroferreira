@@ -155,10 +155,10 @@ const DocumentsPage: React.FC = () => {
 
       // Fetch documents
       const documentsResponse = await fetch(`${apiUrl}/api/documents/medical`, {
-        headers: { Authorization: `Bearer ${token}` },
+      console.log('🔄 [DOCUMENTS] Fetching saved documents from:', `${apiUrl}/api/documents/saved`);
       });
-      // Try both routes to ensure compatibility
-      let response = await fetch(`${apiUrl}/api/documents/medical`, {
+      // Fetch saved documents (not medical records)
+      const response = await fetch(`${apiUrl}/api/documents/saved`, {
       console.log('📡 [DOCUMENTS] Documents response status:', documentsResponse.status);
 
       if (documentsResponse.ok) {
@@ -321,7 +321,7 @@ const DocumentsPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
       
-      // Get selected patient
+      console.log('🔄 [DOCUMENTS] Deleting saved document:', documentToDelete.id);
       const selectedPatient = patients.find(p => p.id.toString() === formData.patient_id);
       if (!selectedPatient) {
         setError('Paciente selecionado não encontrado');
@@ -1698,38 +1698,23 @@ const DocumentsPage: React.FC = () => {
       };
       script.onerror = () => {
         console.error('❌ Failed to load html2pdf.js');
-        reject(new Error('Falha ao carregar biblioteca de PDF'));
+      const response = await fetch(`${apiUrl}/api/documents/saved/${documentToDelete.id}`, {
       };
       document.head.appendChild(script);
     });
   };
-
-  const deleteDocument = async () => {
-    if (!documentToDelete) return;
-
-    try {
-      const token = localStorage.getItem('token');
-      const apiUrl = getApiUrl();
-
-      console.log('🔄 [DOCUMENTS] Deleting document:', documentToDelete.id);
-
-      const response = await fetch(`${apiUrl}/api/documents/medical/${documentToDelete.id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      console.log('📡 [DOCUMENTS] Delete response:', response.status);
+      console.log('📡 [DOCUMENTS] Delete saved document response status:', response.status);
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Erro ao excluir documento');
+        console.error('❌ [DOCUMENTS] Delete saved document error:', errorData);
+        throw new Error(`Falha ao carregar documentos salvos: ${response.status}`);
       }
 
-      console.log('✅ [DOCUMENTS] Document deleted successfully');
-      await fetchData();
+      console.log('✅ [DOCUMENTS] Saved document deleted successfully');
+      console.log('✅ [DOCUMENTS] Saved documents loaded:', data.length);
       setSuccess('Documento excluído com sucesso!');
     } catch (error) {
-      console.error('❌ [DOCUMENTS] Error deleting document:', error);
+      console.error('❌ [DOCUMENTS] Error deleting saved document:', error);
       setError(error instanceof Error ? error.message : 'Erro ao excluir documento');
     } finally {
       setDocumentToDelete(null);
