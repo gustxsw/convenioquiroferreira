@@ -77,6 +77,7 @@ const DocumentsPage: React.FC = () => {
   // PDF generation state
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<number | null>(null);
   const [pdfError, setPdfError] = useState("");
+  
   // Form state
   const [formData, setFormData] = useState({
     document_type: "certificate" as DocumentType,
@@ -89,6 +90,9 @@ const DocumentsPage: React.FC = () => {
     risks: "",
     prescription: "",
     content: "",
+    professionalName: "",
+    professionalSpecialty: "",
+    crm: "",
   });
 
   // Get API URL
@@ -114,7 +118,31 @@ const DocumentsPage: React.FC = () => {
 
   useEffect(() => {
     fetchData();
+    loadProfessionalData();
   }, []);
+
+  const loadProfessionalData = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const apiUrl = getApiUrl();
+
+      const userResponse = await fetch(`${apiUrl}/api/users/${user?.id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (userResponse.ok) {
+        const userData = await userResponse.json();
+        setFormData(prev => ({
+          ...prev,
+          professionalName: userData.name || user?.name || 'Profissional',
+          professionalSpecialty: userData.category_name || '',
+          crm: userData.crm || ''
+        }));
+      }
+    } catch (error) {
+      console.warn('Could not load professional data:', error);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -214,8 +242,6 @@ const DocumentsPage: React.FC = () => {
     setFormData((prev) => ({
       ...prev,
       patient_id: patientId,
-      patientName: patient?.name || "",
-      patientCpf: patient?.cpf || "",
     }));
   };
 
@@ -231,6 +257,9 @@ const DocumentsPage: React.FC = () => {
       risks: "",
       prescription: "",
       content: "",
+      professionalName: formData.professionalName,
+      professionalSpecialty: formData.professionalSpecialty,
+      crm: formData.crm,
     });
     setError('');
     setSuccess('');
@@ -295,64 +324,34 @@ const DocumentsPage: React.FC = () => {
     }
 
     try {
-      console.log('🔄 [DOCUMENTS] Fetching professional signature...');
-      
-      // Fetch professional signature
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
       
-      // Get professional data
-      let professionalData = {
-        name: user?.name || 'Profissional de Saúde',
-        specialty: '',
-        crm: '',
-        signatureUrl: null
-      };
+      // Get selected patient
+      const selectedPatient = patients.find(p => p.id.toString() === formData.patient_id);
+      if (!selectedPatient) {
+        setError('Paciente selecionado não encontrado');
+        setIsCreating(false);
+        return;
+      }
       
+      // Fetch signature
+      let signatureUrl = null;
       try {
-        // Fetch professional details
-        const userResponse = await fetch(`${apiUrl}/api/users/${user?.id}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        
-        if (userResponse.ok) {
-          const userData = await userResponse.json();
-          professionalData.name = userData.name || professionalData.name;
-          professionalData.specialty = userData.category_name || '';
-          professionalData.crm = userData.crm || '';
-        }
-        
-        // Fetch signature
         const signatureResponse = await fetch(`${apiUrl}/api/professionals/${user?.id}/signature`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
         if (signatureResponse.ok) {
           const signatureData = await signatureResponse.json();
-          professionalData.signatureUrl = signatureData.signature_url;
-          console.log('✅ [DOCUMENTS] Professional signature loaded:', professionalData.signatureUrl ? 'Found' : 'Not found');
+          signatureUrl = signatureData.signature_url;
         }
       } catch (signatureError) {
-        console.warn('⚠️ [DOCUMENTS] Could not load signature:', signatureError);
+        console.warn('Could not load signature:', signatureError);
       }
 
-      console.log('🔄 [DOCUMENTS] Generating document preview...');
-
-      // Generate HTML content using existing templates
-      const { generateDocumentHTML } = await import('../../utils/documentTemplates');
-      
-      // Prepare enhanced form data with professional info and signature
-      const enhancedFormData = {
-        ...formData,
-        patientName: patients.find(p => p.id.toString() === formData.patient_id)?.name || 'Paciente',
-        patientCpf: patients.find(p => p.id.toString() === formData.patient_id)?.cpf || '',
-        professionalName: professionalData.name,
-        professionalSpecialty: professionalData.specialty,
-        crm: professionalData.crm,
-        signatureUrl: professionalData.signatureUrl
-      };
-      
-      const htmlContent = generateDocumentHTML(formData.document_type, enhancedFormData);
+      // Generate HTML content directly
+      const htmlContent = generateDocumentHTML(formData, selectedPatient, signatureUrl);
 
       console.log('✅ [DOCUMENTS] HTML content generated');
 
@@ -362,11 +361,11 @@ const DocumentsPage: React.FC = () => {
         htmlContent: htmlContent,
         documentData: {
           document_type: formData.document_type,
-          patient_name: enhancedFormData.patientName,
-          patient_cpf: enhancedFormData.patientCpf,
-          professional_name: enhancedFormData.professionalName,
+          patient_name: selectedPatient.name,
+          patient_cpf: selectedPatient.cpf,
+          professional_name: formData.professionalName,
           private_patient_id: parseInt(formData.patient_id),
-          signatureUrl: enhancedFormData.signatureUrl,
+          signatureUrl: signatureUrl,
           ...formData
         }
       });
@@ -374,7 +373,7 @@ const DocumentsPage: React.FC = () => {
       setShowPreview(true);
       closeModal();
 
-      setSuccess("Documento gerado! Visualize e salve em PDF.");
+      setSuccess("Documento gerado! Visualize e imprima em PDF.");
     } catch (error) {
       console.error('❌ [DOCUMENTS] Error in handleSubmit:', error);
       setError(
@@ -382,6 +381,1160 @@ const DocumentsPage: React.FC = () => {
       );
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  // Função para gerar HTML do documento (igual aos prontuários)
+  const generateDocumentHTML = (formData: any, patient: PrivatePatient, signatureUrl: string | null) => {
+    const documentData = {
+      patientName: patient.name,
+      patientCpf: patient.cpf || '',
+      professionalName: formData.professionalName,
+      professionalSpecialty: formData.professionalSpecialty,
+      crm: formData.crm,
+      signatureUrl: signatureUrl,
+        ...formData,
+    };
+
+    // Generate HTML based on document type
+    switch (formData.document_type) {
+      case 'certificate':
+        return generateCertificateHTML(documentData);
+      case 'prescription':
+        return generatePrescriptionHTML(documentData);
+      case 'consent_form':
+        return generateConsentFormHTML(documentData);
+      case 'exam_request':
+        return generateExamRequestHTML(documentData);
+      case 'declaration':
+        return generateDeclarationHTML(documentData);
+      case 'lgpd':
+        return generateLGPDHTML(documentData);
+      default:
+        return generateGenericHTML(documentData);
+    }
+  };
+
+  // Templates de documentos (igual aos prontuários)
+  const generateCertificateHTML = (data: any) => {
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atestado Médico - ${data.patientName}</title>
+    <style>
+        @page { size: A4; margin: 15mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Times New Roman', serif !important;
+            font-size: 14px !important;
+            line-height: 1.6 !important;
+            color: #000000 !important;
+            background: #ffffff !important;
+            padding: 20px !important;
+            margin: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 2px solid #c11c22;
+            padding-bottom: 20px;
+        }
+        .logo {
+            font-size: 24px !important;
+            font-weight: bold !important;
+            color: #c11c22 !important;
+            margin-bottom: 10px;
+        }
+        .title {
+            font-size: 20px !important;
+            font-weight: bold !important;
+            text-transform: uppercase;
+            margin: 30px 0 !important;
+            text-align: center;
+            color: #000000 !important;
+        }
+        .patient-info {
+            background: #f9f9f9 !important;
+            padding: 15px !important;
+            border-left: 4px solid #c11c22 !important;
+            margin: 20px 0 !important;
+            border-radius: 4px;
+        }
+        .content {
+            margin: 20px 0 !important;
+            padding: 15px !important;
+            border: 1px solid #ddd !important;
+            border-radius: 5px;
+            background: #ffffff !important;
+        }
+        .signature {
+            margin-top: 60px !important;
+            text-align: center;
+        }
+        .signature-line {
+            border-top: 1px solid #000000 !important;
+            width: 300px;
+            margin: 40px auto 10px !important;
+        }
+        .signature-image {
+            max-width: 200px !important;
+            max-height: 60px !important;
+            margin: 20px auto 10px !important;
+            display: block !important;
+        }
+        .footer {
+            margin-top: 40px !important;
+            text-align: center;
+            font-size: 12px !important;
+            color: #666666 !important;
+            border-top: 1px solid #dddddd !important;
+            padding-top: 20px !important;
+        }
+        * { color: #000000 !important; }
+        h1, h2, h3, h4, h5, h6 { color: #c11c22 !important; }
+        strong { font-weight: bold !important; color: #000000 !important; }
+        @media print {
+            body { margin: 0 !important; padding: 20px !important; background: #ffffff !important; }
+            * { color: #000000 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
+        <div>Sistema de Saúde e Bem-Estar</div>
+    </div>
+
+    <div class="title">Atestado Médico</div>
+
+    <div class="patient-info">
+        <strong>Paciente:</strong> ${data.patientName}<br>
+        ${data.patientCpf ? `<strong>CPF:</strong> ${data.patientCpf}<br>` : ''}
+        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+    </div>
+
+    <div class="content">
+        <p>Atesto para os devidos fins que o(a) paciente acima identificado(a) esteve sob meus cuidados médicos e apresenta quadro clínico que o(a) impossibilita de exercer suas atividades habituais.</p>
+        
+        <p><strong>Descrição:</strong> ${data.description}</p>
+        
+        ${data.cid ? `<p><strong>CID:</strong> ${data.cid}</p>` : ''}
+        
+        <p><strong>Período de afastamento:</strong> ${data.days} dia(s) a partir de ${new Date().toLocaleDateString('pt-BR')}.</p>
+        
+        <p>Este atestado é válido para todos os fins legais e administrativos.</p>
+    </div>
+
+    <div class="signature">
+        ${data.signatureUrl ? 
+          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
+        <div>
+            <strong>${data.professionalName}</strong><br>
+            ${data.professionalSpecialty}<br>
+            ${data.crm ? `Registro: ${data.crm}` : ''}
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
+        <p>Telefone: (64) 98124-9199</p>
+        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
+    </div>
+
+    <script>
+        window.onload = function() {
+            setTimeout(function() {
+                window.print();
+                setTimeout(function() {
+                    window.close();
+                }, 1000);
+            }, 500);
+        };
+    </script>
+</body>
+</html>`;
+  };
+
+  const generatePrescriptionHTML = (data: any) => {
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Receituário Médico - ${data.patientName}</title>
+    <style>
+        @page { size: A4; margin: 15mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Times New Roman', serif !important;
+            font-size: 14px !important;
+            line-height: 1.6 !important;
+            color: #000000 !important;
+            background: #ffffff !important;
+            padding: 20px !important;
+            margin: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 2px solid #c11c22;
+            padding-bottom: 20px;
+        }
+        .logo {
+            font-size: 24px !important;
+            font-weight: bold !important;
+            color: #c11c22 !important;
+            margin-bottom: 10px;
+        }
+        .title {
+            font-size: 20px !important;
+            font-weight: bold !important;
+            text-transform: uppercase;
+            margin: 30px 0 !important;
+            text-align: center;
+            color: #000000 !important;
+        }
+        .patient-info {
+            background: #f9f9f9 !important;
+            padding: 15px !important;
+            border-left: 4px solid #c11c22 !important;
+            margin: 20px 0 !important;
+            border-radius: 4px;
+        }
+        .prescription-box {
+            border: 2px solid #c11c22 !important;
+            padding: 20px !important;
+            margin: 20px 0 !important;
+            background: #ffffff !important;
+            min-height: 150px;
+        }
+        .prescription-content {
+            font-size: 16px !important;
+            line-height: 2 !important;
+            white-space: pre-line;
+            color: #000000 !important;
+        }
+        .signature {
+            margin-top: 60px !important;
+            text-align: center;
+        }
+        .signature-line {
+            border-top: 1px solid #000000 !important;
+            width: 300px;
+            margin: 40px auto 10px !important;
+        }
+        .signature-image {
+            max-width: 200px !important;
+            max-height: 60px !important;
+            margin: 20px auto 10px !important;
+            display: block !important;
+        }
+        .footer {
+            margin-top: 40px !important;
+            text-align: center;
+            font-size: 12px !important;
+            color: #666666 !important;
+            border-top: 1px solid #dddddd !important;
+            padding-top: 20px !important;
+        }
+        * { color: #000000 !important; }
+        h1, h2, h3, h4, h5, h6 { color: #c11c22 !important; }
+        strong { font-weight: bold !important; color: #000000 !important; }
+        @media print {
+            body { margin: 0 !important; padding: 20px !important; background: #ffffff !important; }
+            * { color: #000000 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
+        <div>Sistema de Saúde e Bem-Estar</div>
+    </div>
+
+    <div class="title">Receituário Médico</div>
+
+    <div class="patient-info">
+        <strong>Paciente:</strong> ${data.patientName}<br>
+        ${data.patientCpf ? `<strong>CPF:</strong> ${data.patientCpf}<br>` : ''}
+        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+    </div>
+
+    <div class="prescription-box">
+        <div class="prescription-content">${data.prescription}</div>
+    </div>
+
+    <div class="signature">
+        ${data.signatureUrl ? 
+          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
+        <div>
+            <strong>${data.professionalName}</strong><br>
+            ${data.professionalSpecialty}<br>
+            ${data.crm ? `Registro: ${data.crm}` : ''}
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
+        <p>Telefone: (64) 98124-9199</p>
+        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
+    </div>
+
+    <script>
+        window.onload = function() {
+            setTimeout(function() {
+                window.print();
+                setTimeout(function() {
+                    window.close();
+                }, 1000);
+            }, 500);
+        };
+    </script>
+</body>
+</html>`;
+  };
+
+  const generateConsentFormHTML = (data: any) => {
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Termo de Consentimento - ${data.patientName}</title>
+    <style>
+        @page { size: A4; margin: 15mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Times New Roman', serif !important;
+            font-size: 14px !important;
+            line-height: 1.6 !important;
+            color: #000000 !important;
+            background: #ffffff !important;
+            padding: 20px !important;
+            margin: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 2px solid #c11c22;
+            padding-bottom: 20px;
+        }
+        .logo {
+            font-size: 24px !important;
+            font-weight: bold !important;
+            color: #c11c22 !important;
+            margin-bottom: 10px;
+        }
+        .title {
+            font-size: 18px !important;
+            font-weight: bold !important;
+            margin: 30px 0 !important;
+            text-align: center;
+            color: #000000 !important;
+        }
+        .patient-info {
+            background: #f9f9f9 !important;
+            padding: 15px !important;
+            border-left: 4px solid #c11c22 !important;
+            margin: 20px 0 !important;
+            border-radius: 4px;
+        }
+        .section {
+            margin: 20px 0 !important;
+            padding: 15px !important;
+            border: 1px solid #ddd !important;
+            border-radius: 5px;
+            background: #ffffff !important;
+        }
+        .section h3 {
+            margin: 0 0 10px 0 !important;
+            color: #c11c22 !important;
+            font-size: 16px !important;
+            font-weight: bold !important;
+        }
+        .dual-signature {
+            margin-top: 60px !important;
+            display: flex !important;
+            justify-content: space-between !important;
+        }
+        .signature-box {
+            text-align: center;
+            width: 45% !important;
+        }
+        .footer {
+            margin-top: 40px !important;
+            text-align: center;
+            font-size: 12px !important;
+            color: #666666 !important;
+            border-top: 1px solid #dddddd !important;
+            padding-top: 20px !important;
+        }
+        * { color: #000000 !important; }
+        h1, h2, h3, h4, h5, h6 { color: #c11c22 !important; }
+        strong { font-weight: bold !important; color: #000000 !important; }
+        p { margin: 10px 0 !important; text-align: justify; color: #000000 !important; }
+        @media print {
+            body { margin: 0 !important; padding: 20px !important; background: #ffffff !important; }
+            * { color: #000000 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
+        <div>Sistema de Saúde e Bem-Estar</div>
+    </div>
+
+    <div class="title">Termo de Consentimento Livre e Esclarecido</div>
+
+    <div class="patient-info">
+        <strong>Paciente:</strong> ${data.patientName}<br>
+        ${data.patientCpf ? `<strong>CPF:</strong> ${data.patientCpf}<br>` : ''}
+        <strong>Data:</strong> ${new Date().toLocaleDateString('pt-BR')}
+    </div>
+
+    <div class="section">
+        <h3>Procedimento a ser realizado:</h3>
+        <p><strong>${data.procedure}</strong></p>
+        <p>${data.description}</p>
+    </div>
+
+    <div class="section">
+        <h3>Riscos e Benefícios:</h3>
+        <p>${data.risks}</p>
+    </div>
+
+    <div class="section">
+        <h3>Declaração de Consentimento:</h3>
+        <p>Declaro que fui devidamente informado(a) sobre o procedimento acima descrito, seus riscos, benefícios e alternativas. Todas as minhas dúvidas foram esclarecidas e consinto com a realização do procedimento.</p>
+        <p>Estou ciente de que nenhum procedimento médico é 100% isento de riscos e que complicações podem ocorrer, mesmo com todos os cuidados técnicos adequados.</p>
+        <p>Autorizo o profissional de saúde a realizar o procedimento proposto e declaro que este consentimento é dado de forma livre e esclarecida.</p>
+    </div>
+
+    <div class="dual-signature">
+        <div class="signature-box">
+            <div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>
+            <div>
+                <strong>Paciente ou Responsável</strong><br>
+                ${data.patientName}
+            </div>
+        </div>
+        
+        <div class="signature-box">
+            ${data.signatureUrl ? 
+              `<img src="${data.signatureUrl}" alt="Assinatura" style="max-width: 150px; max-height: 50px; margin: 20px auto 10px; display: block;" />` : 
+              '<div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>'
+            }
+            <div>
+                <strong>Profissional Responsável</strong><br>
+                ${data.professionalName}<br>
+                ${data.crm ? `Registro: ${data.crm}` : ''}
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
+        <p>Telefone: (64) 98124-9199</p>
+        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
+    </div>
+
+    <script>
+        window.onload = function() {
+            setTimeout(function() {
+                window.print();
+                setTimeout(function() {
+                    window.close();
+                }, 1000);
+            }, 500);
+        };
+    </script>
+</body>
+</html>`;
+  };
+
+  const generateExamRequestHTML = (data: any) => {
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solicitação de Exames - ${data.patientName}</title>
+    <style>
+        @page { size: A4; margin: 15mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Times New Roman', serif !important;
+            font-size: 14px !important;
+            line-height: 1.6 !important;
+            color: #000000 !important;
+            background: #ffffff !important;
+            padding: 20px !important;
+            margin: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 2px solid #c11c22;
+            padding-bottom: 20px;
+        }
+        .logo {
+            font-size: 24px !important;
+            font-weight: bold !important;
+            color: #c11c22 !important;
+            margin-bottom: 10px;
+        }
+        .title {
+            font-size: 20px !important;
+            font-weight: bold !important;
+            text-transform: uppercase;
+            margin: 30px 0 !important;
+            text-align: center;
+            color: #000000 !important;
+        }
+        .patient-info {
+            background: #f9f9f9 !important;
+            padding: 15px !important;
+            border-left: 4px solid #c11c22 !important;
+            margin: 20px 0 !important;
+            border-radius: 4px;
+        }
+        .exam-box {
+            border: 2px solid #c11c22 !important;
+            padding: 20px !important;
+            margin: 20px 0 !important;
+            background: #ffffff !important;
+            min-height: 150px;
+        }
+        .exam-content {
+            font-size: 16px !important;
+            line-height: 2 !important;
+            white-space: pre-line;
+            color: #000000 !important;
+        }
+        .signature {
+            margin-top: 60px !important;
+            text-align: center;
+        }
+        .signature-line {
+            border-top: 1px solid #000000 !important;
+            width: 300px;
+            margin: 40px auto 10px !important;
+        }
+        .signature-image {
+            max-width: 200px !important;
+            max-height: 60px !important;
+            margin: 20px auto 10px !important;
+            display: block !important;
+        }
+        .footer {
+            margin-top: 40px !important;
+            text-align: center;
+            font-size: 12px !important;
+            color: #666666 !important;
+            border-top: 1px solid #dddddd !important;
+            padding-top: 20px !important;
+        }
+        * { color: #000000 !important; }
+        h1, h2, h3, h4, h5, h6 { color: #c11c22 !important; }
+        strong { font-weight: bold !important; color: #000000 !important; }
+        @media print {
+            body { margin: 0 !important; padding: 20px !important; background: #ffffff !important; }
+            * { color: #000000 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
+        <div>Sistema de Saúde e Bem-Estar</div>
+    </div>
+
+    <div class="title">Solicitação de Exames</div>
+
+    <div class="patient-info">
+        <strong>Paciente:</strong> ${data.patientName}<br>
+        ${data.patientCpf ? `<strong>CPF:</strong> ${data.patientCpf}<br>` : ''}
+        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+    </div>
+
+    <div class="exam-box">
+        <h3 style="margin: 0 0 15px 0; color: #c11c22; font-weight: bold;">Exames Solicitados:</h3>
+        <div class="exam-content">${data.content}</div>
+    </div>
+
+    <div class="signature">
+        ${data.signatureUrl ? 
+          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
+        <div>
+            <strong>${data.professionalName}</strong><br>
+            ${data.professionalSpecialty}<br>
+            ${data.crm ? `Registro: ${data.crm}` : ''}
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
+        <p>Telefone: (64) 98124-9199</p>
+        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
+    </div>
+
+    <script>
+        window.onload = function() {
+            setTimeout(function() {
+                window.print();
+                setTimeout(function() {
+                    window.close();
+                }, 1000);
+            }, 500);
+        };
+    </script>
+</body>
+</html>`;
+  };
+
+  const generateDeclarationHTML = (data: any) => {
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${data.title} - ${data.patientName}</title>
+    <style>
+        @page { size: A4; margin: 15mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Times New Roman', serif !important;
+            font-size: 14px !important;
+            line-height: 1.6 !important;
+            color: #000000 !important;
+            background: #ffffff !important;
+            padding: 20px !important;
+            margin: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 2px solid #c11c22;
+            padding-bottom: 20px;
+        }
+        .logo {
+            font-size: 24px !important;
+            font-weight: bold !important;
+            color: #c11c22 !important;
+            margin-bottom: 10px;
+        }
+        .title {
+            font-size: 20px !important;
+            font-weight: bold !important;
+            margin: 30px 0 !important;
+            text-align: center;
+            color: #000000 !important;
+        }
+        .patient-info {
+            background: #f9f9f9 !important;
+            padding: 15px !important;
+            border-left: 4px solid #c11c22 !important;
+            margin: 20px 0 !important;
+            border-radius: 4px;
+        }
+        .content {
+            margin: 30px 0 !important;
+            padding: 15px !important;
+            border: 1px solid #ddd !important;
+            border-radius: 5px;
+            background: #ffffff !important;
+            min-height: 200px;
+            white-space: pre-line;
+        }
+        .signature {
+            margin-top: 60px !important;
+            text-align: center;
+        }
+        .signature-line {
+            border-top: 1px solid #000000 !important;
+            width: 300px;
+            margin: 40px auto 10px !important;
+        }
+        .signature-image {
+            max-width: 200px !important;
+            max-height: 60px !important;
+            margin: 20px auto 10px !important;
+            display: block !important;
+        }
+        .footer {
+            margin-top: 40px !important;
+            text-align: center;
+            font-size: 12px !important;
+            color: #666666 !important;
+            border-top: 1px solid #dddddd !important;
+            padding-top: 20px !important;
+        }
+        * { color: #000000 !important; }
+        h1, h2, h3, h4, h5, h6 { color: #c11c22 !important; }
+        strong { font-weight: bold !important; color: #000000 !important; }
+        p { margin: 10px 0 !important; text-align: justify; color: #000000 !important; }
+        @media print {
+            body { margin: 0 !important; padding: 20px !important; background: #ffffff !important; }
+            * { color: #000000 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
+        <div>Sistema de Saúde e Bem-Estar</div>
+    </div>
+
+    <div class="title">${data.title}</div>
+
+    <div class="patient-info">
+        <strong>Paciente:</strong> ${data.patientName}<br>
+        ${data.patientCpf ? `<strong>CPF:</strong> ${data.patientCpf}<br>` : ''}
+        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+    </div>
+
+    <div class="content">
+        ${data.content}
+    </div>
+
+    <div class="signature">
+        ${data.signatureUrl ? 
+          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
+        <div>
+            <strong>${data.professionalName}</strong><br>
+            ${data.professionalSpecialty}<br>
+            ${data.crm ? `Registro: ${data.crm}` : ''}
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
+        <p>Telefone: (64) 98124-9199</p>
+        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
+    </div>
+
+    <script>
+        window.onload = function() {
+            setTimeout(function() {
+                window.print();
+                setTimeout(function() {
+                    window.close();
+                }, 1000);
+            }, 500);
+        };
+    </script>
+</body>
+</html>`;
+  };
+
+  const generateLGPDHTML = (data: any) => {
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Termo LGPD - ${data.patientName}</title>
+    <style>
+        @page { size: A4; margin: 15mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Times New Roman', serif !important;
+            font-size: 12px !important;
+            line-height: 1.6 !important;
+            color: #000000 !important;
+            background: #ffffff !important;
+            padding: 20px !important;
+            margin: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 2px solid #c11c22;
+            padding-bottom: 20px;
+        }
+        .logo {
+            font-size: 24px !important;
+            font-weight: bold !important;
+            color: #c11c22 !important;
+            margin-bottom: 10px;
+        }
+        .title {
+            font-size: 18px !important;
+            font-weight: bold !important;
+            margin: 30px 0 !important;
+            text-align: center;
+            color: #000000 !important;
+        }
+        .patient-info {
+            background: #f9f9f9 !important;
+            padding: 15px !important;
+            border-left: 4px solid #c11c22 !important;
+            margin: 20px 0 !important;
+            border-radius: 4px;
+        }
+        .section {
+            margin: 15px 0 !important;
+            padding: 10px !important;
+            border: 1px solid #ddd !important;
+            border-radius: 5px;
+            background: #ffffff !important;
+        }
+        .section h4 {
+            margin: 0 0 10px 0 !important;
+            color: #c11c22 !important;
+            font-size: 14px !important;
+            font-weight: bold !important;
+        }
+        .dual-signature {
+            margin-top: 60px !important;
+            display: flex !important;
+            justify-content: space-between !important;
+        }
+        .signature-box {
+            text-align: center;
+            width: 45% !important;
+        }
+        .footer {
+            margin-top: 40px !important;
+            text-align: center;
+            font-size: 12px !important;
+            color: #666666 !important;
+            border-top: 1px solid #dddddd !important;
+            padding-top: 20px !important;
+        }
+        * { color: #000000 !important; }
+        h1, h2, h3, h4, h5, h6 { color: #c11c22 !important; }
+        strong { font-weight: bold !important; color: #000000 !important; }
+        p { margin: 10px 0 !important; text-align: justify; color: #000000 !important; }
+        ul { margin: 10px 0 !important; padding-left: 20px !important; }
+        li { margin: 5px 0 !important; color: #000000 !important; }
+        @media print {
+            body { margin: 0 !important; padding: 20px !important; background: #ffffff !important; }
+            * { color: #000000 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
+        <div>Sistema de Saúde e Bem-Estar</div>
+    </div>
+
+    <div class="title">Termo de Consentimento para Tratamento de Dados Pessoais (LGPD)</div>
+
+    <div class="patient-info">
+        <strong>Paciente:</strong> ${data.patientName}<br>
+        ${data.patientCpf ? `<strong>CPF:</strong> ${data.patientCpf}<br>` : ''}
+        <strong>Data:</strong> ${new Date().toLocaleDateString('pt-BR')}
+    </div>
+
+    <div class="section">
+        <h4>1. FINALIDADE DO TRATAMENTO DE DADOS</h4>
+        <p>Os dados pessoais coletados serão utilizados exclusivamente para:</p>
+        <ul>
+            <li>Prestação de serviços de saúde e acompanhamento médico;</li>
+            <li>Manutenção do histórico médico e prontuário;</li>
+            <li>Comunicação sobre consultas e tratamentos;</li>
+            <li>Cumprimento de obrigações legais e regulamentares.</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h4>2. DADOS COLETADOS</h4>
+        <p>Serão tratados dados pessoais como nome, CPF, endereço, telefone, email, informações de saúde e histórico médico.</p>
+    </div>
+
+    <div class="section">
+        <h4>3. COMPARTILHAMENTO</h4>
+        <p>Os dados não serão compartilhados com terceiros, exceto quando necessário para a prestação do serviço médico ou por determinação legal.</p>
+    </div>
+
+    <div class="section">
+        <h4>4. DIREITOS DO TITULAR</h4>
+        <p>Você tem direito a acessar, corrigir, excluir ou solicitar a portabilidade de seus dados, conforme a Lei Geral de Proteção de Dados (LGPD).</p>
+    </div>
+
+    <div class="section">
+        <h4>5. CONSENTIMENTO</h4>
+        <p>Ao assinar este termo, declaro que:</p>
+        <ul>
+            <li>Fui informado(a) sobre o tratamento dos meus dados pessoais;</li>
+            <li>Compreendo as finalidades do tratamento;</li>
+            <li>Consinto com o tratamento dos meus dados conforme descrito;</li>
+            <li>Posso revogar este consentimento a qualquer momento.</li>
+        </ul>
+    </div>
+
+    <div class="dual-signature">
+        <div class="signature-box">
+            <div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>
+            <div>
+                <strong>Paciente ou Responsável</strong><br>
+                ${data.patientName}
+            </div>
+        </div>
+        
+        <div class="signature-box">
+            ${data.signatureUrl ? 
+              `<img src="${data.signatureUrl}" alt="Assinatura" style="max-width: 150px; max-height: 50px; margin: 20px auto 10px; display: block;" />` : 
+              '<div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>'
+            }
+            <div>
+                <strong>Profissional Responsável</strong><br>
+                ${data.professionalName}<br>
+                ${data.crm ? `Registro: ${data.crm}` : ''}
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
+        <p>Telefone: (64) 98124-9199</p>
+        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
+    </div>
+
+    <script>
+        window.onload = function() {
+            setTimeout(function() {
+                window.print();
+                setTimeout(function() {
+                    window.close();
+                }, 1000);
+            }, 500);
+        };
+    </script>
+</body>
+</html>`;
+  };
+
+  const generateGenericHTML = (data: any) => {
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${data.title} - ${data.patientName}</title>
+    <style>
+        @page { size: A4; margin: 15mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Times New Roman', serif !important;
+            font-size: 14px !important;
+            line-height: 1.6 !important;
+            color: #000000 !important;
+            background: #ffffff !important;
+            padding: 20px !important;
+            margin: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 2px solid #c11c22;
+            padding-bottom: 20px;
+        }
+        .logo {
+            font-size: 24px !important;
+            font-weight: bold !important;
+            color: #c11c22 !important;
+            margin-bottom: 10px;
+        }
+        .title {
+            font-size: 20px !important;
+            font-weight: bold !important;
+            margin: 30px 0 !important;
+            text-align: center;
+            color: #000000 !important;
+        }
+        .patient-info {
+            background: #f9f9f9 !important;
+            padding: 15px !important;
+            border-left: 4px solid #c11c22 !important;
+            margin: 20px 0 !important;
+            border-radius: 4px;
+        }
+        .content {
+            margin: 30px 0 !important;
+            padding: 15px !important;
+            border: 1px solid #ddd !important;
+            border-radius: 5px;
+            background: #ffffff !important;
+            min-height: 200px;
+            white-space: pre-line;
+        }
+        .signature {
+            margin-top: 60px !important;
+            text-align: center;
+        }
+        .signature-line {
+            border-top: 1px solid #000000 !important;
+            width: 300px;
+            margin: 40px auto 10px !important;
+        }
+        .signature-image {
+            max-width: 200px !important;
+            max-height: 60px !important;
+            margin: 20px auto 10px !important;
+            display: block !important;
+        }
+        .footer {
+            margin-top: 40px !important;
+            text-align: center;
+            font-size: 12px !important;
+            color: #666666 !important;
+            border-top: 1px solid #dddddd !important;
+            padding-top: 20px !important;
+        }
+        * { color: #000000 !important; }
+        h1, h2, h3, h4, h5, h6 { color: #c11c22 !important; }
+        strong { font-weight: bold !important; color: #000000 !important; }
+        p { margin: 10px 0 !important; text-align: justify; color: #000000 !important; }
+        @media print {
+            body { margin: 0 !important; padding: 20px !important; background: #ffffff !important; }
+            * { color: #000000 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
+        <div>Sistema de Saúde e Bem-Estar</div>
+    </div>
+
+    <div class="title">${data.title}</div>
+
+    <div class="patient-info">
+        <strong>Paciente:</strong> ${data.patientName}<br>
+        ${data.patientCpf ? `<strong>CPF:</strong> ${data.patientCpf}<br>` : ''}
+        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+    </div>
+
+    <div class="content">
+        ${data.content}
+    </div>
+
+    <div class="signature">
+        ${data.signatureUrl ? 
+          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
+        <div>
+            <strong>${data.professionalName}</strong><br>
+            ${data.professionalSpecialty}<br>
+            ${data.crm ? `Registro: ${data.crm}` : ''}
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
+        <p>Telefone: (64) 98124-9199</p>
+        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
+    </div>
+
+    <script>
+        window.onload = function() {
+            setTimeout(function() {
+                window.print();
+                setTimeout(function() {
+                    window.close();
+                }, 1000);
+            }, 500);
+        };
+    </script>
+</body>
+</html>`;
+  };
+
+  // Função de impressão direta para documentos (igual aos prontuários)
+  const printDocumentDirect = (document: MedicalDocument) => {
+    try {
+      console.log('🔄 Starting direct document print');
+      
+      // Buscar dados do paciente
+      const patient = patients.find(p => p.name === document.patient_name);
+      
+      // Gerar HTML do documento baseado no tipo
+      const documentData = {
+        patientName: document.patient_name,
+        patientCpf: document.patient_cpf || '',
+        professionalName: formData.professionalName,
+        professionalSpecialty: formData.professionalSpecialty,
+        crm: formData.crm,
+        signatureUrl: null, // Seria necessário buscar a assinatura
+        title: document.title,
+        // Dados específicos do documento seriam necessários do banco
+        description: 'Documento gerado anteriormente',
+        content: 'Conteúdo do documento',
+        days: '1',
+        prescription: 'Prescrição médica',
+        procedure: 'Procedimento médico',
+        risks: 'Riscos e benefícios'
+      };
+
+      let htmlContent = '';
+      switch (document.document_type) {
+        case 'certificate':
+          htmlContent = generateCertificateHTML(documentData);
+          break;
+        case 'prescription':
+          htmlContent = generatePrescriptionHTML(documentData);
+          break;
+        case 'consent_form':
+          htmlContent = generateConsentFormHTML(documentData);
+          break;
+        case 'exam_request':
+          htmlContent = generateExamRequestHTML(documentData);
+          break;
+        case 'declaration':
+          htmlContent = generateDeclarationHTML(documentData);
+          break;
+        case 'lgpd':
+          htmlContent = generateLGPDHTML(documentData);
+          break;
+        default:
+          htmlContent = generateGenericHTML(documentData);
+      }
+      
+      // Criar nova janela
+      const printWindow = window.open('', '_blank', 'width=800,height=600');
+      
+      if (!printWindow) {
+        throw new Error('Popup foi bloqueado. Permita popups para imprimir.');
+      }
+
+      // Escrever e fechar documento
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      
+      setSuccess('Janela de impressão aberta! Use Ctrl+P se necessário.');
+      
+    } catch (error) {
+      console.error('Error printing document:', error);
+      setError(error instanceof Error ? error.message : 'Erro ao imprimir documento');
     }
   };
 
@@ -919,18 +2072,14 @@ const DocumentsPage: React.FC = () => {
                             <Eye className="h-4 w-4" />
                           </button>
                           <button
-                            onClick={() => generatePDFFromDocument(document)}
+                            onClick={() => printDocumentDirect(document)}
                             className={`text-green-600 hover:text-green-900 ${
                               isGeneratingPdf === document.id ? 'opacity-50 cursor-not-allowed' : ''
                             }`}
-                            title="Gerar PDF"
+                            title="Imprimir PDF"
                             disabled={isGeneratingPdf === document.id}
                           >
-                            {isGeneratingPdf === document.id ? (
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
-                            ) : (
-                              <Download className="h-4 w-4" />
-                            )}
+                            <Download className="h-4 w-4" />
                           </button>
                           <SimplePDFGenerator
                             htmlContent={document.document_url}
