@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
-import SchedulingAccessPayment from "../../components/SchedulingAccessPayment";
 import {
   Calendar,
   Clock,
@@ -11,6 +10,7 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
+import SchedulingAccessPayment from '../../components/SchedulingAccessPayment';
   Users,
   CheckCircle,
   XCircle,
@@ -78,6 +78,7 @@ const SchedulingPage: React.FC = () => {
   const [hasSchedulingAccess, setHasSchedulingAccess] = useState<boolean | null>(null);
   const [accessExpiresAt, setAccessExpiresAt] = useState<string | null>(null);
   const [isCheckingAccess, setIsCheckingAccess] = useState(true);
+  const [accessError, setAccessError] = useState('');
 
   // Slot customization state
   const [slotDuration, setSlotDuration] = useState<SlotDuration>(() => {
@@ -174,6 +175,7 @@ const SchedulingPage: React.FC = () => {
   const checkSchedulingAccess = async () => {
     try {
       setIsCheckingAccess(true);
+      setAccessError('');
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
 
@@ -188,16 +190,17 @@ const SchedulingPage: React.FC = () => {
 
       if (response.ok) {
         const accessData = await response.json();
-        console.log('✅ Access data received:', accessData);
+        console.log('✅ Access status received:', accessData);
         setHasSchedulingAccess(accessData.hasAccess);
         setAccessExpiresAt(accessData.expiresAt);
       } else {
-        console.warn('⚠️ Could not check access, assuming no access');
+        console.warn('⚠️ Access check failed:', response.status);
         setHasSchedulingAccess(false);
         setAccessExpiresAt(null);
       }
     } catch (error) {
-      console.error('❌ Error checking scheduling access:', error);
+      console.error('❌ Error checking access:', error);
+      setAccessError('Erro ao verificar acesso à agenda');
       setHasSchedulingAccess(false);
       setAccessExpiresAt(null);
     } finally {
@@ -749,6 +752,25 @@ const SchedulingPage: React.FC = () => {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Verificando acesso à agenda...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error if access check failed
+  if (accessError) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="h-16 w-16 text-red-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Erro de Conexão</h3>
+          <p className="text-gray-600 mb-4">{accessError}</p>
+          <button
+            onClick={checkSchedulingAccess}
+            className="btn btn-primary"
+          >
+            Tentar Novamente
+          </button>
         </div>
       </div>
     );
