@@ -148,20 +148,20 @@ const DocumentsPage: React.FC = () => {
       }
 
       // Fetch saved documents
-      console.log('🔄 [DOCUMENTS] Fetching saved documents from:', `${apiUrl}/api/documents/saved`);
+      console.log('🔄 [DOCUMENTS] Fetching medical documents from:', `${apiUrl}/api/documents/medical`);
       
-      const documentsResponse = await fetch(`${apiUrl}/api/documents/saved`, {
+      const documentsResponse = await fetch(`${apiUrl}/api/documents/medical`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
-      console.log('📡 [DOCUMENTS] Documents response status:', documentsResponse.status);
+      console.log('📡 [DOCUMENTS] Medical documents response status:', documentsResponse.status);
 
       if (documentsResponse.ok) {
         const documentsData = await documentsResponse.json();
-        console.log('✅ [DOCUMENTS] Documents loaded:', documentsData.length);
+        console.log('✅ [DOCUMENTS] Medical documents loaded:', documentsData.length);
         setDocuments(documentsData);
       } else {
-        console.warn('⚠️ [DOCUMENTS] Documents not available:', documentsResponse.status);
+        console.warn('⚠️ [DOCUMENTS] Medical documents not available:', documentsResponse.status);
         setDocuments([]);
       }
 
@@ -309,24 +309,24 @@ const DocumentsPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
 
-      console.log('🔄 [DOCUMENTS] Deleting document:', documentToDelete.id);
+      console.log('🔄 [DOCUMENTS] Deleting medical document:', documentToDelete.id);
 
-      const response = await fetch(`${apiUrl}/api/documents/saved/${documentToDelete.id}`, {
+      const response = await fetch(`${apiUrl}/api/documents/medical/${documentToDelete.id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Erro ao excluir documento');
+        throw new Error(errorData.message || 'Erro ao excluir documento médico');
       }
 
-      console.log('✅ [DOCUMENTS] Document deleted successfully');
+      console.log('✅ [DOCUMENTS] Medical document deleted successfully');
       await fetchData();
-      setSuccess('Documento excluído com sucesso!');
+      setSuccess('Documento médico excluído com sucesso!');
     } catch (error) {
-      console.error('❌ [DOCUMENTS] Error deleting document:', error);
-      setError(error instanceof Error ? error.message : 'Erro ao excluir documento');
+      console.error('❌ [DOCUMENTS] Error deleting medical document:', error);
+      setError(error instanceof Error ? error.message : 'Erro ao excluir documento médico');
     } finally {
       setDocumentToDelete(null);
       setShowDeleteConfirm(false);
