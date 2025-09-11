@@ -108,13 +108,13 @@ const getBaseHTML = (title, content) => {
             text-align: center;
             margin-bottom: 30px;
             padding-bottom: 20px;
-            border-bottom: 2px solid #c11c22;
+            border-bottom: 2px solid #333;
         }
         
         .logo {
             font-size: 24px;
             font-weight: bold;
-            color: #c11c22;
+            color: #333;
             margin-bottom: 10px;
         }
         
@@ -136,7 +136,7 @@ const getBaseHTML = (title, content) => {
             background: #f9f9f9;
             padding: 15px;
             margin: 20px 0;
-            border-left: 4px solid #c11c22;
+            border-left: 4px solid #333;
             border-radius: 4px;
         }
         
@@ -149,7 +149,7 @@ const getBaseHTML = (title, content) => {
         .section-title {
             font-size: 16px;
             font-weight: bold;
-            color: #c11c22;
+            color: #333;
             margin-bottom: 10px;
             border-bottom: 1px solid #eee;
             padding-bottom: 5px;
@@ -198,7 +198,7 @@ const getBaseHTML = (title, content) => {
         
         .vital-sign-value {
             font-weight: bold;
-            color: #c11c22;
+            color: #333;
         }
         
         p {
@@ -220,7 +220,7 @@ const getBaseHTML = (title, content) => {
         }
         
         .prescription-box {
-            border: 2px solid #c11c22;
+            border: 2px solid #333;
             padding: 20px;
             margin: 20px 0;
             background: #fff;
@@ -241,18 +241,9 @@ const getBaseHTML = (title, content) => {
     </style>
 </head>
 <body>
-    <div class="document-header">
-        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
-        <div class="subtitle">Sistema de Saúde e Bem-Estar</div>
-    </div>
     
     ${content}
     
-    <div class="document-footer">
-        <p><strong>Convênio Quiro Ferreira</strong> - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199</p>
-        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
-    </div>
 </body>
 </html>`;
 };

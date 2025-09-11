@@ -19,13 +19,13 @@ const templates = {
         .header {
             text-align: center;
             margin-bottom: 40px;
-            border-bottom: 2px solid #c11c22;
+            border-bottom: 2px solid #333;
             padding-bottom: 20px;
         }
         .logo {
             font-size: 24px;
             font-weight: bold;
-            color: #c11c22;
+            color: #333;
             margin-bottom: 10px;
         }
         .title {
@@ -43,7 +43,7 @@ const templates = {
         .patient-info {
             background: #f9f9f9;
             padding: 15px;
-            border-left: 4px solid #c11c22;
+            border-left: 4px solid #333;
             margin: 20px 0;
         }
         .signature {
@@ -79,10 +79,6 @@ const templates = {
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
-        <div>Sistema de Saúde e Bem-Estar</div>
-    </div>
 
     <div class="title">Atestado Médico</div>
 
@@ -116,11 +112,6 @@ const templates = {
         </div>
     </div>
 
-    <div class="footer">
-        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
-        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
-    </div>
 </body>
 </html>`,
 
@@ -143,13 +134,13 @@ const templates = {
         .header {
             text-align: center;
             margin-bottom: 40px;
-            border-bottom: 2px solid #c11c22;
+            border-bottom: 2px solid #333;
             padding-bottom: 20px;
         }
         .logo {
             font-size: 24px;
             font-weight: bold;
-            color: #c11c22;
+            color: #333;
             margin-bottom: 10px;
         }
         .title {
@@ -162,12 +153,12 @@ const templates = {
         .patient-info {
             background: #f9f9f9;
             padding: 15px;
-            border-left: 4px solid #c11c22;
+            border-left: 4px solid #333;
             margin: 20px 0;
         }
         .prescription-content {
             background: #fff;
-            border: 2px solid #c11c22;
+            border: 2px solid #333;
             padding: 20px;
             margin: 20px 0;
             min-height: 200px;
@@ -210,10 +201,6 @@ const templates = {
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
-        <div>Sistema de Saúde e Bem-Estar</div>
-    </div>
 
     <div class="title">Receituário Médico</div>
 
@@ -239,11 +226,6 @@ const templates = {
         </div>
     </div>
 
-    <div class="footer">
-        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
-        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
-    </div>
 </body>
 </html>`,
 
@@ -266,13 +248,13 @@ const templates = {
         .header {
             text-align: center;
             margin-bottom: 40px;
-            border-bottom: 2px solid #c11c22;
+            border-bottom: 2px solid #333;
             padding-bottom: 20px;
         }
         .logo {
             font-size: 24px;
             font-weight: bold;
-            color: #c11c22;
+            color: #333;
             margin-bottom: 10px;
         }
         .title {
@@ -285,7 +267,7 @@ const templates = {
         .patient-info {
             background: #f9f9f9;
             padding: 15px;
-            border-left: 4px solid #c11c22;
+            border-left: 4px solid #333;
             margin: 20px 0;
         }
         .content {
@@ -333,10 +315,6 @@ const templates = {
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
-        <div>Sistema de Saúde e Bem-Estar</div>
-    </div>
 
     <div class="title">Termo de Consentimento Livre e Esclarecido</div>
 
@@ -390,11 +368,6 @@ const templates = {
         </div>
     </div>
 
-    <div class="footer">
-        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
-        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
-    </div>
 </body>
 </html>`,
 
@@ -417,13 +390,13 @@ const templates = {
         .header {
             text-align: center;
             margin-bottom: 40px;
-            border-bottom: 2px solid #c11c22;
+            border-bottom: 2px solid #333;
             padding-bottom: 20px;
         }
         .logo {
             font-size: 24px;
             font-weight: bold;
-            color: #c11c22;
+            color: #333;
             margin-bottom: 10px;
         }
         .title {
@@ -436,12 +409,12 @@ const templates = {
         .patient-info {
             background: #f9f9f9;
             padding: 15px;
-            border-left: 4px solid #c11c22;
+            border-left: 4px solid #333;
             margin: 20px 0;
         }
         .exam-list {
             background: #fff;
-            border: 2px solid #c11c22;
+            border: 2px solid #333;
             padding: 20px;
             margin: 20px 0;
             min-height: 150px;
@@ -479,10 +452,6 @@ const templates = {
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
-        <div>Sistema de Saúde e Bem-Estar</div>
-    </div>
 
     <div class="title">Solicitação de Exames</div>
 
@@ -511,11 +480,6 @@ ${data.content}
         </div>
     </div>
 
-    <div class="footer">
-        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
-        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
-    </div>
 </body>
 </html>`,
 
@@ -538,13 +502,13 @@ ${data.content}
         .header {
             text-align: center;
             margin-bottom: 40px;
-            border-bottom: 2px solid #c11c22;
+            border-bottom: 2px solid #333;
             padding-bottom: 20px;
         }
         .logo {
             font-size: 24px;
             font-weight: bold;
-            color: #c11c22;
+            color: #333;
             margin-bottom: 10px;
         }
         .title {
@@ -557,7 +521,7 @@ ${data.content}
         .patient-info {
             background: #f9f9f9;
             padding: 15px;
-            border-left: 4px solid #c11c22;
+            border-left: 4px solid #333;
             margin: 20px 0;
         }
         .content {
@@ -655,13 +619,13 @@ ${data.content}
         .header {
             text-align: center;
             margin-bottom: 40px;
-            border-bottom: 2px solid #c11c22;
+            border-bottom: 2px solid #333;
             padding-bottom: 20px;
         }
         .logo {
             font-size: 24px;
             font-weight: bold;
-            color: #c11c22;
+            color: #333;
             margin-bottom: 10px;
         }
         .title {
@@ -673,7 +637,7 @@ ${data.content}
         .patient-info {
             background: #f9f9f9;
             padding: 15px;
-            border-left: 4px solid #c11c22;
+            border-left: 4px solid #333;
             margin: 20px 0;
         }
         .content {
@@ -822,17 +786,13 @@ ${data.content}
         .header {
             text-align: center;
             margin-bottom: 40px;
-            border-bottom: 2px solid #c11c22;
+            border-bottom: 2px solid #333;
             padding-bottom: 20px;
         }
         .logo {
             font-size: 24px;
             font-weight: bold;
-            color: #c11c22;
-            margin-bottom: 10px;
-        }
-        .title {
-            font-size: 20px;
+            color: #333;
             font-weight: bold;
             margin: 30px 0;
             text-align: center;
@@ -840,7 +800,7 @@ ${data.content}
         .patient-info {
             background: #f9f9f9;
             padding: 15px;
-            border-left: 4px solid #c11c22;
+            border-left: 4px solid #333;
             margin: 20px 0;
         }
         .content {
@@ -869,10 +829,6 @@ ${data.content}
             padding: 5px;
             background: white;
         }
-        .footer {
-            margin-top: 40px;
-            text-align: center;
-            font-size: 12px;
             color: #666;
             border-top: 1px solid #ddd;
             padding-top: 20px;
@@ -883,10 +839,6 @@ ${data.content}
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
-        <div>Sistema de Saúde e Bem-Estar</div>
-    </div>
 
     <div class="title">${data.title}</div>
 
@@ -902,21 +854,6 @@ ${data.content}
 
     <div class="signature">
         ${data.signatureUrl ? 
-          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
-          '<div class="signature-line"></div>'
-        }
-        <div>
-            <strong>${data.professionalName}</strong><br>
-            ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
-            ${data.crm ? `Registro: ${data.crm}` : ''}
-        </div>
-    </div>
-
-    <div class="footer">
-        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
-        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
-    </div>
 </body>
 </html>`
 };

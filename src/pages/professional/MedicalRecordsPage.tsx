@@ -454,13 +454,13 @@ const MedicalRecordsPage: React.FC = () => {
         .header {
             text-align: center;
             margin-bottom: 40px;
-            border-bottom: 2px solid #c11c22;
+            border-bottom: 2px solid #333;
             padding-bottom: 20px;
         }
         .logo {
             font-size: 24px !important;
             font-weight: bold !important;
-            color: #c11c22 !important;
+            color: #333 !important;
             margin-bottom: 10px;
         }
         .title {
@@ -474,7 +474,7 @@ const MedicalRecordsPage: React.FC = () => {
         .patient-info {
             background: #f9f9f9 !important;
             padding: 15px !important;
-            border-left: 4px solid #c11c22 !important;
+            border-left: 4px solid #333 !important;
             margin: 20px 0 !important;
             border-radius: 4px;
         }
@@ -496,7 +496,7 @@ const MedicalRecordsPage: React.FC = () => {
             padding-top: 20px !important;
         }
         * { color: #000000 !important; }
-        h1, h2, h3, h4, h5, h6 { color: #c11c22 !important; }
+        h1, h2, h3, h4, h5, h6 { color: #333 !important; }
         strong { font-weight: bold !important; color: #000000 !important; }
         @media print {
             body { margin: 0 !important; padding: 20px !important; background: #ffffff !important; }
@@ -505,10 +505,6 @@ const MedicalRecordsPage: React.FC = () => {
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
-        <div>Sistema de Saúde e Bem-Estar</div>
-    </div>
 
     <div class="title">Prontuário Médico</div>
 
@@ -537,11 +533,6 @@ const MedicalRecordsPage: React.FC = () => {
         </div>
     </div>
 
-    <div class="footer">
-        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199</p>
-        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
-    </div>
 
     <script>
         window.onload = function() {

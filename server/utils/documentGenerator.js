@@ -734,14 +734,14 @@ const createOptimizedHTMLForPDF = (htmlContent) => {
             text-align: center;
             margin-bottom: 30px;
             padding-bottom: 20px;
-            border-bottom: 2px solid #c11c22;
+            border-bottom: 2px solid #333;
             page-break-after: avoid;
         }
         
         .logo {
             font-size: 24px !important;
             font-weight: bold !important;
-            color: #c11c22 !important;
+            color: #333 !important;
             margin-bottom: 10px;
         }
         
@@ -764,7 +764,7 @@ const createOptimizedHTMLForPDF = (htmlContent) => {
             background: #f9f9f9 !important;
             padding: 15px !important;
             margin: 20px 0 !important;
-            border-left: 4px solid #c11c22 !important;
+            border-left: 4px solid #333 !important;
             border-radius: 4px;
             page-break-inside: avoid;
         }
@@ -779,14 +779,14 @@ const createOptimizedHTMLForPDF = (htmlContent) => {
         .section-title {
             font-size: 16px !important;
             font-weight: bold !important;
-            color: #c11c22 !important;
+            color: #333 !important;
             margin-bottom: 10px !important;
             border-bottom: 1px solid #eee !important;
             padding-bottom: 5px !important;
         }
         
         .prescription-box {
-            border: 2px solid #c11c22 !important;
+            border: 2px solid #333 !important;
             padding: 20px !important;
             margin: 20px 0 !important;
             background: #fff !important;
@@ -864,7 +864,7 @@ const createOptimizedHTMLForPDF = (htmlContent) => {
         
         .vital-sign-value {
             font-weight: bold !important;
-            color: #c11c22 !important;
+            color: #333 !important;
         }
         
         p {
@@ -889,7 +889,7 @@ const createOptimizedHTMLForPDF = (htmlContent) => {
         }
         
         h3, h4 {
-            color: #c11c22 !important;
+            color: #333 !important;
             margin: 15px 0 10px 0 !important;
         }
         
@@ -916,18 +916,9 @@ const createOptimizedHTMLForPDF = (htmlContent) => {
     </style>
 </head>
 <body>
-    <div class="document-header">
-        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
-        <div class="subtitle">Sistema de Saúde e Bem-Estar</div>
-    </div>
     
     ${bodyContent}
     
-    <div class="document-footer">
-        <p><strong>Convênio Quiro Ferreira</strong> - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199</p>
-        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
-    </div>
 </body>
 </html>`;
 };

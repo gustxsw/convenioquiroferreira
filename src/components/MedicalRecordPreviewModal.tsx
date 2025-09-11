@@ -168,14 +168,14 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
         .header {
             text-align: center;
             margin-bottom: 40px;
-            border-bottom: 2px solid #c11c22;
+            border-bottom: 2px solid #333;
             padding-bottom: 20px;
         }
         
         .logo {
             font-size: 24px !important;
             font-weight: bold !important;
-            color: #c11c22 !important;
+            color: #333 !important;
             margin-bottom: 10px;
         }
         
@@ -191,7 +191,7 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
         .patient-info {
             background: #f9f9f9 !important;
             padding: 15px !important;
-            border-left: 4px solid #c11c22 !important;
+            border-left: 4px solid #333 !important;
             margin: 20px 0 !important;
             border-radius: 4px;
         }
@@ -207,7 +207,7 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
         
         .section h3 {
             margin: 0 0 10px 0 !important;
-            color: #c11c22 !important;
+            color: #333 !important;
             font-size: 16px !important;
             border-bottom: 1px solid #eee !important;
             padding-bottom: 5px !important;
@@ -243,7 +243,7 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
         
         .vital-sign-value {
             font-weight: bold !important;
-            color: #c11c22 !important;
+            color: #333 !important;
         }
         
         .signature {
@@ -279,7 +279,7 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
         }
         
         h1, h2, h3, h4, h5, h6 {
-            color: #c11c22 !important;
+            color: #333 !important;
         }
         
         strong {
@@ -306,10 +306,6 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
-        <div>Sistema de Saúde e Bem-Estar</div>
-    </div>
 
     <div class="title">Prontuário Médico</div>
 
@@ -341,11 +337,6 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
         </div>
     </div>
 
-    <div class="footer">
-        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199</p>
-        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
-    </div>
 </body>
 </html>`;
   };
