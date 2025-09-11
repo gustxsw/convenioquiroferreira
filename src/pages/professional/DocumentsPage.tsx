@@ -451,6 +451,8 @@ const DocumentsPage: React.FC = () => {
       tempContainer.style.padding = '20px';
       tempContainer.style.overflow = 'visible';
       tempContainer.style.zIndex = '-1';
+      tempContainer.style.display = 'block';
+      tempContainer.style.visibility = 'visible';
       document.body.appendChild(tempContainer);
 
       // Configure PDF options

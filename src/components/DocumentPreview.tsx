@@ -93,6 +93,8 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       tempContainer.style.padding = '20px';
       tempContainer.style.overflow = 'visible';
       tempContainer.style.zIndex = '-1';
+      tempContainer.style.display = 'block';
+      tempContainer.style.visibility = 'visible';
       document.body.appendChild(tempContainer);
 
       // Force styles on all elements
