@@ -2153,7 +2153,10 @@ app.get("/api/clients/lookup", authenticate, authorize(["professional", "admin"]
       return res.status(400).json({ message: "CPF inválido" });
     }
 
-    const cleanCPF = cpf.replace(/\D/g, "");
+    const cleanCPF = cpf.replace
+  }
+}
+)(/\D/g, "");
 
     const clientResult = await pool.query(
       `
@@ -2499,6 +2502,10 @@ app.get("/api/services", authenticate, async (req, res) => {
     const servicesResult = await pool.query(`
       SELECT 
         s.*, sc.name as category_name
+    )
+  }
+}
+)
       FROM services s
       LEFT JOIN service_categories sc ON s.category_id = sc.id
       ORDER BY sc.name, s.name
@@ -3786,7 +3793,10 @@ app.post("/api/admin/grant-scheduling-access", authenticate, authorize(["admin"]
     }
 
     // Validate professional exists
-    const professionalResult = await pool.query(
+    const
+  }
+}
+) professionalResult = await pool.query(
       `
       SELECT id, name FROM users WHERE id = $1 AND 'professional' = ANY(roles)
     `,
