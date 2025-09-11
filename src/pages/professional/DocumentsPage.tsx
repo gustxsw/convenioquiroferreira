@@ -164,49 +164,6 @@ const DocumentsPage: React.FC = () => {
         const documentsData = await documentsResponse.json();
         console.log('✅ [DOCUMENTS] Medical documents loaded:', documentsData.length);
         setDocuments(documentsData);
-      } else {
-        const errorText = await documentsResponse.text();
-        console.error('❌ [DOCUMENTS] Documents error:', errorText);
-        
-        if (documentsResponse.status === 404) {
-          console.log('ℹ️ [DOCUMENTS] No documents found, starting with empty list');
-          setDocuments([]);
-        } else {
-          setError('Não foi possível carregar os documentos médicos');
-          setDocuments([]);
-        }
-      }
-
-      // Fetch private patients
-      const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      console.log('📡 [DOCUMENTS] Patients response status:', patientsResponse.status);
-
-      if (patientsResponse.ok) {
-        const patientsData = await patientsResponse.json();
-        console.log('✅ [DOCUMENTS] Private patients loaded:', patientsData.length);
-        setPatients(patientsData);
-      } else {
-        console.warn('⚠️ [DOCUMENTS] Private patients not available:', patientsResponse.status);
-        setPatients([]);
-      }
-    } catch (error) {
-      console.error("❌ [DOCUMENTS] Error fetching data:", error);
-      setError("Não foi possível carregar os dados dos documentos");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const getDocumentTypeInfo = (type: DocumentType) => {
-    return (
-      documentTypes.find((dt) => dt.value === type) ||
-      documentTypes[documentTypes.length - 1]
-    );
-  };
-
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString("pt-BR", {
