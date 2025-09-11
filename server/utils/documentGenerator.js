@@ -679,6 +679,260 @@ const generateGenericHTML = (data) => {
 };
 
 /**
+ * Create optimized HTML specifically for PDF generation
+ */
+const createOptimizedHTMLForPDF = (htmlContent) => {
+  // Extract content from body if it's a complete HTML document
+  let bodyContent = htmlContent;
+  
+  // If it's a complete HTML document, extract just the body content
+  const bodyMatch = htmlContent.match(/<body[^>]*>(.*?)<\/body>/is);
+  if (bodyMatch && bodyMatch[1]) {
+    bodyContent = bodyMatch[1];
+  }
+  
+  // Remove any existing document structure tags
+  bodyContent = bodyContent
+    .replace(/<!DOCTYPE[^>]*>/gi, '')
+    .replace(/<\/?html[^>]*>/gi, '')
+    .replace(/<\/?head[^>]*>/gi, '')
+    .replace(/<\/?body[^>]*>/gi, '')
+    .replace(/<style[^>]*>.*?<\/style>/gis, '') // Remove existing styles
+    .trim();
+  
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documento Médico</title>
+    <style>
+        @page { 
+            size: A4; 
+            margin: 15mm; 
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Times New Roman', serif !important;
+            font-size: 14px !important;
+            line-height: 1.6 !important;
+            color: #000 !important;
+            background: #fff !important;
+            padding: 20px !important;
+            margin: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        
+        .document-header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #c11c22;
+            page-break-after: avoid;
+        }
+        
+        .logo {
+            font-size: 24px !important;
+            font-weight: bold !important;
+            color: #c11c22 !important;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            font-size: 14px !important;
+            color: #666 !important;
+        }
+        
+        .document-title {
+            font-size: 20px !important;
+            font-weight: bold !important;
+            text-transform: uppercase;
+            text-align: center;
+            margin: 30px 0 !important;
+            color: #000 !important;
+            page-break-after: avoid;
+        }
+        
+        .patient-info {
+            background: #f9f9f9 !important;
+            padding: 15px !important;
+            margin: 20px 0 !important;
+            border-left: 4px solid #c11c22 !important;
+            border-radius: 4px;
+            page-break-inside: avoid;
+        }
+        
+        .content-section {
+            margin: 20px 0 !important;
+            padding: 15px !important;
+            background: #fff !important;
+            page-break-inside: avoid;
+        }
+        
+        .section-title {
+            font-size: 16px !important;
+            font-weight: bold !important;
+            color: #c11c22 !important;
+            margin-bottom: 10px !important;
+            border-bottom: 1px solid #eee !important;
+            padding-bottom: 5px !important;
+        }
+        
+        .prescription-box {
+            border: 2px solid #c11c22 !important;
+            padding: 20px !important;
+            margin: 20px 0 !important;
+            background: #fff !important;
+            min-height: 150px;
+            page-break-inside: avoid;
+        }
+        
+        .prescription-content {
+            font-size: 16px !important;
+            line-height: 2 !important;
+            white-space: pre-line;
+        }
+        
+        .signature-area {
+            margin-top: 60px !important;
+            text-align: center;
+            page-break-before: avoid;
+        }
+        
+        .signature-line {
+            border-top: 1px solid #000 !important;
+            width: 300px;
+            margin: 40px auto 10px !important;
+        }
+        
+        .signature-image {
+            max-width: 200px !important;
+            max-height: 60px !important;
+            margin: 20px auto 10px !important;
+            display: block !important;
+        }
+        
+        .dual-signature {
+            margin-top: 60px !important;
+            display: flex !important;
+            justify-content: space-between !important;
+            page-break-before: avoid;
+        }
+        
+        .signature-box {
+            text-align: center;
+            width: 45% !important;
+        }
+        
+        .document-footer {
+            margin-top: 40px !important;
+            text-align: center;
+            font-size: 12px !important;
+            color: #666 !important;
+            border-top: 1px solid #ddd !important;
+            padding-top: 20px !important;
+            page-break-before: avoid;
+        }
+        
+        .vital-signs-grid {
+            display: grid !important;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)) !important;
+            gap: 10px !important;
+            margin: 15px 0 !important;
+        }
+        
+        .vital-sign-item {
+            text-align: center;
+            padding: 10px !important;
+            background: #f8f9fa !important;
+            border: 1px solid #e9ecef !important;
+            border-radius: 4px;
+        }
+        
+        .vital-sign-label {
+            font-size: 11px !important;
+            color: #666 !important;
+            margin-bottom: 5px !important;
+        }
+        
+        .vital-sign-value {
+            font-weight: bold !important;
+            color: #c11c22 !important;
+        }
+        
+        p {
+            margin: 10px 0 !important;
+            text-align: justify;
+            color: #000 !important;
+        }
+        
+        strong {
+            font-weight: bold !important;
+            color: #000 !important;
+        }
+        
+        ul {
+            margin: 10px 0 !important;
+            padding-left: 20px !important;
+        }
+        
+        li {
+            margin: 5px 0 !important;
+            color: #000 !important;
+        }
+        
+        h3, h4 {
+            color: #c11c22 !important;
+            margin: 15px 0 10px 0 !important;
+        }
+        
+        /* Ensure all text is visible */
+        * {
+            color: #000 !important;
+        }
+        
+        /* Override any inherited styles */
+        div, span, p, h1, h2, h3, h4, h5, h6 {
+            color: #000 !important;
+        }
+        
+        @media print {
+            body { 
+                margin: 0 !important; 
+                padding: 20px !important; 
+                background: #fff !important;
+            }
+            .document-header { page-break-after: avoid; }
+            .signature-area { page-break-before: avoid; }
+            * { color: #000 !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="document-header">
+        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
+        <div class="subtitle">Sistema de Saúde e Bem-Estar</div>
+    </div>
+    
+    ${bodyContent}
+    
+    <div class="document-footer">
+        <p><strong>Convênio Quiro Ferreira</strong> - Sistema de Saúde e Bem-Estar</p>
+        <p>Telefone: (64) 98124-9199</p>
+        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
+    </div>
+</body>
+</html>`;
+};
+
+/**
  * Document templates mapping
  */
 const templates = {
@@ -706,6 +960,9 @@ const uploadHTMLToCloudinary = async (htmlContent, fileName) => {
       throw new Error('File name is required and must be a string');
     }
     
+    // Create optimized HTML for better PDF rendering
+    const optimizedHTML = createOptimizedHTMLForPDF(htmlContent);
+    
     // Generate unique filename
     const timestamp = Date.now();
     const randomString = Math.random().toString(36).substr(2, 9);
@@ -713,7 +970,7 @@ const uploadHTMLToCloudinary = async (htmlContent, fileName) => {
     
     // Upload HTML to Cloudinary as raw file
     const uploadResult = await cloudinary.uploader.upload(
-      `data:text/html;base64,${Buffer.from(htmlContent).toString('base64')}`,
+      `data:text/html;base64,${Buffer.from(optimizedHTML).toString('base64')}`,
       {
         folder: 'quiro-ferreira/documents',
         resource_type: 'raw',

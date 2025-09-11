@@ -83,35 +83,66 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       tempContainer.style.position = 'absolute';
       tempContainer.style.left = '-9999px';
       tempContainer.style.top = '-9999px';
-      tempContainer.style.width = '210mm'; // A4 width
+      tempContainer.style.width = '794px'; // A4 width in pixels (210mm)
+      tempContainer.style.height = 'auto';
+      tempContainer.style.backgroundColor = '#ffffff';
+      tempContainer.style.color = '#000000';
+      tempContainer.style.fontFamily = 'Times New Roman, serif';
+      tempContainer.style.fontSize = '14px';
+      tempContainer.style.lineHeight = '1.6';
+      tempContainer.style.padding = '20px';
+      tempContainer.style.overflow = 'visible';
+      tempContainer.style.zIndex = '-1';
       document.body.appendChild(tempContainer);
+
+      // Force styles on all elements
+      const allElements = tempContainer.querySelectorAll('*');
+      allElements.forEach(el => {
+        if (el instanceof HTMLElement) {
+          el.style.color = '#000000';
+          el.style.backgroundColor = el.classList.contains('patient-info') || 
+                                   el.classList.contains('content-section') ? 
+                                   '#f9f9f9' : 'transparent';
+        }
+      });
 
       // Configure PDF options
       const options = {
         margin: [10, 10, 10, 10],
         filename: `${documentTitle.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_')}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
+        image: { 
+          type: 'jpeg', 
+          quality: 0.98,
+          crossOrigin: 'anonymous'
+        },
         html2canvas: { 
           scale: 2,
           useCORS: true,
+          allowTaint: true,
           letterRendering: true,
-          allowTaint: false
+          logging: false,
+          backgroundColor: '#ffffff',
+          removeContainer: true,
+          imageTimeout: 0,
+          foreignObjectRendering: false
         },
         jsPDF: { 
           unit: 'mm', 
           format: 'a4', 
           orientation: 'portrait',
-          compress: true
+          compress: true,
+          precision: 2
         }
       };
 
       console.log('🔄 Generating PDF with options:', options);
 
       // Generate PDF
-      const pdfBlob = await window.html2pdf()
+      const pdf = window.html2pdf()
         .set(options)
-        .from(tempContainer)
-        .outputPdf('blob');
+        .from(tempContainer);
+        
+      const pdfBlob = await pdf.outputPdf('blob');
 
       console.log('✅ PDF generated successfully, size:', pdfBlob.size);
 

@@ -265,6 +265,21 @@ const initializeDatabase = async () => {
       END $$;
     `);
 
+    // Create saved_documents table for PDF storage
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS saved_documents (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        document_type VARCHAR(50) NOT NULL,
+        patient_name VARCHAR(255) NOT NULL,
+        patient_cpf VARCHAR(11),
+        professional_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        document_url TEXT NOT NULL,
+        document_metadata JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Medical records table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS medical_records (

@@ -441,35 +441,65 @@ const DocumentsPage: React.FC = () => {
       tempContainer.style.position = 'absolute';
       tempContainer.style.left = '-9999px';
       tempContainer.style.top = '-9999px';
-      tempContainer.style.width = '210mm'; // A4 width
+      tempContainer.style.width = '794px'; // A4 width in pixels
+      tempContainer.style.height = 'auto';
+      tempContainer.style.backgroundColor = '#ffffff';
+      tempContainer.style.color = '#000000';
+      tempContainer.style.fontFamily = 'Times New Roman, serif';
+      tempContainer.style.fontSize = '14px';
+      tempContainer.style.lineHeight = '1.6';
+      tempContainer.style.padding = '20px';
+      tempContainer.style.overflow = 'visible';
+      tempContainer.style.zIndex = '-1';
       document.body.appendChild(tempContainer);
 
       // Configure PDF options
       const options = {
         margin: [10, 10, 10, 10],
         filename: `${document.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_')}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
+        image: { 
+          type: 'jpeg', 
+          quality: 0.98,
+          crossOrigin: 'anonymous'
+        },
         html2canvas: { 
           scale: 2,
           useCORS: true,
+          allowTaint: true,
           letterRendering: true,
-          allowTaint: false
+          logging: false,
+          backgroundColor: '#ffffff',
+          removeContainer: true,
+          imageTimeout: 0,
+          foreignObjectRendering: false
         },
         jsPDF: { 
           unit: 'mm', 
           format: 'a4', 
           orientation: 'portrait',
-          compress: true
+          compress: true,
+          precision: 2
         }
       };
+
+      // Force styles on all elements to ensure visibility
+      const allElements = tempContainer.querySelectorAll('*');
+      allElements.forEach(el => {
+        if (el instanceof HTMLElement) {
+          el.style.color = '#000000';
+          el.style.visibility = 'visible';
+          el.style.opacity = '1';
+        }
+      });
 
       console.log('🔄 [DOCUMENTS] Generating PDF with options:', options);
 
       // Generate and download PDF
-      await window.html2pdf()
+      const pdf = window.html2pdf()
         .set(options)
-        .from(tempContainer)
-        .save();
+        .from(tempContainer);
+        
+      await pdf.save();
 
       console.log('✅ [DOCUMENTS] PDF generated and downloaded successfully');
 
