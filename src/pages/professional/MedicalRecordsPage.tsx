@@ -65,8 +65,6 @@ const MedicalRecordsPage: React.FC = () => {
     client_cpf: '',
     patient_name: '',
     patient_cpf: '',
-    patient_type: 'private' as 'convenio' | 'private',
-    client_cpf: '',
     private_patient_id: "",
     chief_complaint: "",
     history_present_illness: "",
@@ -87,12 +85,6 @@ const MedicalRecordsPage: React.FC = () => {
       height: "",
     },
   });
-
-  // Client search state (for convenio patients)
-  const [clientSearchResult, setClientSearchResult] = useState<any>(null);
-  const [dependents, setDependents] = useState<any[]>([]);
-  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(null);
-  const [isSearching, setIsSearching] = useState(false);
 
   // Client search state (for convenio patients)
   const [clientSearchResult, setClientSearchResult] = useState<any>(null);
@@ -213,8 +205,6 @@ const MedicalRecordsPage: React.FC = () => {
       client_cpf: '',
       patient_name: '',
       patient_cpf: '',
-      patient_type: 'private',
-      client_cpf: '',
       private_patient_id: "",
       chief_complaint: "",
       history_present_illness: "",
@@ -239,9 +229,6 @@ const MedicalRecordsPage: React.FC = () => {
     setClientSearchResult(null);
     setDependents([]);
     setSelectedDependentId(null);
-    setClientSearchResult(null);
-    setDependents([]);
-    setSelectedDependentId(null);
     setIsModalOpen(true);
   };
 
@@ -250,6 +237,8 @@ const MedicalRecordsPage: React.FC = () => {
     setFormData({
       patient_type: 'private', // Default to private for editing
       client_cpf: '',
+      patient_name: '',
+      patient_cpf: '',
       private_patient_id: "", // Would need to be set based on the record
       chief_complaint: record.chief_complaint || "",
       history_present_illness: record.history_present_illness || "",
@@ -285,9 +274,6 @@ const MedicalRecordsPage: React.FC = () => {
     setClientSearchResult(null);
     setDependents([]);
     setSelectedDependentId(null);
-    setClientSearchResult(null);
-    setDependents([]);
-    setSelectedDependentId(null);
     setError("");
     setSuccess("");
   };
@@ -311,95 +297,6 @@ const MedicalRecordsPage: React.FC = () => {
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
     }
-  };
-
-  const searchClientByCpf = async () => {
-    if (!formData.client_cpf) return;
-
-    try {
-      setIsSearching(true);
-      setError('');
-
-      const token = localStorage.getItem('token');
-      const apiUrl = getApiUrl();
-      const cleanCpf = formData.client_cpf.replace(/\D/g, '');
-
-      // First, try to find a dependent
-      const dependentResponse = await fetch(
-        `${apiUrl}/api/dependents/search?cpf=${cleanCpf}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      if (dependentResponse.ok) {
-        const dependentData = await dependentResponse.json();
-
-        if (dependentData.status !== 'active') {
-          setError('Este dependente não possui assinatura ativa.');
-          return;
-        }
-
-        setClientSearchResult({
-          id: dependentData.client_id,
-          name: dependentData.client_name,
-          subscription_status: 'active',
-        });
-        setSelectedDependentId(dependentData.id);
-        setDependents([]);
-        return;
-      }
-
-      // If not found as dependent, try as client
-      const clientResponse = await fetch(
-        `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      if (!clientResponse.ok) {
-        if (clientResponse.status === 404) {
-          setError('Cliente ou dependente não encontrado.');
-        } else {
-          setError('Erro ao buscar cliente.');
-        }
-        return;
-      }
-
-      const clientData = await clientResponse.json();
-
-      if (clientData.subscription_status !== 'active') {
-        setError('Este cliente não possui assinatura ativa.');
-        return;
-      }
-
-      setClientSearchResult(clientData);
-      setSelectedDependentId(null);
-
-      // Fetch dependents
-      const dependentsResponse = await fetch(
-        `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      if (dependentsResponse.ok) {
-        const dependentsData = await dependentsResponse.json();
-        setDependents(dependentsData);
-      }
-    } catch (error) {
-      setError('Erro ao buscar paciente.');
-    } finally {
-      setIsSearching(false);
-    }
-  };
-
-  const formatCpf = (value: string) => {
-    if (!value) return '';
-    const numericValue = value.replace(/\D/g, '');
-    return numericValue.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
   };
 
   const searchClientByCpf = async () => {
@@ -514,30 +411,6 @@ const MedicalRecordsPage: React.FC = () => {
     if (formData.patient_type === 'private' && !formData.private_patient_id) {
       setError('Selecione um paciente particular');
       return;
-      // Prepare submission data based on patient type
-      let submitData = { ...formData };
-      
-      if (formData.patient_type === 'convenio') {
-        // For convenio patients, use the searched patient data
-        if (selectedDependentId) {
-          const dependent = dependents.find(d => d.id === selectedDependentId);
-          submitData.patient_name = dependent ? dependent.name : clientSearchResult?.name;
-          submitData.patient_cpf = dependent ? dependent.cpf : formData.client_cpf;
-        } else if (clientSearchResult) {
-          submitData.patient_name = clientSearchResult.name;
-          submitData.patient_cpf = formData.client_cpf;
-        } else {
-          setError('Busque e selecione um cliente ou dependente do convênio');
-          return;
-        }
-      } else {
-        // For private patients, validate selection
-        if (!formData.private_patient_id) {
-          setError('Selecione um paciente particular');
-          return;
-        }
-      }
-
     }
 
     if (formData.patient_type === 'convenio' && !clientSearchResult) {
@@ -1200,101 +1073,6 @@ const MedicalRecordsPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* Patient Type Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tipo de Paciente *
-                  </label>
-                  <select
-                    name="patient_type"
-                {formData.patient_type === 'private' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Paciente Particular *
-                    </label>
-                    <select
-                      name="private_patient_id"
-                      value={formData.private_patient_id}
-                      onChange={handleInputChange}
-                      className="input"
-                      required
-                    >
-                      <option value="">Selecione um paciente</option>
-                      {patients.map((patient) => (
-                        <option key={patient.id} value={patient.id}>
-                          {patient.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {/* Convenio Patient Search */}
-                {formData.patient_type === 'convenio' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Buscar por CPF *
-                    </label>
-                    <div className="flex space-x-2">
-                      <input
-                        type="text"
-                        value={formatCpf(formData.client_cpf)}
-                        onChange={(e) =>
-                          setFormData(prev => ({
-                            ...prev,
-                            client_cpf: e.target.value.replace(/\D/g, ''),
-                          }))
-                        }
-                        className="input flex-1"
-                        placeholder="000.000.000-00"
-                      />
-                      <button
-                        type="button"
-                        onClick={searchClientByCpf}
-                        className="btn btn-secondary"
-                        disabled={isSearching || !formData.client_cpf}
-                      >
-                        {isSearching ? 'Buscando...' : 'Buscar'}
-                      </button>
-                    </div>
-
-                    {/* Found Client */}
-                    {clientSearchResult && (
-                      <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                        <div className="flex items-center mb-2">
-                          <User className="h-4 w-4 text-green-600 mr-2" />
-                          <span className="font-medium text-green-800">
-                            Cliente: {clientSearchResult.name}
-                          </span>
-                        </div>
-
-                        {/* Dependents Selection */}
-                        {dependents.length > 0 && (
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Dependente (opcional)
-                            </label>
-                            <select
-                              value={selectedDependentId || ''}
-                              onChange={(e) =>
-                                setSelectedDependentId(e.target.value ? Number(e.target.value) : null)
-                              }
-                              className="input"
-                            >
-                              <option value="">Prontuário para o titular</option>
-                              {dependents.map((dependent) => (
-                                <option key={dependent.id} value={dependent.id}>
-                                  {dependent.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 {/* Private Patient Selection */}
                 {formData.patient_type === 'private' && (
                   <div>
@@ -1709,6 +1487,15 @@ const MedicalRecordsPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Preview Modal */}
+      {showPreviewModal && recordToPreview && (
+        <MedicalRecordPreviewModal
+          record={recordToPreview}
+          professionalData={professionalData}
+          onClose={closePreviewModal}
+        />
       )}
     </div>
   );
