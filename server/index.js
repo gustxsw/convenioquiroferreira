@@ -2499,10 +2499,6 @@ app.get("/api/services", authenticate, async (req, res) => {
     const servicesResult = await pool.query(`
       SELECT 
         s.*, sc.name as category_name
-    )
-  }
-}
-)
       FROM services s
       LEFT JOIN service_categories sc ON s.category_id = sc.id
       ORDER BY sc.name, s.name
@@ -3295,8 +3291,6 @@ app.get("/api/medical-records", authenticate, authorize(["professional"]), async
         mr.*,
         COALESCE(pp.name, mr.patient_name) as patient_name,
         COALESCE(pp.cpf, mr.patient_cpf) as patient_cpf
-        COALESCE(pp.name, mr.patient_name) as patient_name,
-        COALESCE(pp.cpf, mr.patient_cpf) as patient_cpf
       FROM medical_records mr
       LEFT JOIN private_patients pp ON mr.private_patient_id = pp.id
       WHERE mr.professional_id = $1
@@ -3331,20 +3325,13 @@ app.post("/api/medical-records", authenticate, authorize(["professional"]), asyn
       vital_signs,
     } = req.body;
 
-    // Validate patient data based on type
-    if (patient_type === 'private') {
-      if (!private_patient_id) {
-        return res.status(400).json({ message: "Paciente particular é obrigatório" });
-      }
-      
-      // Validate patient belongs to professional
-      const patientResult = await pool.query(
-        `SELECT id FROM private_patients WHERE id = $1 AND professional_id = $2`,
     // Validate patient data - either private_patient_id OR patient_name is required
     if (!private_patient_id && !patient_name) {
-      return res.status(400).json({ message: "É necessário informar um paciente particular ou dados do paciente do convênio" });
+      return res.status(400).json({ 
+        message: "É necessário informar um paciente particular ou dados do paciente do convênio" 
+      });
+    }
 
-      if (patientResult.rows.length === 0) {
     // Validate patient belongs to professional (only for private patients)
     if (private_patient_id) {
       const patientResult = await pool.query(
@@ -3355,24 +3342,23 @@ app.post("/api/medical-records", authenticate, authorize(["professional"]), asyn
       if (patientResult.rows.length === 0) {
         return res.status(404).json({ message: "Paciente particular não encontrado" });
       }
+    }
+
+    const recordResult = await pool.query(
       `
       INSERT INTO medical_records (
         professional_id, private_patient_id, patient_name, patient_cpf, patient_type,
         chief_complaint, history_present_illness, past_medical_history, medications, 
         allergies, physical_examination, diagnosis, treatment_plan, notes, vital_signs
-        professional_id, private_patient_id, patient_name, patient_cpf, patient_type,
-        chief_complaint, history_present_illness,
+      )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *
     `,
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      [
         req.user.id,
         private_patient_id || null,
         patient_name?.trim() || null,
         patient_cpf?.replace(/\D/g, '') || null,
-        patient_type,
-        patient_name || null,
-        patient_cpf || null,
         patient_type,
         chief_complaint?.trim() || null,
         history_present_illness?.trim() || null,
@@ -3614,9 +3600,6 @@ app.post("/api/documents/medical", authenticate, authorize(["professional"]), as
       private_patient_id,
       patient_name,
       patient_cpf,
-      patient_type = 'private',
-      patient_name,
-      patient_cpf,
       professional_id: professionalId,
     });
 
@@ -3803,10 +3786,7 @@ app.post("/api/admin/grant-scheduling-access", authenticate, authorize(["admin"]
     }
 
     // Validate professional exists
-    const
-  }
-}
-) professionalResult = await pool.query(
+    const professionalResult = await pool.query(
       `
       SELECT id, name FROM users WHERE id = $1 AND 'professional' = ANY(roles)
     `,
