@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { FileText, Download, Save, X, Eye, AlertCircle, CheckCircle, Printer } from 'lucide-react';
+import SimplePDFGenerator from './SimplePDFGenerator';
 
 declare global {
   interface Window {
@@ -44,7 +45,7 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
-
+  const { user } = useAuth();
   // Get API URL
   const getApiUrl = () => {
     if (
@@ -573,25 +574,13 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
               Salvar HTML
             </button>
 
-            <button
-              onClick={saveAsPDF}
-              className={`btn btn-primary flex items-center ${
-                isProcessing ? 'opacity-70 cursor-not-allowed' : ''
-              }`}
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  {isGeneratingPdf ? 'Gerando PDF...' : 'Salvando...'}
-                </>
-              ) : (
-                <>
-                  <Save className="h-4 w-4 mr-2" />
-                  Salvar em PDF
-                </>
-              )}
-            </button>
+            <SimplePDFGenerator
+              htmlContent={generateHTML()}
+              fileName={`Prontuario_${recordData.patient_name}`}
+              title={`Prontuário Médico - ${recordData.patient_name}`}
+              onSuccess={() => setSuccess('PDF gerado com sucesso!')}
+              onError={(error) => setError(error)}
+            />
           </div>
         </div>
 

@@ -11,7 +11,8 @@ router.get('/medical', authenticate, async (req, res) => {
   try {
     console.log('🔄 [DOCUMENTS] Fetching medical documents for professional:', req.user.id);
 
-    const result = await pool.query(`
+    // First try medical_documents table
+    let result = await pool.query(`
       SELECT 
         md.*,
         pp.name as patient_name,
@@ -21,6 +22,28 @@ router.get('/medical', authenticate, async (req, res) => {
       WHERE md.professional_id = $1
       ORDER BY md.created_at DESC
     `, [req.user.id]);
+
+    // If no results, also check saved_documents table
+    if (result.rows.length === 0) {
+      console.log('🔄 [DOCUMENTS] No medical documents found, checking saved_documents...');
+      
+      const savedResult = await pool.query(`
+        SELECT 
+          id,
+          title,
+          document_type,
+          patient_name,
+          patient_cpf,
+          document_url,
+          created_at
+        FROM saved_documents
+        WHERE professional_id = $1
+        ORDER BY created_at DESC
+      `, [req.user.id]);
+      
+      result = savedResult;
+      console.log('✅ [DOCUMENTS] Found saved documents:', savedResult.rows.length);
+    }
 
     console.log('✅ [DOCUMENTS] Medical documents found:', result.rows.length);
     res.json(result.rows);

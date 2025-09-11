@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { FileText, Download, Save, X, Eye, AlertCircle, CheckCircle } from 'lucide-react';
+import SimplePDFGenerator from './SimplePDFGenerator';
 
 declare global {
   interface Window {
@@ -320,25 +321,13 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               Baixar HTML
             </button>
 
-            <button
-              onClick={generateAndSavePdf}
-              className={`btn btn-primary flex items-center ${
-                isProcessing ? 'opacity-70 cursor-not-allowed' : ''
-              }`}
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  {isGeneratingPdf ? 'Gerando PDF...' : 'Salvando...'}
-                </>
-              ) : (
-                <>
-                  <Save className="h-4 w-4 mr-2" />
-                  Salvar em PDF
-                </>
-              )}
-            </button>
+            <SimplePDFGenerator
+              htmlContent={htmlContent}
+              fileName={documentTitle}
+              title={documentTitle}
+              onSuccess={() => setSuccess('PDF gerado com sucesso!')}
+              onError={(error) => setError(error)}
+            />
           </div>
         </div>
 

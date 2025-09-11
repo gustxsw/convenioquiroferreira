@@ -15,6 +15,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import DocumentPreview from "../../components/DocumentPreview";
+import SimplePDFGenerator from "../../components/SimplePDFGenerator";
 
 type DocumentType =
   | "certificate"
@@ -931,6 +932,13 @@ const DocumentsPage: React.FC = () => {
                               <Download className="h-4 w-4" />
                             )}
                           </button>
+                          <SimplePDFGenerator
+                            htmlContent={document.document_url}
+                            fileName={document.title}
+                            title={document.title}
+                            onSuccess={() => setSuccess('PDF gerado com sucesso!')}
+                            onError={(error) => setPdfError(error)}
+                          />
                           <a
                             href={document.document_url}
                             target="_blank"
