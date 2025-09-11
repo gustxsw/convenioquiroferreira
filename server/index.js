@@ -3799,7 +3799,10 @@ app.post("/api/admin/grant-scheduling-access", authenticate, authorize(["admin"]
     }
 
     // Validate professional exists
-    const professionalResult = await pool.query(
+    const
+  }
+}
+) professionalResult = await pool.query(
       `
       SELECT id, name FROM users WHERE id = $1 AND 'professional' = ANY(roles)
     `,
