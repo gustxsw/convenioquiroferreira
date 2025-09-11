@@ -351,7 +351,8 @@ const DocumentsPage: React.FC = () => {
       }
 
       // Generate HTML content directly
-      const htmlContent = generateDocumentHTML(formData, selectedPatient, signatureUrl);
+      // Generate HTML content using inline templates (same as medical records)
+      const htmlContent = generateDocumentHTMLInline(formData.document_type, enhancedFormData);
 
       console.log('✅ [DOCUMENTS] HTML content generated');
 
@@ -388,9 +389,6 @@ const DocumentsPage: React.FC = () => {
   const generateDocumentHTML = (formData: any, patient: PrivatePatient, signatureUrl: string | null) => {
     const documentData = {
       patientName: patient.name,
-      patientCpf: patient.cpf || '',
-      professionalName: formData.professionalName,
-      professionalSpecialty: formData.professionalSpecialty,
       crm: formData.crm,
       signatureUrl: signatureUrl,
         ...formData,
@@ -1886,6 +1884,401 @@ const DocumentsPage: React.FC = () => {
     }
   };
 
+  // Generate HTML content inline (same logic as medical records)
+  const generateDocumentHTMLInline = (documentType: DocumentType, data: any) => {
+    const baseHTML = (title: string, content: string) => `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${title}</title>
+    <style>
+        @page { size: A4; margin: 15mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Times New Roman', serif !important;
+            font-size: 14px !important;
+            line-height: 1.6 !important;
+            color: #000000 !important;
+            background: #ffffff !important;
+            padding: 20px !important;
+            margin: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 2px solid #c11c22;
+            padding-bottom: 20px;
+        }
+        .logo {
+            font-size: 24px !important;
+            font-weight: bold !important;
+            color: #c11c22 !important;
+            margin-bottom: 10px;
+        }
+        .title {
+            font-size: 20px !important;
+            font-weight: bold !important;
+            text-transform: uppercase;
+            margin: 30px 0 !important;
+            text-align: center;
+            color: #000000 !important;
+        }
+        .patient-info {
+            background: #f9f9f9 !important;
+            padding: 15px !important;
+            border-left: 4px solid #c11c22 !important;
+            margin: 20px 0 !important;
+            border-radius: 4px;
+        }
+        .content {
+            margin: 30px 0 !important;
+            text-align: justify;
+            font-size: 14px !important;
+            color: #000000 !important;
+        }
+        .prescription-box {
+            border: 2px solid #c11c22 !important;
+            padding: 20px !important;
+            margin: 20px 0 !important;
+            background: #ffffff !important;
+            min-height: 150px;
+        }
+        .prescription-content {
+            font-size: 16px !important;
+            line-height: 2 !important;
+            white-space: pre-line;
+            color: #000000 !important;
+        }
+        .section {
+            margin: 15px 0 !important;
+            color: #000000 !important;
+        }
+        .section h3 {
+            color: #c11c22 !important;
+            margin-bottom: 10px !important;
+            font-weight: bold !important;
+        }
+        .dual-signature {
+            margin-top: 60px !important;
+            display: flex !important;
+            justify-content: space-between !important;
+        }
+        .signature-box {
+            text-align: center;
+            width: 45% !important;
+        }
+        .signature {
+            margin-top: 60px !important;
+            text-align: center;
+        }
+        .signature-line {
+            border-top: 1px solid #000000 !important;
+            width: 300px;
+            margin: 40px auto 10px !important;
+        }
+        .signature-image {
+            max-width: 200px !important;
+            max-height: 60px !important;
+            margin: 20px auto 10px !important;
+            display: block !important;
+        }
+        .footer {
+            margin-top: 40px !important;
+            text-align: center;
+            font-size: 12px !important;
+            color: #666666 !important;
+            border-top: 1px solid #dddddd !important;
+            padding-top: 20px !important;
+        }
+        * { color: #000000 !important; }
+        h1, h2, h3, h4, h5, h6 { color: #c11c22 !important; }
+        strong { font-weight: bold !important; color: #000000 !important; }
+        p { margin: 10px 0 !important; text-align: justify; color: #000000 !important; }
+        ul { margin: 10px 0 !important; padding-left: 20px !important; }
+        li { margin: 5px 0 !important; color: #000000 !important; }
+        @media print {
+            body { margin: 0 !important; padding: 20px !important; background: #ffffff !important; }
+            * { color: #000000 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
+        <div>Sistema de Saúde e Bem-Estar</div>
+    </div>
+    ${content}
+    <div class="footer">
+        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
+        <p>Telefone: (64) 98124-9199</p>
+        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
+    </div>
+</body>
+</html>`;
+
+    switch (documentType) {
+      case 'certificate':
+        const certificateContent = `
+          <div class="title">Atestado Médico</div>
+          <div class="patient-info">
+              <strong>Paciente:</strong> ${data.patientName}<br>
+              ${data.patientCpf ? `<strong>CPF:</strong> ${data.patientCpf}<br>` : ''}
+              <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+          </div>
+          <div class="content">
+              <p>Atesto para os devidos fins que o(a) paciente acima identificado(a) esteve sob meus cuidados médicos e apresenta quadro clínico que o(a) impossibilita de exercer suas atividades habituais.</p>
+              <p><strong>Descrição:</strong> ${data.description}</p>
+              ${data.cid ? `<p><strong>CID:</strong> ${data.cid}</p>` : ''}
+              <p><strong>Período de afastamento:</strong> ${data.days} dia(s) a partir de ${new Date().toLocaleDateString('pt-BR')}.</p>
+              <p>Este atestado é válido para todos os fins legais e administrativos.</p>
+          </div>
+          <div class="signature">
+              ${data.signatureUrl ? 
+                `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+                '<div class="signature-line"></div>'
+              }
+              <div>
+                  <strong>${data.professionalName}</strong><br>
+                  ${data.professionalSpecialty}<br>
+                  ${data.crm ? `Registro: ${data.crm}` : ''}
+              </div>
+          </div>
+        `;
+        return baseHTML('Atestado Médico', certificateContent);
+
+      case 'prescription':
+        const prescriptionContent = `
+          <div class="title">Receituário Médico</div>
+          <div class="patient-info">
+              <strong>Paciente:</strong> ${data.patientName}<br>
+              ${data.patientCpf ? `<strong>CPF:</strong> ${data.patientCpf}<br>` : ''}
+              <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+          </div>
+          <div class="prescription-box">
+              <div class="prescription-content">${data.prescription}</div>
+          </div>
+          <div class="signature">
+              ${data.signatureUrl ? 
+                `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+                '<div class="signature-line"></div>'
+              }
+              <div>
+                  <strong>${data.professionalName}</strong><br>
+                  ${data.professionalSpecialty}<br>
+                  ${data.crm ? `Registro: ${data.crm}` : ''}
+              </div>
+          </div>
+        `;
+        return baseHTML('Receituário Médico', prescriptionContent);
+
+      case 'consent_form':
+        const consentContent = `
+          <div class="title">Termo de Consentimento Livre e Esclarecido</div>
+          <div class="patient-info">
+              <strong>Paciente:</strong> ${data.patientName}<br>
+              ${data.patientCpf ? `<strong>CPF:</strong> ${data.patientCpf}<br>` : ''}
+              <strong>Data:</strong> ${new Date().toLocaleDateString('pt-BR')}
+          </div>
+          <div class="section">
+              <h3>Procedimento a ser realizado:</h3>
+              <p><strong>${data.procedure}</strong></p>
+              <p>${data.description}</p>
+          </div>
+          <div class="section">
+              <h3>Riscos e Benefícios:</h3>
+              <p>${data.risks}</p>
+          </div>
+          <div class="section">
+              <h3>Declaração de Consentimento:</h3>
+              <p>Declaro que fui devidamente informado(a) sobre o procedimento acima descrito, seus riscos, benefícios e alternativas. Todas as minhas dúvidas foram esclarecidas e consinto com a realização do procedimento.</p>
+              <p>Estou ciente de que nenhum procedimento médico é 100% isento de riscos e que complicações podem ocorrer, mesmo com todos os cuidados técnicos adequados.</p>
+              <p>Autorizo o profissional de saúde a realizar o procedimento proposto e declaro que este consentimento é dado de forma livre e esclarecida.</p>
+          </div>
+          <div class="dual-signature">
+              <div class="signature-box">
+                  <div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>
+                  <div>
+                      <strong>Paciente ou Responsável</strong><br>
+                      ${data.patientName}
+                  </div>
+              </div>
+              <div class="signature-box">
+                  ${data.signatureUrl ? 
+                    `<img src="${data.signatureUrl}" alt="Assinatura" style="max-width: 150px; max-height: 50px; margin: 20px auto 10px; display: block;" />` : 
+                    '<div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>'
+                  }
+                  <div>
+                      <strong>Profissional Responsável</strong><br>
+                      ${data.professionalName}<br>
+                      ${data.crm ? `Registro: ${data.crm}` : ''}
+                  </div>
+              </div>
+          </div>
+        `;
+        return baseHTML('Termo de Consentimento', consentContent);
+
+      case 'exam_request':
+        const examContent = `
+          <div class="title">Solicitação de Exames</div>
+          <div class="patient-info">
+              <strong>Paciente:</strong> ${data.patientName}<br>
+              ${data.patientCpf ? `<strong>CPF:</strong> ${data.patientCpf}<br>` : ''}
+              <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+          </div>
+          <div class="prescription-box">
+              <h3>Exames Solicitados:</h3>
+              <div class="prescription-content">${data.content}</div>
+          </div>
+          <div class="signature">
+              ${data.signatureUrl ? 
+                `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+                '<div class="signature-line"></div>'
+              }
+              <div>
+                  <strong>${data.professionalName}</strong><br>
+                  ${data.professionalSpecialty}<br>
+                  ${data.crm ? `Registro: ${data.crm}` : ''}
+              </div>
+          </div>
+        `;
+        return baseHTML('Solicitação de Exames', examContent);
+
+      case 'lgpd':
+        const lgpdContent = `
+          <div class="title">Termo de Consentimento para Tratamento de Dados Pessoais (LGPD)</div>
+          <div class="patient-info">
+              <strong>Paciente:</strong> ${data.patientName}<br>
+              ${data.patientCpf ? `<strong>CPF:</strong> ${data.patientCpf}<br>` : ''}
+              <strong>Data:</strong> ${new Date().toLocaleDateString('pt-BR')}
+          </div>
+          <div class="section">
+              <h3>1. FINALIDADE DO TRATAMENTO DE DADOS</h3>
+              <p>Os dados pessoais coletados serão utilizados exclusivamente para:</p>
+              <ul>
+                  <li>Prestação de serviços de saúde e acompanhamento médico;</li>
+                  <li>Manutenção do histórico médico e prontuário;</li>
+                  <li>Comunicação sobre consultas e tratamentos;</li>
+                  <li>Cumprimento de obrigações legais e regulamentares.</li>
+              </ul>
+          </div>
+          <div class="section">
+              <h3>2. DADOS COLETADOS</h3>
+              <p>Serão tratados dados pessoais como nome, CPF, endereço, telefone, email, informações de saúde e histórico médico.</p>
+          </div>
+          <div class="section">
+              <h3>3. COMPARTILHAMENTO</h3>
+              <p>Os dados não serão compartilhados com terceiros, exceto quando necessário para a prestação do serviço médico ou por determinação legal.</p>
+          </div>
+          <div class="section">
+              <h3>4. DIREITOS DO TITULAR</h3>
+              <p>Você tem direito a acessar, corrigir, excluir ou solicitar a portabilidade de seus dados, conforme a Lei Geral de Proteção de Dados (LGPD).</p>
+          </div>
+          <div class="section">
+              <h3>5. CONSENTIMENTO</h3>
+              <p>Ao assinar este termo, declaro que:</p>
+              <ul>
+                  <li>Fui informado(a) sobre o tratamento dos meus dados pessoais;</li>
+                  <li>Compreendo as finalidades do tratamento;</li>
+                  <li>Consinto com o tratamento dos meus dados conforme descrito;</li>
+                  <li>Posso revogar este consentimento a qualquer momento.</li>
+              </ul>
+          </div>
+          <div class="dual-signature">
+              <div class="signature-box">
+                  <div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>
+                  <div>
+                      <strong>Paciente ou Responsável</strong><br>
+                      ${data.patientName}
+                  </div>
+              </div>
+              <div class="signature-box">
+                  ${data.signatureUrl ? 
+                    `<img src="${data.signatureUrl}" alt="Assinatura" style="max-width: 150px; max-height: 50px; margin: 20px auto 10px; display: block;" />` : 
+                    '<div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>'
+                  }
+                  <div>
+                      <strong>Profissional Responsável</strong><br>
+                      ${data.professionalName}<br>
+                      ${data.crm ? `Registro: ${data.crm}` : ''}
+                  </div>
+              </div>
+          </div>
+        `;
+        return baseHTML('Termo LGPD', lgpdContent);
+
+      default: // declaration and other
+        const genericContent = `
+          <div class="title">${data.title || 'Declaração Médica'}</div>
+          <div class="patient-info">
+              <strong>Paciente:</strong> ${data.patientName}<br>
+              ${data.patientCpf ? `<strong>CPF:</strong> ${data.patientCpf}<br>` : ''}
+              <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+          </div>
+          <div class="content">
+              <p>${data.content}</p>
+          </div>
+          <div class="signature">
+              ${data.signatureUrl ? 
+                `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+                '<div class="signature-line"></div>'
+              }
+              <div>
+                  <strong>${data.professionalName}</strong><br>
+                  ${data.professionalSpecialty}<br>
+                  ${data.crm ? `Registro: ${data.crm}` : ''}
+              </div>
+          </div>
+        `;
+        return baseHTML(data.title || 'Declaração Médica', genericContent);
+    }
+  };
+
+  // Função de impressão direta para documentos (igual aos prontuários)
+  const printDocumentDirect = (document: MedicalDocument) => {
+    try {
+      console.log('🔄 Starting direct document print for:', document.title);
+      
+      // Fetch document content and print
+      fetch(document.document_url)
+        .then(response => response.text())
+        .then(htmlContent => {
+          // Create print window
+          const printWindow = window.open('', '_blank', 'width=800,height=600');
+          
+          if (!printWindow) {
+            throw new Error('Popup foi bloqueado. Permita popups para imprimir.');
+          }
+
+          // Write optimized content
+          printWindow.document.write(htmlContent);
+          printWindow.document.close();
+
+          // Auto-print
+          printWindow.onload = () => {
+            setTimeout(() => {
+              printWindow.print();
+              setTimeout(() => {
+                printWindow.close();
+              }, 1000);
+            }, 500);
+          };
+
+          setSuccess('Janela de impressão aberta! Use Ctrl+P se necessário.');
+        })
+        .catch(error => {
+          console.error('Error loading document for print:', error);
+          setError('Erro ao carregar documento para impressão');
+        });
+      
+    } catch (error) {
+      console.error('Error printing document:', error);
+      setError(error instanceof Error ? error.message : 'Erro ao imprimir documento');
+    }
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -2095,6 +2488,13 @@ const DocumentsPage: React.FC = () => {
                             onSuccess={() => setSuccess('PDF gerado com sucesso!')}
                             onError={(error) => setPdfError(error)}
                           />
+                          <button
+                            onClick={() => printDocumentDirect(document)}
+                            className="text-purple-600 hover:text-purple-900"
+                            title="Imprimir Direto"
+                          >
+                            <Download className="h-4 w-4" />
+                          </button>
                           <a
                             href={document.document_url}
                             target="_blank"
