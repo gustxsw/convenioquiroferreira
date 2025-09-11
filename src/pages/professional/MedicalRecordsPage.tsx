@@ -374,6 +374,206 @@ const MedicalRecordsPage: React.FC = () => {
     setRecordToPreview(null);
   };
 
+  // Função de impressão direta para prontuários
+  const printMedicalRecordDirect = (record: MedicalRecord) => {
+    try {
+      console.log('🔄 Starting direct medical record print');
+      
+      // Gerar HTML do prontuário
+      const vitalSigns = record.vital_signs || {};
+      const hasVitalSigns = Object.values(vitalSigns).some(value => value && value.toString().trim());
+
+      let vitalSignsHTML = '';
+      if (hasVitalSigns) {
+        const vitalSignItems = [
+          { label: 'Pressão Arterial', value: vitalSigns.blood_pressure },
+          { label: 'Freq. Cardíaca', value: vitalSigns.heart_rate },
+          { label: 'Temperatura', value: vitalSigns.temperature },
+          { label: 'Freq. Respiratória', value: vitalSigns.respiratory_rate },
+          { label: 'Sat. O₂', value: vitalSigns.oxygen_saturation },
+          { label: 'Peso', value: vitalSigns.weight },
+          { label: 'Altura', value: vitalSigns.height }
+        ].filter(item => item.value && item.value.toString().trim());
+
+        if (vitalSignItems.length > 0) {
+          vitalSignsHTML = `
+            <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: #ffffff;">
+              <h3 style="margin: 0 0 10px 0; color: #c11c22; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 5px; font-weight: bold;">Sinais Vitais</h3>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 15px 0;">
+                ${vitalSignItems.map(item => `
+                  <div style="text-align: center; padding: 10px; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px;">
+                    <div style="font-size: 11px; color: #666666; margin-bottom: 5px;">${item.label}</div>
+                    <div style="font-weight: bold; color: #c11c22;">${item.value}</div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      const medicalSections = [
+        { title: 'Queixa Principal', content: record.chief_complaint },
+        { title: 'História da Doença Atual', content: record.history_present_illness },
+        { title: 'História Médica Pregressa', content: record.past_medical_history },
+        { title: 'Medicamentos em Uso', content: record.medications },
+        { title: 'Alergias', content: record.allergies },
+        { title: 'Exame Físico', content: record.physical_examination },
+        { title: 'Diagnóstico', content: record.diagnosis },
+        { title: 'Plano de Tratamento', content: record.treatment_plan },
+        { title: 'Observações Gerais', content: record.notes }
+      ].filter(section => section.content && section.content.trim());
+
+      const medicalSectionsHTML = medicalSections.map(section => `
+        <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; page-break-inside: avoid; background: #ffffff;">
+          <h3 style="margin: 0 0 10px 0; color: #c11c22; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 5px; font-weight: bold;">${section.title}</h3>
+          <p style="color: #000000; margin: 10px 0; text-align: justify;">${section.content}</p>
+        </div>
+      `).join('');
+
+      const htmlContent = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prontuário Médico - ${record.patient_name}</title>
+    <style>
+        @page { size: A4; margin: 15mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Times New Roman', serif !important;
+            font-size: 14px !important;
+            line-height: 1.6 !important;
+            color: #000000 !important;
+            background: #ffffff !important;
+            padding: 20px !important;
+            margin: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 2px solid #c11c22;
+            padding-bottom: 20px;
+        }
+        .logo {
+            font-size: 24px !important;
+            font-weight: bold !important;
+            color: #c11c22 !important;
+            margin-bottom: 10px;
+        }
+        .title {
+            font-size: 20px !important;
+            font-weight: bold !important;
+            text-transform: uppercase;
+            margin: 30px 0 !important;
+            text-align: center;
+            color: #000000 !important;
+        }
+        .patient-info {
+            background: #f9f9f9 !important;
+            padding: 15px !important;
+            border-left: 4px solid #c11c22 !important;
+            margin: 20px 0 !important;
+            border-radius: 4px;
+        }
+        .signature {
+            margin-top: 60px !important;
+            text-align: center;
+        }
+        .signature-line {
+            border-top: 1px solid #000000 !important;
+            width: 300px;
+            margin: 40px auto 10px !important;
+        }
+        .footer {
+            margin-top: 40px !important;
+            text-align: center;
+            font-size: 12px !important;
+            color: #666666 !important;
+            border-top: 1px solid #dddddd !important;
+            padding-top: 20px !important;
+        }
+        * { color: #000000 !important; }
+        h1, h2, h3, h4, h5, h6 { color: #c11c22 !important; }
+        strong { font-weight: bold !important; color: #000000 !important; }
+        @media print {
+            body { margin: 0 !important; padding: 20px !important; background: #ffffff !important; }
+            * { color: #000000 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
+        <div>Sistema de Saúde e Bem-Estar</div>
+    </div>
+
+    <div class="title">Prontuário Médico</div>
+
+    <div class="patient-info">
+        <strong>Paciente:</strong> ${record.patient_name}<br>
+        <strong>Data do Atendimento:</strong> ${new Date(record.created_at).toLocaleDateString('pt-BR')}<br>
+        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+    </div>
+
+    ${vitalSignsHTML}
+
+    ${medicalSectionsHTML}
+
+    ${medicalSections.length === 0 ? `
+    <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: #ffffff;">
+        <p style="color: #000000; margin: 10px 0; text-align: justify;"><em>Prontuário médico sem informações clínicas detalhadas registradas.</em></p>
+    </div>
+    ` : ''}
+
+    <div class="signature">
+        <div class="signature-line"></div>
+        <div>
+            <strong>${professionalData.name}</strong><br>
+            ${professionalData.specialty}<br>
+            ${professionalData.crm ? `Registro: ${professionalData.crm}` : ''}
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
+        <p>Telefone: (64) 98124-9199</p>
+        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
+    </div>
+
+    <script>
+        window.onload = function() {
+            setTimeout(function() {
+                window.print();
+                setTimeout(function() {
+                    window.close();
+                }, 1000);
+            }, 500);
+        };
+    </script>
+</body>
+</html>`;
+      
+      // Criar nova janela
+      const printWindow = window.open('', '_blank', 'width=800,height=600');
+      
+      if (!printWindow) {
+        throw new Error('Popup foi bloqueado. Permita popups para imprimir.');
+      }
+
+      // Escrever e fechar documento
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      
+      setSuccess('Janela de impressão aberta! Use Ctrl+P se necessário.');
+      
+    } catch (error) {
+      console.error('Error printing medical record:', error);
+      setError(error instanceof Error ? error.message : 'Erro ao imprimir prontuário');
+    }
+  };
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString("pt-BR", {
@@ -544,6 +744,13 @@ const MedicalRecordsPage: React.FC = () => {
                           title="Gerar Documento"
                         >
                           <Printer className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => printMedicalRecordDirect(record)}
+                          className="text-purple-600 hover:text-purple-900"
+                          title="Imprimir Direto"
+                        >
+                          <Download className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => openEditModal(record)}
