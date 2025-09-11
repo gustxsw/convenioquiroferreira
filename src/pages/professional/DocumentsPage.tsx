@@ -157,14 +157,25 @@ const DocumentsPage: React.FC = () => {
       const documentsResponse = await fetch(`${apiUrl}/api/documents/medical`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-
+      // Try both routes to ensure compatibility
+      let response = await fetch(`${apiUrl}/api/documents/medical`, {
       console.log('📡 [DOCUMENTS] Documents response status:', documentsResponse.status);
 
       if (documentsResponse.ok) {
+      // If first route fails, try the saved documents route
+      if (!response.ok) {
+        console.log('🔄 Trying saved documents route...');
+        response = await fetch(`${apiUrl}/api/documents/saved`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      }
+
         const documentsData = await documentsResponse.json();
         console.log('✅ [DOCUMENTS] Medical documents loaded:', documentsData.length);
+        console.log('✅ Documents loaded:', documentsData.length);
         setDocuments(documentsData);
       } else {
+        console.warn('⚠️ Documents not available:', response.status);
         const errorData = await documentsResponse.json();
         throw new Error(errorData.message || 'Erro ao carregar documentos');
       }
