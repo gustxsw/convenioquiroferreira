@@ -336,11 +336,9 @@ const DocumentsPage: React.FC = () => {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
-        if (signatureResponse.ok) {
-          const signatureData = await signatureResponse.json();
-          signatureUrl = signatureData.signature_url;
-        }
-      } catch (signatureError) {
+        console.log('🔄 [DOCUMENTS] Fetching saved documents from:', `${apiUrl}/api/documents/saved`);
+        
+        // Fetch saved documents (not medical records)
         console.warn('Could not load signature:', signatureError);
       }
 
