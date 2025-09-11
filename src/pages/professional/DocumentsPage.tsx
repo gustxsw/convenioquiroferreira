@@ -939,6 +939,13 @@ const DocumentsPage: React.FC = () => {
                             onSuccess={() => setSuccess('PDF gerado com sucesso!')}
                             onError={(error) => setPdfError(error)}
                           />
+                          <SimplePDFGenerator
+                            htmlContent={document.document_url}
+                            fileName={document.title}
+                            title={document.title}
+                            onSuccess={() => setSuccess('PDF gerado com sucesso!')}
+                            onError={(error) => setPdfError(error)}
+                          />
                           <a
                             href={document.document_url}
                             target="_blank"

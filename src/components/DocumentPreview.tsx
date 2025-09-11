@@ -1,38 +1,102 @@
-import React, { useState } from 'react';
-import { FileText, Download, Save, X, Eye, AlertCircle, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { useAuth } from "../../contexts/AuthContext";
+import MedicalRecordPreviewModal from "../../components/MedicalRecordPreviewModal";
 import SimplePDFGenerator from './SimplePDFGenerator';
+import {
+  Stethoscope,
+  Plus,
+  Search,
+  User,
+  Calendar,
+  FileText,
+  Edit,
+  Trash2,
+  Eye,
+  X,
+  Check,
+  Download,
+  Printer,
+} from "lucide-react";
 
-declare global {
-  interface Window {
-    html2pdf: any;
-  }
-}
-
-type DocumentPreviewProps = {
-  isOpen: boolean;
-  onClose: () => void;
-  documentTitle: string;
-  htmlContent: string;
-  documentData: {
-    document_type: string;
-    patient_name: string;
-    patient_cpf?: string;
-    professional_name: string;
-    [key: string]: any;
-  };
+type MedicalRecord = {
+  id: number;
+  patient_name: string;
+  chief_complaint: string;
+  history_present_illness: string;
+  past_medical_history: string;
+  medications: string;
+  allergies: string;
+  physical_examination: string;
+  diagnosis: string;
+  treatment_plan: string;
+  notes: string;
+  vital_signs: any;
+  created_at: string;
+  updated_at: string;
 };
 
-const DocumentPreview: React.FC<DocumentPreviewProps> = ({
-  isOpen,
-  onClose,
-  documentTitle,
-  htmlContent,
-  documentData,
-}) => {
-  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+type PrivatePatient = {
+  id: number;
+  name: string;
+  cpf: string;
+};
+
+const MedicalRecordsPage: React.FC = () => {
+  const { user } = useAuth();
+  const [records, setRecords] = useState<MedicalRecord[]>([]);
+  const [patients, setPatients] = useState<PrivatePatient[]>([]);
+  const [filteredRecords, setFilteredRecords] = useState<MedicalRecord[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedPatient, setSelectedPatient] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  // Modal state
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
+  const [selectedRecord, setSelectedRecord] = useState<MedicalRecord | null>(
+    null
+  );
+
+  // Form state
+  const [formData, setFormData] = useState({
+    private_patient_id: "",
+    chief_complaint: "",
+    history_present_illness: "",
+    past_medical_history: "",
+    medications: "",
+    allergies: "",
+    physical_examination: "",
+    diagnosis: "",
+    treatment_plan: "",
+    notes: "",
+    vital_signs: {
+      blood_pressure: "",
+      heart_rate: "",
+      temperature: "",
+      respiratory_rate: "",
+      oxygen_saturation: "",
+      weight: "",
+      height: "",
+    },
+  });
+
+  // Delete confirmation state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState<MedicalRecord | null>(
+    null
+  );
+
+  // Preview state
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [recordToPreview, setRecordToPreview] = useState<MedicalRecord | null>(null);
+  const [professionalData, setProfessionalData] = useState({
+    name: '',
+    specialty: '',
+    crm: ''
+  });
 
   // Get API URL
   const getApiUrl = () => {
@@ -45,312 +109,918 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     return "http://localhost:3001";
   };
 
-  // Load html2pdf library dynamically
-  const loadHtml2Pdf = (): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      if (window.html2pdf) {
-        resolve();
-        return;
-      }
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-      script.onload = () => {
-        console.log('✅ html2pdf.js loaded successfully');
-        resolve();
-      };
-      script.onerror = () => {
-        console.error('❌ Failed to load html2pdf.js');
-        reject(new Error('Falha ao carregar biblioteca de PDF'));
-      };
-      document.head.appendChild(script);
-    });
-  };
+  useEffect(() => {
+    let filtered = records;
 
-  const generateAndSavePdf = async () => {
+    if (searchTerm) {
+      filtered = filtered.filter(
+        (record) =>
+          record.patient_name
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase()) ||
+          record.chief_complaint
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase()) ||
+          record.diagnosis.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    if (selectedPatient) {
+      // This would need to be implemented based on patient ID
+      // For now, we'll filter by patient name
+      filtered = filtered.filter(
+        (record) =>
+          record.patient_name ===
+          patients.find((p) => p.id.toString() === selectedPatient)?.name
+      );
+    }
+
+    setFilteredRecords(filtered);
+  }, [searchTerm, selectedPatient, records, patients]);
+
+  const fetchData = async () => {
     try {
-      setIsGeneratingPdf(true);
-      setError('');
-      setSuccess('');
+      setIsLoading(true);
+      const token = localStorage.getItem("token");
+      const apiUrl = getApiUrl();
 
-      console.log('🔄 Starting PDF generation process...');
-
-      // Load html2pdf library
-      await loadHtml2Pdf();
-
-      // Create a temporary container for the HTML content
-      const tempContainer = document.createElement('div');
-      tempContainer.innerHTML = htmlContent;
-      tempContainer.style.position = 'absolute';
-      tempContainer.style.left = '-9999px';
-      tempContainer.style.top = '-9999px';
-      tempContainer.style.width = '794px'; // A4 width in pixels (210mm)
-      tempContainer.style.height = 'auto';
-      tempContainer.style.backgroundColor = '#ffffff';
-      tempContainer.style.color = '#000000';
-      tempContainer.style.fontFamily = 'Times New Roman, serif';
-      tempContainer.style.fontSize = '14px';
-      tempContainer.style.lineHeight = '1.6';
-      tempContainer.style.padding = '20px';
-      tempContainer.style.overflow = 'visible';
-      tempContainer.style.zIndex = '-1';
-      tempContainer.style.display = 'block';
-      tempContainer.style.visibility = 'visible';
-      document.body.appendChild(tempContainer);
-
-      // Force styles on all elements
-      const allElements = tempContainer.querySelectorAll('*');
-      allElements.forEach(el => {
-        if (el instanceof HTMLElement) {
-          el.style.color = '#000000';
-          el.style.backgroundColor = el.classList.contains('patient-info') || 
-                                   el.classList.contains('content-section') ? 
-                                   '#f9f9f9' : 'transparent';
-        }
+      // Fetch professional data
+      const userResponse = await fetch(`${apiUrl}/api/users/${user?.id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
 
-      // Configure PDF options
-      const options = {
-        margin: [10, 10, 10, 10],
-        filename: `${documentTitle.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_')}.pdf`,
-        image: { 
-          type: 'jpeg', 
-          quality: 0.98,
-          crossOrigin: 'anonymous'
-        },
-        html2canvas: { 
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          letterRendering: true,
-          logging: false,
-          backgroundColor: '#ffffff',
-          removeContainer: true,
-          imageTimeout: 0,
-          foreignObjectRendering: false
-        },
-        jsPDF: { 
-          unit: 'mm', 
-          format: 'a4', 
-          orientation: 'portrait',
-          compress: true,
-          precision: 2
-        }
-      };
+      if (userResponse.ok) {
+        const userData = await userResponse.json();
+        setProfessionalData({
+          name: userData.name || user?.name || 'Profissional',
+          specialty: userData.category_name || '',
+          crm: userData.crm || ''
+        });
+      }
 
-      console.log('🔄 Generating PDF with options:', options);
+      // Fetch medical records
+      const recordsResponse = await fetch(`${apiUrl}/api/medical-records`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-      // Generate PDF
-      const pdf = window.html2pdf()
-        .set(options)
-        .from(tempContainer);
-        
-      const pdfBlob = await pdf.outputPdf('blob');
+      if (recordsResponse.ok) {
+        const recordsData = await recordsResponse.json();
+        setRecords(recordsData);
+      }
 
-      console.log('✅ PDF generated successfully, size:', pdfBlob.size);
+      // Fetch patients
+      const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-      // Clean up temporary container
-      document.body.removeChild(tempContainer);
-
-      // Convert blob to base64 for backend
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          setIsSaving(true);
-          const base64Data = (reader.result as string).split(',')[1];
-
-          console.log('🔄 Saving PDF to backend...');
-
-          // Save to backend
-          const token = localStorage.getItem('token');
-          const apiUrl = getApiUrl();
-
-          const response = await fetch(`${apiUrl}/api/documents/save`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              title: documentTitle,
-              document_type: documentData.document_type,
-              patient_name: documentData.patient_name,
-              patient_cpf: documentData.patient_cpf || null,
-              pdf_data: base64Data,
-              document_metadata: documentData,
-            }),
-          });
-
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || 'Erro ao salvar documento no servidor');
-          }
-
-          const result = await response.json();
-          console.log('✅ Document saved to backend:', result);
-
-          // Download PDF locally
-          const url = URL.createObjectURL(pdfBlob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = options.filename;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-
-          setSuccess('PDF gerado, baixado e salvo com sucesso!');
-          
-          // Auto-close after success
-          setTimeout(() => {
-            onClose();
-          }, 2000);
-        } catch (error) {
-          console.error('❌ Error saving PDF:', error);
-          setError(error instanceof Error ? error.message : 'Erro ao salvar PDF');
-        } finally {
-          setIsSaving(false);
-        }
-      };
-
-      reader.onerror = () => {
-        setError('Erro ao processar PDF');
-        setIsGeneratingPdf(false);
-        setIsSaving(false);
-      };
-
-      reader.readAsDataURL(pdfBlob);
+      if (patientsResponse.ok) {
+        const patientsData = await patientsResponse.json();
+        setPatients(patientsData);
+      }
     } catch (error) {
-      console.error('❌ Error generating PDF:', error);
-      setError(error instanceof Error ? error.message : 'Erro ao gerar PDF');
-      setIsGeneratingPdf(false);
-      setIsSaving(false);
+      console.error("Error fetching data:", error);
+      setError("Não foi possível carregar os dados");
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const downloadHtml = () => {
-    const blob = new Blob([htmlContent], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${documentTitle.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_')}.html`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  const openCreateModal = () => {
+    setModalMode("create");
+    setFormData({
+      private_patient_id: "",
+      chief_complaint: "",
+      history_present_illness: "",
+      past_medical_history: "",
+      medications: "",
+      allergies: "",
+      physical_examination: "",
+      diagnosis: "",
+      treatment_plan: "",
+      notes: "",
+      vital_signs: {
+        blood_pressure: "",
+        heart_rate: "",
+        temperature: "",
+        respiratory_rate: "",
+        oxygen_saturation: "",
+        weight: "",
+        height: "",
+      },
+    });
+    setSelectedRecord(null);
+    setIsModalOpen(true);
   };
 
-  if (!isOpen) return null;
+  const openEditModal = (record: MedicalRecord) => {
+    setModalMode("edit");
+    setFormData({
+      private_patient_id: "", // Would need to be set based on the record
+      chief_complaint: record.chief_complaint || "",
+      history_present_illness: record.history_present_illness || "",
+      past_medical_history: record.past_medical_history || "",
+      medications: record.medications || "",
+      allergies: record.allergies || "",
+      physical_examination: record.physical_examination || "",
+      diagnosis: record.diagnosis || "",
+      treatment_plan: record.treatment_plan || "",
+      notes: record.notes || "",
+      vital_signs: record.vital_signs || {
+        blood_pressure: "",
+        heart_rate: "",
+        temperature: "",
+        respiratory_rate: "",
+        oxygen_saturation: "",
+        weight: "",
+        height: "",
+      },
+    });
+    setSelectedRecord(record);
+    setIsModalOpen(true);
+  };
 
-  const isProcessing = isGeneratingPdf || isSaving;
+  const openViewModal = (record: MedicalRecord) => {
+    setSelectedRecord(record);
+    setIsViewModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setIsViewModalOpen(false);
+    setError("");
+    setSuccess("");
+  };
+
+  const handleInputChange = (
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
+  ) => {
+    const { name, value } = e.target;
+
+    if (name.startsWith("vital_signs.")) {
+      const vitalSign = name.split(".")[1];
+      setFormData((prev) => ({
+        ...prev,
+        vital_signs: {
+          ...prev.vital_signs,
+          [vitalSign]: value,
+        },
+      }));
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+
+    try {
+      const token = localStorage.getItem("token");
+      const apiUrl = getApiUrl();
+
+      const url =
+        modalMode === "create"
+          ? `${apiUrl}/api/medical-records`
+          : `${apiUrl}/api/medical-records/${selectedRecord?.id}`;
+
+      const method = modalMode === "create" ? "POST" : "PUT";
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(formData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Erro ao salvar prontuário");
+      }
+
+      setSuccess(
+        modalMode === "create"
+          ? "Prontuário criado com sucesso!"
+          : "Prontuário atualizado com sucesso!"
+      );
+      await fetchData();
+
+      setTimeout(() => {
+        closeModal();
+      }, 1500);
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : "Erro ao salvar prontuário"
+      );
+    }
+  };
+
+  const confirmDelete = (record: MedicalRecord) => {
+    setRecordToDelete(record);
+    setShowDeleteConfirm(true);
+  };
+
+  const cancelDelete = () => {
+    setRecordToDelete(null);
+    setShowDeleteConfirm(false);
+  };
+
+  const deleteRecord = async () => {
+    if (!recordToDelete) return;
+
+    try {
+      const token = localStorage.getItem("token");
+      const apiUrl = getApiUrl();
+
+      const response = await fetch(
+        `${apiUrl}/api/medical-records/${recordToDelete.id}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Erro ao excluir prontuário");
+      }
+
+      await fetchData();
+      setSuccess("Prontuário excluído com sucesso!");
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : "Erro ao excluir prontuário"
+      );
+    } finally {
+      setRecordToDelete(null);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  const openPreviewModal = (record: MedicalRecord) => {
+    setRecordToPreview(record);
+    setShowPreviewModal(true);
+  };
+
+  const closePreviewModal = () => {
+    setShowPreviewModal(false);
+    setRecordToPreview(null);
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-          <div className="flex items-center">
-            <FileText className="h-6 w-6 text-red-600 mr-3" />
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">{documentTitle}</h2>
-              <p className="text-sm text-gray-600">
-                Paciente: {documentData.patient_name}
-              </p>
-            </div>
-          </div>
-          
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-            disabled={isProcessing}
-          >
-            <X className="h-6 w-6" />
-          </button>
+    <div>
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Prontuários Médicos
+          </h1>
+          <p className="text-gray-600">
+            Gerencie os prontuários dos seus pacientes
+          </p>
         </div>
 
-        {/* Feedback Messages */}
-        {error && (
-          <div className="mx-6 mt-4 bg-red-50 text-red-600 p-3 rounded-lg flex items-center">
-            <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
-            {error}
-          </div>
-        )}
+        <button
+          onClick={openCreateModal}
+          className="btn btn-primary flex items-center"
+        >
+          <Plus className="h-5 w-5 mr-2" />
+          Novo Prontuário
+        </button>
+      </div>
 
-        {success && (
-          <div className="mx-6 mt-4 bg-green-50 text-green-600 p-3 rounded-lg flex items-center">
-            <CheckCircle className="h-5 w-5 mr-2 flex-shrink-0" />
-            {success}
-          </div>
-        )}
-
-        {/* Document Preview */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-            <div 
-              className="p-8"
-              dangerouslySetInnerHTML={{ __html: htmlContent }}
-              style={{
-                fontFamily: 'Times New Roman, serif',
-                lineHeight: '1.6',
-                color: '#333',
-                maxWidth: '210mm',
-                margin: '0 auto',
-                minHeight: '297mm', // A4 height
-                backgroundColor: 'white'
-              }}
-            />
-          </div>
+      {/* Filters */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Buscar por paciente, queixa ou diagnóstico..."
+            className="input pl-10"
+          />
         </div>
 
-        {/* Action Buttons */}
-        <div className="p-6 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
-          <div className="flex items-center space-x-2">
-            <Eye className="h-4 w-4 text-gray-500" />
-            <span className="text-sm text-gray-600">
-              Visualização do documento
-            </span>
-          </div>
+        <select
+          value={selectedPatient}
+          onChange={(e) => setSelectedPatient(e.target.value)}
+          className="input"
+        >
+          <option value="">Todos os pacientes</option>
+          {patients.map((patient) => (
+            <option key={patient.id} value={patient.id}>
+              {patient.name}
+            </option>
+          ))}
+        </select>
+      </div>
 
-          <div className="flex space-x-3">
-            <button
-              onClick={downloadHtml}
-              className="btn btn-secondary flex items-center"
-              disabled={isProcessing}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Baixar HTML
-            </button>
-
-            <SimplePDFGenerator
-              htmlContent={htmlContent}
-              fileName={documentTitle}
-              title={documentTitle}
-              onSuccess={() => setSuccess('PDF gerado com sucesso!')}
-              onError={(error) => setError(error)}
-            />
-          </div>
+      {error && (
+        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6">
+          {error}
         </div>
+      )}
 
-        {/* Processing Status */}
-        {isProcessing && (
-          <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
-              <p className="text-gray-700 font-medium">
-                {isGeneratingPdf ? 'Gerando PDF...' : 'Salvando documento...'}
-              </p>
-              <p className="text-sm text-gray-500 mt-2">
-                {isGeneratingPdf 
-                  ? 'Convertendo HTML para PDF, aguarde...'
-                  : 'Enviando para o servidor e salvando...'
-                }
-              </p>
-            </div>
+      {success && (
+        <div className="bg-green-50 text-green-600 p-4 rounded-lg mb-6">
+          {success}
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+        {isLoading ? (
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Carregando prontuários...</p>
+          </div>
+        ) : filteredRecords.length === 0 ? (
+          <div className="text-center py-12">
+            <Stethoscope className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              {searchTerm || selectedPatient
+                ? "Nenhum prontuário encontrado"
+                : "Nenhum prontuário cadastrado"}
+            </h3>
+            <p className="text-gray-600 mb-4">
+              {searchTerm || selectedPatient
+                ? "Tente ajustar os filtros de busca."
+                : "Comece criando o primeiro prontuário médico."}
+            </p>
+            {!searchTerm && !selectedPatient && (
+              <button
+                onClick={openCreateModal}
+                className="btn btn-primary inline-flex items-center"
+              >
+                <Plus className="h-5 w-5 mr-2" />
+                Criar Primeiro Prontuário
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Paciente
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Queixa Principal
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Diagnóstico
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Data
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Ações
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredRecords.map((record) => (
+                  <tr key={record.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div className="flex-shrink-0 h-10 w-10">
+                          <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
+                            <User className="h-5 w-5 text-red-600" />
+                          </div>
+                        </div>
+                        <div className="ml-4">
+                          <div className="text-sm font-medium text-gray-900">
+                            {record.patient_name}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-gray-900">
+                        {record.chief_complaint || "Não informado"}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-gray-900">
+                        {record.diagnosis || "Não informado"}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center text-sm text-gray-500">
+                        <Calendar className="h-3 w-3 mr-1" />
+                        {formatDate(record.created_at)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="flex items-center justify-end space-x-2">
+                        <button
+                          onClick={() => openViewModal(record)}
+                          className="text-gray-600 hover:text-gray-900"
+                          title="Visualizar"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => openPreviewModal(record)}
+                          className="text-green-600 hover:text-green-900"
+                          title="Gerar Documento"
+                        >
+                          <Printer className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => openEditModal(record)}
+                          className="text-blue-600 hover:text-blue-900"
+                          title="Editar"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => confirmDelete(record)}
+                          className="text-red-600 hover:text-red-900"
+                          title="Excluir"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
+
+      {/* Medical record form modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold">
+                {modalMode === "create"
+                  ? "Novo Prontuário"
+                  : "Editar Prontuário"}
+              </h2>
+            </div>
+
+            {error && (
+              <div className="mx-6 mt-4 bg-red-50 text-red-600 p-3 rounded-lg">
+                {error}
+              </div>
+            )}
+
+            {success && (
+              <div className="mx-6 mt-4 bg-green-50 text-green-600 p-3 rounded-lg">
+                {success}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="p-6">
+              <div className="space-y-6">
+                {/* Patient Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Paciente *
+                  </label>
+                  <select
+                    name="private_patient_id"
+                    value={formData.private_patient_id}
+                    onChange={handleInputChange}
+                    className="input"
+                    required
+                  >
+                    <option value="">Selecione um paciente</option>
+                    {patients.map((patient) => (
+                      <option key={patient.id} value={patient.id}>
+                        {patient.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Vital Signs */}
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    Sinais Vitais
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Pressão Arterial
+                      </label>
+                      <input
+                        type="text"
+                        name="vital_signs.blood_pressure"
+                        value={formData.vital_signs.blood_pressure}
+                        onChange={handleInputChange}
+                        className="input"
+                        placeholder="120/80"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Frequência Cardíaca
+                      </label>
+                      <input
+                        type="text"
+                        name="vital_signs.heart_rate"
+                        value={formData.vital_signs.heart_rate}
+                        onChange={handleInputChange}
+                        className="input"
+                        placeholder="72 bpm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Temperatura
+                      </label>
+                      <input
+                        type="text"
+                        name="vital_signs.temperature"
+                        value={formData.vital_signs.temperature}
+                        onChange={handleInputChange}
+                        className="input"
+                        placeholder="36.5°C"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Freq. Respiratória
+                      </label>
+                      <input
+                        type="text"
+                        name="vital_signs.respiratory_rate"
+                        value={formData.vital_signs.respiratory_rate}
+                        onChange={handleInputChange}
+                        className="input"
+                        placeholder="16 rpm"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Medical Information */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Queixa Principal
+                    </label>
+                    <textarea
+                      name="chief_complaint"
+                      value={formData.chief_complaint}
+                      onChange={handleInputChange}
+                      className="input min-h-[100px]"
+                      rows={4}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      História da Doença Atual
+                    </label>
+                    <textarea
+                      name="history_present_illness"
+                      value={formData.history_present_illness}
+                      onChange={handleInputChange}
+                      className="input min-h-[100px]"
+                      rows={4}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      História Médica Pregressa
+                    </label>
+                    <textarea
+                      name="past_medical_history"
+                      value={formData.past_medical_history}
+                      onChange={handleInputChange}
+                      className="input min-h-[100px]"
+                      rows={4}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Medicamentos em Uso
+                    </label>
+                    <textarea
+                      name="medications"
+                      value={formData.medications}
+                      onChange={handleInputChange}
+                      className="input min-h-[100px]"
+                      rows={4}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Alergias
+                    </label>
+                    <textarea
+                      name="allergies"
+                      value={formData.allergies}
+                      onChange={handleInputChange}
+                      className="input min-h-[100px]"
+                      rows={4}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Exame Físico
+                    </label>
+                    <textarea
+                      name="physical_examination"
+                      value={formData.physical_examination}
+                      onChange={handleInputChange}
+                      className="input min-h-[100px]"
+                      rows={4}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Diagnóstico
+                    </label>
+                    <textarea
+                      name="diagnosis"
+                      value={formData.diagnosis}
+                      onChange={handleInputChange}
+                      className="input min-h-[100px]"
+                      rows={4}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Plano de Tratamento
+                    </label>
+                    <textarea
+                      name="treatment_plan"
+                      value={formData.treatment_plan}
+                      onChange={handleInputChange}
+                      className="input min-h-[100px]"
+                      rows={4}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Observações Gerais
+                  </label>
+                  <textarea
+                    name="notes"
+                    value={formData.notes}
+                    onChange={handleInputChange}
+                    className="input min-h-[100px]"
+                    rows={4}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 mt-8 pt-6 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="btn btn-secondary"
+                >
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  {modalMode === "create"
+                    ? "Criar Prontuário"
+                    : "Salvar Alterações"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* View modal */}
+      {isViewModalOpen && selectedRecord && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <h2 className="text-xl font-bold">Visualizar Prontuário</h2>
+              <button
+                onClick={closeModal}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-2">
+                  Informações do Paciente
+                </h3>
+                <p>
+                  <strong>Nome:</strong> {selectedRecord.patient_name}
+                </p>
+                <p>
+                  <strong>Data do Atendimento:</strong>{" "}
+                  {formatDate(selectedRecord.created_at)}
+                </p>
+              </div>
+
+              {selectedRecord.vital_signs && (
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-2">
+                    Sinais Vitais
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    {selectedRecord.vital_signs.blood_pressure && (
+                      <div>
+                        <strong>PA:</strong>{" "}
+                        {selectedRecord.vital_signs.blood_pressure}
+                      </div>
+                    )}
+                    {selectedRecord.vital_signs.heart_rate && (
+                      <div>
+                        <strong>FC:</strong>{" "}
+                        {selectedRecord.vital_signs.heart_rate}
+                      </div>
+                    )}
+                    {selectedRecord.vital_signs.temperature && (
+                      <div>
+                        <strong>Temp:</strong>{" "}
+                        {selectedRecord.vital_signs.temperature}
+                      </div>
+                    )}
+                    {selectedRecord.vital_signs.respiratory_rate && (
+                      <div>
+                        <strong>FR:</strong>{" "}
+                        {selectedRecord.vital_signs.respiratory_rate}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {selectedRecord.chief_complaint && (
+                  <div>
+                    <h4 className="font-semibold text-gray-900 mb-2">
+                      Queixa Principal
+                    </h4>
+                    <p className="text-gray-700">
+                      {selectedRecord.chief_complaint}
+                    </p>
+                  </div>
+                )}
+
+                {selectedRecord.history_present_illness && (
+                  <div>
+                    <h4 className="font-semibold text-gray-900 mb-2">
+                      História da Doença Atual
+                    </h4>
+                    <p className="text-gray-700">
+                      {selectedRecord.history_present_illness}
+                    </p>
+                  </div>
+                )}
+
+                {selectedRecord.past_medical_history && (
+                  <div>
+                    <h4 className="font-semibold text-gray-900 mb-2">
+                      História Médica Pregressa
+                    </h4>
+                    <p className="text-gray-700">
+                      {selectedRecord.past_medical_history}
+                    </p>
+                  </div>
+                )}
+
+                {selectedRecord.medications && (
+                  <div>
+                    <h4 className="font-semibold text-gray-900 mb-2">
+                      Medicamentos
+                    </h4>
+                    <p className="text-gray-700">
+                      {selectedRecord.medications}
+                    </p>
+                  </div>
+                )}
+
+                {selectedRecord.allergies && (
+                  <div>
+                    <h4 className="font-semibold text-gray-900 mb-2">
+                      Alergias
+                    </h4>
+                    <p className="text-gray-700">{selectedRecord.allergies}</p>
+                  </div>
+                )}
+
+                {selectedRecord.physical_examination && (
+                  <div>
+                    <h4 className="font-semibold text-gray-900 mb-2">
+                      Exame Físico
+                    </h4>
+                    <p className="text-gray-700">
+                      {selectedRecord.physical_examination}
+                    </p>
+                  </div>
+                )}
+
+                {selectedRecord.diagnosis && (
+                  <div>
+                    <h4 className="font-semibold text-gray-900 mb-2">
+                      Diagnóstico
+                    </h4>
+                    <p className="text-gray-700">{selectedRecord.diagnosis}</p>
+                  </div>
+                )}
+
+                {selectedRecord.treatment_plan && (
+                  <div>
+                    <h4 className="font-semibold text-gray-900 mb-2">
+                      Plano de Tratamento
+                    </h4>
+                    <p className="text-gray-700">
+                      {selectedRecord.treatment_plan}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {selectedRecord.notes && (
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-2">
+                    Observações
+                  </h4>
+                  <p className="text-gray-700">{selectedRecord.notes}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Medical Record Preview Modal */}
+      {showPreviewModal && recordToPreview && (
+        <MedicalRecordPreviewModal
+          isOpen={showPreviewModal}
+          onClose={closePreviewModal}
+          recordData={recordToPreview}
+          professionalData={professionalData}
+        />
+      )}
+
+      {/* Delete confirmation modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md p-6">
+            <h2 className="text-xl font-bold mb-4">Confirmar Exclusão</h2>
+
+            <p className="mb-6">
+              Tem certeza que deseja excluir este prontuário? Esta ação não pode
+              ser desfeita.
+            </p>
+
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={cancelDelete}
+                className="btn btn-secondary flex items-center"
+              >
+                <X className="h-4 w-4 mr-2" />
+                Cancelar
+              </button>
+              <button
+                onClick={deleteRecord}
+                className="btn bg-red-600 text-white hover:bg-red-700 flex items-center"
+              >
+                <Check className="h-4 w-4 mr-2" />
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-export default DocumentPreview;
+export default MedicalRecordsPage;

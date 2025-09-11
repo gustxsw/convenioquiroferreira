@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { FileText, Download, Save, X, Eye, AlertCircle, CheckCircle, Printer } from 'lucide-react';
 import SimplePDFGenerator from './SimplePDFGenerator';
+import SimplePDFGenerator from './SimplePDFGenerator';
 
 declare global {
   interface Window {
@@ -554,25 +555,13 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
             />
           </div>
         </div>
-
-        {/* Action Buttons */}
-        <div className="p-6 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
-          <div className="flex items-center space-x-2">
-            <Eye className="h-4 w-4 text-gray-500" />
-            <span className="text-sm text-gray-600">
-              Visualização do prontuário médico
-            </span>
-          </div>
-
-          <div className="flex space-x-3">
-            <button
-              onClick={saveAsHTML}
-              className="btn btn-secondary flex items-center"
-              disabled={isProcessing}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Salvar HTML
-            </button>
+            <SimplePDFGenerator
+              htmlContent={generateHTML()}
+              fileName={`Prontuario_${recordData.patient_name}`}
+              title={`Prontuário Médico - ${recordData.patient_name}`}
+              onSuccess={() => setSuccess('PDF gerado com sucesso!')}
+              onError={(error) => setError(error)}
+            />
 
             <SimplePDFGenerator
               htmlContent={generateHTML()}

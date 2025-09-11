@@ -4992,6 +4992,32 @@ const createSavedDocumentsTable = async () => {
 // Initialize database tables
 createSavedDocumentsTable();
 
+// Create saved_documents table if it doesn't exist
+const createSavedDocumentsTable = async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS saved_documents (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        document_type VARCHAR(50) NOT NULL,
+        patient_name VARCHAR(255) NOT NULL,
+        patient_cpf VARCHAR(11),
+        professional_id INTEGER NOT NULL,
+        document_url TEXT NOT NULL,
+        document_metadata JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (professional_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    console.log('✅ saved_documents table ready');
+  } catch (error) {
+    console.error('❌ Error creating saved_documents table:', error);
+  }
+};
+
+// Initialize database tables
+createSavedDocumentsTable();
+
 
 app.get("/api/health", (req, res) => {
   res.json({

@@ -978,16 +978,6 @@ const MedicalRecordsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Medical Record Preview Modal */}
-      {showPreviewModal && recordToPreview && (
-        <MedicalRecordPreviewModal
-          isOpen={showPreviewModal}
-          onClose={closePreviewModal}
-          recordData={recordToPreview}
-          professionalData={professionalData}
-        />
-      )}
-
       {/* Delete confirmation modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
