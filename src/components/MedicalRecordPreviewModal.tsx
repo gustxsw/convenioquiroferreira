@@ -44,7 +44,6 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
-  const { user } = useAuth();
 
   // Get API URL
   const getApiUrl = () => {
