@@ -143,8 +143,24 @@ const DocumentsPage: React.FC = () => {
           name: userData.name || user?.name || 'Profissional',
           specialty: userData.category_name || '',
           crm: userData.crm || '',
-          signatureUrl: userData.signature_url || null,
+          signatureUrl: null, // Will be fetched separately
         });
+
+        // Fetch signature separately
+        try {
+          const signatureResponse = await fetch(`${apiUrl}/api/professionals/${user?.id}/signature`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (signatureResponse.ok) {
+            const signatureData = await signatureResponse.json();
+            setProfessionalData(prev => ({
+              ...prev,
+              signatureUrl: signatureData.signature_url
+            }));
+          }
+        } catch (signatureError) {
+          console.warn('Could not load signature:', signatureError);
+        }
       }
 
       // Fetch saved documents
@@ -159,9 +175,11 @@ const DocumentsPage: React.FC = () => {
       if (documentsResponse.ok) {
         const documentsData = await documentsResponse.json();
         console.log('✅ [DOCUMENTS] Medical documents loaded:', documentsData.length);
+        console.log('✅ [DOCUMENTS] Documents data:', documentsData);
         setDocuments(documentsData);
       } else {
-        console.warn('⚠️ [DOCUMENTS] Medical documents not available:', documentsResponse.status);
+        const errorText = await documentsResponse.text();
+        console.error('❌ [DOCUMENTS] Medical documents error:', documentsResponse.status, errorText);
         setDocuments([]);
       }
 
@@ -274,6 +292,7 @@ const DocumentsPage: React.FC = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('❌ [DOCUMENTS] Document creation error:', errorData);
         throw new Error(errorData.message || 'Erro ao gerar documento');
       }
 
