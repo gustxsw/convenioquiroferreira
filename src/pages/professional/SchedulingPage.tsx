@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import CancelConsultationModal from "../../components/CancelConsultationModal";
 import EditConsultationModal from "../../components/EditConsultationModal";
 import SlotCustomizationModal from "../../components/SlotCustomizationModal";
 import RecurringConsultationModal from '../../components/RecurringConsultationModal';
@@ -106,6 +107,9 @@ const SchedulingPage: React.FC = () => {
   // Edit consultation modal
   const [showEditModal, setShowEditModal] = useState(false);
   const [consultationToEdit, setConsultationToEdit] = useState<Consultation | null>(null);
+
+  // Cancel consultation modal
+  const [showCancelModal, setShowCancelModal] = useState(false);
 
   // Slot customization
   const [slotDuration2, setSlotDuration2] = useState<SlotDuration>(() => {
@@ -600,6 +604,49 @@ const SchedulingPage: React.FC = () => {
     fetchData();
     setSuccess("Consulta editada com sucesso!");
     setTimeout(() => setSuccess(""), 3000);
+  };
+
+  const openCancelModal = (consultation: Consultation) => {
+    setSelectedConsultation(consultation);
+    setShowCancelModal(true);
+  };
+
+  const closeModals = () => {
+    setShowCancelModal(false);
+    setShowStatusModal(false);
+    setSelectedConsultation(null);
+    setError("");
+  };
+
+  const handleCancelConsultation = async (reason?: string) => {
+    if (!selectedConsultation) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const apiUrl = getApiUrl();
+
+      const response = await fetch(`${apiUrl}/api/consultations/${selectedConsultation.id}/cancel`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          cancellation_reason: reason || null
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erro ao cancelar consulta');
+      }
+
+      await fetchData();
+      setSuccess('Consulta cancelada com sucesso! Horário liberado para novos agendamentos.');
+      setTimeout(() => setSuccess(''), 5000);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Erro ao cancelar consulta');
+    }
   };
 
   const openWhatsApp = async (consultation: Consultation) => {
