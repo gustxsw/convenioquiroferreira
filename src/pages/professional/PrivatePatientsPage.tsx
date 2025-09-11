@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserPlus, Edit, Trash2, User, Search, Phone, Mail, MapPin, Calendar, X, Check } from 'lucide-react';
+import { UserPlus, Edit, Trash2, User, Search, Phone, Mail, MapPin, Calendar, X, Check, Filter, RefreshCw, Users } from 'lucide-react';
 
 type PrivatePatient = {
   id: number;
@@ -22,6 +22,8 @@ const PrivatePatientsPage: React.FC = () => {
   const [patients, setPatients] = useState<PrivatePatient[]>([]);
   const [filteredPatients, setFilteredPatients] = useState<PrivatePatient[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchType, setSearchType] = useState<'name' | 'cpf' | 'phone'>('name');
+  const [isSearching, setIsSearching] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -50,6 +52,17 @@ const PrivatePatientsPage: React.FC = () => {
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [patientToDelete, setPatientToDelete] = useState<PrivatePatient | null>(null);
+  
+  // Advanced search state
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const [advancedSearchData, setAdvancedSearchData] = useState({
+    name: '',
+    cpf: '',
+    phone: '',
+    email: '',
+    city: '',
+    state: ''
+  });
 
   // Get API URL
   const getApiUrl = () => {
@@ -67,16 +80,100 @@ const PrivatePatientsPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (searchTerm) {
-      const filtered = patients.filter(patient =>
-        patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        patient.cpf.includes(searchTerm.replace(/\D/g, ''))
-      );
-      setFilteredPatients(filtered);
-    } else {
-      setFilteredPatients(patients);
-    }
+    filterPatients();
   }, [searchTerm, patients]);
+
+  const filterPatients = () => {
+    let filtered = patients;
+
+    if (searchTerm.trim()) {
+      const searchValue = searchTerm.toLowerCase().trim();
+      
+      filtered = filtered.filter(patient => {
+        switch (searchType) {
+          case 'name':
+            return patient.name.toLowerCase().includes(searchValue);
+          case 'cpf':
+            return patient.cpf && patient.cpf.replace(/\D/g, '').includes(searchValue.replace(/\D/g, ''));
+          case 'phone':
+            return patient.phone && patient.phone.replace(/\D/g, '').includes(searchValue.replace(/\D/g, ''));
+          default:
+            return patient.name.toLowerCase().includes(searchValue) ||
+                   (patient.cpf && patient.cpf.includes(searchValue.replace(/\D/g, ''))) ||
+                   (patient.phone && patient.phone.includes(searchValue.replace(/\D/g, '')));
+        }
+      });
+    }
+
+    setFilteredPatients(filtered);
+  };
+
+  const performAdvancedSearch = () => {
+    setIsSearching(true);
+    
+    let filtered = patients;
+    
+    // Apply advanced search filters
+    if (advancedSearchData.name.trim()) {
+      filtered = filtered.filter(patient =>
+        patient.name.toLowerCase().includes(advancedSearchData.name.toLowerCase().trim())
+      );
+    }
+    
+    if (advancedSearchData.cpf.trim()) {
+      const cleanCpf = advancedSearchData.cpf.replace(/\D/g, '');
+      filtered = filtered.filter(patient =>
+        patient.cpf && patient.cpf.replace(/\D/g, '').includes(cleanCpf)
+      );
+    }
+    
+    if (advancedSearchData.phone.trim()) {
+      const cleanPhone = advancedSearchData.phone.replace(/\D/g, '');
+      filtered = filtered.filter(patient =>
+        patient.phone && patient.phone.replace(/\D/g, '').includes(cleanPhone)
+      );
+    }
+    
+    if (advancedSearchData.email.trim()) {
+      filtered = filtered.filter(patient =>
+        patient.email && patient.email.toLowerCase().includes(advancedSearchData.email.toLowerCase().trim())
+      );
+    }
+    
+    if (advancedSearchData.city.trim()) {
+      filtered = filtered.filter(patient =>
+        patient.city && patient.city.toLowerCase().includes(advancedSearchData.city.toLowerCase().trim())
+      );
+    }
+    
+    if (advancedSearchData.state) {
+      filtered = filtered.filter(patient =>
+        patient.state === advancedSearchData.state
+      );
+    }
+    
+    setFilteredPatients(filtered);
+    setIsSearching(false);
+    setShowAdvancedSearch(false);
+  };
+
+  const clearAdvancedSearch = () => {
+    setAdvancedSearchData({
+      name: '',
+      cpf: '',
+      phone: '',
+      email: '',
+      city: '',
+      state: ''
+    });
+    setFilteredPatients(patients);
+    setShowAdvancedSearch(false);
+  };
+
+  const clearSimpleSearch = () => {
+    setSearchTerm('');
+    setFilteredPatients(patients);
+  };
 
   const fetchPatients = async () => {
     try {
@@ -310,18 +407,247 @@ const PrivatePatientsPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Search */}
-      <div className="mb-6">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar por nome ou CPF..."
-            className="input pl-10"
-          />
+      {/* Search Section */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center">
+            <Search className="h-5 w-5 text-red-600 mr-2" />
+            <h2 className="text-lg font-semibold">Buscar Pacientes</h2>
+          </div>
+          
+          <div className="flex space-x-2">
+            <button
+              onClick={() => setShowAdvancedSearch(!showAdvancedSearch)}
+              className="btn btn-outline flex items-center"
+            >
+              <Filter className="h-4 w-4 mr-2" />
+              Busca Avançada
+            </button>
+            
+            <button
+              onClick={() => {
+                clearSimpleSearch();
+                clearAdvancedSearch();
+              }}
+              className="btn btn-secondary flex items-center"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Limpar
+            </button>
+          </div>
         </div>
+
+        {/* Simple Search */}
+        {!showAdvancedSearch && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Tipo de Busca
+              </label>
+              <select
+                value={searchType}
+                onChange={(e) => setSearchType(e.target.value as 'name' | 'cpf' | 'phone')}
+                className="input"
+              >
+                <option value="name">Por Nome</option>
+                <option value="cpf">Por CPF</option>
+                <option value="phone">Por Telefone</option>
+              </select>
+            </div>
+            
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Termo de Busca
+              </label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder={
+                    searchType === 'name' ? 'Digite o nome do paciente...' :
+                    searchType === 'cpf' ? 'Digite o CPF (apenas números)...' :
+                    'Digite o telefone (apenas números)...'
+                  }
+                  className="input pl-10"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Advanced Search */}
+        {showAdvancedSearch && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nome
+                </label>
+                <input
+                  type="text"
+                  value={advancedSearchData.name}
+                  onChange={(e) => setAdvancedSearchData(prev => ({ ...prev, name: e.target.value }))}
+                  className="input"
+                  placeholder="Nome do paciente"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  CPF
+                </label>
+                <input
+                  type="text"
+                  value={advancedSearchData.cpf}
+                  onChange={(e) => setAdvancedSearchData(prev => ({ 
+                    ...prev, 
+                    cpf: e.target.value.replace(/\D/g, '').slice(0, 11)
+                  }))}
+                  className="input"
+                  placeholder="00000000000"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Telefone
+                </label>
+                <input
+                  type="text"
+                  value={advancedSearchData.phone}
+                  onChange={(e) => setAdvancedSearchData(prev => ({ 
+                    ...prev, 
+                    phone: e.target.value.replace(/\D/g, '').slice(0, 11)
+                  }))}
+                  className="input"
+                  placeholder="00000000000"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={advancedSearchData.email}
+                  onChange={(e) => setAdvancedSearchData(prev => ({ ...prev, email: e.target.value }))}
+                  className="input"
+                  placeholder="email@exemplo.com"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Cidade
+                </label>
+                <input
+                  type="text"
+                  value={advancedSearchData.city}
+                  onChange={(e) => setAdvancedSearchData(prev => ({ ...prev, city: e.target.value }))}
+                  className="input"
+                  placeholder="Nome da cidade"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Estado
+                </label>
+                <select
+                  value={advancedSearchData.state}
+                  onChange={(e) => setAdvancedSearchData(prev => ({ ...prev, state: e.target.value }))}
+                  className="input"
+                >
+                  <option value="">Todos os estados</option>
+                  <option value="AC">Acre</option>
+                  <option value="AL">Alagoas</option>
+                  <option value="AP">Amapá</option>
+                  <option value="AM">Amazonas</option>
+                  <option value="BA">Bahia</option>
+                  <option value="CE">Ceará</option>
+                  <option value="DF">Distrito Federal</option>
+                  <option value="ES">Espírito Santo</option>
+                  <option value="GO">Goiás</option>
+                  <option value="MA">Maranhão</option>
+                  <option value="MT">Mato Grosso</option>
+                  <option value="MS">Mato Grosso do Sul</option>
+                  <option value="MG">Minas Gerais</option>
+                  <option value="PA">Pará</option>
+                  <option value="PB">Paraíba</option>
+                  <option value="PR">Paraná</option>
+                  <option value="PE">Pernambuco</option>
+                  <option value="PI">Piauí</option>
+                  <option value="RJ">Rio de Janeiro</option>
+                  <option value="RN">Rio Grande do Norte</option>
+                  <option value="RS">Rio Grande do Sul</option>
+                  <option value="RO">Rondônia</option>
+                  <option value="RR">Roraima</option>
+                  <option value="SC">Santa Catarina</option>
+                  <option value="SP">São Paulo</option>
+                  <option value="SE">Sergipe</option>
+                  <option value="TO">Tocantins</option>
+                </select>
+              </div>
+            </div>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={clearAdvancedSearch}
+                className="btn btn-secondary flex items-center"
+              >
+                <X className="h-4 w-4 mr-2" />
+                Limpar Filtros
+              </button>
+              <button
+                onClick={performAdvancedSearch}
+                className={`btn btn-primary flex items-center ${
+                  isSearching ? 'opacity-70 cursor-not-allowed' : ''
+                }`}
+                disabled={isSearching}
+              >
+                {isSearching ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Buscando...
+                  </>
+                ) : (
+                  <>
+                    <Search className="h-4 w-4 mr-2" />
+                    Buscar
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Search Results Info */}
+        {(searchTerm || Object.values(advancedSearchData).some(val => val.trim())) && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-600">
+                {filteredPatients.length} paciente(s) encontrado(s)
+                {searchTerm && ` para "${searchTerm}"`}
+              </p>
+              
+              {filteredPatients.length > 0 && (
+                <div className="flex items-center space-x-4 text-xs text-gray-500">
+                  <div className="flex items-center">
+                    <Users className="h-3 w-3 mr-1" />
+                    Total: {patients.length}
+                  </div>
+                  <div className="flex items-center">
+                    <Search className="h-3 w-3 mr-1" />
+                    Filtrados: {filteredPatients.length}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -402,7 +728,7 @@ const PrivatePatientsPage: React.FC = () => {
                           </div>
                           {patient.cpf && (
                             <div className="text-sm text-gray-500">
-                              CPF: {patient.cpf ? formatCpfDisplay(patient.cpf) : 'Não informado'}
+                              CPF: {formatCpfDisplay(patient.cpf)}
                             </div>
                           )}
                         </div>
@@ -531,7 +857,7 @@ const PrivatePatientsPage: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={formatCpfDisplay(formData.cpf)}
+                    value={formData.cpf ? formatCpfDisplay(formData.cpf) : ''}
                     onChange={(e) => formatCpf(e.target.value)}
                     className="input"
                     placeholder="000.000.000-00"
@@ -557,7 +883,7 @@ const PrivatePatientsPage: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={formatPhoneDisplay(formData.phone)}
+                    value={formData.phone ? formatPhoneDisplay(formData.phone) : ''}
                     onChange={(e) => formatPhone(e.target.value)}
                     className="input"
                     placeholder="(00) 00000-0000"
@@ -590,7 +916,7 @@ const PrivatePatientsPage: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={formatZipCodeDisplay(formData.zip_code)}
+                    value={formData.zip_code ? formatZipCodeDisplay(formData.zip_code) : ''}
                     onChange={(e) => formatZipCode(e.target.value)}
                     className="input"
                     placeholder="00000-000"
