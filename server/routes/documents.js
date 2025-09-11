@@ -16,8 +16,8 @@ router.get('/medical', authenticate, async (req, res) => {
     let result = await pool.query(`
       SELECT 
         md.*,
-        pp.name as patient_name,
-        pp.cpf as patient_cpf
+        COALESCE(pp.name, md.patient_name) as patient_name,
+        COALESCE(pp.cpf, md.patient_cpf) as patient_cpf
       FROM medical_documents md
       LEFT JOIN private_patients pp ON md.private_patient_id = pp.id
       WHERE md.professional_id = $1
@@ -79,19 +79,28 @@ router.get('/medical', authenticate, async (req, res) => {
 // Create medical document
 router.post('/medical', authenticate, async (req, res) => {
   try {
-    const { title, document_type, private_patient_id, template_data } = req.body;
+    const { title, document_type, private_patient_id, patient_name, patient_cpf, template_data } = req.body;
 
     console.log('🔄 [DOCUMENTS] Creating medical document:', {
       title,
       document_type,
       private_patient_id,
+      patient_name,
+      patient_cpf,
       professional_id: req.user.id
     });
 
     // Validate required fields
-    if (!title || !document_type || !private_patient_id || !template_data) {
+    if (!title || !document_type || !template_data) {
       return res.status(400).json({ 
-        message: 'Título, tipo de documento, paciente e dados do template são obrigatórios' 
+        message: 'Título, tipo de documento e dados do template são obrigatórios' 
+      });
+    }
+
+    // Validate patient data - either private_patient_id OR patient_name is required
+    if (!private_patient_id && !patient_name) {
+      return res.status(400).json({ 
+        message: 'É necessário informar um paciente particular ou dados do paciente do convênio' 
       });
     }
 
@@ -104,8 +113,8 @@ router.post('/medical', authenticate, async (req, res) => {
     const result = await pool.query(`
       INSERT INTO medical_documents (
         title, document_type, private_patient_id, professional_id, 
-        document_url, template_data, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        document_url, template_data, patient_name, patient_cpf, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
       RETURNING *
     `, [
       title,
@@ -113,7 +122,9 @@ router.post('/medical', authenticate, async (req, res) => {
       private_patient_id,
       req.user.id,
       documentResult.url,
-      JSON.stringify(template_data)
+      JSON.stringify(template_data),
+      patient_name,
+      patient_cpf
     ]);
 
     console.log('✅ [DOCUMENTS] Medical document saved to database');
