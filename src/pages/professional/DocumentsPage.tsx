@@ -333,7 +333,7 @@ const DocumentsPage: React.FC = () => {
         console.warn('Could not load signature:', signatureError);
       }
 
-      // Enhanced form data with patient info
+      // Prepare enhanced form data
       const enhancedFormData = {
         ...formData,
         patientName: selectedPatient.name,
@@ -2231,48 +2231,21 @@ const DocumentsPage: React.FC = () => {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-            <FileText className="h-8 w-8 text-red-600 mr-3" />
-            Documentos Médicos
-          </h1>
-          <p className="text-gray-600 mt-1">
-            Gerencie atestados, receituários e outros documentos médicos
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">Documentos Médicos</h1>
+          <p className="text-gray-600">Gerencie atestados, receituários e outros documentos</p>
         </div>
         <button
           onClick={openCreateModal}
           className="btn btn-primary flex items-center"
         >
-          <Plus className="h-5 w-5 mr-2" />
+          <Plus className="h-4 w-4 mr-2" />
           Novo Documento
         </button>
       </div>
 
-      {/* Success/Error Messages */}
-      {success && (
-        <div className="mb-4 bg-green-50 text-green-600 p-3 rounded-lg flex items-center">
-          <Check className="h-5 w-5 mr-2 flex-shrink-0" />
-          {success}
-        </div>
-      )}
-
-      {error && (
-        <div className="mb-4 bg-red-50 text-red-600 p-3 rounded-lg flex items-center">
-          <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
-          {error}
-        </div>
-      )}
-
-      {pdfError && (
-        <div className="mb-4 bg-red-50 text-red-600 p-3 rounded-lg flex items-center">
-          <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
-          {pdfError}
-        </div>
-      )}
-
       {/* Filters */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
             <input
@@ -2295,18 +2268,44 @@ const DocumentsPage: React.FC = () => {
               </option>
             ))}
           </select>
+          <div className="text-sm text-gray-500 flex items-center">
+            <FileText className="h-4 w-4 mr-2" />
+            {filteredDocuments.length} documento(s) encontrado(s)
+          </div>
         </div>
       </div>
+
+      {/* Error and Success Messages */}
+      {error && (
+        <div className="mb-4 bg-red-50 text-red-600 p-3 rounded-lg flex items-center">
+          <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
+          {error}
+        </div>
+      )}
+
+      {success && (
+        <div className="mb-4 bg-green-50 text-green-600 p-3 rounded-lg flex items-center">
+          <Check className="h-5 w-5 mr-2 flex-shrink-0" />
+          {success}
+        </div>
+      )}
+
+      {pdfError && (
+        <div className="mb-4 bg-red-50 text-red-600 p-3 rounded-lg flex items-center">
+          <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
+          {pdfError}
+        </div>
+      )}
 
       {/* Documents List */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
-            <span className="ml-3 text-gray-600">Carregando documentos...</span>
+          <div className="p-8 text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Carregando documentos...</p>
           </div>
         ) : filteredDocuments.length === 0 ? (
-          <div className="text-center py-12">
+          <div className="p-8 text-center">
             <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">
               Nenhum documento encontrado
@@ -2351,15 +2350,17 @@ const DocumentsPage: React.FC = () => {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredDocuments.map((document) => {
                   const typeInfo = documentTypes.find(t => t.value === document.document_type) || 
-                    { icon: "📄", label: "Documento" };
+                    { icon: "📄", label: document.document_type };
                   
                   return (
                     <tr key={document.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
-                          <FileText className="h-4 w-4 text-gray-400 mr-2" />
-                          <div className="text-sm font-medium text-gray-900">
-                            {document.title}
+                          <FileText className="h-4 w-4 text-gray-400 mr-3" />
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">
+                              {document.title}
+                            </div>
                           </div>
                         </div>
                       </td>
