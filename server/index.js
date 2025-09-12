@@ -199,27 +199,6 @@ const initializeDatabase = async () => {
           (user_id IS NULL AND dependent_id IS NOT NULL AND private_patient_id IS NULL) OR
           (user_id IS NULL AND dependent_id IS NULL AND private_patient_id IS NOT NULL)
         )
-        
-        -- Drop old constraint if it exists
-        IF EXISTS (
-          SELECT 1 FROM information_schema.table_constraints 
-          WHERE constraint_name = 'medical_documents_patient_check' 
-          AND table_name = 'medical_documents'
-        ) THEN
-          ALTER TABLE medical_documents DROP CONSTRAINT medical_documents_patient_check;
-        END IF;
-        
-        -- Add new flexible constraint
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.table_constraints 
-          WHERE constraint_name = 'medical_documents_patient_type_check' 
-          AND table_name = 'medical_documents'
-        ) THEN
-          ALTER TABLE medical_documents ADD CONSTRAINT medical_documents_patient_type_check CHECK (
-            (private_patient_id IS NOT NULL AND patient_name IS NULL) OR
-            (private_patient_id IS NULL AND patient_name IS NOT NULL)
-          );
-        END IF;
       )
     `);
 
@@ -389,7 +368,13 @@ const initializeDatabase = async () => {
         
         -- Add missing columns if they don't exist
         IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'medical_records' AND column_name = 'patient_type'
+        ) THEN
+          ALTER TABLE medical_records ADD COLUMN patient_type VARCHAR(20) DEFAULT 'private';
+        END IF;
+      END $$;
+    `);
 
     // Scheduling access table
     await pool.query(`
@@ -546,7 +531,7 @@ const initializeDatabase = async () => {
 
     // Insert default services if they don't exist
     const fisioCategory = await pool.query(
-      \`SELECT id FROM service_categories WHERE name = 'Fisioterapia'`
+      `SELECT id FROM service_categories WHERE name = 'Fisioterapia'`
     );
     if (fisioCategory.rows.length > 0) {
       await pool.query(
@@ -647,24 +632,24 @@ const getProductionUrls = () => {
     
   return {
     client: {
-      success: \`${baseUrl}/client?payment=success`,
-      failure: \`${baseUrl}/client?payment=failure`,
-      pending: \`${baseUrl}/client?payment=pending`,
+      success: `${baseUrl}/client?payment=success`,
+      failure: `${baseUrl}/client?payment=failure`,
+      pending: `${baseUrl}/client?payment=pending`,
     },
     dependent: {
-      success: \`${baseUrl}/client?payment=success&type=dependent`,
-      failure: \`${baseUrl}/client?payment=failure&type=dependent`,
-      pending: \`${baseUrl}/client?payment=pending&type=dependent`,
+      success: `${baseUrl}/client?payment=success&type=dependent`,
+      failure: `${baseUrl}/client?payment=failure&type=dependent`,
+      pending: `${baseUrl}/client?payment=pending&type=dependent`,
     },
     professional: {
-      success: \`${baseUrl}/professional?payment=success`,
-      failure: \`${baseUrl}/professional?payment=failure`,
-      pending: \`${baseUrl}/professional?payment=pending`,
+      success: `${baseUrl}/professional?payment=success`,
+      failure: `${baseUrl}/professional?payment=failure`,
+      pending: `${baseUrl}/professional?payment=pending`,
     },
     agenda: {
-      success: \`${baseUrl}/professional?payment=success&type=agenda`,
-      failure: \`${baseUrl}/professional?payment=failure&type=agenda`,
-      pending: \`${baseUrl}/professional?payment=pending&type=agenda`,
+      success: `${baseUrl}/professional?payment=success&type=agenda`,
+      failure: `${baseUrl}/professional?payment=failure&type=agenda`,
+      pending: `${baseUrl}/professional?payment=pending&type=agenda`,
     },
     webhook: process.env.NODE_ENV === "production"
       ? "https://www.cartaoquiroferreira.com.br/api/webhook/mercadopago"
@@ -1267,56 +1252,6 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
       if (crm !== undefined) updateData.crm = crm?.trim() || null;
     }
 
-    // Add activate client route
-    app.post("/api/users/:id/activate", authenticate, authorize(["admin"]), async (req, res) => {
-      try {
-        const { id } = req.params;
-        
-        console.log("🔄 Activating client:", id);
-        
-        // Get user data
-        const userResult = await pool.query(
-          "SELECT * FROM users WHERE id = $1 AND 'client' = ANY(roles)",
-          [id]
-        );
-        
-        if (userResult.rows.length === 0) {
-          return res.status(404).json({ message: "Cliente não encontrado" });
-        }
-        
-        // Set expiry date to 1 year from now
-        const expiryDate = new Date();
-        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-        
-        // Update subscription status and expiry
-        const updatedUserResult = await pool.query(
-          \`UPDATE users 
-           SET subscription_status = 'active', 
-               subscription_expiry = $1,
-               updated_at = NOW()
-           WHERE id = $2
-           RETURNING 
-             id, name, cpf, email, phone, 
-             birth_date::text as birth_date,
-             address, address_number, address_complement, neighborhood, city, state,
-             roles, subscription_status, 
-             subscription_expiry::text as subscription_expiry,
-             photo_url, category_name, percentage, crm, 
-             created_at::text as created_at, updated_at::text as updated_at`,
-          [expiryDate, id]
-        );
-        
-        console.log("✅ Client activated successfully:", id);
-        
-        res.json({
-          message: "Cliente ativado com sucesso",
-          user: updatedUserResult.rows[0]
-        });
-      } catch (error) {
-        console.error("❌ Error activating client:", error);
-        res.status(500).json({ message: "Erro ao ativar cliente" });
-      }
-    });
     updateData.updated_at = new Date();
 
     // Update user
@@ -1366,6 +1301,57 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
   } catch (error) {
     console.error("❌ Error updating user:", error);
     res.status(500).json({ message: "Erro ao atualizar usuário" });
+  }
+});
+
+// Add activate client route
+app.post("/api/users/:id/activate", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    console.log("🔄 Activating client:", id);
+    
+    // Get user data
+    const userResult = await pool.query(
+      "SELECT * FROM users WHERE id = $1 AND 'client' = ANY(roles)",
+      [id]
+    );
+    
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ message: "Cliente não encontrado" });
+    }
+    
+    // Set expiry date to 1 year from now
+    const expiryDate = new Date();
+    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+    
+    // Update subscription status and expiry
+    const updatedUserResult = await pool.query(
+      `UPDATE users 
+       SET subscription_status = 'active', 
+           subscription_expiry = $1,
+           updated_at = NOW()
+       WHERE id = $2
+       RETURNING 
+         id, name, cpf, email, phone, 
+         birth_date::text as birth_date,
+         address, address_number, address_complement, neighborhood, city, state,
+         roles, subscription_status, 
+         subscription_expiry::text as subscription_expiry,
+         photo_url, category_name, percentage, crm, 
+         created_at::text as created_at, updated_at::text as updated_at`,
+      [expiryDate, id]
+    );
+    
+    console.log("✅ Client activated successfully:", id);
+    
+    res.json({
+      message: "Cliente ativado com sucesso",
+      user: updatedUserResult.rows[0]
+    });
+  } catch (error) {
+    console.error("❌ Error activating client:", error);
+    res.status(500).json({ message: "Erro ao ativar cliente" });
   }
 });
 
@@ -1703,12 +1689,12 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), che
     let paramCount = 1;
 
     if (service_id !== undefined) {
-      updateFields.push(\`service_id = $${paramCount++}`);
+      updateFields.push(`service_id = $${paramCount++}`);
       updateValues.push(service_id);
     }
 
     if (location_id !== undefined) {
-      updateFields.push(\`location_id = $${paramCount++}`);
+      updateFields.push(`location_id = $${paramCount++}`);
       updateValues.push(location_id);
     }
 
@@ -1716,12 +1702,12 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), che
       if (isNaN(parseFloat(value)) || parseFloat(value) <= 0) {
         return res.status(400).json({ message: "Valor deve ser um número maior que zero" });
       }
-      updateFields.push(\`value = $${paramCount++}`);
+      updateFields.push(`value = $${paramCount++}`);
       updateValues.push(parseFloat(value));
     }
 
     if (date !== undefined) {
-      updateFields.push(\`date = $${paramCount++}`);
+      updateFields.push(`date = $${paramCount++}`);
       updateValues.push(new Date(date));
     }
 
@@ -1730,17 +1716,17 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), che
       if (!validStatuses.includes(status)) {
         return res.status(400).json({ message: "Status inválido" });
       }
-      updateFields.push(\`status = $${paramCount++}`);
+      updateFields.push(`status = $${paramCount++}`);
       updateValues.push(status);
     }
 
     if (notes !== undefined) {
-      updateFields.push(\`notes = $${paramCount++}`);
+      updateFields.push(`notes = $${paramCount++}`);
       updateValues.push(notes?.trim() || null);
     }
 
     // Always update updated_at
-    updateFields.push(\`updated_at = $${paramCount++}`);
+    updateFields.push(`updated_at = $${paramCount++}`);
     updateValues.push(new Date());
 
     // Add consultation ID and professional ID for WHERE clause
@@ -1792,7 +1778,7 @@ app.put('/api/consultations/:id', authenticate, authorize(['professional', 'admi
 
     // Update consultation
     const updateResult = await pool.query(
-      \`UPDATE consultations 
+      `UPDATE consultations 
        SET date = $1, value = $2, location_id = $3, notes = $4, status = $5, updated_at = NOW()
        WHERE id = $6 AND professional_id = $7
        RETURNING *`,
@@ -1842,10 +1828,10 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
     }
 
     const createdConsultations = [];
-    const startDateTime = new Date(\`${start_date}T${start_time}`);
+    const startDateTime = new Date(`${start_date}T${start_time}`);
     
     // 🔥 FIXED: Create initial date and convert from Brasília to UTC
-    let currentDate = new Date(\`${start_date}T${start_time}`);
+    let currentDate = new Date(`${start_date}T${start_time}`);
     // Subtract 3 hours to convert from Brasília to UTC
     currentDate = new Date(currentDate.getTime() - (3 * 60 * 60 * 1000));
     
@@ -1859,7 +1845,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
 
       try {
         const result = await pool.query(
-          \`INSERT INTO consultations (
+          `INSERT INTO consultations (
             user_id, dependent_id, private_patient_id, professional_id, service_id, 
             location_id, value, date, status, notes, created_at, updated_at
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
@@ -1880,7 +1866,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
 
         createdConsultations.push(result.rows[0]);
       } catch (error) {
-        console.error(\`❌ Error creating consultation ${i + 1}:`, error);
+        console.error(`❌ Error creating consultation ${i + 1}:`, error);
         // Continue with next consultation instead of failing completely
       }
 
@@ -1894,7 +1880,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
 
     console.log('✅ Recurring consultations created:', createdConsultations.length);
     res.json({
-      message: \`${createdConsultations.length} consultas recorrentes criadas com sucesso`,
+      message: `${createdConsultations.length} consultas recorrentes criadas com sucesso`,
       created_count: createdConsultations.length,
       consultations: createdConsultations,
       created_count: createdConsultations.length
@@ -1914,7 +1900,7 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
 
     // Get consultation details with patient info
     const consultationResult = await pool.query(
-      \`SELECT 
+      `SELECT 
         c.*,
         CASE 
           WHEN c.private_patient_id IS NOT NULL THEN pp.name
@@ -1951,7 +1937,7 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
 
     // Format phone number (remove non-numeric characters and add country code)
     const cleanPhone = consultation.patient_phone.replace(/\D/g, '');
-    const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : \`55${cleanPhone}`;
+    const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
     
     // Format date and time - Convert UTC to Brasília timezone
     const consultationDate = new Date(consultation.date);
@@ -1967,11 +1953,11 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
     });
     
     // Create WhatsApp message
-    const message = \`Olá ${consultation.patient_name}, gostaria de confirmar o seu agendamento com o profissional ${req.user.name} no dia ${formattedDate} às ${formattedTime}`;
+    const message = `Olá ${consultation.patient_name}, gostaria de confirmar o seu agendamento com o profissional ${req.user.name} no dia ${formattedDate} às ${formattedTime}`;
     const encodedMessage = encodeURIComponent(message);
     
     // Generate WhatsApp URL
-    const whatsappUrl = \`https://wa.me/${formattedPhone}?text=${encodedMessage}`;
+    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
 
     console.log('✅ WhatsApp URL generated:', whatsappUrl);
     res.json({ whatsapp_url: whatsappUrl });
@@ -2156,7 +2142,7 @@ app.get("/api/dependents", authenticate, authorize(["professional", "admin", "cl
     // Filter by client_id if provided
     if (client_id) {
       paramCount++;
-      query += \` AND user_id = $${paramCount}`;
+      query += ` AND user_id = $${paramCount}`;
       params.push(client_id);
 
       // Clients can only access their own dependents
@@ -2168,7 +2154,7 @@ app.get("/api/dependents", authenticate, authorize(["professional", "admin", "cl
     // Filter by status if provided (maps to subscription_status)
     if (status) {
       paramCount++;
-      query += \` AND subscription_status = $${paramCount}`;
+      query += ` AND subscription_status = $${paramCount}`;
       params.push(status);
     }
 
@@ -2687,13 +2673,7 @@ app.post('/api/professionals/:id/signature', authenticate, createUpload().single
     }
 
     if (!req.file) {
-      return res.status(
-      }
-      )
-    }
-  }
-}
-)400).json({ message: 'Arquivo de assinatura é obrigatório' });
+      return res.status(400).json({ message: 'Arquivo de assinatura é obrigatório' });
     }
 
     console.log('🔄 [SIGNATURE] Uploading signature for professional:', professionalId);
@@ -2790,7 +2770,7 @@ app.delete('/api/professionals/:id/signature', authenticate, async (req, res) =>
       if (currentResult.rows[0]?.signature_url) {
         const publicId = currentResult.rows[0].signature_url.split('/').pop()?.split('.')[0];
         if (publicId) {
-          await cloudinary.uploader.destroy(\`quiro-ferreira/signatures/${publicId}`);
+          await cloudinary.uploader.destroy(`quiro-ferreira/signatures/${publicId}`);
           console.log('✅ [SIGNATURE] Signature deleted from Cloudinary');
         }
       }
@@ -3295,7 +3275,7 @@ app.post("/api/medical-records", authenticate, authorize(["professional"]), asyn
       
       // Validate patient belongs to professional
       const patientResult = await pool.query(
-        \`SELECT id FROM private_patients WHERE id = $1 AND professional_id = $2`,
+        `SELECT id FROM private_patients WHERE id = $1 AND professional_id = $2`,
         [private_patient_id, req.user.id]
       );
 
@@ -3499,7 +3479,7 @@ app.post("/api/medical-records/generate-document", authenticate, authorize(["pro
       [
         req.user.id,
         record.private_patient_id,
-        \`Prontuário - ${record.patient_name}`,
+        `Prontuário - ${record.patient_name}`,
         "medical_record",
         documentData.url,
         JSON.stringify(template_data),
@@ -3528,7 +3508,7 @@ app.get("/api/documents/medical", authenticate, authorize(["professional"]), asy
     console.log("🔄 Fetching medical documents for professional:", professionalId);
 
     const result = await pool.query(
-      \`SELECT 
+      `SELECT 
         md.id,
         md.title,
         md.document_type,
@@ -3628,7 +3608,7 @@ app.post("/api/documents/medical", authenticate, authorize(["professional"]), as
 
       // Save document record to database
       const result = await pool.query(
-        \`INSERT INTO medical_documents (
+        `INSERT INTO medical_documents (
           professional_id, private_patient_id, patient_name, patient_cpf, title, document_type, 
           document_url, created_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP) 
@@ -3793,7 +3773,7 @@ app.post("/api/admin/grant-scheduling-access", authenticate, authorize(["admin"]
       [
         professional_id,
         "Acesso à Agenda Concedido",
-        \`Você recebeu acesso à agenda até ${new Date(expires_at).toLocaleDateString("pt-BR")}. ${reason ? `Motivo: ${reason}` : ""}`,
+        `Você recebeu acesso à agenda até ${new Date(expires_at).toLocaleDateString("pt-BR")}. ${reason ? `Motivo: ${reason}` : ""}`,
         "success",
       ]
     );
@@ -3914,10 +3894,10 @@ app.post("/api/create-subscription", authenticate, authorize(["client"]), async 
       },
       auto_return: "approved",
       notification_url: urls.webhook,
-      external_reference: \`subscription_${user_id}_${Date.now()}`,
+      external_reference: `subscription_${user_id}_${Date.now()}`,
       payer: {
         name: user.name,
-        email: user.email || \`user${user_id}@temp.com`,
+        email: user.email || `user${user_id}@temp.com`,
         identification: {
           type: "CPF",
           number: user.cpf,
@@ -3942,7 +3922,7 @@ app.post("/api/create-subscription", authenticate, authorize(["client"]), async 
         250.0,
         "pending",
         subscriptionResult.id,
-        \`subscription_${user_id}_${Date.now()}`,
+        `subscription_${user_id}_${Date.now()}`,
       ]
     );
 
@@ -3992,7 +3972,7 @@ app.post("/api/dependents/:id/create-payment", authenticate, authorize(["client"
     const preferenceData = {
       items: [
         {
-          title: \`Ativação de Dependente - ${dependent.name}`,
+          title: `Ativação de Dependente - ${dependent.name}`,
           description: "Ativação de dependente no cartão de convênio",
           quantity: 1,
           unit_price: 50.0,
@@ -4006,10 +3986,10 @@ app.post("/api/dependents/:id/create-payment", authenticate, authorize(["client"
       },
       auto_return: "approved",
       notification_url: urls.webhook,
-      external_reference: \`dependent_${dependent_id}_${Date.now()}`,
+      external_reference: `dependent_${dependent_id}_${Date.now()}`,
       payer: {
         name: dependent.client_name,
-        email: dependent.client_email || \`client${dependent.user_id}@temp.com`,
+        email: dependent.client_email || `client${dependent.user_id}@temp.com`,
         identification: {
           type: "CPF",
           number: dependent.client_cpf,
@@ -4034,7 +4014,7 @@ app.post("/api/dependents/:id/create-payment", authenticate, authorize(["client"
         50.0,
         "pending",
         dependentPaymentResult.id,
-        \`dependent_${dependent_id}_${Date.now()}`,
+        `dependent_${dependent_id}_${Date.now()}`,
       ]
     );
 
@@ -4080,10 +4060,10 @@ app.post("/api/professional/create-payment", authenticate, authorize(["professio
       },
       auto_return: "approved",
       notification_url: urls.webhook,
-      external_reference: \`professional_${req.user.id}_${Date.now()}`,
+      external_reference: `professional_${req.user.id}_${Date.now()}`,
       payer: {
         name: req.user.name,
-        email: req.user.email || \`professional${req.user.id}@temp.com`,
+        email: req.user.email || `professional${req.user.id}@temp.com`,
       },
     };
 
@@ -4104,7 +4084,7 @@ app.post("/api/professional/create-payment", authenticate, authorize(["professio
         parseFloat(amount),
         "pending",
         professionalResult.id,
-        \`professional_${req.user.id}_${Date.now()}`,
+        `professional_${req.user.id}_${Date.now()}`,
       ]
     );
 
@@ -4131,7 +4111,7 @@ app.post("/api/professional/create-agenda-payment", authenticate, authorize(["pr
       items: [
         {
           title: "Acesso à Agenda - Quiro Ferreira",
-          description: \`Acesso ao sistema de agendamentos por ${duration_days} dias`,
+          description: `Acesso ao sistema de agendamentos por ${duration_days} dias`,
           quantity: 1,
           unit_price: 24.99,
           currency_id: "BRL",
@@ -4144,10 +4124,10 @@ app.post("/api/professional/create-agenda-payment", authenticate, authorize(["pr
       },
       auto_return: "approved",
       notification_url: urls.webhook,
-      external_reference: \`agenda_${req.user.id}_${duration_days}_${Date.now()}`,
+      external_reference: `agenda_${req.user.id}_${duration_days}_${Date.now()}`,
       payer: {
         name: req.user.name,
-        email: req.user.email || \`professional${req.user.id}@temp.com`,
+        email: req.user.email || `professional${req.user.id}@temp.com`,
       },
     };
 
@@ -4167,7 +4147,7 @@ app.post("/api/professional/create-agenda-payment", authenticate, authorize(["pr
         24.99,
         "pending",
         agendaResult.id,
-        \`agenda_${req.user.id}_${duration_days}_${Date.now()}`,
+        `agenda_${req.user.id}_${duration_days}_${Date.now()}`,
       ]
     );
 
@@ -4197,10 +4177,10 @@ app.post("/api/webhook/mercadopago", express.raw({ type: "application/json" }), 
 
       // Get payment details from MercadoPago
       const paymentResponse = await fetch(
-        \`https://api.mercadopago.com/v1/payments/${paymentId}`,
+        `https://api.mercadopago.com/v1/payments/${paymentId}`,
         {
           headers: {
-            Authorization: \`Bearer ${process.env.MP_ACCESS_TOKEN}`,
+            Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`,
           },
         }
       );
@@ -4273,7 +4253,7 @@ const processSubscriptionPayment = async (payment) => {
         processed_at = CURRENT_TIMESTAMP
       WHERE payment_reference LIKE $2
     `,
-      [payment.id, \`subscription_${userId}_%`]
+      [payment.id, `subscription_${userId}_%`]
     );
 
     // Create notification
@@ -4327,7 +4307,7 @@ const processDependentPayment = async (payment) => {
         processed_at = CURRENT_TIMESTAMP
       WHERE payment_reference LIKE $2
     `,
-      [payment.id, \`dependent_${dependentId}_%`]
+      [payment.id, `dependent_${dependentId}_%`]
     );
 
     // Get dependent and client info for notification
@@ -4353,7 +4333,7 @@ const processDependentPayment = async (payment) => {
         [
           info.user_id,
           "Dependente Ativado",
-          \`O dependente ${info.dependent_name} foi ativado com sucesso!`,
+          `O dependente ${info.dependent_name} foi ativado com sucesso!`,
           "success",
         ]
       );
@@ -4383,7 +4363,7 @@ const processProfessionalPayment = async (payment) => {
         processed_at = CURRENT_TIMESTAMP
       WHERE payment_reference LIKE $2
     `,
-      [payment.id, \`professional_${professionalId}_%`]
+      [payment.id, `professional_${professionalId}_%`]
     );
 
     // Create notification
@@ -4395,7 +4375,7 @@ const processProfessionalPayment = async (payment) => {
       [
         professionalId,
         "Pagamento Processado",
-        \`Seu pagamento de repasse ao convênio foi processado com sucesso.`,
+        `Seu pagamento de repasse ao convênio foi processado com sucesso.`,
         "success",
       ]
     );
@@ -4446,7 +4426,7 @@ const processAgendaPayment = async (payment) => {
         processed_at = CURRENT_TIMESTAMP
       WHERE payment_reference LIKE $2
     `,
-      [payment.id, \`agenda_${professionalId}_${durationDays}_%`]
+      [payment.id, `agenda_${professionalId}_${durationDays}_%`]
     );
 
     // Create notification
@@ -4458,7 +4438,7 @@ const processAgendaPayment = async (payment) => {
       [
         professionalId,
         "Acesso à Agenda Ativado",
-        \`Seu acesso à agenda foi ativado por ${durationDays} dias!`,
+        `Seu acesso à agenda foi ativado por ${durationDays} dias!`,
         "success",
       ]
     );
@@ -4485,8 +4465,8 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
     console.log("🔄 Fetching cancelled consultations for period:", start_date, "to", end_date);
     
     // Convert dates to ensure proper timezone handling
-    const startDateFormatted = \`${start_date} 00:00:00`;
-    const endDateFormatted = \`${end_date} 23:59:59`;
+    const startDateFormatted = `${start_date} 00:00:00`;
+    const endDateFormatted = `${end_date} 23:59:59`;
     
     console.log("🔄 Using formatted dates:", startDateFormatted, "to", endDateFormatted);
 
@@ -4559,8 +4539,8 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
     console.log("🔄 Generating revenue report for period:", start_date, "to", end_date);
     
     // Convert dates to ensure proper timezone handling
-    const startDateFormatted = \`${start_date} 00:00:00`;
-    const endDateFormatted = \`${end_date} 23:59:59`;
+    const startDateFormatted = `${start_date} 00:00:00`;
+    const endDateFormatted = `${end_date} 23:59:59`;
     
     console.log("🔄 Using formatted dates for revenue:", startDateFormatted, "to", endDateFormatted);
 
@@ -4648,14 +4628,14 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
     console.log("🔄 Generating professional revenue report for:", req.user.id, "dates:", start_date, "to", end_date);
     
     // Convert dates to ensure proper timezone handling
-    const startDateFormatted = \`${start_date} 00:00:00`;
-    const endDateFormatted = \`${end_date} 23:59:59`;
+    const startDateFormatted = `${start_date} 00:00:00`;
+    const endDateFormatted = `${end_date} 23:59:59`;
     
     console.log("🔄 Using formatted dates for professional revenue:", startDateFormatted, "to", endDateFormatted);
 
     // Get professional percentage
     const professionalResult = await pool.query(
-      \`SELECT percentage FROM users WHERE id = $1`,
+      `SELECT percentage FROM users WHERE id = $1`,
       [req.user.id]
     );
 
@@ -4732,14 +4712,14 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
     console.log("🔄 Generating detailed professional report for:", req.user.id, "dates:", start_date, "to", end_date);
     
     // Convert dates to ensure proper timezone handling
-    const startDateFormatted = \`${start_date} 00:00:00`;
-    const endDateFormatted = \`${end_date} 23:59:59`;
+    const startDateFormatted = `${start_date} 00:00:00`;
+    const endDateFormatted = `${end_date} 23:59:59`;
     
     console.log("🔄 Using formatted dates for detailed report:", startDateFormatted, "to", endDateFormatted);
 
     // Get professional percentage
     const professionalResult = await pool.query(
-      \`SELECT percentage FROM users WHERE id = $1`,
+      `SELECT percentage FROM users WHERE id = $1`,
       [req.user.id]
     );
 
@@ -4793,9 +4773,9 @@ app.get("/api/reports/clients-by-city", authenticate, authorize(["admin"]), asyn
         city,
         state,
         COUNT(*) as client_count,
-        COUNT(CASE WHEN subscription_status = 'active\' THEN 1 END) as active_clients,
-        COUNT(CASE WHEN subscription_status = 'pending\' THEN 1 END) as pending_clients,
-        COUNT(CASE WHEN subscription_status = 'expired\' THEN 1 END) as expired_clients
+        COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
+        COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
+        COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
       FROM users 
       WHERE 'client' = ANY(roles) AND city IS NOT NULL AND city != ''
       GROUP BY city, state
@@ -5056,47 +5036,47 @@ app.get("/api/audit-logs", authenticate, authorize(["admin"]), async (req, res) 
 
     if (user_id) {
       paramCount++;
-      query += \` AND al.user_id = $${paramCount}`;
+      query += ` AND al.user_id = $${paramCount}`;
       params.push(user_id);
     }
 
     if (action) {
       paramCount++;
-      query += \` AND al.action = $${paramCount}`;
+      query += ` AND al.action = $${paramCount}`;
       params.push(action);
     }
 
     if (table_name) {
       paramCount++;
-      query += \` AND al.table_name = $${paramCount}`;
+      query += ` AND al.table_name = $${paramCount}`;
       params.push(table_name);
     }
 
-    query += \` ORDER BY al.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+    query += ` ORDER BY al.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
     params.push(limit, offset);
 
     const logsResult = await pool.query(query, params);
 
     // Get total count for pagination
-    let countQuery = \`SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
+    let countQuery = `SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
     const countParams = [];
     let countParamCount = 0;
 
     if (user_id) {
       countParamCount++;
-      countQuery += \` AND al.user_id = $${countParamCount}`;
+      countQuery += ` AND al.user_id = $${countParamCount}`;
       countParams.push(user_id);
     }
 
     if (action) {
       countParamCount++;
-      countQuery += \` AND al.action = $${countParamCount}`;
+      countQuery += ` AND al.action = $${countParamCount}`;
       countParams.push(action);
     }
 
     if (table_name) {
       countParamCount++;
-      countQuery += \` AND al.table_name = $${countParamCount}`;
+      countQuery += ` AND al.table_name = $${countParamCount}`;
       countParams.push(table_name);
     }
 
@@ -5181,12 +5161,12 @@ const startServer = async () => {
 
     // Start listening
     app.listen(PORT, () => {
-      console.log(\`🚀 Server running on port ${PORT}`);
-      console.log(\`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(\`📊 Database: Connected`);
-      console.log(\`💳 MercadoPago: Configured`);
-      console.log(\`📋 Consultations System: Active`);
-      console.log(\`✅ All systems operational`);
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log(`📊 Database: Connected`);
+      console.log(`💳 MercadoPago: Configured`);
+      console.log(`📋 Consultations System: Active`);
+      console.log(`✅ All systems operational`);
     });
   } catch (error) {
     console.error("❌ Failed to start server:", error);
