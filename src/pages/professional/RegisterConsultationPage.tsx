@@ -248,8 +248,7 @@ const RegisterConsultationPage: React.FC = () => {
         setClientName(dependentData.client_name);
         setSubscriptionStatus(dependentData.status);
         setSelectedDependentId(dependentData.id);
-          // Filter only active dependents
-          setDependents(dependentsData.filter((d: any) => d.status === 'active'));
+        setDependents([]); // No dependents list needed when found directly
         setSuccess(
           `Dependente encontrado: ${dependentData.name} (Titular: ${dependentData.client_name}) - Status: ${dependentData.status === 'active' ? 'Ativo' : 'Inativo'}`
         );
@@ -307,6 +306,7 @@ const RegisterConsultationPage: React.FC = () => {
 
       if (dependentsResponse.ok) {
         const dependentsData = await dependentsResponse.json();
+        // Filter only active dependents
         setDependents(dependentsData);
       }
 
