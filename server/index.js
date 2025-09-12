@@ -4787,8 +4787,8 @@ app.get("/api/reports/clients-by-city", authenticate, authorize(["admin"]), asyn
     console.log("🔄 [CANCELLED] Frontend dates received:", { start_date, end_date });
     
     // Create proper date range for Brazil timezone
-    const startDateTime = `${start_date} 00:00:00`;
-    const endDateTime = `${end_date} 23:59:59`;
+    const startDateTime = \`${start_date} 00:00:00`;
+    const endDateTime = \`${end_date} 23:59:59`;
     
     console.log("🔄 [CANCELLED] Using date range:", { startDateTime, endDateTime });
       FROM users 

@@ -394,7 +394,7 @@ const ReportsPage: React.FC = () => {
                 </div>
 
                 <p className="text-sm text-gray-600 text-center">
-                  Período: {formatDate(startDate)} a {formatDate(endDate)}
+                  Período: {startDate ? new Date(startDate).toLocaleDateString('pt-BR') : ''} a {endDate ? new Date(endDate).toLocaleDateString('pt-BR') : ''}
                 </p>
               </div>
 
