@@ -194,7 +194,7 @@ const initializeDatabase = async () => {
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        CONSTRAINT check_patient_type CHECK (
+        CONSTRAINT consultations_patient_type_check CHECK (
           (user_id IS NOT NULL AND dependent_id IS NULL AND private_patient_id IS NULL) OR
           (user_id IS NULL AND dependent_id IS NOT NULL AND private_patient_id IS NULL) OR
           (user_id IS NULL AND dependent_id IS NULL AND private_patient_id IS NOT NULL)
@@ -301,7 +301,7 @@ const initializeDatabase = async () => {
         vital_signs JSONB,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        CONSTRAINT medical_records_patient_check CHECK (
+        CONSTRAINT medical_records_patient_type_check CHECK (
           (private_patient_id IS NOT NULL AND patient_name IS NULL AND patient_cpf IS NULL) OR
           (private_patient_id IS NULL AND patient_name IS NOT NULL)
         )
@@ -321,7 +321,7 @@ const initializeDatabase = async () => {
         document_url TEXT NOT NULL,
         template_data JSONB,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        CONSTRAINT medical_documents_patient_check CHECK (
+        CONSTRAINT medical_documents_patient_type_check CHECK (
           (private_patient_id IS NOT NULL AND patient_name IS NULL AND patient_cpf IS NULL) OR
           (private_patient_id IS NULL AND patient_name IS NOT NULL)
         )
@@ -332,19 +332,20 @@ const initializeDatabase = async () => {
     await pool.query(`
       DO $$
       BEGIN
-        -- Drop existing constraint if it exists
+        -- Drop any existing patient-related constraints
+        IF EXISTS (
+          SELECT 1 FROM information_schema.table_constraints 
+          WHERE table_name = 'medical_documents' AND constraint_name = 'medical_documents_patient_check'
+        ) THEN
+          ALTER TABLE medical_documents DROP CONSTRAINT medical_documents_patient_check;
+        END IF;
+        
         IF EXISTS (
           SELECT 1 FROM information_schema.table_constraints 
           WHERE table_name = 'medical_documents' AND constraint_name = 'medical_documents_check'
         ) THEN
           ALTER TABLE medical_documents DROP CONSTRAINT medical_documents_check;
         END IF;
-        
-        -- Add new constraint
-        ALTER TABLE medical_documents ADD CONSTRAINT medical_documents_patient_check CHECK (
-          (private_patient_id IS NOT NULL AND patient_name IS NULL) OR
-          (private_patient_id IS NULL AND patient_name IS NOT NULL)
-        );
       END $$;
     `);
 
@@ -352,19 +353,20 @@ const initializeDatabase = async () => {
     await pool.query(`
       DO $$
       BEGIN
-        -- Drop existing constraint if it exists
+        -- Drop any existing patient-related constraints
+        IF EXISTS (
+          SELECT 1 FROM information_schema.table_constraints 
+          WHERE table_name = 'medical_records' AND constraint_name = 'medical_records_patient_check'
+        ) THEN
+          ALTER TABLE medical_records DROP CONSTRAINT medical_records_patient_check;
+        END IF;
+        
         IF EXISTS (
           SELECT 1 FROM information_schema.table_constraints 
           WHERE table_name = 'medical_records' AND constraint_name = 'medical_records_check'
         ) THEN
           ALTER TABLE medical_records DROP CONSTRAINT medical_records_check;
         END IF;
-        
-        -- Add new constraint
-        ALTER TABLE medical_records ADD CONSTRAINT medical_records_patient_check CHECK (
-          (private_patient_id IS NOT NULL AND patient_name IS NULL) OR
-          (private_patient_id IS NULL AND patient_name IS NOT NULL)
-        );
         
         -- Add missing columns if they don't exist
         IF NOT EXISTS (
@@ -4510,7 +4512,7 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
       WHERE c.status = 'cancelled'
-        AND c.date >= $1 AND c.date <= $2
+        AND c.date >= $1::date AND c.date < ($2::date + INTERVAL '1 day')
     `;
 
     const params = [start_date, end_date];
@@ -4550,7 +4552,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       `
       SELECT COALESCE(SUM(c.value), 0) as total_revenue
       FROM consultations c
-      WHERE c.date >= $1 AND c.date <= $2
+      WHERE c.date >= $1::date AND c.date < ($2::date + INTERVAL '1 day')
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
     `,
@@ -4571,7 +4573,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         COALESCE(SUM(c.value * u.percentage / 100), 0) as professional_payment
       FROM users u
       LEFT JOIN consultations c ON u.id = c.professional_id 
-        AND c.date >= $1 AND c.date <= $2
+        AND c.date >= $1::date AND c.date < ($2::date + INTERVAL '1 day')
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       WHERE 'professional' = ANY(u.roles)
@@ -4591,7 +4593,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         COUNT(c.id) as consultation_count
       FROM services s
       LEFT JOIN consultations c ON s.id = c.service_id 
-        AND c.date >= $1 AND c.date <= $2
+        AND c.date >= $1::date AND c.date < ($2::date + INTERVAL '1 day')
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       GROUP BY s.id, s.name
@@ -4656,7 +4658,7 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
-      WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4 AND c.status != 'cancelled'
+      WHERE c.professional_id = $1 AND c.date >= $2::date AND c.date < ($4::date + INTERVAL '1 day') AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `,
       [req.user.id, start_date, 100 - professionalPercentage, end_date]
@@ -4726,7 +4728,7 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
         COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
-      WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4 AND c.status != 'cancelled'
+      WHERE c.professional_id = $1 AND c.date >= $2::date AND c.date < ($4::date + INTERVAL '1 day') AND c.status != 'cancelled'
     `,
       [req.user.id, start_date, 100 - professionalPercentage, end_date]
     );
