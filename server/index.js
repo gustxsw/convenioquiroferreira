@@ -4479,6 +4479,9 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
 
     console.log("🔄 Fetching cancelled consultations for period:", start_date, "to", end_date);
 
+    const startDateTime = `${start_date} 00:00:00`;
+    const endDateTime = `${end_date} 23:59:59`;
+
     let query = `
       SELECT 
         c.id,
@@ -4512,7 +4515,7 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
       WHERE c.status = 'cancelled'
-        AND c.date >= $1::date AND c.date < ($2::date + INTERVAL '1 day')
+        AND c.date >= $1::timestamp AND c.date <= $2::timestamp
     `;
 
     const params = [startDateTime, endDateTime];
@@ -4784,13 +4787,7 @@ app.get("/api/reports/clients-by-city", authenticate, authorize(["admin"]), asyn
         COUNT(*) as client_count,
         COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
         COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
-    console.log("🔄 [CANCELLED] Frontend dates received:", { start_date, end_date });
-    
-    // Create proper date range for Brazil timezone
-    const startDateTime = \`${start_date} 00:00:00`;
-    const endDateTime = \`${end_date} 23:59:59`;
-    
-    console.log("🔄 [CANCELLED] Using date range:", { startDateTime, endDateTime });
+        COUNT(CASE WHEN subscription_status = 'inactive' THEN 1 END) as inactive_clients
       FROM users 
       WHERE 'client' = ANY(roles) AND city IS NOT NULL AND city != ''
       GROUP BY city, state
@@ -5072,7 +5069,6 @@ app.get("/api/audit-logs", authenticate, authorize(["admin"]), async (req, res) 
 
     const logsResult = await pool.query(query, params);
 
-        AND c.date >= $1::timestamp AND c.date <= $2::timestamp
     let countQuery = `SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
     const countParams = [];
     let countParamCount = 0;
