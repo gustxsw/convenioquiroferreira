@@ -222,8 +222,8 @@ const SchedulingPage: React.FC = () => {
     const consultation = consultationsByTime[timeSlot];
     
     if (consultation) {
-      // If slot is occupied, open edit modal
-      openEditModal(consultation);
+      // If slot is occupied, do nothing (only edit button should work)
+      return;
     } else {
       // If slot is empty, open quick schedule modal
       setSelectedSlot({
@@ -1084,10 +1084,10 @@ const SchedulingPage: React.FC = () => {
                           'h-32'
                         } border-b border-gray-100 flex items-center px-4 transition-all cursor-pointer ${
                           isOccupied 
-                            ? `${getSlotStyling(consultation)} hover:shadow-sm` 
+                            ? `${getSlotStyling(consultation)}` 
                             : 'hover:bg-blue-50 hover:border-l-4 hover:border-blue-300'
                         }`}
-                        title={isOccupied ? 'Clique para editar' : 'Clique para agendar'}
+                        title={isOccupied ? 'Use o botão de edição para editar' : 'Clique para agendar'}
                       >
                         {consultation ? (
                           <div className="flex items-center justify-between w-full">
@@ -1122,7 +1122,10 @@ const SchedulingPage: React.FC = () => {
                                   
                                   {/* WhatsApp Button */}
                                   <button
-                                    onClick={() => openWhatsApp(consultation)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openWhatsApp(consultation);
+                                    }}
                                     className="ml-2 p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded transition-colors"
                                     title="Enviar mensagem no WhatsApp"
                                   >
@@ -1157,7 +1160,10 @@ const SchedulingPage: React.FC = () => {
                             <div className="flex items-center space-x-2">
                               {/* Edit Button */}
                               <button
-                                onClick={() => openEditModal(consultation)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEditModal(consultation);
+                                }}
                                 className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
                                 title="Editar consulta"
                               >
@@ -1166,7 +1172,10 @@ const SchedulingPage: React.FC = () => {
 
                               {/* Status Button */}
                               <button
-                                onClick={() => openStatusModal(consultation)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openStatusModal(consultation);
+                                }}
                                 className={`px-2 py-1 rounded text-xs font-medium flex items-center border transition-all hover:shadow-sm ${
                                   getStatusInfo(consultation.status).className
                                 }`}
