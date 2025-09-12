@@ -1395,21 +1395,30 @@ const SchedulingPage: React.FC = () => {
                                   <input
                                     type="checkbox"
                                     checked={recurringFormData.selected_weekdays.includes(day.value)}
-                                    onChange={(e) => {
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        sendWhatsAppMessage(consultation);
+                                      }}
                                       const isChecked = e.target.checked;
                                       setRecurringFormData(prev => ({
                                         ...prev,
                                         selected_weekdays: isChecked
                                           ? [...prev.selected_weekdays, day.value]
                                           : prev.selected_weekdays.filter(d => d !== day.value)
-                                      }));
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        updateConsultationStatus(consultation.id, 'completed');
+                                      }}
                                     }}
                                     className="sr-only"
                                   />
                                   <div className="text-center">
                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-2 ${
                                       recurringFormData.selected_weekdays.includes(day.value)
-                                        ? `bg-${day.color}-500 text-white`
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openCancelModal(consultation);
+                                      }}
                                         : 'bg-gray-100 text-gray-600'
                                     }`}>
                                       <span className="text-xs font-bold">{day.short.charAt(0)}</span>
