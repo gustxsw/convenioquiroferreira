@@ -1141,9 +1141,6 @@ const SchedulingPage: React.FC = () => {
                                   <p className="text-xs text-gray-500">
                                     {formatTime(consultation.date)}
                                   </p>
-                                  <p className="text-xs text-gray-500">
-                                    {formatTime(consultation.date)}
-                                  </p>
                                   {consultation.location_name && (
                                     <p className="text-xs text-gray-500">
                                       {consultation.location_name}
