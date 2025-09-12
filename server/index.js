@@ -1795,8 +1795,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
       recurrence_interval,
       end_date,
       occurrences,
-      notes,
-      timezone_offset = -3 // Default to Brasília timezone
+      notes
     } = req.body;
 
     console.log('🔄 Creating recurring consultations:', req.body);
@@ -1814,11 +1813,10 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
     const createdConsultations = [];
     const startDateTime = new Date(`${start_date}T${start_time}`);
     
-    // Create initial date in specified timezone and convert to UTC
+    // 🔥 FIXED: Create initial date and convert from Brasília to UTC
     let currentDate = new Date(`${start_date}T${start_time}`);
-    if (timezone_offset !== undefined) {
-      currentDate = new Date(currentDate.getTime() - (timezone_offset * 60 * 60 * 1000));
-    }
+    // Subtract 3 hours to convert from Brasília to UTC
+    currentDate = new Date(currentDate.getTime() - (3 * 60 * 60 * 1000));
     
     const endDateTime = end_date ? new Date(end_date) : null;
 

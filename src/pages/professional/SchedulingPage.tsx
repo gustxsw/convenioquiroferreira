@@ -474,7 +474,12 @@ const SchedulingPage: React.FC = () => {
           service_id: parseInt(formData.service_id),
           location_id: formData.location_id ? parseInt(formData.location_id) : null,
           value: parseFloat(formData.value),
-          date: new Date(`${formData.date}T${formData.time}`).toISOString(),
+          // 🔥 FIXED: Create date in Brasília timezone and convert to UTC
+          date: (() => {
+            const localDate = new Date(`${formData.date}T${formData.time}`);
+            // Subtract 3 hours to convert from Brasília to UTC
+            return new Date(localDate.getTime() - (3 * 60 * 60 * 1000)).toISOString();
+          })(),
           status: "scheduled",
           notes: formData.notes || null,
         };

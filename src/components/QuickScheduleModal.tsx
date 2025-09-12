@@ -278,9 +278,9 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
       const apiUrl = getApiUrl();
 
       // Create date in Brasília timezone and convert to UTC
-      const brasiliaOffset = -3 * 60; // -3 hours in minutes
       const localDate = new Date(`${selectedSlot.date}T${selectedSlot.time}`);
-      const utcDate = new Date(localDate.getTime() - (brasiliaOffset * 60 * 1000));
+      // 🔥 FIXED: Subtract 3 hours to convert from Brasília to UTC
+      const utcDate = new Date(localDate.getTime() - (3 * 60 * 60 * 1000));
 
       const consultationData: any = {
         professional_id: user?.id,

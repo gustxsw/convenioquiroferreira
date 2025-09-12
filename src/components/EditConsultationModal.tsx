@@ -133,9 +133,9 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
       const apiUrl = getApiUrl();
 
       // Create date in Brasília timezone and convert to UTC
-      const brasiliaOffset = -3 * 60; // -3 hours in minutes
       const localDate = new Date(`${formData.date}T${formData.time}`);
-      const utcDate = new Date(localDate.getTime() - (brasiliaOffset * 60 * 1000));
+      // 🔥 FIXED: Subtract 3 hours to convert from Brasília to UTC
+      const utcDate = new Date(localDate.getTime() - (3 * 60 * 60 * 1000));
 
       const updateData = {
         date: utcDate.toISOString(),

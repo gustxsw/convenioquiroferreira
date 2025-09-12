@@ -403,9 +403,9 @@ const RegisterConsultationPage: React.FC = () => {
     }
 
     // Create date in Brasília timezone and convert to UTC
-    const brasiliaOffset = -3 * 60; // -3 hours in minutes
     const localDate = new Date(`${date}T${time}`);
-    const utcDate = new Date(localDate.getTime() - (brasiliaOffset * 60 * 1000));
+    // 🔥 FIXED: Subtract 3 hours to convert from Brasília to UTC
+    const utcDate = new Date(localDate.getTime() - (3 * 60 * 60 * 1000));
 
     try {
       setIsLoading(true);
