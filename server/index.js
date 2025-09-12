@@ -1969,6 +1969,8 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
     console.log('🔄 WhatsApp formatted date/time:', formattedDate, formattedTime);
     
     const formattedTime = consultationDate.toLocaleTimeString('pt-BR', { 
+    }
+    )
     const message = `Olá ${consultation.patient_name}, gostaria de confirmar o seu agendamento com o profissional ${req.user.name} no dia ${formattedDate} às ${formattedTime}`;
     const encodedMessage = encodeURIComponent(message);
     
