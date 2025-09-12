@@ -1928,9 +1928,9 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
     const brasiliaDate = new Date(consultationDate.getTime() + (3 * 60 * 60 * 1000));
     // Convert UTC to Brasília time (add 3 hours)
     // Convert UTC to Brasília timezone (UTC-3)
-    const brasiliaDate = new Date(consultationDate.getTime() + (3 * 60 * 60 * 1000));
-    const formattedDate = brasiliaDate.toLocaleDateString('pt-BR');
-    const formattedTime = brasiliaDate.toLocaleTimeString('pt-BR', { 
+    const whatsappBrasiliaDate = new Date(consultationDate.getTime() + (3 * 60 * 60 * 1000));
+    const formattedDate = whatsappBrasiliaDate.toLocaleDateString('pt-BR');
+    const formattedTime = whatsappBrasiliaDate.toLocaleTimeString('pt-BR', { 
       hour: '2-digit', 
       minute: '2-digit' 
     });
