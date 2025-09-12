@@ -1971,7 +1971,6 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
       minute: '2-digit',
       hour12: false
     });
-    )
     const message = `Olá ${consultation.patient_name}, gostaria de confirmar o seu agendamento com o profissional ${req.user.name} no dia ${formattedDate} às ${formattedTime}`;
     const encodedMessage = encodeURIComponent(message);
     
