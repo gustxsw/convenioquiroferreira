@@ -286,6 +286,9 @@ const initializeDatabase = async () => {
         id SERIAL PRIMARY KEY,
         professional_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         private_patient_id INTEGER REFERENCES private_patients(id) ON DELETE CASCADE,
+        patient_name VARCHAR(255),
+        patient_cpf VARCHAR(11),
+        patient_type VARCHAR(20) DEFAULT 'private',
         chief_complaint TEXT,
         history_present_illness TEXT,
         past_medical_history TEXT,
@@ -297,7 +300,11 @@ const initializeDatabase = async () => {
         notes TEXT,
         vital_signs JSONB,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT medical_records_patient_check CHECK (
+          (private_patient_id IS NOT NULL AND patient_name IS NULL AND patient_cpf IS NULL) OR
+          (private_patient_id IS NULL AND patient_name IS NOT NULL)
+        )
       )
     `);
 
@@ -307,50 +314,71 @@ const initializeDatabase = async () => {
         id SERIAL PRIMARY KEY,
         professional_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         private_patient_id INTEGER REFERENCES private_patients(id),
+        patient_name VARCHAR(255),
+        patient_cpf VARCHAR(11),
         title VARCHAR(255) NOT NULL,
         document_type VARCHAR(50) NOT NULL,
         document_url TEXT NOT NULL,
         template_data JSONB,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT medical_documents_patient_check CHECK (
+          (private_patient_id IS NOT NULL AND patient_name IS NULL AND patient_cpf IS NULL) OR
+          (private_patient_id IS NULL AND patient_name IS NOT NULL)
+        )
       )
     `);
 
-    // Add columns for convenio patients to medical_documents table
+    // Drop old constraints and add new ones for medical_documents
     await pool.query(`
       DO $$
       BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name = 'medical_documents' AND column_name = 'patient_name'
+        -- Drop existing constraint if it exists
+        IF EXISTS (
+          SELECT 1 FROM information_schema.table_constraints 
+          WHERE table_name = 'medical_documents' AND constraint_name = 'medical_documents_check'
         ) THEN
-          ALTER TABLE medical_documents ADD COLUMN patient_name TEXT;
+          ALTER TABLE medical_documents DROP CONSTRAINT medical_documents_check;
         END IF;
         
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name = 'medical_documents' AND column_name = 'patient_cpf'
-        ) THEN
-          ALTER TABLE medical_documents ADD COLUMN patient_cpf TEXT;
-        END IF;
+        -- Add new constraint
+        ALTER TABLE medical_documents ADD CONSTRAINT medical_documents_patient_check CHECK (
+          (private_patient_id IS NOT NULL AND patient_name IS NULL) OR
+          (private_patient_id IS NULL AND patient_name IS NOT NULL)
+        );
       END $$;
     `);
 
-    // Add columns for convenio patients to medical_records table
+    // Drop old constraints and add new ones for medical_records
     await pool.query(`
       DO $$
       BEGIN
+        -- Drop existing constraint if it exists
+        IF EXISTS (
+          SELECT 1 FROM information_schema.table_constraints 
+          WHERE table_name = 'medical_records' AND constraint_name = 'medical_records_check'
+        ) THEN
+          ALTER TABLE medical_records DROP CONSTRAINT medical_records_check;
+        END IF;
+        
+        -- Add new constraint
+        ALTER TABLE medical_records ADD CONSTRAINT medical_records_patient_check CHECK (
+          (private_patient_id IS NOT NULL AND patient_name IS NULL) OR
+          (private_patient_id IS NULL AND patient_name IS NOT NULL)
+        );
+        
+        -- Add missing columns if they don't exist
         IF NOT EXISTS (
           SELECT 1 FROM information_schema.columns
           WHERE table_name = 'medical_records' AND column_name = 'patient_name'
         ) THEN
-          ALTER TABLE medical_records ADD COLUMN patient_name TEXT;
+          ALTER TABLE medical_records ADD COLUMN patient_name VARCHAR(255);
         END IF;
         
         IF NOT EXISTS (
           SELECT 1 FROM information_schema.columns
           WHERE table_name = 'medical_records' AND column_name = 'patient_cpf'
         ) THEN
-          ALTER TABLE medical_records ADD COLUMN patient_cpf TEXT;
+          ALTER TABLE medical_records ADD COLUMN patient_cpf VARCHAR(11);
         END IF;
         
         IF NOT EXISTS (
