@@ -251,7 +251,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
         end_date: formData.end_date || null,
         occurrences: formData.occurrences,
         notes: formData.notes && formData.notes.trim() ? formData.notes.trim() : null,
-        // 🔥 FIXED: Remove timezone_offset as we handle it in frontend
       };
 
       // Set patient based on type

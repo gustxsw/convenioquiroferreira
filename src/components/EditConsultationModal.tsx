@@ -133,12 +133,11 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
       const apiUrl = getApiUrl();
 
       // Create date in Brasília timezone and convert to UTC
-      const localDate = new Date(`${formData.date}T${formData.time}`);
-      // Convert from Brasília to UTC by subtracting 3 hours
-      const utcDate = new Date(localDate.getTime() - (3 * 60 * 60 * 1000));
+      // Send date exactly as entered (no timezone conversion)
+      const dateTime = `${formData.date}T${formData.time}`;
 
       const updateData = {
-        date: utcDate.toISOString(),
+        date: dateTime,
         value: parseFloat(formData.value),
         location_id: formData.location_id ? parseInt(formData.location_id) : null,
         notes: formData.notes && formData.notes.trim() ? formData.notes.trim() : null,

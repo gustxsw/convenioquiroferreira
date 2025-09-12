@@ -278,16 +278,15 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
       const apiUrl = getApiUrl();
 
       // Create date in Brasília timezone and convert to UTC
-      const localDate = new Date(`${selectedSlot.date}T${selectedSlot.time}`);
-      // Convert from Brasília to UTC by subtracting 3 hours
-      const utcDate = new Date(localDate.getTime() - (3 * 60 * 60 * 1000));
+      // Send date exactly as entered (no timezone conversion)
+      const dateTime = `${selectedSlot.date}T${selectedSlot.time}`;
 
       const consultationData: any = {
         professional_id: user?.id,
         service_id: parseInt(formData.service_id),
         location_id: formData.location_id ? parseInt(formData.location_id) : null,
         value: parseFloat(formData.value),
-        date: utcDate.toISOString(),
+        date: dateTime,
         status: 'scheduled',
         notes: formData.notes.trim() || null,
       };

@@ -478,7 +478,7 @@ const SchedulingPage: React.FC = () => {
           location_id: formData.location_id ? parseInt(formData.location_id) : null,
           value: parseFloat(formData.value),
           // 🔥 FIXED: Send date/time exactly as entered (no timezone conversion)
-          date: `${formData.date}T${formData.time}:00`,
+          date: `${formData.date}T${formData.time}`,
           status: "scheduled",
           notes: formData.notes || null,
         };

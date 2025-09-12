@@ -1965,8 +1965,11 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
     
     // Format date and time - Use saved date directly (already in correct timezone)
     console.log('🔄 Consultation date from DB:', consultation.date);
+    
+    // Use the date as stored in database (no timezone conversion)
+    const consultationDate = new Date(consultation.date);
     const formattedDate = consultationDate.toLocaleDateString('pt-BR');
-    const formattedTime = consultationDate.toLocaleTimeString('pt-BR', {
+    const formattedTime = consultationDate.toLocaleTimeString('pt-BR', { 
       hour: '2-digit',
       minute: '2-digit',
       hour12: false
