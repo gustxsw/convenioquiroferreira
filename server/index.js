@@ -202,6 +202,33 @@ const initializeDatabase = async () => {
       )
     `);
 
+    // Drop old constraint if it exists and add new flexible constraint
+    await pool.query(`
+      DO $$
+      BEGIN
+        -- Drop old constraint if it exists
+        IF EXISTS (
+          SELECT 1 FROM information_schema.table_constraints 
+          WHERE constraint_name = 'medical_documents_patient_check' 
+          AND table_name = 'medical_documents'
+        ) THEN
+          ALTER TABLE medical_documents DROP CONSTRAINT medical_documents_patient_check;
+        END IF;
+        
+        -- Add new flexible constraint
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.table_constraints 
+          WHERE constraint_name = 'medical_documents_patient_type_check' 
+          AND table_name = 'medical_documents'
+        ) THEN
+          ALTER TABLE medical_documents ADD CONSTRAINT medical_documents_patient_type_check CHECK (
+            (private_patient_id IS NOT NULL AND patient_name IS NULL) OR
+            (private_patient_id IS NULL AND patient_name IS NOT NULL)
+          );
+        END IF;
+      END $$;
+    `);
+
     // Add status and updated_at columns to existing consultations table if they don't exist
     await pool.query(`
       DO $$
@@ -1883,7 +1910,6 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
       message: `${createdConsultations.length} consultas recorrentes criadas com sucesso`,
       created_count: createdConsultations.length,
       consultations: createdConsultations,
-      created_count: createdConsultations.length
     });
   } catch (error) {
     console.error('❌ Error creating recurring consultations:', error);
