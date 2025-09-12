@@ -171,6 +171,23 @@ const SchedulingPage: React.FC = () => {
     return "http://localhost:3001";
   };
 
+  // Timezone conversion utilities
+  const convertBrazilTimeToUTC = (date: string, time: string): string => {
+    // Create date in Brazil timezone (GMT-3)
+    const brazilDateTime = new Date(`${date}T${time}:00`);
+    // Add 3 hours to convert to UTC
+    const utcDateTime = new Date(brazilDateTime.getTime() + (3 * 60 * 60 * 1000));
+    return utcDateTime.toISOString();
+  };
+
+  const convertUTCToBrazilTime = (utcDateString: string): string => {
+    // Parse UTC date
+    const utcDate = new Date(utcDateString);
+    // Subtract 3 hours to convert to Brazil time
+    const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
+    return format(brazilDate, 'HH:mm');
+  };
+
   useEffect(() => {
     checkSchedulingAccess();
     fetchData();
