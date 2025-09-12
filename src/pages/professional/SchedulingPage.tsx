@@ -477,12 +477,8 @@ const SchedulingPage: React.FC = () => {
           service_id: parseInt(formData.service_id),
           location_id: formData.location_id ? parseInt(formData.location_id) : null,
           value: parseFloat(formData.value),
-          // 🔥 FIXED: Create date in Brasília timezone and convert to UTC
-          date: (() => {
-            const localDate = new Date(`${formData.date}T${formData.time}`);
-            // Subtract 3 hours to convert from Brasília to UTC
-            return new Date(localDate.getTime() - (3 * 60 * 60 * 1000)).toISOString();
-          })(),
+          // 🔥 FIXED: Send date/time exactly as entered (no timezone conversion)
+          date: `${formData.date}T${formData.time}:00`,
           status: "scheduled",
           notes: formData.notes || null,
         };
@@ -688,12 +684,9 @@ const SchedulingPage: React.FC = () => {
     localStorage.setItem('scheduling-slot-duration', duration.toString());
   };
   const formatTime = (dateString: string) => {
-    // Convert UTC date to Brasília timezone for display
+    // 🔥 FIXED: Use date as stored (no timezone conversion)
     const utcDate = new Date(dateString);
-    // Add 3 hours to convert from UTC to Brasília time
-    const brasiliaDate = new Date(utcDate.getTime() + (3 * 60 * 60 * 1000));
-    
-    return format(brasiliaDate, 'HH:mm');
+    return format(utcDate, 'HH:mm');
   };
 
   const getStatusInfo = (status: string) => {

@@ -1591,6 +1591,13 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
       }
     }
 
+    // 🔥 FIXED: Parse date correctly - frontend sends local time, save as local time
+    console.log("🔄 Original date from frontend:", date);
+    
+    // Create date object treating the input as local Brazil time
+    const localDate = new Date(date);
+    console.log("🔄 Parsed local date:", localDate.toISOString());
+    console.log("🔄 Local time display:", localDate.toLocaleString('pt-BR'));
     // Create consultation
     const consultationResult = await pool.query(
       `
@@ -1609,7 +1616,7 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
         service_id,
         location_id || null,
         parseFloat(value),
-        date, // Save date as-is from frontend (already in correct format)
+        localDate,
         status,
         notes?.trim() || null,
       ]
@@ -1618,6 +1625,7 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
     const consultation = consultationResult.rows[0];
 
     console.log("✅ Consultation created:", consultation.id);
+    console.log("✅ Saved date:", consultation.date);
 
     res.status(201).json({
       message: "Consulta criada com sucesso",
@@ -1952,15 +1960,15 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
     const cleanPhone = consultation.patient_phone.replace(/\D/g, '');
     const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
     
-    // Format date and time - Use date as stored (already in correct timezone)
+    // 🔥 FIXED: Use date as stored (no timezone conversion)
+    console.log('🔄 Consultation date from DB:', consultation.date);
     const consultationDate = new Date(consultation.date);
-    const formattedDate = consultationDate.toLocaleDateString('pt-BR');
-    const formattedTime = consultationDate.toLocaleTimeString('pt-BR', { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
+    console.log('🔄 Using consultation date directly:', consultationDate.toLocaleString('pt-BR'));
     
-    // Create WhatsApp message
+    const formattedDate = consultationDate.toLocaleDateString('pt-BR');
+    console.log('🔄 WhatsApp formatted date/time:', formattedDate, formattedTime);
+    
+    const formattedTime = consultationDate.toLocaleTimeString('pt-BR', { 
     const message = `Olá ${consultation.patient_name}, gostaria de confirmar o seu agendamento com o profissional ${req.user.name} no dia ${formattedDate} às ${formattedTime}`;
     const encodedMessage = encodeURIComponent(message);
     
