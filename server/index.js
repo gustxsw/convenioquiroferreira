@@ -4479,9 +4479,6 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
 
     console.log("🔄 Fetching cancelled consultations for period:", start_date, "to", end_date);
 
-    const startDateTime = `${start_date} 00:00:00`;
-    const endDateTime = `${end_date} 23:59:59`;
-
     let query = `
       SELECT 
         c.id,
@@ -4515,7 +4512,7 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
       WHERE c.status = 'cancelled'
-        AND c.date >= $1::timestamp AND c.date <= $2::timestamp
+        AND c.date >= $1::date AND c.date < ($2::date + INTERVAL '1 day')
     `;
 
     const params = [startDateTime, endDateTime];
@@ -4787,7 +4784,14 @@ app.get("/api/reports/clients-by-city", authenticate, authorize(["admin"]), asyn
         COUNT(*) as client_count,
         COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
         COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
-        COUNT(CASE WHEN subscription_status = 'inactive' THEN 1 END) as inactive_clients
+    console.log("🔄 [CANCELLED] Frontend dates received:", { start_date, end_date });
+    
+    // Create proper date range for Brazil timezone
+    const startDateTime = \`${start_date} 00:00:00`;
+    )
+    const endDateTime = \`${end_date} 23:59:59`;
+    
+    console.log("🔄 [CANCELLED] Using date range:", { startDateTime, endDateTime });
       FROM users 
       WHERE 'client' = ANY(roles) AND city IS NOT NULL AND city != ''
       GROUP BY city, state
@@ -5048,46 +5052,47 @@ app.get("/api/audit-logs", authenticate, authorize(["admin"]), async (req, res) 
 
     if (user_id) {
       paramCount++;
-      query += ` AND al.user_id = $${paramCount}`;
+      query += \` AND al.user_id = $${paramCount}`;
       params.push(user_id);
     }
 
     if (action) {
       paramCount++;
-      query += ` AND al.action = $${paramCount}`;
+      query += \` AND al.action = $${paramCount}`;
       params.push(action);
     }
 
     if (table_name) {
       paramCount++;
-      query += ` AND al.table_name = $${paramCount}`;
+      query += \` AND al.table_name = $${paramCount}`;
       params.push(table_name);
     }
 
-    query += ` ORDER BY al.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+    query += \` ORDER BY al.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
     params.push(limit, offset);
 
     const logsResult = await pool.query(query, params);
 
-    let countQuery = `SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
+        AND c.date >= $1::timestamp AND c.date <= $2::timestamp
+    let countQuery = \`SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
     const countParams = [];
     let countParamCount = 0;
 
     if (user_id) {
       countParamCount++;
-      countQuery += ` AND al.user_id = $${countParamCount}`;
+      countQuery += \` AND al.user_id = $${countParamCount}`;
       countParams.push(user_id);
     }
 
     if (action) {
       countParamCount++;
-      countQuery += ` AND al.action = $${countParamCount}`;
+      countQuery += \` AND al.action = $${countParamCount}`;
       countParams.push(action);
     }
 
     if (table_name) {
       countParamCount++;
-      countQuery += ` AND al.table_name = $${countParamCount}`;
+      countQuery += \` AND al.table_name = $${countParamCount}`;
       countParams.push(table_name);
     }
 
@@ -5172,12 +5177,12 @@ const startServer = async () => {
 
     // Start listening
     app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(`📊 Database: Connected`);
-      console.log(`💳 MercadoPago: Configured`);
-      console.log(`📋 Consultations System: Active`);
-      console.log(`✅ All systems operational`);
+      console.log(\`🚀 Server running on port ${PORT}`);
+      console.log(\`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log(\`📊 Database: Connected`);
+      console.log(\`💳 MercadoPago: Configured`);
+      console.log(\`📋 Consultations System: Active`);
+      console.log(\`✅ All systems operational`);
     });
   } catch (error) {
     console.error("❌ Failed to start server:", error);
@@ -5214,3 +5219,6 @@ process.on("SIGINT", async () => {
 
 // Start the server
 startServer();
+  }
+}
+)
