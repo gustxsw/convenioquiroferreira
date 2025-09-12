@@ -202,33 +202,6 @@ const initializeDatabase = async () => {
       )
     `);
 
-    // Drop old constraint if it exists and add new flexible constraint
-    await pool.query(`
-      DO $$
-      BEGIN
-        -- Drop old constraint if it exists
-        IF EXISTS (
-          SELECT 1 FROM information_schema.table_constraints 
-          WHERE constraint_name = 'medical_documents_patient_check' 
-          AND table_name = 'medical_documents'
-        ) THEN
-          ALTER TABLE medical_documents DROP CONSTRAINT medical_documents_patient_check;
-        END IF;
-        
-        -- Add new flexible constraint
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.table_constraints 
-          WHERE constraint_name = 'medical_documents_patient_type_check' 
-          AND table_name = 'medical_documents'
-        ) THEN
-          ALTER TABLE medical_documents ADD CONSTRAINT medical_documents_patient_type_check CHECK (
-            (private_patient_id IS NOT NULL AND patient_name IS NULL) OR
-            (private_patient_id IS NULL AND patient_name IS NOT NULL)
-          );
-        END IF;
-      END $$;
-    `);
-
     // Add status and updated_at columns to existing consultations table if they don't exist
     await pool.query(`
       DO $$
@@ -395,7 +368,21 @@ const initializeDatabase = async () => {
         
         -- Add missing columns if they don't exist
         IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns 
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'medical_records' AND column_name = 'patient_name'
+        ) THEN
+          ALTER TABLE medical_records ADD COLUMN patient_name VARCHAR(255);
+        END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'medical_records' AND column_name = 'patient_cpf'
+        ) THEN
+          ALTER TABLE medical_records ADD COLUMN patient_cpf VARCHAR(11);
+        END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
           WHERE table_name = 'medical_records' AND column_name = 'patient_type'
         ) THEN
           ALTER TABLE medical_records ADD COLUMN patient_type VARCHAR(20) DEFAULT 'private';
@@ -1279,6 +1266,56 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
       if (crm !== undefined) updateData.crm = crm?.trim() || null;
     }
 
+    // Add activate client route
+    app.post("/api/users/:id/activate", authenticate, authorize(["admin"]), async (req, res) => {
+      try {
+        const { id } = req.params;
+        
+        console.log("🔄 Activating client:", id);
+        
+        // Get user data
+        const userResult = await pool.query(
+          "SELECT * FROM users WHERE id = $1 AND 'client' = ANY(roles)",
+          [id]
+        );
+        
+        if (userResult.rows.length === 0) {
+          return res.status(404).json({ message: "Cliente não encontrado" });
+        }
+        
+        // Set expiry date to 1 year from now
+        const expiryDate = new Date();
+        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+        
+        // Update subscription status and expiry
+        const updatedUserResult = await pool.query(
+          `UPDATE users 
+           SET subscription_status = 'active', 
+               subscription_expiry = $1,
+               updated_at = NOW()
+           WHERE id = $2
+           RETURNING 
+             id, name, cpf, email, phone, 
+             birth_date::text as birth_date,
+             address, address_number, address_complement, neighborhood, city, state,
+             roles, subscription_status, 
+             subscription_expiry::text as subscription_expiry,
+             photo_url, category_name, percentage, crm, 
+             created_at::text as created_at, updated_at::text as updated_at`,
+          [expiryDate, id]
+        );
+        
+        console.log("✅ Client activated successfully:", id);
+        
+        res.json({
+          message: "Cliente ativado com sucesso",
+          user: updatedUserResult.rows[0]
+        });
+      } catch (error) {
+        console.error("❌ Error activating client:", error);
+        res.status(500).json({ message: "Erro ao ativar cliente" });
+      }
+    });
     updateData.updated_at = new Date();
 
     // Update user
@@ -1328,57 +1365,6 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
   } catch (error) {
     console.error("❌ Error updating user:", error);
     res.status(500).json({ message: "Erro ao atualizar usuário" });
-  }
-});
-
-// Add activate client route
-app.post("/api/users/:id/activate", authenticate, authorize(["admin"]), async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    console.log("🔄 Activating client:", id);
-    
-    // Get user data
-    const userResult = await pool.query(
-      "SELECT * FROM users WHERE id = $1 AND 'client' = ANY(roles)",
-      [id]
-    );
-    
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ message: "Cliente não encontrado" });
-    }
-    
-    // Set expiry date to 1 year from now
-    const expiryDate = new Date();
-    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-    
-    // Update subscription status and expiry
-    const updatedUserResult = await pool.query(
-      `UPDATE users 
-       SET subscription_status = 'active', 
-           subscription_expiry = $1,
-           updated_at = NOW()
-       WHERE id = $2
-       RETURNING 
-         id, name, cpf, email, phone, 
-         birth_date::text as birth_date,
-         address, address_number, address_complement, neighborhood, city, state,
-         roles, subscription_status, 
-         subscription_expiry::text as subscription_expiry,
-         photo_url, category_name, percentage, crm, 
-         created_at::text as created_at, updated_at::text as updated_at`,
-      [expiryDate, id]
-    );
-    
-    console.log("✅ Client activated successfully:", id);
-    
-    res.json({
-      message: "Cliente ativado com sucesso",
-      user: updatedUserResult.rows[0]
-    });
-  } catch (error) {
-    console.error("❌ Error activating client:", error);
-    res.status(500).json({ message: "Erro ao ativar cliente" });
   }
 });
 
@@ -1910,6 +1896,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
       message: `${createdConsultations.length} consultas recorrentes criadas com sucesso`,
       created_count: createdConsultations.length,
       consultations: createdConsultations,
+      created_count: createdConsultations.length
     });
   } catch (error) {
     console.error('❌ Error creating recurring consultations:', error);
@@ -4489,12 +4476,6 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
     }
 
     console.log("🔄 Fetching cancelled consultations for period:", start_date, "to", end_date);
-    
-    // Convert dates to ensure proper timezone handling
-    const startDateFormatted = `${start_date} 00:00:00`;
-    const endDateFormatted = `${end_date} 23:59:59`;
-    
-    console.log("🔄 Using formatted dates:", startDateFormatted, "to", endDateFormatted);
 
     let query = `
       SELECT 
@@ -4529,10 +4510,10 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
       WHERE c.status = 'cancelled'
-        AND c.date >= $1::timestamp AND c.date <= $2::timestamp
+        AND c.date >= $1 AND c.date <= $2
     `;
 
-    const params = [startDateFormatted, endDateFormatted];
+    const params = [start_date, end_date];
 
     // If professional, only show their cancelled consultations
     if (req.user.currentRole === "professional") {
@@ -4563,23 +4544,17 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
     }
 
     console.log("🔄 Generating revenue report for period:", start_date, "to", end_date);
-    
-    // Convert dates to ensure proper timezone handling
-    const startDateFormatted = `${start_date} 00:00:00`;
-    const endDateFormatted = `${end_date} 23:59:59`;
-    
-    console.log("🔄 Using formatted dates for revenue:", startDateFormatted, "to", endDateFormatted);
 
     // Get total revenue (only convenio consultations)
     const totalRevenueResult = await pool.query(
       `
       SELECT COALESCE(SUM(c.value), 0) as total_revenue
       FROM consultations c
-      WHERE c.date >= $1::timestamp AND c.date <= $2::timestamp
+      WHERE c.date >= $1 AND c.date <= $2
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
     `,
-      [startDateFormatted, endDateFormatted]
+      [start_date, end_date]
     );
 
     const totalRevenue = parseFloat(totalRevenueResult.rows[0].total_revenue) || 0;
@@ -4596,7 +4571,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         COALESCE(SUM(c.value * u.percentage / 100), 0) as professional_payment
       FROM users u
       LEFT JOIN consultations c ON u.id = c.professional_id 
-        AND c.date >= $1::timestamp AND c.date <= $2::timestamp
+        AND c.date >= $1 AND c.date <= $2
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       WHERE 'professional' = ANY(u.roles)
@@ -4604,7 +4579,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
     `,
-      [startDateFormatted, endDateFormatted]
+      [start_date, end_date]
     );
 
     // Get revenue by service (only convenio consultations)
@@ -4616,14 +4591,14 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         COUNT(c.id) as consultation_count
       FROM services s
       LEFT JOIN consultations c ON s.id = c.service_id 
-        AND c.date >= $1::timestamp AND c.date <= $2::timestamp
+        AND c.date >= $1 AND c.date <= $2
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       GROUP BY s.id, s.name
       HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
     `,
-      [startDateFormatted, endDateFormatted]
+      [start_date, end_date]
     );
 
     const report = {
@@ -4651,13 +4626,7 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
         .json({ message: "Data inicial e final são obrigatórias" });
     }
 
-    console.log("🔄 Generating professional revenue report for:", req.user.id, "dates:", start_date, "to", end_date);
-    
-    // Convert dates to ensure proper timezone handling
-    const startDateFormatted = `${start_date} 00:00:00`;
-    const endDateFormatted = `${end_date} 23:59:59`;
-    
-    console.log("🔄 Using formatted dates for professional revenue:", startDateFormatted, "to", endDateFormatted);
+    console.log("🔄 Generating professional revenue report for:", req.user.id);
 
     // Get professional percentage
     const professionalResult = await pool.query(
@@ -4687,10 +4656,10 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
-      WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $4::timestamp AND c.status != 'cancelled'
+      WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4 AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `,
-      [req.user.id, startDateFormatted, 100 - professionalPercentage, endDateFormatted]
+      [req.user.id, start_date, 100 - professionalPercentage, end_date]
     );
 
     // Calculate totals
@@ -4735,13 +4704,7 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         .json({ message: "Data inicial e final são obrigatórias" });
     }
 
-    console.log("🔄 Generating detailed professional report for:", req.user.id, "dates:", start_date, "to", end_date);
-    
-    // Convert dates to ensure proper timezone handling
-    const startDateFormatted = `${start_date} 00:00:00`;
-    const endDateFormatted = `${end_date} 23:59:59`;
-    
-    console.log("🔄 Using formatted dates for detailed report:", startDateFormatted, "to", endDateFormatted);
+    console.log("🔄 Generating detailed professional report for:", req.user.id);
 
     // Get professional percentage
     const professionalResult = await pool.query(
@@ -4763,9 +4726,9 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
         COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
-      WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $4::timestamp AND c.status != 'cancelled'
+      WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4 AND c.status != 'cancelled'
     `,
-      [req.user.id, startDateFormatted, 100 - professionalPercentage, endDateFormatted]
+      [req.user.id, start_date, 100 - professionalPercentage, end_date]
     );
 
     const stats = statsResult.rows[0];
