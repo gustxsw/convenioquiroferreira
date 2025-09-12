@@ -4515,7 +4515,7 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
         AND c.date >= $1::date AND c.date < ($2::date + INTERVAL '1 day')
     `;
 
-    const params = [start_date, end_date];
+    const params = [startDateTime, endDateTime];
 
     // If professional, only show their cancelled consultations
     if (req.user.currentRole === "professional") {
@@ -4527,7 +4527,7 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
 
     const result = await pool.query(query, params);
 
-    console.log("✅ Cancelled consultations fetched:", result.rows.length);
+    console.log("✅ [CANCELLED] Cancelled consultations fetched:", result.rows.length);
     res.json(result.rows);
   } catch (error) {
     console.error("❌ Error fetching cancelled consultations:", error);
@@ -4545,18 +4545,24 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         .json({ message: "Data inicial e final são obrigatórias" });
     }
 
-    console.log("🔄 Generating revenue report for period:", start_date, "to", end_date);
+    console.log("🔄 [REVENUE-REPORT] Frontend dates received:", { start_date, end_date });
+    
+    // Create proper date range for Brazil timezone
+    const startDateTime = `${start_date} 00:00:00`;
+    const endDateTime = `${end_date} 23:59:59`;
+    
+    console.log("🔄 [REVENUE-REPORT] Using date range:", { startDateTime, endDateTime });
 
     // Get total revenue (only convenio consultations)
     const totalRevenueResult = await pool.query(
       `
       SELECT COALESCE(SUM(c.value), 0) as total_revenue
       FROM consultations c
-      WHERE c.date >= $1::date AND c.date < ($2::date + INTERVAL '1 day')
+      WHERE c.date >= $1::timestamp AND c.date <= $2::timestamp
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
     `,
-      [start_date, end_date]
+      [startDateTime, endDateTime]
     );
 
     const totalRevenue = parseFloat(totalRevenueResult.rows[0].total_revenue) || 0;
@@ -4573,7 +4579,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         COALESCE(SUM(c.value * u.percentage / 100), 0) as professional_payment
       FROM users u
       LEFT JOIN consultations c ON u.id = c.professional_id 
-        AND c.date >= $1::date AND c.date < ($2::date + INTERVAL '1 day')
+        AND c.date >= $1::timestamp AND c.date <= $2::timestamp
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       WHERE 'professional' = ANY(u.roles)
@@ -4581,7 +4587,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
     `,
-      [start_date, end_date]
+      [startDateTime, endDateTime]
     );
 
     // Get revenue by service (only convenio consultations)
@@ -4593,14 +4599,14 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         COUNT(c.id) as consultation_count
       FROM services s
       LEFT JOIN consultations c ON s.id = c.service_id 
-        AND c.date >= $1::date AND c.date < ($2::date + INTERVAL '1 day')
+        AND c.date >= $1::timestamp AND c.date <= $2::timestamp
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       GROUP BY s.id, s.name
       HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
     `,
-      [start_date, end_date]
+      [startDateTime, endDateTime]
     );
 
     const report = {
@@ -4609,7 +4615,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       revenue_by_service: revenueByServiceResult.rows,
     };
 
-    console.log("✅ Revenue report generated");
+    console.log("✅ [REVENUE-REPORT] Report generated with correct dates");
 
     res.json(report);
   } catch (error) {
@@ -4628,7 +4634,13 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
         .json({ message: "Data inicial e final são obrigatórias" });
     }
 
-    console.log("🔄 Generating professional revenue report for:", req.user.id);
+    console.log("🔄 [PROF-REVENUE] Frontend dates received:", { start_date, end_date });
+    
+    // Create proper date range for Brazil timezone
+    const startDateTime = `${start_date} 00:00:00`;
+    const endDateTime = `${end_date} 23:59:59`;
+    
+    console.log("🔄 [PROF-REVENUE] Using date range:", { startDateTime, endDateTime });
 
     // Get professional percentage
     const professionalResult = await pool.query(
@@ -4658,10 +4670,10 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
-      WHERE c.professional_id = $1 AND c.date >= $2::date AND c.date < ($4::date + INTERVAL '1 day') AND c.status != 'cancelled'
+      WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $4::timestamp AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `,
-      [req.user.id, start_date, 100 - professionalPercentage, end_date]
+      [req.user.id, startDateTime, 100 - professionalPercentage, endDateTime]
     );
 
     // Calculate totals
@@ -4685,7 +4697,7 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       consultations: consultationsResult.rows,
     };
 
-    console.log("✅ Professional revenue report generated");
+    console.log("✅ [PROF-REVENUE] Report generated with correct dates");
 
     res.json(report);
   } catch (error) {
@@ -4706,7 +4718,13 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         .json({ message: "Data inicial e final são obrigatórias" });
     }
 
-    console.log("🔄 Generating detailed professional report for:", req.user.id);
+    console.log("🔄 [PROF-DETAILED] Frontend dates received:", { start_date, end_date });
+    
+    // Create proper date range for Brazil timezone
+    const startDateTime = `${start_date} 00:00:00`;
+    const endDateTime = `${end_date} 23:59:59`;
+    
+    console.log("🔄 [PROF-DETAILED] Using date range:", { startDateTime, endDateTime });
 
     // Get professional percentage
     const professionalResult = await pool.query(
@@ -4728,9 +4746,9 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
         COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
-      WHERE c.professional_id = $1 AND c.date >= $2::date AND c.date < ($4::date + INTERVAL '1 day') AND c.status != 'cancelled'
+      WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $4::timestamp AND c.status != 'cancelled'
     `,
-      [req.user.id, start_date, 100 - professionalPercentage, end_date]
+      [req.user.id, startDateTime, 100 - professionalPercentage, endDateTime]
     );
 
     const stats = statsResult.rows[0];
@@ -4748,7 +4766,7 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
       },
     };
 
-    console.log("✅ Detailed professional report generated");
+    console.log("✅ [PROF-DETAILED] Report generated with correct dates");
 
     res.json(report);
   } catch (error) {
@@ -4766,7 +4784,13 @@ app.get("/api/reports/clients-by-city", authenticate, authorize(["admin"]), asyn
         COUNT(*) as client_count,
         COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
         COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
-        COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
+    console.log("🔄 [CANCELLED] Frontend dates received:", { start_date, end_date });
+    
+    // Create proper date range for Brazil timezone
+    const startDateTime = `${start_date} 00:00:00`;
+    const endDateTime = `${end_date} 23:59:59`;
+    
+    console.log("🔄 [CANCELLED] Using date range:", { startDateTime, endDateTime });
       FROM users 
       WHERE 'client' = ANY(roles) AND city IS NOT NULL AND city != ''
       GROUP BY city, state
@@ -5048,7 +5072,7 @@ app.get("/api/audit-logs", authenticate, authorize(["admin"]), async (req, res) 
 
     const logsResult = await pool.query(query, params);
 
-    // Get total count for pagination
+        AND c.date >= $1::timestamp AND c.date <= $2::timestamp
     let countQuery = `SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
     const countParams = [];
     let countParamCount = 0;
