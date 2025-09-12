@@ -2335,7 +2335,11 @@ app.post("/api/dependents", authenticate, authorize(["client"]), async (req, res
       [cleanCPF]
     );
 
-    if (existingUser.rows.length > 0 || existingDependent.rows.length > 0) {
+    if (existingUser
+    )
+  }
+}
+).rows.length > 0 || existingDependent.rows.length > 0) {
       return res.status(409).json({ message: "CPF já cadastrado" });
     }
 
@@ -4787,8 +4791,8 @@ app.get("/api/reports/clients-by-city", authenticate, authorize(["admin"]), asyn
     console.log("🔄 [CANCELLED] Frontend dates received:", { start_date, end_date });
     
     // Create proper date range for Brazil timezone
-    const startDateTime = `${start_date} 00:00:00`;
-    const endDateTime = `${end_date} 23:59:59`;
+    const startDateTime = \`${start_date} 00:00:00`;
+    const endDateTime = \`${end_date} 23:59:59`;
     
     console.log("🔄 [CANCELLED] Using date range:", { startDateTime, endDateTime });
       FROM users 
