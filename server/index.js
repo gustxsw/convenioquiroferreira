@@ -1965,11 +1965,12 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
     
     // Format date and time - Use saved date directly (already in correct timezone)
     console.log('🔄 Consultation date from DB:', consultation.date);
+    const formattedDate = consultationDate.toLocaleDateString('pt-BR');
+    const formattedTime = consultationDate.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
       minute: '2-digit',
       hour12: false
-    const formattedDate = consultationDate.toLocaleDateString('pt-BR');
-    const formattedTime = consultationDate.toLocaleTimeString('pt-BR', { 
-    }
+    });
     )
     const message = `Olá ${consultation.patient_name}, gostaria de confirmar o seu agendamento com o profissional ${req.user.name} no dia ${formattedDate} às ${formattedTime}`;
     const encodedMessage = encodeURIComponent(message);
