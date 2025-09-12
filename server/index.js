@@ -1591,6 +1591,8 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
       }
     }
 
+    console.log("🔄 Date received from frontend:", date);
+    console.log("🔄 Date type:", typeof date);
     // 🔥 FIXED: Parse date correctly - frontend sends local time, save as local time
     console.log("🔄 Original date from frontend:", date);
     
@@ -1616,7 +1618,7 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
         service_id,
         location_id || null,
         parseFloat(value),
-        localDate,
+        date, // Save exactly as received from frontend
         status,
         notes?.trim() || null,
       ]
@@ -1624,6 +1626,7 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
 
     const consultation = consultationResult.rows[0];
 
+    console.log("✅ Consultation created with date:", consultation.date);
     console.log("✅ Consultation created:", consultation.id);
     console.log("✅ Saved date:", consultation.date);
 
@@ -1960,16 +1963,12 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
     const cleanPhone = consultation.patient_phone.replace(/\D/g, '');
     const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
     
-    // 🔥 FIXED: Use date as stored (no timezone conversion)
+    // Format date and time - Use saved date directly (already in correct timezone)
     console.log('🔄 Consultation date from DB:', consultation.date);
-    const consultationDate = new Date(consultation.date);
-    console.log('🔄 Using consultation date directly:', consultationDate.toLocaleString('pt-BR'));
-    
+      minute: '2-digit',
+      hour12: false
     const formattedDate = consultationDate.toLocaleDateString('pt-BR');
-    console.log('🔄 WhatsApp formatted date/time:', formattedDate, formattedTime);
-    
     const formattedTime = consultationDate.toLocaleTimeString('pt-BR', { 
-    }
     )
     const message = `Olá ${consultation.patient_name}, gostaria de confirmar o seu agendamento com o profissional ${req.user.name} no dia ${formattedDate} às ${formattedTime}`;
     const encodedMessage = encodeURIComponent(message);

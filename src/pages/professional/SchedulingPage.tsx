@@ -477,12 +477,8 @@ const SchedulingPage: React.FC = () => {
           service_id: parseInt(formData.service_id),
           location_id: formData.location_id ? parseInt(formData.location_id) : null,
           value: parseFloat(formData.value),
-          // 🔥 FIXED: Send date/time exactly as entered (no timezone conversion)
+          // Send date exactly as entered in frontend
           date: `${formData.date}T${formData.time}:00`,
-          status: "scheduled",
-          notes: formData.notes || null,
-        };
-
         // Set patient based on type
         if (formData.patient_type === "private") {
           consultationData.private_patient_id = parseInt(formData.private_patient_id || '');
@@ -684,12 +680,10 @@ const SchedulingPage: React.FC = () => {
     localStorage.setItem('scheduling-slot-duration', duration.toString());
   };
   const formatTime = (dateString: string) => {
-    // 🔥 FIXED: Use date as stored (no timezone conversion)
+    // Use the saved date directly (already in correct timezone)
     const utcDate = new Date(dateString);
-    return format(utcDate, 'HH:mm');
-  };
 
-  const getStatusInfo = (status: string) => {
+    return format(utcDate, 'HH:mm');
     switch (status) {
       case "scheduled":
         return {
