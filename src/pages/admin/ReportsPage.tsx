@@ -92,7 +92,8 @@ const ReportsPage: React.FC = () => {
       const apiUrl = getApiUrl();
 
       console.log("🔄 Fetching revenue report from:", `${apiUrl}/api/reports/revenue`);
-      console.log("🔄 Date range:", { startDate, endDate });
+      console.log("🔄 Frontend date range being sent:", { startDate, endDate });
+      console.log("🔄 URL being called:", `${apiUrl}/api/reports/revenue?start_date=${startDate}&end_date=${endDate}`);
 
       const response = await fetch(
         `${apiUrl}/api/reports/revenue?start_date=${startDate}&end_date=${endDate}`,

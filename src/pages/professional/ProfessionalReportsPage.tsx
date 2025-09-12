@@ -56,7 +56,8 @@ const ProfessionalReportsPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
       
-     console.log('🔄 Fetching detailed report with dates:', { startDate, endDate });
+      console.log('🔄 Fetching detailed report with dates:', { startDate, endDate });
+      console.log('🔄 Frontend dates being sent:', `start_date=${startDate}&end_date=${endDate}`);
      
       const response = await fetch(
         `${apiUrl}/api/reports/professional-detailed?start_date=${startDate}&end_date=${endDate}`,
@@ -68,16 +69,16 @@ const ProfessionalReportsPage: React.FC = () => {
         }
       );
       
-     console.log('📡 Detailed report response status:', response.status);
+      console.log('📡 Detailed report response status:', response.status);
      
       if (!response.ok) {
-       const errorData = await response.json();
-       console.error('❌ Detailed report error:', errorData);
+        const errorData = await response.json();
+        console.error('❌ Detailed report error:', errorData);
         throw new Error('Falha ao carregar relatório');
       }
       
       const data = await response.json();
-     console.log('✅ Detailed report data received:', data);
+      console.log('✅ Detailed report data received:', data);
       setReport(data);
     } catch (error) {
       console.error('Error fetching report:', error);
