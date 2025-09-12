@@ -374,7 +374,7 @@ const RegisterConsultationPage: React.FC = () => {
     }
 
     // Validate form
-    if (!clientId && !selectedDependentId) {
+    if (!clientId && !selectedDependentId && !foundDependent) {
       setError("É necessário selecionar um cliente ou dependente");
       return;
     }
@@ -413,6 +413,33 @@ const RegisterConsultationPage: React.FC = () => {
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
+      // Prepare consultation data with proper patient identification
+      const consultationData: any = {
+        professional_id: user?.id,
+        service_id: serviceId,
+        location_id: locationId ? parseInt(locationId) : null,
+        value: Number(value),
+        date: utcDate.toISOString(),
+        status: 'scheduled',
+        notes: null,
+      };
+
+      // Set patient based on what was found
+      if (foundDependent) {
+        // Direct dependent search result
+        consultationData.dependent_id = foundDependent.id;
+        console.log("🎯 Using found dependent:", foundDependent.id);
+      } else if (selectedDependentId) {
+        // Selected from dependents list
+        consultationData.dependent_id = selectedDependentId;
+        console.log("🎯 Using selected dependent:", selectedDependentId);
+      } else if (clientId) {
+        // Client (titular)
+        consultationData.user_id = clientId;
+        console.log("🎯 Using client:", clientId);
+      }
+
+      console.log("🔄 Final consultation data:", consultationData);
       // Create both consultation record and appointment
       const response = await fetch(`${apiUrl}/api/consultations`, {
         method: "POST",
@@ -420,20 +447,7 @@ const RegisterConsultationPage: React.FC = () => {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          client_id: selectedDependentId ? null : clientId,
-          dependent_id: selectedDependentId,
-          private_patient_id: null,
-          professional_id: user?.id,
-          service_id: serviceId,
-          location_id: locationId ? parseInt(locationId) : null,
-          value: Number(value),
-          date: utcDate.toISOString(),
-          // Add appointment data
-          appointment_date: date,
-          appointment_time: time,
-          create_appointment: true,
-        }),
+        body: JSON.stringify(consultationData),
       });
 
       console.log("📡 Consultation creation response status:", response.status);
@@ -463,11 +477,7 @@ const RegisterConsultationPage: React.FC = () => {
       setTime("");
 
       setSuccess(
-        `Consulta registrada e agendamento criado com sucesso! ${
-          responseData.appointment
-            ? "Agendamento ID: " + responseData.appointment.id
-            : ""
-        }`
+        "Consulta registrada com sucesso!"
       );
 
       // Redirect after a delay

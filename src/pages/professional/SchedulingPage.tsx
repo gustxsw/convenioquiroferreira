@@ -443,7 +443,7 @@ const SchedulingPage: React.FC = () => {
 
         // Set patient based on type
         if (formData.patient_type === "private") {
-          recurringData.private_patient_id = parseInt(formData.private_patient_id);
+          recurringData.private_patient_id = parseInt(formData.private_patient_id || '');
         } else {
           if (selectedDependentId) {
             recurringData.dependent_id = selectedDependentId;
@@ -452,6 +452,7 @@ const SchedulingPage: React.FC = () => {
           }
         }
 
+        console.log("🔄 Recurring consultation data:", recurringData);
         const response = await fetch(`${apiUrl}/api/consultations/recurring`, {
           method: "POST",
           headers: {
@@ -463,6 +464,7 @@ const SchedulingPage: React.FC = () => {
 
         if (!response.ok) {
           const errorData = await response.json();
+          console.error("❌ Recurring consultation error:", errorData);
           throw new Error(errorData.message || "Falha ao criar consultas recorrentes");
         }
 
@@ -471,6 +473,7 @@ const SchedulingPage: React.FC = () => {
       } else {
         // Create single consultation
         const consultationData: any = {
+          professional_id: user?.id,
           service_id: parseInt(formData.service_id),
           location_id: formData.location_id ? parseInt(formData.location_id) : null,
           value: parseFloat(formData.value),
@@ -486,7 +489,7 @@ const SchedulingPage: React.FC = () => {
 
         // Set patient based on type
         if (formData.patient_type === "private") {
-          consultationData.private_patient_id = parseInt(formData.private_patient_id);
+          consultationData.private_patient_id = parseInt(formData.private_patient_id || '');
         } else {
           if (selectedDependentId) {
             consultationData.dependent_id = selectedDependentId;
@@ -495,6 +498,7 @@ const SchedulingPage: React.FC = () => {
           }
         }
 
+        console.log("🔄 Single consultation data:", consultationData);
         const response = await fetch(`${apiUrl}/api/consultations`, {
           method: "POST",
           headers: {
@@ -506,6 +510,7 @@ const SchedulingPage: React.FC = () => {
 
         if (!response.ok) {
           const errorData = await response.json();
+          console.error("❌ Single consultation error:", errorData);
           throw new Error(errorData.message || "Falha ao criar consulta");
         }
 

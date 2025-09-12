@@ -448,10 +448,12 @@ const MedicalRecordsPage: React.FC = () => {
       // Add patient info to form data
       const submitData = {
         ...formData,
+        patient_type: formData.patient_type,
         patient_name: patientName,
         patient_cpf: patientCpf,
       };
 
+      console.log("🔄 Medical record submit data:", submitData);
       const url =
         modalMode === "create"
           ? `${apiUrl}/api/medical-records`
@@ -470,6 +472,7 @@ const MedicalRecordsPage: React.FC = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
+        console.error("❌ Medical record error:", errorData);
         throw new Error(errorData.message || "Erro ao salvar prontuário");
       }
 

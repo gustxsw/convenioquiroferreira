@@ -288,25 +288,24 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
         location_id: formData.location_id ? parseInt(formData.location_id) : null,
         value: parseFloat(formData.value),
         date: utcDate.toISOString(),
-        appointment_date: selectedSlot.date,
-        appointment_time: selectedSlot.time,
-        create_appointment: true,
+        status: 'scheduled',
         notes: formData.notes.trim() || null,
       };
 
       // Set patient based on type
       if (patientType === 'private') {
-        consultationData.private_patient_id = parseInt(formData.private_patient_id);
+        consultationData.private_patient_id = parseInt(formData.private_patient_id || '');
       } else {
         if (foundDependent) {
           consultationData.dependent_id = foundDependent.id;
         } else if (selectedDependentId) {
           consultationData.dependent_id = selectedDependentId;
         } else if (foundClient) {
-          consultationData.client_id = foundClient.id;
+          consultationData.user_id = foundClient.id;
         }
       }
 
+      console.log("🔄 Quick schedule consultation data:", consultationData);
       const response = await fetch(`${apiUrl}/api/consultations`, {
         method: 'POST',
         headers: {
@@ -318,6 +317,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
 
       if (!response.ok) {
         const errorData = await response.json();
+        console.error("❌ Quick schedule error:", errorData);
         throw new Error(errorData.message || 'Falha ao agendar consulta');
       }
 

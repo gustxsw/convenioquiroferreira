@@ -1504,8 +1504,10 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
     // Validate patient type (exactly one must be provided)
     const patientCount = [user_id, dependent_id, private_patient_id].filter(Boolean).length;
     if (patientCount !== 1) {
+      console.log("❌ Patient validation failed:", { user_id, dependent_id, private_patient_id, patientCount });
       return res.status(400).json({
         message: "Exatamente um tipo de paciente deve ser especificado",
+        debug: { user_id, dependent_id, private_patient_id, patientCount }
       });
     }
 
