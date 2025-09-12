@@ -1926,6 +1926,8 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
     const consultationDate = new Date(consultation.date);
     // Add 3 hours to convert from UTC to Brasília timezone
     const brasiliaDate = new Date(consultationDate.getTime() + (3 * 60 * 60 * 1000));
+    // Convert UTC to Brasília time (add 3 hours)
+    const brasiliaDate = new Date(consultationDate.getTime() + (3 * 60 * 60 * 1000));
     const formattedDate = brasiliaDate.toLocaleDateString('pt-BR');
     const formattedTime = brasiliaDate.toLocaleTimeString('pt-BR', { 
       hour: '2-digit', 
@@ -1933,7 +1935,7 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
     });
     
     // Create WhatsApp message
-    const message = `Olá ${consultation.patient_name}, gostaria de confirmar o seu agendamento com o profissional ${consultation.professional_name} no dia ${formattedDate} às ${formattedTime}`;
+    const message = `Olá ${consultation.patient_name}, gostaria de confirmar o seu agendamento com o profissional ${req.user.name} no dia ${formattedDate} às ${formattedTime}`;
     const encodedMessage = encodeURIComponent(message);
     
     // Generate WhatsApp URL

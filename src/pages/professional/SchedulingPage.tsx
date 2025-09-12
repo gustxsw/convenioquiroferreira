@@ -682,10 +682,10 @@ const SchedulingPage: React.FC = () => {
     setSlotDuration2(duration);
     localStorage.setItem('scheduling-slot-duration', duration.toString());
   };
-
   const formatTime = (dateString: string) => {
+    // Convert UTC date to Brasília timezone for display
     const utcDate = new Date(dateString);
-    // Add 3 hours to convert from UTC to Brasília timezone for display
+    // Add 3 hours to convert from UTC to Brasília time
     const brasiliaDate = new Date(utcDate.getTime() + (3 * 60 * 60 * 1000));
     
     return format(brasiliaDate, 'HH:mm');
@@ -1137,6 +1137,9 @@ const SchedulingPage: React.FC = () => {
                                   </p>
                                   <p className="text-xs font-medium text-green-600">
                                     {formatCurrency(consultation.value)}
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    {formatTime(consultation.date)}
                                   </p>
                                   <p className="text-xs text-gray-500">
                                     {formatTime(consultation.date)}
