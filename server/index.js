@@ -1609,7 +1609,7 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
         service_id,
         location_id || null,
         parseFloat(value),
-        new Date(date),
+        date, // Save date as-is from frontend (already in correct format)
         status,
         notes?.trim() || null,
       ]
@@ -1723,7 +1723,7 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), che
 
     if (date !== undefined) {
       updateFields.push(`date = $${paramCount++}`);
-      updateValues.push(new Date(date));
+      updateValues.push(date); // Save date as-is from frontend
     }
 
     if (status !== undefined) {
@@ -1847,8 +1847,6 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
     
     // 🔥 FIXED: Create initial date and convert from Brasília to UTC
     let currentDate = new Date(`${start_date}T${start_time}`);
-    // Subtract 3 hours to convert from Brasília to UTC
-    currentDate = new Date(currentDate.getTime() - (3 * 60 * 60 * 1000));
     
     const endDateTime = end_date ? new Date(end_date) : null;
 
@@ -1873,7 +1871,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
             service_id,
             location_id || null,
             value,
-            currentDate.toISOString(),
+            `${start_date}T${start_time}:00`, // Save in local format
             'scheduled',
             notes || null
           ]
@@ -1954,15 +1952,10 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
     const cleanPhone = consultation.patient_phone.replace(/\D/g, '');
     const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
     
-    // Format date and time - Convert UTC to Brasília timezone
+    // Format date and time - Use date as stored (already in correct timezone)
     const consultationDate = new Date(consultation.date);
-    // Add 3 hours to convert from UTC to Brasília timezone
-    const brasiliaDate = new Date(consultationDate.getTime() + (3 * 60 * 60 * 1000));
-    // Convert UTC to Brasília time (add 3 hours)
-    // Convert UTC to Brasília timezone (UTC-3)
-    const whatsappBrasiliaDate = new Date(consultationDate.getTime() + (3 * 60 * 60 * 1000));
-    const formattedDate = whatsappBrasiliaDate.toLocaleDateString('pt-BR');
-    const formattedTime = whatsappBrasiliaDate.toLocaleTimeString('pt-BR', { 
+    const formattedDate = consultationDate.toLocaleDateString('pt-BR');
+    const formattedTime = consultationDate.toLocaleTimeString('pt-BR', { 
       hour: '2-digit', 
       minute: '2-digit' 
     });
