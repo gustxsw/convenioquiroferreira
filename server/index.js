@@ -199,6 +199,27 @@ const initializeDatabase = async () => {
           (user_id IS NULL AND dependent_id IS NOT NULL AND private_patient_id IS NULL) OR
           (user_id IS NULL AND dependent_id IS NULL AND private_patient_id IS NOT NULL)
         )
+        
+        -- Drop old constraint if it exists
+        IF EXISTS (
+          SELECT 1 FROM information_schema.table_constraints 
+          WHERE constraint_name = 'medical_documents_patient_check' 
+          AND table_name = 'medical_documents'
+        ) THEN
+          ALTER TABLE medical_documents DROP CONSTRAINT medical_documents_patient_check;
+        END IF;
+        
+        -- Add new flexible constraint
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.table_constraints 
+          WHERE constraint_name = 'medical_documents_patient_type_check' 
+          AND table_name = 'medical_documents'
+        ) THEN
+          ALTER TABLE medical_documents ADD CONSTRAINT medical_documents_patient_type_check CHECK (
+            (private_patient_id IS NOT NULL AND patient_name IS NULL) OR
+            (private_patient_id IS NULL AND patient_name IS NOT NULL)
+          );
+        END IF;
       )
     `);
 
@@ -369,26 +390,6 @@ const initializeDatabase = async () => {
         -- Add missing columns if they don't exist
         IF NOT EXISTS (
           SELECT 1 FROM information_schema.columns
-          WHERE table_name = 'medical_records' AND column_name = 'patient_name'
-        ) THEN
-          ALTER TABLE medical_records ADD COLUMN patient_name VARCHAR(255);
-        END IF;
-        
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name = 'medical_records' AND column_name = 'patient_cpf'
-        ) THEN
-          ALTER TABLE medical_records ADD COLUMN patient_cpf VARCHAR(11);
-        END IF;
-        
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name = 'medical_records' AND column_name = 'patient_type'
-        ) THEN
-          ALTER TABLE medical_records ADD COLUMN patient_type VARCHAR(20) DEFAULT 'private';
-        END IF;
-      END $$;
-    `);
 
     // Scheduling access table
     await pool.query(`
