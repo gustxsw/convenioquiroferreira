@@ -104,25 +104,6 @@ const getBaseHTML = (title, content) => {
             margin: 0 !important;
         }
         
-        .document-header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #c11c22;
-        }
-        
-        .logo {
-            font-size: 24px;
-            font-weight: bold;
-            color: #c11c22;
-            margin-bottom: 10px;
-        }
-        
-        .subtitle {
-            font-size: 14px;
-            color: #666;
-        }
-        
         .document-title {
             font-size: 20px;
             font-weight: bold;
@@ -136,7 +117,7 @@ const getBaseHTML = (title, content) => {
             background: #f9f9f9;
             padding: 15px;
             margin: 20px 0;
-            border-left: 4px solid #c11c22;
+            border-left: 4px solid #333;
             border-radius: 4px;
         }
         
@@ -149,14 +130,14 @@ const getBaseHTML = (title, content) => {
         .section-title {
             font-size: 16px;
             font-weight: bold;
-            color: #c11c22;
+            color: #333;
             margin-bottom: 10px;
             border-bottom: 1px solid #eee;
             padding-bottom: 5px;
         }
         
         .prescription-box {
-            border: 2px solid #c11c22;
+            border: 2px solid #333;
             padding: 20px;
             margin: 20px 0;
             background: #fff;
@@ -193,16 +174,6 @@ const getBaseHTML = (title, content) => {
             justify-content: space-between;
         }
         
-        .signature-box {
-            text-align: center;
-            width: 45%;
-        }
-        
-        .document-footer {
-            margin-top: 40px;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
             border-top: 1px solid #ddd;
             padding-top: 20px;
         }
@@ -226,7 +197,7 @@ const getBaseHTML = (title, content) => {
         }
         
         h3, h4 {
-            color: #c11c22;
+            color: #333;
             margin: 15px 0 10px 0;
         }
         
@@ -236,25 +207,15 @@ const getBaseHTML = (title, content) => {
             .signature-area { page-break-before: avoid; }
         }
         
-        @page { 
             size: A4; 
             margin: 20mm; 
         }
     </style>
 </head>
 <body>
-    <div class="document-header">
-        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
-        <div class="subtitle">Sistema de Saúde e Bem-Estar</div>
-    </div>
     
     ${content}
     
-    <div class="document-footer">
-        <p><strong>Convênio Quiro Ferreira</strong> - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199</p>
-        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
-    </div>
 </body>
 </html>`;
 };
@@ -889,7 +850,7 @@ const createOptimizedHTMLForPDF = (htmlContent) => {
         }
         
         h3, h4 {
-            color: #333 !important;
+            color: #333;
             margin: 15px 0 10px 0 !important;
         }
         

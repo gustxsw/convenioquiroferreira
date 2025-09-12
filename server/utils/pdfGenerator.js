@@ -53,7 +53,7 @@ const createOptimizedHTML = (htmlContent) => {
             background: #f9f9f9;
             padding: 15px;
             margin: 20px 0;
-            border-left: 4px solid #c11c22;
+            border-left: 4px solid #333;
         }
         .signature-area {
             margin-top: 60px;
@@ -63,14 +63,6 @@ const createOptimizedHTML = (htmlContent) => {
             border-top: 1px solid #000;
             width: 300px;
             margin: 40px auto 10px;
-        }
-        .document-footer {
-            margin-top: 40px;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-            border-top: 1px solid #ddd;
-            padding-top: 20px;
         }
     </style>
 </head>
