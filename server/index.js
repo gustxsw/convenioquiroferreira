@@ -4477,7 +4477,7 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
       return res.status(400).json({ message: "Data inicial e final são obrigatórias" });
     }
 
-    console.log("🔄 Fetching cancelled consultations for period:", start_date, "to", end_date);
+    console.log("🔄 [CANCELLED] Fetching cancelled consultations for period:", start_date, "to", end_date);
 
     let query = `
       SELECT 
@@ -4512,7 +4512,8 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
       WHERE c.status = 'cancelled'
-        AND c.date >= $1::date AND c.date < ($2::date + INTERVAL '1 day')
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') >= $1::date 
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
     `;
 
     const params = [start_date, end_date];
@@ -4527,7 +4528,7 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
 
     const result = await pool.query(query, params);
 
-    console.log("✅ Cancelled consultations fetched:", result.rows.length);
+    console.log("✅ [CANCELLED] Cancelled consultations fetched:", result.rows.length);
     res.json(result.rows);
   } catch (error) {
     console.error("❌ Error fetching cancelled consultations:", error);
@@ -4545,14 +4546,15 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         .json({ message: "Data inicial e final são obrigatórias" });
     }
 
-    console.log("🔄 Generating revenue report for period:", start_date, "to", end_date);
+    console.log("🔄 [REVENUE-REPORT] Generating revenue report for period:", start_date, "to", end_date);
 
     // Get total revenue (only convenio consultations)
     const totalRevenueResult = await pool.query(
       `
       SELECT COALESCE(SUM(c.value), 0) as total_revenue
       FROM consultations c
-      WHERE c.date >= $1::date AND c.date < ($2::date + INTERVAL '1 day')
+      WHERE DATE(c.date AT TIME ZONE 'America/Sao_Paulo') >= $1::date 
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
     `,
@@ -4573,7 +4575,8 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         COALESCE(SUM(c.value * u.percentage / 100), 0) as professional_payment
       FROM users u
       LEFT JOIN consultations c ON u.id = c.professional_id 
-        AND c.date >= $1::date AND c.date < ($2::date + INTERVAL '1 day')
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') >= $1::date 
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       WHERE 'professional' = ANY(u.roles)
@@ -4593,7 +4596,8 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         COUNT(c.id) as consultation_count
       FROM services s
       LEFT JOIN consultations c ON s.id = c.service_id 
-        AND c.date >= $1::date AND c.date < ($2::date + INTERVAL '1 day')
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') >= $1::date 
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       GROUP BY s.id, s.name
@@ -4609,7 +4613,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       revenue_by_service: revenueByServiceResult.rows,
     };
 
-    console.log("✅ Revenue report generated");
+    console.log("✅ [REVENUE-REPORT] Revenue report generated");
 
     res.json(report);
   } catch (error) {
@@ -4628,7 +4632,7 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
         .json({ message: "Data inicial e final são obrigatórias" });
     }
 
-    console.log("🔄 Generating professional revenue report for:", req.user.id);
+    console.log("🔄 [PROF-REVENUE] Generating professional revenue report for:", req.user.id, "period:", start_date, "to", end_date);
 
     // Get professional percentage
     const professionalResult = await pool.query(
@@ -4658,7 +4662,10 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
-      WHERE c.professional_id = $1 AND c.date >= $2::date AND c.date < ($4::date + INTERVAL '1 day') AND c.status != 'cancelled'
+      WHERE c.professional_id = $1 
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') >= $2::date 
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $4::date 
+        AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `,
       [req.user.id, start_date, 100 - professionalPercentage, end_date]
@@ -4685,7 +4692,7 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       consultations: consultationsResult.rows,
     };
 
-    console.log("✅ Professional revenue report generated");
+    console.log("✅ [PROF-REVENUE] Professional revenue report generated");
 
     res.json(report);
   } catch (error) {
@@ -4706,7 +4713,7 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         .json({ message: "Data inicial e final são obrigatórias" });
     }
 
-    console.log("🔄 Generating detailed professional report for:", req.user.id);
+    console.log("🔄 [PROF-DETAILED] Generating detailed professional report for:", req.user.id, "period:", start_date, "to", end_date);
 
     // Get professional percentage
     const professionalResult = await pool.query(
@@ -4728,7 +4735,10 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
         COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
-      WHERE c.professional_id = $1 AND c.date >= $2::date AND c.date < ($4::date + INTERVAL '1 day') AND c.status != 'cancelled'
+      WHERE c.professional_id = $1 
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') >= $2::date 
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $4::date 
+        AND c.status != 'cancelled'
     `,
       [req.user.id, start_date, 100 - professionalPercentage, end_date]
     );
@@ -4748,7 +4758,7 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
       },
     };
 
-    console.log("✅ Detailed professional report generated");
+    console.log("✅ [PROF-DETAILED] Detailed professional report generated");
 
     res.json(report);
   } catch (error) {
