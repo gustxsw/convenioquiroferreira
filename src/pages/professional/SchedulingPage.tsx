@@ -679,10 +679,10 @@ const SchedulingPage: React.FC = () => {
   };
 
   const formatTime = (dateString: string) => {
-    // Convert UTC date to Brasília timezone for display
+    // 🔥 FIXED: Convert UTC to Brasília timezone correctly
     const utcDate = new Date(dateString);
-    const brasiliaOffset = -3 * 60; // -3 hours in minutes
-    const brasiliaDate = new Date(utcDate.getTime() + (brasiliaOffset * 60 * 1000));
+    // Add 3 hours to convert from UTC to Brasília time
+    const brasiliaDate = new Date(utcDate.getTime() + (3 * 60 * 60 * 1000));
     
     return format(brasiliaDate, 'HH:mm');
   };
@@ -1133,6 +1133,9 @@ const SchedulingPage: React.FC = () => {
                                   </p>
                                   <p className="text-xs font-medium text-green-600">
                                     {formatCurrency(consultation.value)}
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    {formatTime(consultation.date)}
                                   </p>
                                   {consultation.location_name && (
                                     <p className="text-xs text-gray-500">
