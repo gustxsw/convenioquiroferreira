@@ -1895,13 +1895,15 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
           WHEN c.dependent_id IS NOT NULL THEN cu.phone
           ELSE u.phone
         END as patient_phone,
-        s.name as service_name
+        s.name as service_name,
+        prof.name as professional_name
        FROM consultations c
        LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
        LEFT JOIN dependents d ON c.dependent_id = d.id
        LEFT JOIN users cu ON d.user_id = cu.id
        LEFT JOIN users u ON c.user_id = u.id
        LEFT JOIN services s ON c.service_id = s.id
+       LEFT JOIN users prof ON c.professional_id = prof.id
        WHERE c.id = $1 AND c.professional_id = $2`,
       [consultationId, req.user.id]
     );
@@ -1920,16 +1922,18 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
     const cleanPhone = consultation.patient_phone.replace(/\D/g, '');
     const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
     
-    // Format date and time
+    // Format date and time - Convert UTC to Brasília timezone
     const consultationDate = new Date(consultation.date);
-    const formattedDate = consultationDate.toLocaleDateString('pt-BR');
-    const formattedTime = consultationDate.toLocaleTimeString('pt-BR', { 
+    // Add 3 hours to convert from UTC to Brasília timezone
+    const brasiliaDate = new Date(consultationDate.getTime() + (3 * 60 * 60 * 1000));
+    const formattedDate = brasiliaDate.toLocaleDateString('pt-BR');
+    const formattedTime = brasiliaDate.toLocaleTimeString('pt-BR', { 
       hour: '2-digit', 
       minute: '2-digit' 
     });
     
     // Create WhatsApp message
-    const message = `Olá ${consultation.patient_name}, sua consulta está confirmada para ${formattedDate} às ${formattedTime}`;
+    const message = `Olá ${consultation.patient_name}, gostaria de confirmar o seu agendamento com o profissional ${consultation.professional_name} no dia ${formattedDate} às ${formattedTime}`;
     const encodedMessage = encodeURIComponent(message);
     
     // Generate WhatsApp URL

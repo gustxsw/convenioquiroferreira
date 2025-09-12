@@ -684,9 +684,8 @@ const SchedulingPage: React.FC = () => {
   };
 
   const formatTime = (dateString: string) => {
-    // 🔥 FIXED: Convert UTC to Brasília timezone correctly
     const utcDate = new Date(dateString);
-    // Add 3 hours to convert from UTC to Brasília time
+    // Add 3 hours to convert from UTC to Brasília timezone for display
     const brasiliaDate = new Date(utcDate.getTime() + (3 * 60 * 60 * 1000));
     
     return format(brasiliaDate, 'HH:mm');
