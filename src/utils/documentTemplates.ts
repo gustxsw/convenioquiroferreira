@@ -1,4 +1,4 @@
-// Document templates for HTML generation
+// Document templates for HTML generation - Clean professional templates
 const templates = {
   certificate: (data: any) => `
 <!DOCTYPE html>
@@ -15,18 +15,6 @@ const templates = {
             padding: 40px;
             background: white;
             color: #333;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            border-bottom: 2px solid #333;
-            padding-bottom: 20px;
-        }
-        .logo {
-            font-size: 24px;
-            font-weight: bold;
-            color: #333;
-            margin-bottom: 10px;
         }
         .title {
             font-size: 20px;
@@ -64,14 +52,6 @@ const templates = {
             border-radius: 4px;
             padding: 5px;
             background: white;
-        }
-        .footer {
-            margin-top: 40px;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-            border-top: 1px solid #ddd;
-            padding-top: 20px;
         }
         @media print {
             body { margin: 0; padding: 20px; }
@@ -131,18 +111,6 @@ const templates = {
             background: white;
             color: #333;
         }
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            border-bottom: 2px solid #333;
-            padding-bottom: 20px;
-        }
-        .logo {
-            font-size: 24px;
-            font-weight: bold;
-            color: #333;
-            margin-bottom: 10px;
-        }
         .title {
             font-size: 20px;
             font-weight: bold;
@@ -186,14 +154,6 @@ const templates = {
             border-radius: 4px;
             padding: 5px;
             background: white;
-        }
-        .footer {
-            margin-top: 40px;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-            border-top: 1px solid #ddd;
-            padding-top: 20px;
         }
         @media print {
             body { margin: 0; padding: 20px; }
@@ -245,18 +205,6 @@ const templates = {
             background: white;
             color: #333;
         }
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            border-bottom: 2px solid #333;
-            padding-bottom: 20px;
-        }
-        .logo {
-            font-size: 24px;
-            font-weight: bold;
-            color: #333;
-            margin-bottom: 10px;
-        }
         .title {
             font-size: 18px;
             font-weight: bold;
@@ -300,14 +248,6 @@ const templates = {
             border-radius: 4px;
             padding: 5px;
             background: white;
-        }
-        .footer {
-            margin-top: 40px;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-            border-top: 1px solid #ddd;
-            padding-top: 20px;
         }
         @media print {
             body { margin: 0; padding: 20px; }
@@ -387,18 +327,6 @@ const templates = {
             background: white;
             color: #333;
         }
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            border-bottom: 2px solid #333;
-            padding-bottom: 20px;
-        }
-        .logo {
-            font-size: 24px;
-            font-weight: bold;
-            color: #333;
-            margin-bottom: 10px;
-        }
         .title {
             font-size: 20px;
             font-weight: bold;
@@ -437,14 +365,6 @@ const templates = {
             border-radius: 4px;
             padding: 5px;
             background: white;
-        }
-        .footer {
-            margin-top: 40px;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-            border-top: 1px solid #ddd;
-            padding-top: 20px;
         }
         @media print {
             body { margin: 0; padding: 20px; }
@@ -499,18 +419,6 @@ ${data.content}
             background: white;
             color: #333;
         }
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            border-bottom: 2px solid #333;
-            padding-bottom: 20px;
-        }
-        .logo {
-            font-size: 24px;
-            font-weight: bold;
-            color: #333;
-            margin-bottom: 10px;
-        }
         .title {
             font-size: 20px;
             font-weight: bold;
@@ -549,24 +457,12 @@ ${data.content}
             padding: 5px;
             background: white;
         }
-        .footer {
-            margin-top: 40px;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-            border-top: 1px solid #ddd;
-            padding-top: 20px;
-        }
         @media print {
             body { margin: 0; padding: 20px; }
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
-        <div>Sistema de Saúde e Bem-Estar</div>
-    </div>
 
     <div class="title">Declaração Médica</div>
 
@@ -592,11 +488,6 @@ ${data.content}
         </div>
     </div>
 
-    <div class="footer">
-        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
-        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
-    </div>
 </body>
 </html>`,
 
@@ -615,18 +506,6 @@ ${data.content}
             padding: 40px;
             background: white;
             color: #333;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            border-bottom: 2px solid #333;
-            padding-bottom: 20px;
-        }
-        .logo {
-            font-size: 24px;
-            font-weight: bold;
-            color: #333;
-            margin-bottom: 10px;
         }
         .title {
             font-size: 18px;
@@ -671,24 +550,12 @@ ${data.content}
             padding: 5px;
             background: white;
         }
-        .footer {
-            margin-top: 40px;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-            border-top: 1px solid #ddd;
-            padding-top: 20px;
-        }
         @media print {
             body { margin: 0; padding: 20px; }
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo">CONVÊNIO QUIRO FERREIRA</div>
-        <div>Sistema de Saúde e Bem-Estar</div>
-    </div>
 
     <div class="title">Termo de Consentimento para Tratamento de Dados Pessoais (LGPD)</div>
 
@@ -759,11 +626,6 @@ ${data.content}
         </div>
     </div>
 
-    <div class="footer">
-        <p>Convênio Quiro Ferreira - Sistema de Saúde e Bem-Estar</p>
-        <p>Telefone: (64) 98124-9199 | Email: contato@quiroferreira.com.br</p>
-        <p>Este documento foi gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}</p>
-    </div>
 </body>
 </html>`,
 
@@ -783,16 +645,8 @@ ${data.content}
             background: white;
             color: #333;
         }
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            border-bottom: 2px solid #333;
-            padding-bottom: 20px;
-        }
-        .logo {
-            font-size: 24px;
-            font-weight: bold;
-            color: #333;
+        .title {
+            font-size: 20px;
             font-weight: bold;
             margin: 30px 0;
             text-align: center;
@@ -829,10 +683,6 @@ ${data.content}
             padding: 5px;
             background: white;
         }
-            color: #666;
-            border-top: 1px solid #ddd;
-            padding-top: 20px;
-        }
         @media print {
             body { margin: 0; padding: 20px; }
         }
@@ -854,7 +704,16 @@ ${data.content}
 
     <div class="signature">
         ${data.signatureUrl ? 
-}
+          `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
+          '<div class="signature-line"></div>'
+        }
+        <div>
+            <strong>${data.professionalName}</strong><br>
+            ${data.professionalSpecialty || 'Profissional de Saúde'}<br>
+            ${data.crm ? `Registro: ${data.crm}` : ''}
+        </div>
+    </div>
+
 </body>
 </html>`
 };
