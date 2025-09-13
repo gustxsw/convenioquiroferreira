@@ -327,7 +327,7 @@ const ManageUsersPage: React.FC = () => {
 
       // Validate professional percentage
       if (formData.roles.includes('professional')) {
-        if (formData.professional_percentage < 0 || formData.professional_percentage > 100) {
+        if (formData.percentage < 0 || formData.percentage > 100) {
           setError('Porcentagem do profissional deve estar entre 0 e 100');
           return;
         }
@@ -753,8 +753,8 @@ const ManageUsersPage: React.FC = () => {
                           {user.crm && (
                             <div className="text-gray-500 text-xs">Registro: {user.crm}</div>
                           )}
-                          {user.professional_percentage && user.roles?.includes('professional') && (
-                            <div className="text-blue-600 text-xs">{user.professional_percentage}%</div>
+                          {user.percentage && user.roles?.includes('professional') && (
+                            <div className="text-blue-600 text-xs">{user.percentage}%</div>
                           )}
                           {!user.category_name && !user.crm && (
                             <span className="text-gray-400 text-sm">-</span>
@@ -997,8 +997,8 @@ const ManageUsersPage: React.FC = () => {
                         </label>
                         <input
                           type="number"
-                          name="professional_percentage"
-                          value={formData.professional_percentage}
+                          name="percentage"
+                          value={formData.percentage}
                           onChange={handleInputChange}
                           className="input"
                           min="0"

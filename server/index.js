@@ -1069,7 +1069,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
       subscription_status,
       subscription_expiry,
       category_name,
-      professional_percentage,
+      percentage,
       crm,
     } = req.body;
 
@@ -1154,7 +1154,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
         subscription_status || "pending",
         subscription_expiry || null,
         category_name?.trim() || null,
-        professional_percentage || null,
+        percentage || null,
         crm?.trim() || null,
       ]
     );
@@ -1198,7 +1198,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
       subscription_status,
       subscription_expiry,
       category_name,
-      professional_percentage,
+      percentage,
       crm,
       currentPassword,
       newPassword,
@@ -1264,7 +1264,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
       if (subscription_status !== undefined) updateData.subscription_status = subscription_status;
       if (subscription_expiry !== undefined) updateData.subscription_expiry = subscription_expiry;
       if (category_name !== undefined) updateData.category_name = category_name?.trim() || null;
-      if (professional_percentage !== undefined) updateData.percentage = professional_percentage;
+      if (percentage !== undefined) updateData.percentage = percentage;
       if (crm !== undefined) updateData.crm = crm?.trim() || null;
     }
 
@@ -1281,7 +1281,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
       WHERE id = $19
       RETURNING id, name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, roles, subscription_status, 
-        subscription_expiry, photo_url, category_name, percentage as professional_percentage, crm, created_at, updated_at
+        subscription_expiry, photo_url, category_name, percentage, crm, created_at, updated_at
     `,
       [
         updateData.name,
