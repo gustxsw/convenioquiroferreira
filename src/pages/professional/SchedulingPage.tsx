@@ -1402,12 +1402,12 @@ const SchedulingPage: React.FC = () => {
                             </label>
                             <div className="grid grid-cols-7 gap-2">
                               {[
-                                { value: 1, label: 'Segunda', short: 'SEG', color: 'blue' },
-                                { value: 2, label: 'Terça', short: 'TER', color: 'green' },
-                                { value: 3, label: 'Quarta', short: 'QUA', color: 'yellow' },
-                                { value: 4, label: 'Quinta', short: 'QUI', color: 'purple' },
-                                { value: 5, label: 'Sexta', short: 'SEX', color: 'pink' },
-                                { value: 6, label: 'Sábado', short: 'SÁB', color: 'indigo' },
+                                { value: 1, label: 'Segunda', short: 'SEG', color: 'red' },
+                                { value: 2, label: 'Terça', short: 'TER', color: 'red' },
+                                { value: 3, label: 'Quarta', short: 'QUA', color: 'red' },
+                                { value: 4, label: 'Quinta', short: 'QUI', color: 'red' },
+                                { value: 5, label: 'Sexta', short: 'SEX', color: 'red' },
+                                { value: 6, label: 'Sábado', short: 'SÁB', color: 'red' },
                                 { value: 0, label: 'Domingo', short: 'DOM', color: 'red' }
                               ].map((day) => (
                                 <label
