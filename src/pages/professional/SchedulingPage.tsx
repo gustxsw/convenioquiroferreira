@@ -701,7 +701,9 @@ const SchedulingPage: React.FC = () => {
     localStorage.setItem('scheduling-slot-duration', duration.toString());
   };
   const formatTime = (dateString: string) => {
-    // 🔥 FIXED: Use date as stored (no timezone conversion)
+    // Convert from UTC (database) to Brazil local time for display
+    const utcDate = new Date(dateString);
+    const localDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
     const utcDate = new Date(dateString);
     return format(utcDate, 'HH:mm');
   };

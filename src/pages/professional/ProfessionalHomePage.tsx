@@ -211,7 +211,9 @@ const ProfessionalHomePage: React.FC = () => {
 
   const formatDate = (dateString: string) => {
     try {
-      const date = new Date(dateString);
+      // Convert from UTC (database) to Brazil local time for display
+      const utcDate = new Date(dateString);
+      const localDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
       return format(date, "dd 'de' MMMM 'de' yyyy 'às' HH:mm", {
         locale: ptBR,
       });

@@ -242,7 +242,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
         service_id: parseInt(formData.service_id),
         location_id: formData.location_id ? parseInt(formData.location_id) : null,
         value: parseFloat(formData.value),
-        start_date: formData.start_date, 
+        start_date: formData.start_date,
         start_time: formData.start_time,
         recurrence_type: formData.recurrence_type,
         recurrence_interval: formData.recurrence_type === 'weekly' ? 1 : formData.recurrence_interval,

@@ -130,12 +130,11 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
       const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
 
-      // Create date in Brasília timezone and convert to UTC
-      // Send date exactly as entered (no timezone conversion)
-      const dateTime = `${formData.date}T${formData.time}`;
+      // Send date and time as entered (backend will handle UTC conversion)
+      const dateTimeString = `${formData.date}T${formData.time}`;
 
       const updateData = {
-        date: dateTime,
+        date: dateTimeString,
         value: parseFloat(formData.value),
         location_id: formData.location_id ? parseInt(formData.location_id) : null,
         notes: formData.notes && formData.notes.trim() ? formData.notes.trim() : null,

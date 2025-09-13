@@ -402,10 +402,8 @@ const RegisterConsultationPage: React.FC = () => {
       return;
     }
 
-    // Create date in Brasília timezone and convert to UTC
-    const localDate = new Date(`${date}T${time}`);
-    // Convert from Brasília to UTC by subtracting 3 hours
-    const utcDate = new Date(localDate.getTime() - (3 * 60 * 60 * 1000));
+    // Send date and time as entered (backend will handle UTC conversion)
+    const dateTimeString = `${date}T${time}`;
 
     try {
       setIsLoading(true);
@@ -419,7 +417,7 @@ const RegisterConsultationPage: React.FC = () => {
         service_id: serviceId,
         location_id: locationId ? parseInt(locationId) : null,
         value: Number(value),
-        date: utcDate.toISOString(),
+        date: dateTimeString,
         status: 'scheduled',
         notes: null,
       };
