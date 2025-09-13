@@ -4455,8 +4455,8 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
     console.log("🔄 [CANCELLED] Fetching cancelled consultations for period:", start_date, "to", end_date);
 
     // Simple date range: start at 03:00 and end at 02:59 next day
-    const startDateTime = `${start_date} 03:00:00`;
-    const endDateTime = `${end_date} 02:59:59`;
+    const cancelledStartDateTime = `${start_date} 03:00:00`;
+    const cancelledEndDateTime = `${end_date} 02:59:59`;
     let query = `
       SELECT 
         c.id,
@@ -4493,7 +4493,7 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
         AND c.date >= $1::timestamp AND c.date <= $2::timestamp
     `;
 
-    const params = [startDateTime, endDateTime];
+    const params = [cancelledStartDateTime, cancelledEndDateTime];
 
     // If professional, only show their cancelled consultations
     if (req.user.currentRole === "professional") {
@@ -4526,8 +4526,8 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
     console.log("🔄 [REVENUE-REPORT] Generating revenue report for period:", start_date, "to", end_date);
 
     // Simple date range: start at 03:00 and end at 02:59 next day to capture all Brazil timezone data
-    const startDateTime = `${start_date} 03:00:00`;
-    const endDateTime = `${end_date} 02:59:59`;
+    const revenueStartDateTime = `${start_date} 03:00:00`;
+    const revenueEndDateTime = `${end_date} 02:59:59`;
     const totalRevenueResult = await pool.query(
       `
       SELECT COALESCE(SUM(c.value), 0) as total_revenue
@@ -4536,7 +4536,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
     `,
-      [startDateTime, endDateTime]
+      [revenueStartDateTime, revenueEndDateTime]
     );
 
     const totalRevenue = parseFloat(totalRevenueResult.rows[0].total_revenue) || 0;
@@ -4561,7 +4561,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
     `,
-      [startDateTime, endDateTime]
+      [revenueStartDateTime, revenueEndDateTime]
     );
 
     // Get revenue by service (only convenio consultations)
@@ -4580,7 +4580,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
     `,
-      [startDateTime, endDateTime]
+      [revenueStartDateTime, revenueEndDateTime]
     );
 
     const report = {
@@ -4619,8 +4619,8 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
     const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
 
     // Simple date range: start at 03:00 and end at 02:59 next day
-    const startDateTime = `${start_date} 03:00:00`;
-    const endDateTime = `${end_date} 02:59:59`;
+    const profRevenueStartDateTime = `${start_date} 03:00:00`;
+    const profRevenueEndDateTime = `${end_date} 02:59:59`;
 
     // Simple date range: start at 03:00 and end at 02:59 next day
     const startDateTime = `${start_date} 03:00:00`;
@@ -4648,7 +4648,7 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $4::timestamp AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `,
-      [req.user.id, startDateTime, 100 - professionalPercentage, endDateTime]
+      [req.user.id, profRevenueStartDateTime, 100 - professionalPercentage, profRevenueEndDateTime]
     );
 
     // Calculate totals
@@ -4704,8 +4704,8 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
     const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
 
     // Simple date range: start at 03:00 and end at 02:59 next day
-    const startDateTime = `${start_date} 03:00:00`;
-    const endDateTime = `${end_date} 02:59:59`;
+    const detailedStartDateTime = `${start_date} 03:00:00`;
+    const detailedEndDateTime = `${end_date} 02:59:59`;
     const statsResult = await pool.query(
       `
       SELECT 
@@ -4720,7 +4720,7 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
       WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $3::timestamp AND c.status != 'cancelled'
       WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $3::timestamp AND c.status != 'cancelled'
     `,
-      [req.user.id, startDateTime, endDateTime]
+      [req.user.id, detailedStartDateTime, detailedEndDateTime]
     );
 
     const stats = statsResult.rows[0];
