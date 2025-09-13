@@ -361,6 +361,8 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
     const dependentsUtcDate = new Date(dateString);
     const dependentsLocalDate = new Date(dependentsUtcDate.getTime() - (3 * 60 * 60 * 1000));
     return dependentsLocalDate.toLocaleDateString("pt-BR");
+  };
+
   return (
     <div className="card mb-6">
       <div className="flex justify-between items-center mb-4">
