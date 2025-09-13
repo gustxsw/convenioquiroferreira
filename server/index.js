@@ -1557,11 +1557,7 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
       if (user_id) {
         const clientResult = await pool.query(
           `
-          SELECT su
-    )
-  }
-}
-)bscription_status FROM users WHERE id = $1 AND 'client' = ANY(roles)
+          SELECT subscription_status FROM users WHERE id = $1 AND 'client' = ANY(roles)
         `,
           [user_id]
         );
@@ -1827,11 +1823,6 @@ app.put('/api/consultations/:id', authenticate, authorize(['professional', 'admi
           return editUtcDate.toISOString();
         })(),
         value, location_id, notes, status, consultationId, req.user.id
-          const localDate = new Date(date);
-          const utcDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
-          return utcDate.toISOString();
-        })(),
-        value, location_id, notes, status, consultationId, req.user.id
       ]
     );
 
@@ -1932,8 +1923,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
     res.json({
       message: `${createdConsultations.length} consultas recorrentes criadas com sucesso`,
       created_count: createdConsultations.length,
-      consultations: createdConsultations,
-      created_count: createdConsultations.length
+      consultations: createdConsultations
     });
   } catch (error) {
     console.error('❌ Error creating recurring consultations:', error);
@@ -4547,7 +4537,6 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
       LEFT JOIN attendance_locations al ON c.location_id = al.id
       WHERE c.status = 'cancelled'
         AND DATE(c.date) >= $1::date AND DATE(c.date) <= $2::date
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
     `;
 
     const params = [start_date, end_date];
@@ -4588,7 +4577,6 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       SELECT COALESCE(SUM(c.value), 0) as total_revenue
       FROM consultations c
       WHERE DATE(c.date) >= $1::date AND DATE(c.date) <= $2::date
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
     `,
@@ -4610,7 +4598,6 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       FROM users u
       LEFT JOIN consultations c ON u.id = c.professional_id 
         AND DATE(c.date) >= $1::date AND DATE(c.date) <= $2::date
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       WHERE 'professional' = ANY(u.roles)
@@ -4631,7 +4618,6 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       FROM services s
       LEFT JOIN consultations c ON s.id = c.service_id 
         AND DATE(c.date) >= $1::date AND DATE(c.date) <= $2::date
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       GROUP BY s.id, s.name
@@ -4697,9 +4683,6 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       WHERE c.professional_id = $1 AND DATE(c.date) >= $2::date AND DATE(c.date) <= $4::date AND c.status != 'cancelled'
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') >= $2::date 
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $4::date 
-        AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `,
       [req.user.id, start_date, 100 - professionalPercentage, end_date]
@@ -4769,10 +4752,10 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
         COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
-      WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $4::timestamp
+      WHERE c.professional_id = $1 AND DATE(c.date) >= $2::date AND DATE(c.date) <= $4::date
         AND c.status != 'cancelled'
     `,
-      [req.user.id, detailedStartUtcString, 100 - professionalPercentage, detailedEndUtcString]
+      [req.user.id, start_date, 100 - professionalPercentage, end_date]
     );
 
     const stats = statsResult.rows[0];
