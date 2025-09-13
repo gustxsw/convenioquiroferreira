@@ -1601,6 +1601,7 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
     console.log("🔄 Local date from frontend:", localDate.toLocaleString('pt-BR'));
     console.log("🔄 UTC date for storage:", utcDate.toISOString());
     
+    
     // Create consultation
     const consultationResult = await pool.query(
       `
@@ -1737,6 +1738,9 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), che
       // Convert from Brazil local time to UTC for storage
       const localDate = new Date(date);
       const utcDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
+      // Convert from Brazil local time to UTC for storage
+      const localDate = new Date(date);
+      const utcDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
       updateFields.push(`date = $${paramCount++}`);
       updateValues.push(utcDate.toISOString()); // Save in UTC
     }
@@ -1819,6 +1823,11 @@ app.put('/api/consultations/:id', authenticate, authorize(['professional', 'admi
           return utcDate.toISOString();
         })(),
         value, location_id, notes, status, consultationId, req.user.id
+          const localDate = new Date(date);
+          const utcDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
+          return utcDate.toISOString();
+        })(),
+        value, location_id, notes, status, consultationId, req.user.id
       ]
     );
 
@@ -1865,22 +1874,22 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
     }
 
     const createdConsultations = [];
-    const recurringStartDateTime = new Date(`${start_date}T${start_time}`);
     
-    // 🔥 FIXED: Create initial date and convert from Brasília to UTC
-    let currentRecurringDate = new Date(`${start_date}T${start_time}`);
-    const utcStartDateTime = new Date(startDateTime.getTime() + (3 * 60 * 60 * 1000));
-    let currentDate = new Date(utcStartDateTime);
+    // Create initial date in Brazil local time and convert to UTC
+    let currentLocalDate = new Date(`${start_date}T${start_time}`);
     
-    const recurringEndDateTime = end_date ? new Date(end_date) : null;
+    const endLocalDate = end_date ? new Date(end_date) : null;
 
     for (let i = 0; i < occurrences; i++) {
       // Check if we've reached the end date
-      if (recurringEndDateTime && currentRecurringDate > recurringEndDateTime) {
+      if (endLocalDate && currentLocalDate > endLocalDate) {
         break;
       }
 
       try {
+        // Convert current local date to UTC for storage
+        const currentUtcDate = new Date(currentLocalDate.getTime() + (3 * 60 * 60 * 1000));
+        
         const result = await pool.query(
           `INSERT INTO consultations (
             user_id, dependent_id, private_patient_id, professional_id, service_id, 
@@ -1895,7 +1904,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
             service_id,
             location_id || null,
             value,
-            currentDate.toISOString(), // Save in UTC
+            currentUtcDate.toISOString(), // Save in UTC
             'scheduled',
             notes || null
           ]
@@ -1909,9 +1918,9 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
 
       // Calculate next date based on recurrence
       if (recurrence_type === 'daily') {
-        currentRecurringDate.setDate(currentRecurringDate.getDate() + recurrence_interval);
+        currentLocalDate.setDate(currentLocalDate.getDate() + recurrence_interval);
       } else if (recurrence_type === 'weekly') {
-        currentRecurringDate.setDate(currentRecurringDate.getDate() + (7 * recurrence_interval));
+        currentLocalDate.setDate(currentLocalDate.getDate() + (7 * recurrence_interval));
       }
     }
 
@@ -1976,15 +1985,15 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
     const cleanPhone = consultation.patient_phone.replace(/\D/g, '');
     const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
     
-    // Format date and time - Use saved date directly (already in correct timezone)
+    // Format date and time - Convert from UTC (database) to Brazil local time for WhatsApp
     console.log('🔄 Consultation date from DB:', consultation.date);
     
-    // Convert from UTC (database) to Brazil local time for WhatsApp
+    // Convert from UTC (database) to Brazil local time for display
     const consultationDate = new Date(consultation.date);
-    const localDate = new Date(consultationDate.getTime() - (3 * 60 * 60 * 1000));
+    const localDateForDisplay = new Date(consultationDate.getTime() - (3 * 60 * 60 * 1000));
     
-    const formattedDate = consultationDate.toLocaleDateString('pt-BR');
-    const formattedTime = localDate.toLocaleTimeString('pt-BR', { 
+    const formattedDate = localDateForDisplay.toLocaleDateString('pt-BR');
+    const formattedTime = localDateForDisplay.toLocaleTimeString('pt-BR', { 
       hour: '2-digit',
       minute: '2-digit',
       hour12: false
@@ -4500,6 +4509,12 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
 
     console.log("🔄 [CANCELLED] Fetching cancelled consultations for period:", start_date, "to", end_date);
 
+    // Convert frontend dates to UTC for proper database filtering
+    const startDateUtc = new Date(`${start_date}T00:00:00`);
+    const endDateUtc = new Date(`${end_date}T23:59:59`);
+    const startUtc = new Date(startDateUtc.getTime() + (3 * 60 * 60 * 1000));
+    const endUtc = new Date(endDateUtc.getTime() + (3 * 60 * 60 * 1000));
+
     let query = `
       SELECT 
         c.id,
@@ -4533,11 +4548,10 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
       WHERE c.status = 'cancelled'
-        AND DATE(c.date) >= $1::date AND DATE(c.date) <= $2::date
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
+        AND c.date >= $1 AND c.date <= $2
     `;
 
-    const params = [start_date, end_date];
+    const params = [startUtc.toISOString(), endUtc.toISOString()];
 
     // If professional, only show their cancelled consultations
     if (req.user.currentRole === "professional") {
@@ -4569,17 +4583,22 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
 
     console.log("🔄 [REVENUE-REPORT] Generating revenue report for period:", start_date, "to", end_date);
 
+    // Convert frontend dates to UTC for proper database filtering
+    const startDateUtc = new Date(`${start_date}T00:00:00`);
+    const endDateUtc = new Date(`${end_date}T23:59:59`);
+    const startUtc = new Date(startDateUtc.getTime() + (3 * 60 * 60 * 1000));
+    const endUtc = new Date(endDateUtc.getTime() + (3 * 60 * 60 * 1000));
+
     // Get total revenue (only convenio consultations)
     const totalRevenueResult = await pool.query(
       `
       SELECT COALESCE(SUM(c.value), 0) as total_revenue
       FROM consultations c
-      WHERE DATE(c.date) >= $1::date AND DATE(c.date) <= $2::date
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
+      WHERE c.date >= $1 AND c.date <= $2
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
     `,
-      [start_date, end_date]
+      [startUtc.toISOString(), endUtc.toISOString()]
     );
 
     const totalRevenue = parseFloat(totalRevenueResult.rows[0].total_revenue) || 0;
@@ -4596,8 +4615,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         COALESCE(SUM(c.value * u.percentage / 100), 0) as professional_payment
       FROM users u
       LEFT JOIN consultations c ON u.id = c.professional_id 
-        AND DATE(c.date) >= $1::date AND DATE(c.date) <= $2::date
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
+        AND c.date >= $1 AND c.date <= $2
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       WHERE 'professional' = ANY(u.roles)
@@ -4605,7 +4623,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
     `,
-      [start_date, end_date]
+      [startUtc.toISOString(), endUtc.toISOString()]
     );
 
     // Get revenue by service (only convenio consultations)
@@ -4617,15 +4635,14 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         COUNT(c.id) as consultation_count
       FROM services s
       LEFT JOIN consultations c ON s.id = c.service_id 
-        AND DATE(c.date) >= $1::date AND DATE(c.date) <= $2::date
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
+        AND c.date >= $1 AND c.date <= $2
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       GROUP BY s.id, s.name
       HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
     `,
-      [start_date, end_date]
+      [startUtc.toISOString(), endUtc.toISOString()]
     );
 
     const report = {
@@ -4655,6 +4672,12 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
 
     console.log("🔄 [PROF-REVENUE] Generating professional revenue report for:", req.user.id, "period:", start_date, "to", end_date);
 
+    // Convert frontend dates to UTC for proper database filtering
+    const startDateUtc = new Date(`${start_date}T00:00:00`);
+    const endDateUtc = new Date(`${end_date}T23:59:59`);
+    const startUtc = new Date(startDateUtc.getTime() + (3 * 60 * 60 * 1000));
+    const endUtc = new Date(endDateUtc.getTime() + (3 * 60 * 60 * 1000));
+
     // Get professional percentage
     const professionalResult = await pool.query(
       `SELECT percentage FROM users WHERE id = $1`,
@@ -4683,13 +4706,10 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
-      WHERE c.professional_id = $1 AND DATE(c.date) >= $2::date AND DATE(c.date) <= $4::date AND c.status != 'cancelled'
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') >= $2::date 
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $4::date 
-        AND c.status != 'cancelled'
+      WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4 AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `,
-      [req.user.id, start_date, 100 - professionalPercentage, end_date]
+      [req.user.id, startUtc.toISOString(), 100 - professionalPercentage, endUtc.toISOString()]
     );
 
     // Calculate totals
@@ -4736,6 +4756,12 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
 
     console.log("🔄 [PROF-DETAILED] Generating detailed professional report for:", req.user.id, "period:", start_date, "to", end_date);
 
+    // Convert frontend dates to UTC for proper database filtering
+    const startDateUtc = new Date(`${start_date}T00:00:00`);
+    const endDateUtc = new Date(`${end_date}T23:59:59`);
+    const startUtc = new Date(startDateUtc.getTime() + (3 * 60 * 60 * 1000));
+    const endUtc = new Date(endDateUtc.getTime() + (3 * 60 * 60 * 1000));
+
     // Get professional percentage
     const professionalResult = await pool.query(
       `SELECT percentage FROM users WHERE id = $1`,
@@ -4756,12 +4782,9 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
         COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
-      WHERE c.professional_id = $1 AND DATE(c.date) >= $2::date AND DATE(c.date) <= $4::date AND c.status != 'cancelled'
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') >= $2::date 
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $4::date 
-        AND c.status != 'cancelled'
+      WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4 AND c.status != 'cancelled'
     `,
-      [req.user.id, start_date, 100 - professionalPercentage, end_date]
+      [req.user.id, startUtc.toISOString(), 100 - professionalPercentage, endUtc.toISOString()]
     );
 
     const stats = statsResult.rows[0];
