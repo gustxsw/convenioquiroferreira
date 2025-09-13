@@ -552,7 +552,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                     }
                     className="input"
                     required
-                  >
                     <option value="daily">Diário</option>
                     <option value="weekly">Semanal</option>
                     <option value="monthly">Mensal</option>
@@ -697,34 +696,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                   </div>
                 )}
 
-                {/* Monthly Recurrence - Interval */}
-                {formData.recurrence_type === 'monthly' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      A cada quantos meses? *
-                    </label>
-                    <select
-                      value={formData.recurrence_interval}
-                      onChange={(e) =>
-                        setFormData(prev => ({
-                          ...prev,
-                          recurrence_interval: parseInt(e.target.value),
-                        }))
-                      }
-                      className="input"
-                      required
-                    >
-                      <option value={1}>Todo mês</option>
-                      <option value={2}>A cada 2 meses</option>
-                      <option value={3}>A cada 3 meses</option>
-                      <option value={6}>A cada 6 meses</option>
-                      <option value={12}>A cada 12 meses (anual)</option>
-                    </select>
-                    <p className="text-xs text-gray-500 mt-1">
-                      A consulta será repetida no mesmo dia do mês
-                    </p>
-                  </div>
-                )}
 
                 {/* End Date and Occurrences */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -796,16 +767,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                           <p>⏰ Horário: {formData.start_time}</p>
                         )}
                         <p>📊 Total: {formData.weekly_count} consulta{formData.weekly_count > 1 ? 's' : ''}</p>
-                      </>
-                    )}
-                    {formData.recurrence_type === 'monthly' && (
-                      <>
-                        <p className="font-medium">
-                          🔄 Consultas a cada {formData.recurrence_interval} mês{formData.recurrence_interval > 1 ? 'es' : ''}
-                        </p>
-                        {formData.start_time && (
-                          <p>⏰ Horário: {formData.start_time}</p>
-                        )}
                       </>
                     )}
                     <div className="border-t border-blue-300 pt-2 mt-3">
