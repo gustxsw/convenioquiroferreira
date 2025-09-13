@@ -1810,6 +1810,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
     // Generate recurring consultations
     const createdConsultations = [];
         if (!selected_weekdays || !Array.isArray(selected_weekdays) || selected_weekdays.length === 0) {
+        }
     const endDateObj = end_date ? new Date(end_date) : null;
     let count = 0;
 
