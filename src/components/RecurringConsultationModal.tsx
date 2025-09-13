@@ -247,7 +247,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
         recurrence_type: formData.recurrence_type,
         recurrence_interval: formData.recurrence_type === 'weekly' ? 1 : formData.recurrence_interval,
         weekly_count: formData.recurrence_type === 'weekly' ? formData.weekly_count : null,
-        selected_weekdays: formData.recurrence_type === 'daily' ? formData.selected_weekdays : null,
+        selected_weekdays: formData.selected_weekdays,
         end_date: formData.end_date || null,
         occurrences: formData.occurrences,
         notes: formData.notes && formData.notes.trim() ? formData.notes.trim() : null,
