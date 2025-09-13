@@ -213,6 +213,20 @@ const ReportsPage: React.FC = () => {
     return date.toLocaleDateString("pt-BR");
   };
 
+  // Format date for display (convert from UTC to Brazil local time)
+  const formatDateTimeFromUTC = (utcDateString: string) => {
+    const utcDate = new Date(utcDateString);
+    // Convert from UTC to Brazil local time (-3h)
+    const localDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
+    return localDate.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit', 
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
   const calculateTotalClinicRevenue = () => {
     if (!report) return 0;
     if (!report.revenue_by_professional || !Array.isArray(report.revenue_by_professional)) return 0;
