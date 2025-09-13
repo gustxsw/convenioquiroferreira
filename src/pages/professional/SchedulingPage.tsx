@@ -1467,7 +1467,9 @@ const SchedulingPage: React.FC = () => {
                           </select>
                         </div>
 
-                        <div>
+                        {/* Only show interval for weekly recurrence */}
+                        {formData.recurrence_type === 'weekly' && (
+                          <div>
                           <label className="block text-sm font-medium text-blue-700 mb-1">
                             Intervalo
                           </label>
@@ -1485,9 +1487,10 @@ const SchedulingPage: React.FC = () => {
                             className="input"
                           />
                           <p className="text-xs text-blue-600 mt-1">
-                            {formData.recurrence_type === "daily" ? "A cada quantos dias" : "A cada quantas semanas"}
+                              A cada quantas semanas
                           </p>
-                        </div>
+                          </div>
+                        )}
 
                         <div>
                           <label className="block text-sm font-medium text-blue-700 mb-1">
