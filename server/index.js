@@ -4769,12 +4769,10 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
         COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
-      WHERE c.professional_id = $1 AND DATE(c.date) >= $2::date AND DATE(c.date) <= $4::date AND c.status != 'cancelled'
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') >= $2::date 
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $4::date 
+      WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $4::timestamp
         AND c.status != 'cancelled'
     `,
-      [req.user.id, start_date, 100 - professionalPercentage, end_date]
+      [req.user.id, detailedStartUtcString, 100 - professionalPercentage, detailedEndUtcString]
     );
 
     const stats = statsResult.rows[0];
