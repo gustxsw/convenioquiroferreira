@@ -1861,9 +1861,9 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
 
       // Move to next date based on recurrence type
       if (recurrence_type === 'daily') {
-        currentDate.setDate(currentDate.getDate() + 1);
+        iterationDate.setDate(iterationDate.getDate() + 1);
       } else if (recurrence_type === 'weekly') {
-        currentDate.setDate(currentDate.getDate() + 7);
+        iterationDate.setDate(iterationDate.getDate() + 7);
       }
 
       // Safety check to prevent infinite loops
@@ -2055,23 +2055,26 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
     const endDateObj = end_date ? new Date(end_date) : null;
     let count = 0;
 
-    // Initialize currentDate with start_date and start_time
-    const currentDate = new Date(`${start_date}T${start_time}:00`);
+    // Initialize iteration date for recurring consultations
+    const iterationDate = new Date(`${start_date}T${start_time}:00`);
+    console.log('🔄 [RECURRING] Starting iteration from date:', iterationDate.toISOString());
     console.log('🔄 [RECURRING] Starting date:', currentDate.toISOString());
     // Initialize current date with start date and time
     const currentDate = new Date(`${start_date}T${start_time}:00`);
     console.log('🔄 [RECURRING] Starting from date:', currentDate.toISOString());
 
-    while (count < occurrences && (!endDateObj || currentDate <= endDateObj)) {
+    while (count < occurrences && (!endDateObj || iterationDate <= endDateObj)) {
       let shouldCreateConsultation = false;
       const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
 
       if (recurrence_type === 'daily') {
-        // For daily recurrence, check if current day is in selected weekdays
+        const dayOfWeek = iterationDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
         shouldCreateConsultation = selected_weekdays.includes(dayOfWeek);
+        console.log('🔄 [RECURRING-DAILY] Day of week:', dayOfWeek, 'Should create:', shouldCreateConsultation);
       } else if (recurrence_type === 'weekly') {
         // For weekly recurrence, create consultation on the same day of week
         shouldCreateConsultation = true;
+        console.log('🔄 [RECURRING-WEEKLY] Week count:', Math.floor(count / 1) + 1, 'of', weekly_count);
       }
 
       if (shouldCreateConsultation) {
@@ -2118,7 +2121,8 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
       }
 
       // Safety check to prevent infinite loops
-      if (count >= 1000) {
+        const consultationDateTime = `${iterationDate.toISOString().split('T')[0]}T${start_time}`;
+        console.log('🔄 [RECURRING] Creating consultation for:', consultationDateTime);
         console.warn('⚠️ [RECURRING] Breaking loop at 1000 iterations to prevent infinite loop');
         break;
       }
@@ -2931,21 +2935,22 @@ app.delete('/api/professionals/:id/signature', authenticate, async (req, res) =>
     );
 
     // Remove signature URL from database
-    const result = await pool.query(
-      'UPDATE users SET signature_url = NULL, updated_at = NOW() WHERE id = $1 RETURNING id',
-      [professionalId]
-    );
-
-    if (result.rows.length === 0) {
+            user_id || null,
+            dependent_id || null,
+            private_patient_id || null,
+            service_id,
+            location_id || null,
+            parseFloat(value),
       return res.status(404).json({ message: 'Profissional não encontrado' });
     }
-
+            notes?.trim() || null
     // Try to delete from Cloudinary (optional, don't fail if it doesn't work)
     try {
       if (currentResult.rows[0]?.signature_url) {
         const publicId = currentResult.rows[0].signature_url.split('/').pop()?.split('.')[0];
+          console.log('✅ [RECURRING] Consultation created:', result.rows[0].id, 'for date:', consultationDateTime);
         if (publicId) {
-          await cloudinary.uploader.destroy(`quiro-ferreira/signatures/${publicId}`);
+          console.error('❌ [RECURRING] Error creating consultation for date:', iterationDate.toISOString().split('T')[0], error);
           console.log('✅ [SIGNATURE] Signature deleted from Cloudinary');
         }
       }
