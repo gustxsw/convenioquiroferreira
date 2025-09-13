@@ -4461,7 +4461,7 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
         c.id,
         c.date,
         c.value,
-        c.notes as cancellation_reason,
+        c.cancellation_reason,
         c.updated_at as cancelled_at,
         s.name as service_name,
         prof.name as professional_name,
