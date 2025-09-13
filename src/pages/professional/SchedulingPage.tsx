@@ -705,6 +705,10 @@ const SchedulingPage: React.FC = () => {
     const schedulingUtcDate = new Date(dateString);
     const schedulingLocalDate = new Date(schedulingUtcDate.getTime() - (3 * 60 * 60 * 1000));
     return schedulingLocalDate.toLocaleDateString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
 
   const getStatusInfo = (status: string) => {
     switch (status) {
