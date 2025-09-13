@@ -4630,6 +4630,7 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       `
       SELECT 
         c.date, c.value,
+        c.value as total_value,
         s.name as service_name,
         CASE 
           WHEN c.user_id IS NOT NULL THEN u.name
@@ -4650,7 +4651,10 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
-      WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $4::timestamp AND c.status != 'cancelled'
+      WHERE c.professional_id = $1 
+        AND c.date >= $2::timestamp 
+        AND c.date <= $4::timestamp 
+        AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `,
       [req.user.id, profRevenueStartDateTime, 100 - professionalPercentage, profRevenueEndDateTime]
