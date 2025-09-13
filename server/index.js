@@ -4755,10 +4755,10 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
     console.log("🔄 [PROF-DETAILED] Generating detailed professional report for:", req.user.id, "period:", start_date, "to", end_date);
 
     // Get professional percentage
-    const professionalResult = await pool.query(
-      `SELECT percentage FROM users WHERE id = $1`,
-      [req.user.id]
-    );
+    const profDetailedStartDateUtc = new Date(`${start_date}T00:00:00`);
+    const profDetailedEndDateUtc = new Date(`${end_date}T23:59:59`);
+    const profDetailedUtcStartDate = new Date(profDetailedStartDateUtc.getTime() + (3 * 60 * 60 * 1000));
+    const profDetailedUtcEndDate = new Date(profDetailedEndDateUtc.getTime() + (3 * 60 * 60 * 1000));
 
     const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
 
