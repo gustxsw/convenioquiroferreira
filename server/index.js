@@ -1691,7 +1691,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
         const validWeekdays = weekdaysToCheck.map(day => parseInt(day)).filter(day => !isNaN(day));
         shouldCreateConsultation = validWeekdays.includes(dayOfWeek);
         
-        console.log('🔄 [RECURRING-DAILY] Day of week:', dayOfWeek, 'Should create:', shouldCreateConsultation);
+        console.log('🔄 [RECURRING-DAILY] Day of week:', dayOfWeek, 'Selected weekdays:', selected_weekdays, 'Should create:', shouldCreateConsultation);
         console.log('🔄 [RECURRING-DAILY] Valid weekdays to check:', validWeekdays);
       } else if (recurrence_type === 'weekly') {
         // For weekly recurrence, create consultation and check weekly limit
