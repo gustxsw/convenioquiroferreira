@@ -697,54 +697,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                   </div>
                 )}
 
-
-                {/* End Date and Occurrences */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Data Final (opcional)
-                    </label>
-                    <input
-                      type="date"
-                      value={formData.end_date}
-                      onChange={(e) =>
-                        setFormData(prev => ({ ...prev, end_date: e.target.value }))
-                      }
-                      className="input"
-                      min={formData.start_date}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                {formData.recurrence_type === 'monthly' && (
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      value={formData.occurrences}
-                      onChange={(e) =>
-                        setFormData(prev => ({
-                          ...prev,
-                          occurrences: parseInt(e.target.value),
-                        }))
-                      }
-                      className="input"
-                      required
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Limite de consultas a serem criadas
-                    </p>
-                  </div>
-                </div>
-
-                {/* Preview of recurrence pattern */}
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
-                  <h4 className="font-medium text-blue-900 mb-3 flex items-center">
-                    📅 <span className="ml-2">Resumo da Recorrência:</span>
-                  </h4>
-                  <div className="text-sm text-blue-700 space-y-2">
                 {/* Interval - Only show for weekly and monthly */}
                 {(formData.recurrence_type === 'weekly' || formData.recurrence_type === 'monthly') && (
                   <div>
@@ -796,6 +748,55 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                   </div>
                 )}
 
+                {/* End Date and Occurrences */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Data Final (opcional)
+                    </label>
+                    <input
+                      type="date"
+                      value={formData.end_date}
+                      onChange={(e) =>
+                        setFormData(prev => ({ ...prev, end_date: e.target.value }))
+                      }
+                      className="input"
+                      min={formData.start_date}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {formData.recurrence_type === 'monthly' && (
+                        'Máximo de Ocorrências *'
+                      )}
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={formData.occurrences}
+                      onChange={(e) =>
+                        setFormData(prev => ({
+                          ...prev,
+                          occurrences: parseInt(e.target.value),
+                        }))
+                      }
+                      className="input"
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Limite de consultas a serem criadas
+                    </p>
+                  </div>
+                </div>
+
+                {/* Preview of recurrence pattern */}
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
+                  <h4 className="font-medium text-blue-900 mb-3 flex items-center">
+                    📅 <span className="ml-2">Resumo da Recorrência:</span>
+                  </h4>
+                  <div className="text-sm text-blue-700 space-y-2">
                     {formData.recurrence_type === 'daily' && formData.selected_weekdays.length > 0 && (
                       <>
                         <p className="font-medium">
