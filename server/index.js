@@ -1599,10 +1599,10 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
     console.log("🔄 Date type:", typeof date);
     
     // 🔥 FIXED: Convert from Brazil local time to UTC for storage
-    const localDate = new Date(date); // Frontend sends Brazil local time
-    const utcDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000)); // Convert to UTC (+3h)
+    const frontendLocalDate = new Date(date); // Frontend sends Brazil local time
+    const utcDate = new Date(frontendLocalDate.getTime() + (3 * 60 * 60 * 1000)); // Convert to UTC (+3h)
     
-    console.log("🔄 Local date from frontend:", localDate.toLocaleString('pt-BR'));
+    console.log("🔄 Local date from frontend:", frontendLocalDate.toLocaleString('pt-BR'));
     console.log("🔄 UTC date for storage:", utcDate.toISOString());
     
     
@@ -1740,13 +1740,13 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), che
 
     if (date !== undefined) {
       // Convert from Brazil local time to UTC for storage
-      const localDate = new Date(date);
-      const utcDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
+      const updateLocalDate = new Date(date);
+      const updateUtcDate = new Date(updateLocalDate.getTime() + (3 * 60 * 60 * 1000));
       // Convert from Brazil local time to UTC for storage
       const localDate = new Date(date);
       const utcDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
       updateFields.push(`date = $${paramCount++}`);
-      updateValues.push(utcDate.toISOString()); // Save in UTC
+      updateValues.push(updateUtcDate.toISOString()); // Save in UTC
     }
 
     if (status !== undefined) {
@@ -1822,9 +1822,9 @@ app.put('/api/consultations/:id', authenticate, authorize(['professional', 'admi
        RETURNING *`,
       [
         (() => {
-          const localDate = new Date(date);
-          const utcDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
-          return utcDate.toISOString();
+          const editLocalDate = new Date(date);
+          const editUtcDate = new Date(editLocalDate.getTime() + (3 * 60 * 60 * 1000));
+          return editUtcDate.toISOString();
         })(),
         value, location_id, notes, status, consultationId, req.user.id
           const localDate = new Date(date);
