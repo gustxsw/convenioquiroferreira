@@ -4612,7 +4612,7 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
 
     // Get professional percentage
     const professionalResult = await pool.query(
-      `SELECT percentage FROM users WHERE id = $1`,
+      "SELECT percentage FROM users WHERE id = $1",
       [req.user.id]
     );
 
