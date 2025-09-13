@@ -1960,6 +1960,179 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
   }
 });
 
+// Cancel consultation
+app.put("/api/consultations/:id/cancel", authenticate, authorize(["professional"]), checkSchedulingAccess, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { cancellation_reason } = req.body;
+
+    console.log("🔄 Cancelling consultation:", id);
+
+    const result = await pool.query(
+      `
+      UPDATE consultations 
+      SET 
+        status = 'cancelled',
+        cancelled_at = CURRENT_TIMESTAMP,
+        cancelled_by = $1,
+        cancellation_reason = $2,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3 AND professional_id = $1
+      RETURNING *
+    `,
+      [req.user.id, cancellation_reason?.trim() || null, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Consulta não encontrada" });
+    }
+
+    console.log("✅ Consultation cancelled:", id);
+
+    res.json({
+      message: "Consulta cancelada com sucesso",
+      consultation: result.rows[0],
+    });
+  } catch (error) {
+    console.error("❌ Error cancelling consultation:", error);
+    res.status(500).json({ message: "Erro ao cancelar consulta" });
+  }
+});
+
+// POST /api/consultations/recurring - Create recurring consultations
+app.post('/api/consultations/recurring', authenticate, authorize(['professional', 'admin']), checkSchedulingAccess, async (req, res) => {
+  try {
+    const {
+      user_id,
+      dependent_id,
+      private_patient_id,
+      service_id,
+      location_id,
+      value,
+      start_date,
+      start_time,
+      recurrence_type,
+      end_date,
+      occurrences,
+      notes,
+      weekly_count,
+      selected_weekdays
+    } = req.body;
+
+    console.log('🔄 Creating recurring consultations:', req.body);
+
+    // Validate required fields
+    if (!service_id || !value || !start_date || !start_time || !recurrence_type || !occurrences) {
+      return res.status(400).json({ message: 'Campos obrigatórios não preenchidos' });
+    }
+
+    // Validate patient selection
+    if (!user_id && !dependent_id && !private_patient_id) {
+      return res.status(400).json({ message: 'É necessário selecionar um paciente' });
+    }
+
+    // Validate recurrence type specific fields
+    if (recurrence_type === 'daily') {
+      if (!selected_weekdays || !Array.isArray(selected_weekdays) || selected_weekdays.length === 0) {
+        return res.status(400).json({ message: 'Para recorrência diária, é necessário selecionar pelo menos um dia da semana' });
+      }
+    } else if (recurrence_type === 'weekly') {
+      if (!weekly_count || weekly_count < 1) {
+        return res.status(400).json({ message: 'Para recorrência semanal, é necessário especificar o número de semanas' });
+      }
+    }
+
+    console.log('🔄 [RECURRING] Creating recurring consultations with data:', {
+      recurrence_type,
+      selected_weekdays,
+      weekly_count,
+      start_date,
+      start_time
+    });
+
+    // Generate recurring consultations
+    const createdConsultations = [];
+    const endDateObj = end_date ? new Date(end_date) : null;
+    let count = 0;
+
+    // Initialize current date with start date and time
+    const currentDate = new Date(`${start_date}T${start_time}:00`);
+    console.log('🔄 [RECURRING] Starting from date:', currentDate.toISOString());
+
+    while (count < occurrences && (!endDateObj || currentDate <= endDateObj)) {
+      let shouldCreateConsultation = false;
+      const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+
+      if (recurrence_type === 'daily') {
+        // For daily recurrence, check if current day is in selected weekdays
+        shouldCreateConsultation = selected_weekdays.includes(dayOfWeek);
+      } else if (recurrence_type === 'weekly') {
+        // For weekly recurrence, create consultation on the same day of week
+        shouldCreateConsultation = true;
+      }
+
+      if (shouldCreateConsultation) {
+        const consultationDateTime = currentDate.toISOString();
+
+        try {
+          const result = await pool.query(`
+            INSERT INTO consultations (
+              professional_id, user_id, dependent_id, private_patient_id, 
+              service_id, location_id, value, date, status, notes, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+            RETURNING *
+          `, [
+            req.user.id,
+            user_id || null,
+            dependent_id || null,
+            private_patient_id || null,
+            parseInt(service_id),
+            location_id ? parseInt(location_id) : null,
+            parseFloat(value),
+            consultationDateTime,
+            'scheduled',
+            notes || null
+          ]);
+
+          createdConsultations.push(result.rows[0]);
+          count++;
+          console.log('✅ [RECURRING] Created consultation for:', currentDate.toISOString().split('T')[0]);
+        } catch (error) {
+          console.error('❌ [RECURRING] Error creating consultation for date:', currentDate.toISOString().split('T')[0], error);
+          // Continue with next date instead of failing completely
+        }
+      }
+
+      // Move to next date based on recurrence type
+      if (recurrence_type === 'daily') {
+        currentDate.setDate(currentDate.getDate() + 1);
+      } else if (recurrence_type === 'weekly') {
+        currentDate.setDate(currentDate.getDate() + 7);
+        // For weekly, stop after weekly_count weeks
+        if (count >= weekly_count) {
+          break;
+        }
+      }
+
+      // Safety check to prevent infinite loops
+      if (count >= 1000) {
+        console.warn('⚠️ [RECURRING] Breaking loop at 1000 iterations to prevent infinite loop');
+        break;
+      }
+    }
+
+    console.log('✅ Recurring consultations created:', createdConsultations.length);
+    res.json({
+      message: `${createdConsultations.length} consultas recorrentes criadas com sucesso`,
+      created_count: createdConsultations.length,
+      consultations: createdConsultations
+    });
+  } catch (error) {
+    console.error('❌ Error creating recurring consultations:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
 // Delete consultation
 app.delete("/api/consultations/:id", authenticate, authorize(["professional"]), checkSchedulingAccess, async (req, res) => {
   try {
