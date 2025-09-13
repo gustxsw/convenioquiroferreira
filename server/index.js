@@ -4729,7 +4729,7 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
     const amountToPay = parseFloat(stats.convenio_revenue) * ((100 - professionalPercentage) / 100);
 
     // Calculate amount_to_pay in JavaScript
-    const amountToPay = parseFloat(stats.convenio_revenue) * ((100 - professionalPercentage) / 100);
+    const detailedAmountToPay = parseFloat(stats.convenio_revenue) * ((100 - professionalPercentage) / 100);
     const report = {
       summary: {
         total_consultations: parseInt(stats.total_consultations),
@@ -4739,7 +4739,7 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         convenio_revenue: parseFloat(stats.convenio_revenue),
         private_revenue: parseFloat(stats.private_revenue),
         professional_percentage: professionalPercentage,
-        amount_to_pay: amountToPay,
+        amount_to_pay: detailedAmountToPay,
       },
     };
 
