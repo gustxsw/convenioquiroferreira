@@ -435,8 +435,10 @@ const ClientHomePage: React.FC = () => {
           <div className="text-center py-8 bg-gray-50 rounded-lg">
             <CalendarClock className="h-16 w-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {selectedFilter === "all"
+              {selectedFilter === "all" && !searchTerm
                 ? "Nenhuma consulta encontrada"
+                : searchTerm
+                ? `Nenhuma consulta encontrada para "${searchTerm}"`
                 : `Nenhuma consulta encontrada para ${
                     selectedFilter === "titular"
                       ? "o titular"
@@ -446,75 +448,85 @@ const ClientHomePage: React.FC = () => {
                   }`}
             </h3>
             <p className="text-gray-600">
-              {selectedFilter === "all"
+              {selectedFilter === "all" && !searchTerm
                 ? "Você ainda não possui consultas registradas."
+                : searchTerm
+                ? "Tente ajustar os termos de busca."
                 : "Não há consultas registradas para este usuário."}
             </p>
           </div>
         ) : (
-          <div className="table-container">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Data</th>
-                  <th>Paciente</th>
-                  <th>Serviço</th>
-                  <th>Profissional</th>
-                  <th>Valor</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredConsultations.map((consultation) => (
-                  <tr key={consultation.id}>
-                    <td>{formatDate(consultation.date)}</td>
-                    <td>
-                      <div className="flex items-center">
-                        {consultation.client_name === user?.name ? (
-                          <User className="h-4 w-4 text-green-600 mr-2" />
-                        ) : (
-                          <Users className="h-4 w-4 text-blue-600 mr-2" />
-                        )}
-                        {consultation.client_name}
-                        {consultation.client_name === user?.name && (
-                          <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
-                            Titular
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td>{consultation.service_name}</td>
-                    <td>{consultation.professional_name}</td>
-                    <td>{formatCurrency(consultation.value)}</td>
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <div className="max-h-96 overflow-y-auto">
+              <table className="min-w-full">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="text-left py-3 px-4 font-medium text-gray-700 border-b border-gray-200">Data</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-700 border-b border-gray-200">Paciente</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-700 border-b border-gray-200">Serviço</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-700 border-b border-gray-200">Profissional</th>
+                    <th className="text-right py-3 px-4 font-medium text-gray-700 border-b border-gray-200">Valor</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Summary */}
-        {filteredConsultations.length > 0 && (
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">
-                {filteredConsultations.length} consulta(s) encontrada(s)
-                {selectedFilter !== "all" && (
-                  <span className="ml-1">
-                    para{" "}
-                    {selectedFilter === "titular"
-                      ? "o titular"
-                      : dependents.find(
-                          (d) => d.id.toString() === selectedFilter
-                        )?.name}
-                  </span>
-                )}
-              </span>
-              <span className="text-sm font-medium text-gray-900">
-                Total:{" "}
-                {formatCurrency(
-                  filteredConsultations.reduce((sum, c) => sum + c.value, 0)
-                )}
-              </span>
+                </thead>
+                <tbody>
+                  {filteredConsultations.map((consultation) => (
+                    <tr key={consultation.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-3 px-4 text-sm text-gray-600">
+                        {formatDate(consultation.date)}
+                      </td>
+                      <td className="py-3 px-4 text-sm">
+                        <div className="flex items-center">
+                          {consultation.client_name === user?.name ? (
+                            <User className="h-4 w-4 text-green-600 mr-2" />
+                          ) : (
+                            <Users className="h-4 w-4 text-blue-600 mr-2" />
+                          )}
+                          <span className="text-gray-900">{consultation.client_name}</span>
+                          {consultation.client_name === user?.name && (
+                            <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
+                              Titular
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-600">
+                        {consultation.service_name}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-600">
+                        {consultation.professional_name}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-900 text-right font-medium">
+                        {formatCurrency(consultation.value)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            
+            {/* Table Footer with Summary */}
+            <div className="bg-gray-50 px-4 py-3 border-t border-gray-200">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-600">
+                  {filteredConsultations.length} consulta(s) 
+                  {searchTerm && ` encontrada(s) para "${searchTerm}"`}
+                  {selectedFilter !== "all" && !searchTerm && (
+                    <span className="ml-1">
+                      para{" "}
+                      {selectedFilter === "titular"
+                        ? "o titular"
+                        : dependents.find(
+                            (d) => d.id.toString() === selectedFilter
+                          )?.name}
+                    </span>
+                  )}
+                </span>
+                <span className="text-gray-900 font-medium">
+                  Total: {formatCurrency(
+                    filteredConsultations.reduce((sum, c) => sum + c.value, 0)
+                  )}
+                </span>
+              </div>
             </div>
           </div>
         )}

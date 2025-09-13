@@ -2292,72 +2292,78 @@ app.get("/api/dependents/lookup", authenticate, authorize(["professional", "admi
   }
 });
 
-app.post("/api/dependents", authenticate, authorize(["client"]), async (req, res) => {
+app.post('/api/dependents', authenticate, async (req, res) => {
   try {
-    const { user_id, name, cpf, birth_date } = req.body;
+    const { client_id, name, cpf, birth_date } = req.body;
 
-    // Validate client can only create dependents for themselves
-    if (req.user.id !== user_id) {
-      return res.status(403).json({
-        message: "Você só pode criar dependentes para sua própria conta",
+    console.log('🔄 Creating dependent:', { client_id, name, cpf, professional_id: req.user.id });
+
+    // Allow clients to create dependents for themselves OR admins to create for any client
+    if (req.user.currentRole === 'client' && req.user.id !== client_id) {
+      return res.status(403).json({ 
+        message: 'Você só pode criar dependentes para sua própria conta.' 
+      });
+    }
+    
+    // Admins can create dependents for any client
+    if (req.user.currentRole !== 'client' && req.user.currentRole !== 'admin') {
+      return res.status(403).json({ 
+        message: 'Apenas clientes e administradores podem criar dependentes.' 
       });
     }
 
-    if (!name || !cpf) {
-      return res.status(400).json({ message: "Nome e CPF são obrigatórios" });
+    // Validate required fields
+    if (!client_id || !name || !cpf) {
+      return res.status(400).json({ message: 'ID do cliente, nome e CPF são obrigatórios' });
     }
 
     if (!validateCPF(cpf)) {
-      return res.status(400).json({ message: "CPF inválido" });
+      return res.status(400).json({ message: 'CPF inválido' });
     }
 
-    const cleanCPF = cpf.replace(/\D/g, "");
+    const cleanCPF = cpf.replace(/\D/g, '');
 
     // Check if CPF already exists
     const existingUser = await pool.query(
-      "SELECT id FROM users WHERE cpf = $1",
+      'SELECT id FROM users WHERE cpf = $1',
       [cleanCPF]
     );
     const existingDependent = await pool.query(
-      "SELECT id FROM dependents WHERE cpf = $1",
+      'SELECT id FROM dependents WHERE cpf = $1',
       [cleanCPF]
     );
 
     if (existingUser.rows.length > 0 || existingDependent.rows.length > 0) {
-      return res.status(409).json({ message: "CPF já cadastrado" });
+      return res.status(409).json({ message: 'CPF já cadastrado' });
     }
 
     // Check dependent limit (max 10 per client)
     const dependentCount = await pool.query(
-      "SELECT COUNT(*) FROM dependents WHERE user_id = $1",
-      [user_id]
+      'SELECT COUNT(*) FROM dependents WHERE user_id = $1',
+      [client_id]
     );
     if (parseInt(dependentCount.rows[0].count) >= 10) {
-      return res
-        .status(400)
-        .json({ message: "Limite máximo de 10 dependentes atingido" });
+      return res.status(400).json({ message: 'Limite máximo de 10 dependentes atingido' });
     }
 
     const dependentResult = await pool.query(
-      `
-      INSERT INTO dependents (user_id, name, cpf, birth_date)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *
-    `,
-      [user_id, name.trim(), cleanCPF, birth_date || null]
+      `INSERT INTO dependents (user_id, name, cpf, birth_date)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [client_id, name.trim(), cleanCPF, birth_date || null]
     );
 
     const dependent = dependentResult.rows[0];
 
-    console.log("✅ Dependent created successfully:", dependent.id);
+    console.log('✅ Dependent created successfully:', dependent.id);
 
     res.status(201).json({
-      message: "Dependente criado com sucesso",
-      dependent,
+      message: 'Dependente criado com sucesso',
+      dependent
     });
   } catch (error) {
-    console.error("❌ Error creating dependent:", error);
-    res.status(500).json({ message: "Erro ao criar dependente" });
+    console.error('❌ Error creating dependent:', error);
+    res.status(500).json({ message: 'Erro ao criar dependente' });
   }
 });
 
