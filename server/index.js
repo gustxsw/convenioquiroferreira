@@ -4715,9 +4715,8 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         COALESCE(SUM(c.value), 0) as total_revenue,
         COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value ELSE 0 END), 0) as convenio_revenue,
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
-        COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
+        COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value ELSE 0 END), 0) as convenio_revenue_for_calc
       FROM consultations c
-      WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $3::timestamp AND c.status != 'cancelled'
       WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $3::timestamp AND c.status != 'cancelled'
     `,
       [req.user.id, detailedStartDateTime, detailedEndDateTime]
