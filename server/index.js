@@ -4457,8 +4457,6 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
     // Simple date range: start at 03:00 and end at 02:59 next day
     const startDateTime = `${start_date} 03:00:00`;
     const endDateTime = `${end_date} 02:59:59`;
-
-    let query = `
       SELECT 
         c.id,
         c.date,
@@ -4529,8 +4527,6 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
     // Simple date range: start at 03:00 and end at 02:59 next day to capture all Brazil timezone data
     const startDateTime = `${start_date} 03:00:00`;
     const endDateTime = `${end_date} 02:59:59`;
-
-    // Get total revenue (only convenio consultations)
     const totalRevenueResult = await pool.query(
       `
       SELECT COALESCE(SUM(c.value), 0) as total_revenue
@@ -4624,6 +4620,10 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
     // Simple date range: start at 03:00 and end at 02:59 next day
     const startDateTime = `${start_date} 03:00:00`;
     const endDateTime = `${end_date} 02:59:59`;
+
+    // Simple date range: start at 03:00 and end at 02:59 next day
+    const startDateTime = `${start_date} 03:00:00`;
+    const endDateTime = `${end_date} 02:59:59`;
     // Get consultations for the period
     const consultationsResult = await pool.query(
       `
@@ -4705,8 +4705,6 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
     // Simple date range: start at 03:00 and end at 02:59 next day
     const startDateTime = `${start_date} 03:00:00`;
     const endDateTime = `${end_date} 02:59:59`;
-
-    // Get detailed consultation statistics
     const statsResult = await pool.query(
       `
       SELECT 
@@ -4717,13 +4715,16 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value ELSE 0 END), 0) as convenio_revenue,
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
         COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
-      FROM consultations c
+      WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $3::timestamp AND c.status != 'cancelled'
       WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $3::timestamp AND c.status != 'cancelled'
     `,
       [req.user.id, startDateTime, endDateTime]
     );
 
     const stats = statsResult.rows[0];
+
+    // Calculate amount_to_pay in JavaScript
+    const amountToPay = parseFloat(stats.convenio_revenue) * ((100 - professionalPercentage) / 100);
 
     // Calculate amount_to_pay in JavaScript
     const amountToPay = parseFloat(stats.convenio_revenue) * ((100 - professionalPercentage) / 100);
