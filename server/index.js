@@ -1747,56 +1747,6 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), che
   }
 });
 
-// PUT /api/consultations/:id - Update consultation
-app.put('/api/consultations/:id', authenticate, authorize(['professional', 'admin']), checkSchedulingAccess, async (req, res) => {
-  try {
-    const consultationId = req.params.id;
-    const { date, value, location_id, notes, status } = req.body;
-
-    console.log('🔄 Updating consultation:', consultationId, req.body);
-
-    // Validate required fields
-    if (!date || !value) {
-      return res.status(400).json({ message: 'Data e valor são obrigatórios' });
-    }
-
-    // Check if consultation exists and belongs to the professional
-    const checkResult = await pool.query(
-      'SELECT * FROM consultations WHERE id = $1 AND professional_id = $2',
-      [consultationId, req.user.id]
-    );
-
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Consulta não encontrada ou não autorizada' });
-    }
-
-    // Update consultation
-    const updateResult = await pool.query(
-      `UPDATE consultations 
-       SET date = $1, value = $2, location_id = $3, notes = $4, status = $5, updated_at = NOW()
-       WHERE id = $6 AND professional_id = $7
-       RETURNING *`,
-      [
-        (() => {
-          const editConsultationLocalDate = new Date(date);
-          const editConsultationUtcDate = new Date(editConsultationLocalDate.getTime() + (3 * 60 * 60 * 1000));
-          return editConsultationUtcDate.toISOString();
-        })(),
-        value, location_id, notes, status, consultationId, req.user.id
-      ]
-    );
-
-    console.log('✅ Consultation updated successfully');
-    res.json({ 
-      message: 'Consulta atualizada com sucesso',
-      consultation: updateResult.rows[0]
-    });
-  } catch (error) {
-    console.error('❌ Error updating consultation:', error);
-    res.status(500).json({ message: 'Erro interno do servidor' });
-  }
-});
-
 // POST /api/consultations/recurring - Create recurring consultations
 app.post('/api/consultations/recurring', authenticate, authorize(['professional', 'admin']), checkSchedulingAccess, async (req, res) => {
   try {
@@ -1813,7 +1763,9 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
       recurrence_interval,
       end_date,
       occurrences,
-      notes
+      notes,
+      weekly_count,
+      selected_weekdays
     } = req.body;
 
     console.log('🔄 Creating recurring consultations:', req.body);
@@ -1828,58 +1780,95 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
       return res.status(400).json({ message: 'É necessário selecionar um paciente' });
     }
 
+    // Prepare consultation data
+    const consultationData = {
+      service_id: parseInt(service_id),
+      location_id: location_id ? parseInt(location_id) : null,
+      value: parseFloat(value),
+      start_date,
+      start_time,
+      recurrence_type,
+      recurrence_interval: 1, // Always 1 since we use selected_weekdays for daily and weekly_count for weekly
+      weekly_count: recurrence_type === 'weekly' ? weekly_count : null,
+      selected_weekdays: recurrence_type === 'daily' ? selected_weekdays : null,
+      end_date: end_date || null,
+      occurrences,
+      notes: notes || null,
+    };
+
+    // Set patient based on type
+    if (private_patient_id) {
+      consultationData.private_patient_id = parseInt(private_patient_id);
+    } else if (dependent_id) {
+      consultationData.dependent_id = dependent_id;
+    } else if (user_id) {
+      consultationData.user_id = user_id;
+    }
+
+    console.log('🔄 [RECURRING] Creating recurring consultations with data:', consultationData);
+
+    // Generate recurring consultations
     const createdConsultations = [];
-    
-    // Parse start date and time
-    const currentLocalDate = new Date(`${start_date}T${start_time}`);
-    const recurringUtcStartDateTime = new Date(currentLocalDate.getTime() + (3 * 60 * 60 * 1000));
-    let currentUtcDate = new Date(recurringUtcStartDateTime);
-    
-    const endLocalDate = end_date ? new Date(end_date) : null;
+    let currentDate = new Date(start_date);
+    const endDateObj = end_date ? new Date(end_date) : null;
+    let count = 0;
 
-    for (let i = 0; i < occurrences; i++) {
-      // Check if we've reached the end date
-      if (endLocalDate && currentLocalDate > endLocalDate) {
-        break;
-      }
+    while (count < occurrences && (!endDateObj || currentDate <= endDateObj)) {
+      let shouldCreateConsultation = false;
 
-      try {
-        // Convert current local date to UTC for storage
-        const currentUtcDate = new Date(currentLocalDate.getTime() + (3 * 60 * 60 * 1000));
-        
-        const result = await pool.query(
-          `INSERT INTO consultations (
-            user_id, dependent_id, private_patient_id, professional_id, service_id, 
-            location_id, value, date, status, notes, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
-          RETURNING *`,
-          [
-            user_id || null,
-            dependent_id || null,
-            private_patient_id || null,
-            req.user.id,
-            service_id,
-            location_id || null,
-            value,
-            currentUtcDate.toISOString(), // Save in UTC
-            'scheduled',
-            notes || null
-          ]
-        );
-
-        createdConsultations.push(result.rows[0]);
-      } catch (error) {
-        console.error(`❌ Error creating consultation ${i + 1}:`, error);
-        // Continue with next consultation instead of failing completely
-      }
-
-      // Calculate next date based on recurrence
       if (recurrence_type === 'daily') {
-        currentLocalDate.setDate(currentLocalDate.getDate() + recurrence_interval);
-        currentUtcDate = new Date(currentLocalDate.getTime() + (3 * 60 * 60 * 1000));
+        // For daily recurrence, use selected weekdays
+        if (selected_weekdays && selected_weekdays.length > 0) {
+          const dayOfWeek = currentDate.getDay();
+          shouldCreateConsultation = selected_weekdays.includes(dayOfWeek);
+        }
       } else if (recurrence_type === 'weekly') {
-        currentLocalDate.setDate(currentLocalDate.getDate() + (7 * recurrence_interval));
-        currentUtcDate = new Date(currentLocalDate.getTime() + (3 * 60 * 60 * 1000));
+        // For weekly recurrence, create consultation on the same day of week
+        shouldCreateConsultation = true;
+      }
+
+      if (shouldCreateConsultation) {
+        const consultationDateTime = `${currentDate.toISOString().split('T')[0]}T${start_time}`;
+
+        try {
+          const result = await pool.query(`
+            INSERT INTO consultations (
+              professional_id, user_id, dependent_id, private_patient_id, 
+              service_id, location_id, value, date, status, notes, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+            RETURNING *
+          `, [
+            req.user.id,
+            consultationData.user_id || null,
+            consultationData.dependent_id || null,
+            consultationData.private_patient_id || null,
+            consultationData.service_id,
+            consultationData.location_id,
+            consultationData.value,
+            consultationDateTime,
+            'scheduled',
+            consultationData.notes
+          ]);
+
+          createdConsultations.push(result.rows[0]);
+          count++;
+        } catch (error) {
+          console.error('❌ [RECURRING] Error creating consultation for date:', currentDate.toISOString().split('T')[0], error);
+          // Continue with next date instead of failing completely
+        }
+      }
+
+      // Move to next date based on recurrence type
+      if (recurrence_type === 'daily') {
+        currentDate.setDate(currentDate.getDate() + 1);
+      } else if (recurrence_type === 'weekly') {
+        currentDate.setDate(currentDate.getDate() + 7);
+      }
+
+      // Safety check to prevent infinite loops
+      if (count >= 1000) {
+        console.warn('⚠️ [RECURRING] Breaking loop at 1000 iterations to prevent infinite loop');
+        break;
       }
     }
 
