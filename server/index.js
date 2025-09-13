@@ -1,5 +1,3 @@
-Looking at your script file, I can see there are several missing closing brackets. Here's the corrected version with all the missing brackets added:
-
 import express from "express";
 import cors from "cors";
 import bcrypt from "bcryptjs";
@@ -1738,10 +1736,13 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), che
 
     if (date !== undefined) {
       // Convert from Brazil local time to UTC for storage
+      const updateLocalDate = new Date(date);
+      const updateUtcDate = new Date(updateLocalDate.getTime() + (3 * 60 * 60 * 1000));
+      // Convert from Brazil local time to UTC for storage
       const localDate = new Date(date);
       const utcDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
       updateFields.push(`date = $${paramCount++}`);
-      updateValues.push(utcDate.toISOString()); // Save in UTC
+      updateValues.push(updateUtcDate.toISOString()); // Save in UTC
     }
 
     if (status !== undefined) {
@@ -1817,9 +1818,9 @@ app.put('/api/consultations/:id', authenticate, authorize(['professional', 'admi
        RETURNING *`,
       [
         (() => {
-          const localDate = new Date(date);
-          const utcDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
-          return utcDate.toISOString();
+          const editLocalDate = new Date(date);
+          const editUtcDate = new Date(editLocalDate.getTime() + (3 * 60 * 60 * 1000));
+          return editUtcDate.toISOString();
         })(),
         value, location_id, notes, status, consultationId, req.user.id
       ]
@@ -4502,6 +4503,12 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
 
     console.log("🔄 [CANCELLED] Fetching cancelled consultations for period:", start_date, "to", end_date);
 
+    // Convert frontend dates to UTC for database filtering
+    const startDateUtc = new Date(`${start_date}T00:00:00`);
+    const endDateUtc = new Date(`${end_date}T23:59:59`);
+    const startUtcString = new Date(startDateUtc.getTime() + (3 * 60 * 60 * 1000)).toISOString();
+    const endUtcString = new Date(endDateUtc.getTime() + (3 * 60 * 60 * 1000)).toISOString();
+
     let query = `
       SELECT 
         c.id,
@@ -4535,11 +4542,10 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
       WHERE c.status = 'cancelled'
-        AND DATE(c.date) >= $1::date AND DATE(c.date) <= $2::date
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
+        AND c.date >= $1::timestamp AND c.date <= $2::timestamp
     `;
 
-    const params = [start_date, end_date];
+    const params = [startUtcString, endUtcString];
 
     // If professional, only show their cancelled consultations
     if (req.user.currentRole === "professional") {
@@ -4926,6 +4932,57 @@ app.get("/api/admin/dependents", authenticate, authorize(["admin"]), async (req,
   } catch (error) {
     console.error("❌ Error fetching all dependents:", error);
     res.status(500).json({ message: "Erro ao carregar dependentes" });
+  }
+});
+
+// Add activate client route
+app.post("/api/users/:id/activate", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    console.log("🔄 Activating client:", id);
+    
+    // Get user data
+    const userResult = await pool.query(
+      "SELECT * FROM users WHERE id = $1 AND 'client' = ANY(roles)",
+      [id]
+    );
+    
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ message: "Cliente não encontrado" });
+    }
+    
+    // Set expiry date to 1 year from now
+    const expiryDate = new Date();
+    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+    
+    // Update subscription status and expiry
+    const updatedUserResult = await pool.query(
+      `UPDATE users 
+       SET subscription_status = 'active', 
+           subscription_expiry = $1,
+           updated_at = NOW()
+       WHERE id = $2
+       RETURNING 
+         id, name, cpf, email, phone, 
+         birth_date::text as birth_date,
+         address, address_number, address_complement, neighborhood, city, state,
+         roles, subscription_status, 
+         subscription_expiry::text as subscription_expiry,
+         photo_url, category_name, percentage, crm, 
+         created_at::text as created_at, updated_at::text as updated_at`,
+      [expiryDate, id]
+    );
+    
+    console.log("✅ Client activated successfully:", id);
+    
+    res.json({
+      message: "Cliente ativado com sucesso",
+      user: updatedUserResult.rows[0]
+    });
+  } catch (error) {
+    console.error("❌ Error activating client:", error);
+    res.status(500).json({ message: "Erro ao ativar cliente" });
   }
 });
 
