@@ -1865,18 +1865,18 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
     }
 
     const createdConsultations = [];
-    const startDateTime = new Date(`${start_date}T${start_time}`);
+    const recurringStartDateTime = new Date(`${start_date}T${start_time}`);
     
     // 🔥 FIXED: Create initial date and convert from Brasília to UTC
-    const startDateTime = new Date(`${start_date}T${start_time}`);
+    let currentRecurringDate = new Date(`${start_date}T${start_time}`);
     const utcStartDateTime = new Date(startDateTime.getTime() + (3 * 60 * 60 * 1000));
     let currentDate = new Date(utcStartDateTime);
     
-    const endDateTime = end_date ? new Date(end_date) : null;
+    const recurringEndDateTime = end_date ? new Date(end_date) : null;
 
     for (let i = 0; i < occurrences; i++) {
       // Check if we've reached the end date
-      if (endDateTime && currentDate > endDateTime) {
+      if (recurringEndDateTime && currentRecurringDate > recurringEndDateTime) {
         break;
       }
 
@@ -1909,9 +1909,9 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
 
       // Calculate next date based on recurrence
       if (recurrence_type === 'daily') {
-        currentDate.setUTCDate(currentDate.getUTCDate() + recurrence_interval);
+        currentRecurringDate.setDate(currentRecurringDate.getDate() + recurrence_interval);
       } else if (recurrence_type === 'weekly') {
-        currentDate.setUTCDate(currentDate.getUTCDate() + (7 * recurrence_interval));
+        currentRecurringDate.setDate(currentRecurringDate.getDate() + (7 * recurrence_interval));
       }
     }
 
