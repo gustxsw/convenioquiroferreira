@@ -231,10 +231,8 @@ const ClientHomePage: React.FC = () => {
   }, [consultations, selectedFilter, dependents, user?.name]);
 
   const formatDate = (dateString: string) => {
-    // Convert from UTC (database) to Brazil local time for display
-    const utcDate = new Date(dateString);
-    const localDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-    return format(date, "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+    const date = new Date(dateString);
+    return format(localDate, "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
   };
 
   const formatCurrency = (value: number) => {
