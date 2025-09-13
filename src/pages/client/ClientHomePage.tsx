@@ -529,7 +529,7 @@ const ClientHomePage: React.FC = () => {
       <div className="card">
         <h2 className="text-xl font-semibold mb-4">Informações do Convênio</h2>
         <p className="text-gray-600">
-          Para mais informações sobre seu convênio, entre em contato conosco.
+          Informações sobre seu convênio e benefícios disponíveis.
         </p>
       </div>
     </div>
