@@ -552,6 +552,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                     }
                     className="input"
                     required
+                  >
                     <option value="daily">Diário</option>
                     <option value="weekly">Semanal</option>
                     <option value="monthly">Mensal</option>
