@@ -1780,56 +1780,41 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
       return res.status(400).json({ message: 'É necessário selecionar um paciente' });
     }
 
-    // Prepare consultation data
-    const consultationData = {
-      service_id: parseInt(service_id),
-      location_id: location_id ? parseInt(location_id) : null,
-      value: parseFloat(value),
-      start_date,
-      start_time,
-      recurrence_type,
-      recurrence_interval: 1, // Always 1 since we use selected_weekdays for daily and weekly_count for weekly
-      weekly_count: recurrence_type === 'weekly' ? weekly_count : null,
-      selected_weekdays: recurrence_type === 'daily' ? selected_weekdays : null,
-      end_date: end_date || null,
-      occurrences,
-      notes: notes || null,
-    };
-
-    // Set patient based on type
-    if (private_patient_id) {
-      consultationData.private_patient_id = parseInt(private_patient_id);
-    } else if (dependent_id) {
-      consultationData.dependent_id = dependent_id;
-    } else if (user_id) {
-      consultationData.user_id = user_id;
+    // Validate recurrence-specific fields
+    if (recurrence_type === 'daily') {
+      if (!selected_weekdays || !Array.isArray(selected_weekdays) || selected_weekdays.length === 0) {
+        return res.status(400).json({ message: 'Para recorrência diária, é necessário selecionar pelo menos um dia da semana' });
+      }
+    } else if (recurrence_type === 'weekly') {
+      if (!weekly_count || weekly_count <= 0) {
+        return res.status(400).json({ message: 'Para recorrência semanal, é necessário informar o número de semanas' });
+      }
     }
 
-    console.log('🔄 [RECURRING] Creating recurring consultations with data:', consultationData);
-
+    console.log('🔄 [RECURRING] Creating recurring consultations with validated data');
     // Generate recurring consultations
     const createdConsultations = [];
-        if (!selected_weekdays || !Array.isArray(selected_weekdays) || selected_weekdays.length === 0) {
-        }
     const endDateObj = end_date ? new Date(end_date) : null;
     let count = 0;
 
-    while (count < occurrences && (!endDateObj || currentDate <= endDateObj)) {
+    // Initialize iteration date
+    const iterationDate = new Date(`${start_date}T${start_time}:00`);
+    console.log('🔄 [RECURRING] Starting iteration from date:', iterationDate.toISOString());
+
+    while (count < occurrences && (!endDateObj || iterationDate <= endDateObj)) {
       let shouldCreateConsultation = false;
+      const dayOfWeek = iterationDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
 
       if (recurrence_type === 'daily') {
         // For daily recurrence, use selected weekdays
-        if (selected_weekdays && selected_weekdays.length > 0) {
-          // Move to next day
-          shouldCreateConsultation = selected_weekdays.includes(dayOfWeek);
-        }
+        shouldCreateConsultation = selected_weekdays.includes(dayOfWeek);
       } else if (recurrence_type === 'weekly') {
-        // For weekly recurrence, create consultation on the same day of week
+        // For weekly recurrence, create consultation and check if we've reached the limit
         shouldCreateConsultation = true;
       }
 
       if (shouldCreateConsultation) {
-        const consultationDateTime = `${currentDate.toISOString().split('T')[0]}T${start_time}`;
+        const consultationDateTime = `${iterationDate.toISOString().split('T')[0]}T${start_time}`;
 
         try {
           const result = await pool.query(`
@@ -1840,21 +1825,22 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
             RETURNING *
           `, [
             req.user.id,
-            consultationData.user_id || null,
-            consultationData.dependent_id || null,
-            consultationData.private_patient_id || null,
-            consultationData.service_id,
-            consultationData.location_id,
-            consultationData.value,
+            user_id || null,
+            dependent_id || null,
+            private_patient_id ? parseInt(private_patient_id) : null,
+            parseInt(service_id),
+            location_id ? parseInt(location_id) : null,
+            parseFloat(value),
             consultationDateTime,
             'scheduled',
-            consultationData.notes
+            notes?.trim() || null
           ]);
 
           createdConsultations.push(result.rows[0]);
           count++;
+          console.log('✅ [RECURRING] Created consultation for date:', consultationDateTime);
         } catch (error) {
-          console.error('❌ [RECURRING] Error creating consultation for date:', currentDate.toISOString().split('T')[0], error);
+          console.error('❌ [RECURRING] Error creating consultation for date:', iterationDate.toISOString().split('T')[0], error);
           // Continue with next date instead of failing completely
         }
       }
@@ -2111,9 +2097,14 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
 
       // Move to next date based on recurrence type
       if (recurrence_type === 'daily') {
-        currentDate.setDate(currentDate.getDate() + 1);
+        iterationDate.setDate(iterationDate.getDate() + 1);
       } else if (recurrence_type === 'weekly') {
-        currentDate.setDate(currentDate.getDate() + 7);
+        iterationDate.setDate(iterationDate.getDate() + 7);
+        // For weekly, check if we've created enough weeks
+        if (count >= weekly_count) {
+          console.log('✅ [RECURRING] Reached weekly limit:', weekly_count);
+          break;
+        }
         // For weekly, stop after weekly_count weeks
         if (count >= weekly_count) {
           break;
