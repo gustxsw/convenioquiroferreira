@@ -2055,6 +2055,9 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
     const endDateObj = end_date ? new Date(end_date) : null;
     let count = 0;
 
+    // Initialize currentDate with start_date and start_time
+    const currentDate = new Date(`${start_date}T${start_time}:00`);
+    console.log('🔄 [RECURRING] Starting date:', currentDate.toISOString());
     // Initialize current date with start date and time
     const currentDate = new Date(`${start_date}T${start_time}:00`);
     console.log('🔄 [RECURRING] Starting from date:', currentDate.toISOString());
