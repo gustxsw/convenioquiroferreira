@@ -4585,22 +4585,22 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
     console.log("🔄 [REVENUE-REPORT] Generating revenue report for period:", start_date, "to", end_date);
 
     // Convert frontend dates to UTC for database queries
-    const startDateUtc = new Date(\`${start_date}T00:00:00`);
-    const endDateUtc = new Date(\`${end_date}T23:59:59`);
-    const startUtcString = new Date(startDateUtc.getTime() + (3 * 60 * 60 * 1000)).toISOString();
-    const endUtcString = new Date(endDateUtc.getTime() + (3 * 60 * 60 * 1000)).toISOString();
+    const revenueStartDateUtc = new Date(`${start_date}T00:00:00`);
+    const revenueEndDateUtc = new Date(`${end_date}T23:59:59`);
+    const revenueUtcStartDate = new Date(revenueStartDateUtc.getTime() + (3 * 60 * 60 * 1000));
+    const revenueUtcEndDate = new Date(revenueEndDateUtc.getTime() + (3 * 60 * 60 * 1000));
 
     // Get total revenue (only convenio consultations)
     const totalRevenueResult = await pool.query(
       `
       SELECT COALESCE(SUM(c.value), 0) as total_revenue
       FROM consultations c
-      WHERE c.date >= $1::timestamp AND c.date <= $2::timestamp
+      WHERE c.date >= $1 AND c.date <= $2
         AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
     `,
-      [startUtcString, endUtcString]
+      [revenueUtcStartDate.toISOString(), revenueUtcEndDate.toISOString()]
     );
 
     const totalRevenue = parseFloat(totalRevenueResult.rows[0].total_revenue) || 0;
@@ -4617,7 +4617,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         COALESCE(SUM(c.value * u.percentage / 100), 0) as professional_payment
       FROM users u
       LEFT JOIN consultations c ON u.id = c.professional_id 
-        AND DATE(c.date) >= $1::date AND DATE(c.date) <= $2::date
+        AND c.date >= $1 AND c.date <= $2
         AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
@@ -4626,7 +4626,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
     `,
-      [start_date, end_date]
+      [revenueUtcStartDate.toISOString(), revenueUtcEndDate.toISOString()]
     );
 
     // Get revenue by service (only convenio consultations)
@@ -4638,7 +4638,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         COUNT(c.id) as consultation_count
       FROM services s
       LEFT JOIN consultations c ON s.id = c.service_id 
-        AND DATE(c.date) >= $1::date AND DATE(c.date) <= $2::date
+        AND c.date >= $1 AND c.date <= $2
         AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
@@ -4646,7 +4646,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
     `,
-      [start_date, end_date]
+      [revenueUtcStartDate.toISOString(), revenueUtcEndDate.toISOString()]
     );
 
     const report = {
