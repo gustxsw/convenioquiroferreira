@@ -4454,11 +4454,9 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
 
     console.log("🔄 [CANCELLED] Fetching cancelled consultations for period:", start_date, "to", end_date);
 
-    // Convert frontend dates to UTC for proper database filtering
-    const startDateUtc = new Date(`${start_date}T00:00:00`);
-    const endDateUtc = new Date(`${end_date}T23:59:59`);
-    const startUtcString = new Date(startDateUtc.getTime() + (3 * 60 * 60 * 1000)).toISOString();
-    const endUtcString = new Date(endDateUtc.getTime() + (3 * 60 * 60 * 1000)).toISOString();
+    // Simple date range: start at 03:00 and end at 02:59 next day
+    const startDateTime = `${start_date} 03:00:00`;
+    const endDateTime = `${end_date} 02:59:59`;
 
     let query = `
       SELECT 
@@ -4496,7 +4494,7 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
         AND c.date >= $1::timestamp AND c.date <= $2::timestamp
     `;
 
-    const params = [startUtcString, endUtcString];
+    const params = [startDateTime, endDateTime];
 
     // If professional, only show their cancelled consultations
     if (req.user.currentRole === "professional") {
@@ -4528,22 +4526,20 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
 
     console.log("🔄 [REVENUE-REPORT] Generating revenue report for period:", start_date, "to", end_date);
 
-    // Convert frontend dates to UTC for database queries
-    const revenueStartDateUtc = new Date(`${start_date}T00:00:00`);
-    const revenueEndDateUtc = new Date(`${end_date}T23:59:59`);
-    const revenueUtcStartDate = new Date(revenueStartDateUtc.getTime() + (3 * 60 * 60 * 1000));
-    const revenueUtcEndDate = new Date(revenueEndDateUtc.getTime() + (3 * 60 * 60 * 1000));
+    // Simple date range: start at 03:00 and end at 02:59 next day to capture all Brazil timezone data
+    const startDateTime = `${start_date} 03:00:00`;
+    const endDateTime = `${end_date} 02:59:59`;
 
     // Get total revenue (only convenio consultations)
     const totalRevenueResult = await pool.query(
       `
       SELECT COALESCE(SUM(c.value), 0) as total_revenue
       FROM consultations c
-      WHERE c.date >= $1 AND c.date <= $2
+      WHERE c.date >= $1::timestamp AND c.date <= $2::timestamp
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
     `,
-      [revenueUtcStartDate.toISOString(), revenueUtcEndDate.toISOString()]
+      [startDateTime, endDateTime]
     );
 
     const totalRevenue = parseFloat(totalRevenueResult.rows[0].total_revenue) || 0;
@@ -4560,7 +4556,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         COALESCE(SUM(c.value * u.percentage / 100), 0) as professional_payment
       FROM users u
       LEFT JOIN consultations c ON u.id = c.professional_id 
-        AND c.date >= $1 AND c.date <= $2
+        AND c.date >= $1::timestamp AND c.date <= $2::timestamp
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       WHERE 'professional' = ANY(u.roles)
@@ -4568,7 +4564,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
     `,
-      [revenueUtcStartDate.toISOString(), revenueUtcEndDate.toISOString()]
+      [startDateTime, endDateTime]
     );
 
     // Get revenue by service (only convenio consultations)
@@ -4580,14 +4576,14 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
         COUNT(c.id) as consultation_count
       FROM services s
       LEFT JOIN consultations c ON s.id = c.service_id 
-        AND c.date >= $1 AND c.date <= $2
+        AND c.date >= $1::timestamp AND c.date <= $2::timestamp
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       GROUP BY s.id, s.name
       HAVING COUNT(c.id) > 0
       ORDER BY revenue DESC
     `,
-      [revenueUtcStartDate.toISOString(), revenueUtcEndDate.toISOString()]
+      [startDateTime, endDateTime]
     );
 
     const report = {
@@ -4625,6 +4621,9 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
 
     const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
 
+    // Simple date range: start at 03:00 and end at 02:59 next day
+    const startDateTime = `${start_date} 03:00:00`;
+    const endDateTime = `${end_date} 02:59:59`;
     // Get consultations for the period
     const consultationsResult = await pool.query(
       `
@@ -4645,10 +4644,10 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
-      WHERE c.professional_id = $1 AND DATE(c.date) >= $2::date AND DATE(c.date) <= $4::date AND c.status != 'cancelled'
+      WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $4::timestamp AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `,
-      [req.user.id, start_date, 100 - professionalPercentage, end_date]
+      [req.user.id, startDateTime, 100 - professionalPercentage, endDateTime]
     );
 
     // Calculate totals
@@ -4703,11 +4702,9 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
 
     const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
 
-    // Convert frontend dates to UTC for database queries
-    const profDetailedStartDateUtc = new Date(`${start_date}T00:00:00`);
-    const profDetailedEndDateUtc = new Date(`${end_date}T23:59:59`);
-    const profDetailedUtcStartDate = new Date(profDetailedStartDateUtc.getTime() + (3 * 60 * 60 * 1000));
-    const profDetailedUtcEndDate = new Date(profDetailedEndDateUtc.getTime() + (3 * 60 * 60 * 1000));
+    // Simple date range: start at 03:00 and end at 02:59 next day
+    const startDateTime = `${start_date} 03:00:00`;
+    const endDateTime = `${end_date} 02:59:59`;
 
     // Get detailed consultation statistics
     const statsResult = await pool.query(
@@ -4721,13 +4718,15 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
         COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
-      WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4 AND c.status != 'cancelled'
+      WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $3::timestamp AND c.status != 'cancelled'
     `,
-      [req.user.id, profDetailedUtcStartDate.toISOString(), 100 - professionalPercentage, profDetailedUtcEndDate.toISOString()]
+      [req.user.id, startDateTime, endDateTime]
     );
 
     const stats = statsResult.rows[0];
 
+    // Calculate amount_to_pay in JavaScript
+    const amountToPay = parseFloat(stats.convenio_revenue) * ((100 - professionalPercentage) / 100);
     const report = {
       summary: {
         total_consultations: parseInt(stats.total_consultations),
@@ -4737,7 +4736,7 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         convenio_revenue: parseFloat(stats.convenio_revenue),
         private_revenue: parseFloat(stats.private_revenue),
         professional_percentage: professionalPercentage,
-        amount_to_pay: parseFloat(stats.amount_to_pay),
+        amount_to_pay: amountToPay,
       },
     };
 
