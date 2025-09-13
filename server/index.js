@@ -321,9 +321,9 @@ const initializeDatabase = async () => {
         document_url TEXT NOT NULL,
         template_data JSONB,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        CONSTRAINT medical_documents_patient_type_check CHECK (
-          (private_patient_id IS NOT NULL AND patient_name IS NULL AND patient_cpf IS NULL) OR
-          (private_patient_id IS NULL AND patient_name IS NOT NULL)
+        CONSTRAINT medical_documents_patient_check CHECK (
+          (private_patient_id IS NOT NULL) OR 
+          (patient_name IS NOT NULL)
         )
       )
     `);
@@ -332,20 +332,33 @@ const initializeDatabase = async () => {
     await pool.query(`
       DO $$
       BEGIN
-        -- Drop any existing patient-related constraints
-        IF EXISTS (
-          SELECT 1 FROM information_schema.table_constraints 
-          WHERE table_name = 'medical_documents' AND constraint_name = 'medical_documents_patient_check'
-        ) THEN
-          ALTER TABLE medical_documents DROP CONSTRAINT medical_documents_patient_check;
-        END IF;
+        -- Drop old constraints that are too restrictive
+        BEGIN
+          ALTER TABLE medical_documents DROP CONSTRAINT IF EXISTS medical_documents_patient_type_check;
+        EXCEPTION
+          WHEN undefined_object THEN NULL;
+        END;
         
-        IF EXISTS (
-          SELECT 1 FROM information_schema.table_constraints 
-          WHERE table_name = 'medical_documents' AND constraint_name = 'medical_documents_check'
-        ) THEN
-          ALTER TABLE medical_documents DROP CONSTRAINT medical_documents_check;
-        END IF;
+        BEGIN
+          ALTER TABLE medical_documents DROP CONSTRAINT IF EXISTS medical_documents_patient_check;
+        EXCEPTION
+          WHEN undefined_object THEN NULL;
+        END;
+        
+        BEGIN
+          ALTER TABLE medical_documents DROP CONSTRAINT IF EXISTS medical_documents_check;
+        EXCEPTION
+          WHEN undefined_object THEN NULL;
+        END;
+        
+        -- Add new flexible constraint
+        BEGIN
+          ALTER TABLE medical_documents ADD CONSTRAINT medical_documents_patient_check CHECK (
+            (private_patient_id IS NOT NULL) OR (patient_name IS NOT NULL)
+          );
+        EXCEPTION
+          WHEN duplicate_object THEN NULL;
+        END;
       END $$;
     `);
 
@@ -3597,6 +3610,15 @@ app.post("/api/documents/medical", authenticate, authorize(["professional"]), as
       console.log("✅ Document generated:", documentResult.url);
 
       // Save document record to database
+      console.log("🔄 Saving document to database with data:", {
+        professionalId,
+        private_patient_id: private_patient_id || null,
+        patient_name: patientData.name,
+        patient_cpf: patientData.cpf || null,
+        title,
+        document_type
+      });
+      
       const result = await pool.query(
         `INSERT INTO medical_documents (
           professional_id, private_patient_id, patient_name, patient_cpf, title, document_type, 
