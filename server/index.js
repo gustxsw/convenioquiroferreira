@@ -1594,9 +1594,9 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
     console.log("🔄 Date received from frontend:", date);
     console.log("🔄 Date type:", typeof date);
     
-    // 🔥 FIXED: Convert from Brazil local time to UTC for storage
-    const frontendLocalDate = new Date(date); // Frontend sends Brazil local time
-    const utcDate = new Date(frontendLocalDate.getTime() + (3 * 60 * 60 * 1000)); // Convert to UTC (+3h)
+    // 🔥 FIXED: Frontend sends local time, convert to UTC for storage
+    const frontendLocalDate = new Date(date); // Frontend sends Brazil local time (11:00)
+    const utcDate = new Date(frontendLocalDate.getTime() + (3 * 60 * 60 * 1000)); // Convert to UTC (14:00)
     
     console.log("🔄 Local date from frontend:", frontendLocalDate.toLocaleString('pt-BR'));
     console.log("🔄 UTC date for storage:", utcDate.toISOString());
@@ -1739,8 +1739,8 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), che
       const updateLocalDate = new Date(date);
       const updateUtcDate = new Date(updateLocalDate.getTime() + (3 * 60 * 60 * 1000));
       // Convert from Brazil local time to UTC for storage
-      const localDate = new Date(date);
-      const utcDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
+      const updateLocalDate = new Date(date);
+      const updateUtcDate = new Date(updateLocalDate.getTime() + (3 * 60 * 60 * 1000));
       updateFields.push(`date = $${paramCount++}`);
       updateValues.push(updateUtcDate.toISOString()); // Save in UTC
     }
