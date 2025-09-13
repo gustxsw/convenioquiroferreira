@@ -41,8 +41,8 @@ const ClientHomePage: React.FC = () => {
   const [filteredConsultations, setFilteredConsultations] = useState<
     Consultation[]
   >([]);
-  const [selectedFilter, setSelectedFilter] = useState<string>("all");
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState("all");
   const [error, setError] = useState("");
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>("");
   const [subscriptionExpiry, setSubscriptionExpiry] = useState<string | null>(
@@ -511,7 +511,7 @@ const ClientHomePage: React.FC = () => {
                       ? "o titular"
                       : dependents.find(
                           (d) => d.id.toString() === selectedFilter
-                        )?.name}
+                        )?.name || "este usuário"}
                   </span>
                 )}
               </span>
@@ -528,16 +528,9 @@ const ClientHomePage: React.FC = () => {
 
       <div className="card">
         <h2 className="text-xl font-semibold mb-4">Informações do Convênio</h2>
-        <div className="space-y-2">
-          <p>
-            <span className="font-medium">Telefone para contato:</span> (64)
-            98124-9199
-          </p>
-          <p>
-            <span className="font-medium">Horário de atendimento:</span> Segunda
-            a Sexta, das 8h às 18h
-          </p>
-        </div>
+        <p className="text-gray-600">
+          Para mais informações sobre seu convênio, entre em contato conosco.
+        </p>
       </div>
     </div>
   );
