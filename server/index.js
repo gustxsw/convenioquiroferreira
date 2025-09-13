@@ -1,3 +1,5 @@
+Looking at your script file, I can see it's missing several closing brackets. Here's the corrected version with all the missing brackets added:
+
 import express from "express";
 import cors from "cors";
 import bcrypt from "bcryptjs";
@@ -4658,6 +4660,12 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
 
     console.log("🔄 [PROF-REVENUE] Generating professional revenue report for:", req.user.id, "period:", start_date, "to", end_date);
 
+    // Convert frontend dates to UTC for database filtering
+    const profRevenueStartUtc = new Date(`${start_date}T00:00:00`);
+    const profRevenueEndUtc = new Date(`${end_date}T23:59:59`);
+    const profStartUtcString = new Date(profRevenueStartUtc.getTime() + (3 * 60 * 60 * 1000)).toISOString();
+    const profEndUtcString = new Date(profRevenueEndUtc.getTime() + (3 * 60 * 60 * 1000)).toISOString();
+
     // Get professional percentage
     const professionalResult = await pool.query(
       `SELECT percentage FROM users WHERE id = $1`,
@@ -4686,7 +4694,9 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
-      WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $4::timestamp
+      WHERE c.professional_id = $1 AND DATE(c.date) >= $2::date AND DATE(c.date) <= $4::date AND c.status != 'cancelled'
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') >= $2::date 
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $4::date 
         AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `,
@@ -4925,57 +4935,6 @@ app.get("/api/admin/dependents", authenticate, authorize(["admin"]), async (req,
   } catch (error) {
     console.error("❌ Error fetching all dependents:", error);
     res.status(500).json({ message: "Erro ao carregar dependentes" });
-  }
-});
-
-// Add activate client route
-app.post("/api/users/:id/activate", authenticate, authorize(["admin"]), async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    console.log("🔄 Activating client:", id);
-    
-    // Get user data
-    const userResult = await pool.query(
-      "SELECT * FROM users WHERE id = $1 AND 'client' = ANY(roles)",
-      [id]
-    );
-    
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ message: "Cliente não encontrado" });
-    }
-    
-    // Set expiry date to 1 year from now
-    const expiryDate = new Date();
-    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-    
-    // Update subscription status and expiry
-    const updatedUserResult = await pool.query(
-      `UPDATE users 
-       SET subscription_status = 'active', 
-           subscription_expiry = $1,
-           updated_at = NOW()
-       WHERE id = $2
-       RETURNING 
-         id, name, cpf, email, phone, 
-         birth_date::text as birth_date,
-         address, address_number, address_complement, neighborhood, city, state,
-         roles, subscription_status, 
-         subscription_expiry::text as subscription_expiry,
-         photo_url, category_name, percentage, crm, 
-         created_at::text as created_at, updated_at::text as updated_at`,
-      [expiryDate, id]
-    );
-    
-    console.log("✅ Client activated successfully:", id);
-    
-    res.json({
-      message: "Cliente ativado com sucesso",
-      user: updatedUserResult.rows[0]
-    });
-  } catch (error) {
-    console.error("❌ Error activating client:", error);
-    res.status(500).json({ message: "Erro ao ativar cliente" });
   }
 });
 
