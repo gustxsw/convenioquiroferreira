@@ -466,7 +466,6 @@ const ClientHomePage: React.FC = () => {
                   <th>Paciente</th>
                   <th>Serviço</th>
                   <th>Profissional</th>
-                  <th>Valor</th>
                 </tr>
               </thead>
               <tbody>
@@ -490,7 +489,6 @@ const ClientHomePage: React.FC = () => {
                     </td>
                     <td>{consultation.service_name}</td>
                     <td>{consultation.professional_name}</td>
-                    <td>{formatCurrency(consultation.value)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -501,7 +499,7 @@ const ClientHomePage: React.FC = () => {
         {/* Summary */}
         {filteredConsultations.length > 0 && (
           <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-            <div className="flex justify-between items-center">
+            <div className="text-center">
               <span className="text-sm text-gray-600">
                 {filteredConsultations.length} consulta(s) encontrada(s)
                 {selectedFilter !== "all" && (
@@ -511,14 +509,8 @@ const ClientHomePage: React.FC = () => {
                       ? "o titular"
                       : dependents.find(
                           (d) => d.id.toString() === selectedFilter
-                        )?.name || "este usuário"}
+                        )?.name}
                   </span>
-                )}
-              </span>
-              <span className="text-sm font-medium text-gray-900">
-                Total:{" "}
-                {formatCurrency(
-                  filteredConsultations.reduce((sum, c) => sum + c.value, 0)
                 )}
               </span>
             </div>

@@ -1809,7 +1809,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
 
     // Generate recurring consultations
     const createdConsultations = [];
-    let currentDate = new Date(start_date);
+        if (!selected_weekdays || !Array.isArray(selected_weekdays) || selected_weekdays.length === 0) {
     const endDateObj = end_date ? new Date(end_date) : null;
     let count = 0;
 
@@ -1819,7 +1819,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
       if (recurrence_type === 'daily') {
         // For daily recurrence, use selected weekdays
         if (selected_weekdays && selected_weekdays.length > 0) {
-          const dayOfWeek = currentDate.getDay();
+          // Move to next day
           shouldCreateConsultation = selected_weekdays.includes(dayOfWeek);
         }
       } else if (recurrence_type === 'weekly') {

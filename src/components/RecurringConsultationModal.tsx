@@ -717,7 +717,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Máximo de Consultas *
+                {formData.recurrence_type === 'monthly' && (
                     </label>
                     <input
                       type="number"
@@ -745,6 +745,57 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                     📅 <span className="ml-2">Resumo da Recorrência:</span>
                   </h4>
                   <div className="text-sm text-blue-700 space-y-2">
+                {/* Interval - Only show for weekly and monthly */}
+                {(formData.recurrence_type === 'weekly' || formData.recurrence_type === 'monthly') && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {formData.recurrence_type === 'weekly' ? 'A cada quantas semanas?' : 'A cada quantos meses?'} *
+                    </label>
+                    {formData.recurrence_type === 'weekly' ? (
+                      <select
+                        value={formData.recurrence_interval}
+                        onChange={(e) =>
+                          setFormData(prev => ({
+                            ...prev,
+                            recurrence_interval: parseInt(e.target.value),
+                          }))
+                        }
+                        className="input"
+                        required
+                      >
+                        <option value={1}>Toda semana</option>
+                        <option value={2}>A cada 2 semanas</option>
+                        <option value={3}>A cada 3 semanas</option>
+                        <option value={4}>A cada 4 semanas (mensal)</option>
+                      </select>
+                    ) : (
+                      <select
+                        value={formData.recurrence_interval}
+                        onChange={(e) =>
+                          setFormData(prev => ({
+                            ...prev,
+                            recurrence_interval: parseInt(e.target.value),
+                          }))
+                        }
+                        className="input"
+                        required
+                      >
+                        <option value={1}>Todo mês</option>
+                        <option value={2}>A cada 2 meses</option>
+                        <option value={3}>A cada 3 meses</option>
+                        <option value={6}>A cada 6 meses</option>
+                        <option value={12}>A cada 12 meses (anual)</option>
+                      </select>
+                    )}
+                    <p className="text-xs text-gray-500 mt-1">
+                      {formData.recurrence_type === 'weekly' 
+                        ? 'Frequência das consultas semanais'
+                        : 'A consulta será repetida no mesmo dia do mês'
+                      }
+                    </p>
+                  </div>
+                )}
+
                     {formData.recurrence_type === 'daily' && formData.selected_weekdays.length > 0 && (
                       <>
                         <p className="font-medium">
