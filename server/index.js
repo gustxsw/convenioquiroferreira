@@ -4640,6 +4640,11 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
           WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0)
           ELSE 0
         END as amount_to_pay
+        c.value as total_value,
+        CASE 
+          WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0)
+          ELSE 0
+        END as amount_to_pay
       FROM consultations c
       JOIN services s ON c.service_id = s.id
       LEFT JOIN users u ON c.user_id = u.id

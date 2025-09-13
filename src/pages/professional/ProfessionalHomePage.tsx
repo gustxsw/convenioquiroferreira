@@ -15,8 +15,134 @@ import {
   Upload,
   CheckCircle,
   Clock,
+  Search,
 } from "lucide-react";
 import PaymentSection from "./PaymentSection";
+
+// Consultations Table Component with Search
+type ConsultationsTableProps = {
+  consultations: {
+    date: string;
+    client_name: string;
+    service_name: string;
+    total_value: number;
+    amount_to_pay: number;
+  }[];
+  formatDate: (date: string) => string;
+  formatCurrency: (value: number) => string;
+};
+
+const ConsultationsTable: React.FC<ConsultationsTableProps> = ({
+  consultations,
+  formatDate,
+  formatCurrency,
+}) => {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filteredConsultations, setFilteredConsultations] = useState(consultations);
+
+  useEffect(() => {
+    if (searchTerm.trim()) {
+      const filtered = consultations.filter(consultation =>
+        consultation.client_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        consultation.service_name?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredConsultations(filtered);
+    } else {
+      setFilteredConsultations(consultations);
+    }
+  }, [searchTerm, consultations]);
+
+  return (
+    <div>
+      {/* Search Bar */}
+      <div className="mb-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Buscar por cliente ou serviço..."
+            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+          />
+        </div>
+        {searchTerm && (
+          <p className="text-sm text-gray-600 mt-2">
+            {filteredConsultations.length} de {consultations.length} consulta(s) encontrada(s)
+          </p>
+        )}
+      </div>
+
+      {/* Table Container with Fixed Height */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <div className="max-h-96 overflow-y-auto">
+          <table className="min-w-full">
+            <thead className="bg-gray-50 sticky top-0">
+              <tr>
+                <th className="text-left py-3 px-4 font-medium text-gray-700 border-b border-gray-200">
+                  Data
+                </th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700 border-b border-gray-200">
+                  Cliente
+                </th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700 border-b border-gray-200">
+                  Serviço
+                </th>
+                <th className="text-right py-3 px-4 font-medium text-gray-700 border-b border-gray-200">
+                  Valor Total
+                </th>
+                <th className="text-right py-3 px-4 font-medium text-gray-700 border-b border-gray-200">
+                  Valor a Pagar
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredConsultations.map((consultation, index) => (
+                <tr
+                  key={index}
+                  className="border-b border-gray-100 hover:bg-gray-50"
+                >
+                  <td className="py-3 px-4 text-sm text-gray-600">
+                    {formatDate(consultation.date)}
+                  </td>
+                  <td className="py-3 px-4 text-sm text-gray-900">
+                    {consultation.client_name || "N/A"}
+                  </td>
+                  <td className="py-3 px-4 text-sm text-gray-600">
+                    {consultation.service_name || "N/A"}
+                  </td>
+                  <td className="py-3 px-4 text-sm text-gray-900 text-right font-medium">
+                    {formatCurrency(consultation.total_value)}
+                  </td>
+                  <td className="py-3 px-4 text-sm text-red-600 text-right font-medium">
+                    {formatCurrency(consultation.amount_to_pay)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        
+        {/* Table Footer with Summary */}
+        <div className="bg-gray-50 px-4 py-3 border-t border-gray-200">
+          <div className="flex justify-between items-center text-sm">
+            <span className="text-gray-600">
+              {filteredConsultations.length} consulta(s) {searchTerm && 'filtrada(s)'}
+            </span>
+            <div className="flex space-x-6">
+              <span className="text-gray-900 font-medium">
+                Total: {formatCurrency(filteredConsultations.reduce((sum, c) => sum + (c.total_value || 0), 0))}
+              </span>
+              <span className="text-red-600 font-medium">
+                A Pagar: {formatCurrency(filteredConsultations.reduce((sum, c) => sum + (c.amount_to_pay || 0), 0))}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 type RevenueReport = {
   summary: {
@@ -485,53 +611,11 @@ const ProfessionalHomePage: React.FC = () => {
                 </Link>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full">
-                  <thead>
-                    <tr className="border-b border-gray-200">
-                      <th className="text-left py-3 px-4 font-medium text-gray-700">
-                        Data
-                      </th>
-                      <th className="text-left py-3 px-4 font-medium text-gray-700">
-                        Cliente
-                      </th>
-                      <th className="text-left py-3 px-4 font-medium text-gray-700">
-                        Serviço
-                      </th>
-                      <th className="text-right py-3 px-4 font-medium text-gray-700">
-                        Valor Total
-                      </th>
-                      <th className="text-right py-3 px-4 font-medium text-gray-700">
-                        Valor a Pagar
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {revenueReport.consultations.map((consultation, index) => (
-                      <tr
-                        key={index}
-                        className="border-b border-gray-100 hover:bg-gray-50"
-                      >
-                        <td className="py-3 px-4 text-sm text-gray-600">
-                          {formatDate(consultation.date)}
-                        </td>
-                        <td className="py-3 px-4 text-sm text-gray-900">
-                          {consultation.client_name || "N/A"}
-                        </td>
-                        <td className="py-3 px-4 text-sm text-gray-600">
-                          {consultation.service_name || "N/A"}
-                        </td>
-                        <td className="py-3 px-4 text-sm text-gray-900 text-right font-medium">
-                          {formatCurrency(consultation.total_value)}
-                        </td>
-                        <td className="py-3 px-4 text-sm text-red-600 text-right font-medium">
-                          {formatCurrency(consultation.amount_to_pay)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ConsultationsTable 
+                consultations={revenueReport.consultations}
+                formatDate={formatDate}
+                formatCurrency={formatCurrency}
+              />
             )}
           </div>
         </>
