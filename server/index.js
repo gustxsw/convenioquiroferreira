@@ -4525,8 +4525,8 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
     console.log("🔄 [REVENUE-REPORT] Generating revenue report for period:", start_date, "to", end_date);
 
     // Simple date range: start at 03:00 and end at 02:59 next day to capture all Brazil timezone data
-    const startDateTime = `${start_date} 03:00:00`;
-    const endDateTime = `${end_date} 02:59:59`;
+    const startDateTime = \`${start_date} 03:00:00`;
+    const endDateTime = \`${end_date} 02:59:59`;
     const totalRevenueResult = await pool.query(
       `
       SELECT COALESCE(SUM(c.value), 0) as total_revenue
@@ -4611,19 +4611,19 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
 
     // Get professional percentage
     const professionalResult = await pool.query(
-      `SELECT percentage FROM users WHERE id = $1`,
+      \`SELECT percentage FROM users WHERE id = $1`,
       [req.user.id]
     );
 
     const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
 
     // Simple date range: start at 03:00 and end at 02:59 next day
-    const startDateTime = `${start_date} 03:00:00`;
-    const endDateTime = `${end_date} 02:59:59`;
+    const startDateTime = \`${start_date} 03:00:00`;
+    const endDateTime = \`${end_date} 02:59:59`;
 
     // Simple date range: start at 03:00 and end at 02:59 next day
-    const startDateTime = `${start_date} 03:00:00`;
-    const endDateTime = `${end_date} 02:59:59`;
+    const startDateTime = \`${start_date} 03:00:00`;
+    const endDateTime = \`${end_date} 02:59:59`;
     // Get consultations for the period
     const consultationsResult = await pool.query(
       `
@@ -4696,15 +4696,15 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
 
     // Get professional percentage
     const professionalResult = await pool.query(
-      `SELECT percentage FROM users WHERE id = $1`,
+      \`SELECT percentage FROM users WHERE id = $1`,
       [req.user.id]
     );
 
     const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
 
     // Simple date range: start at 03:00 and end at 02:59 next day
-    const startDateTime = `${start_date} 03:00:00`;
-    const endDateTime = `${end_date} 02:59:59`;
+    const startDateTime = \`${start_date} 03:00:00`;
+    const endDateTime = \`${end_date} 02:59:59`;
     const statsResult = await pool.query(
       `
       SELECT 
@@ -4757,9 +4757,9 @@ app.get("/api/reports/clients-by-city", authenticate, authorize(["admin"]), asyn
         city,
         state,
         COUNT(*) as client_count,
-        COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
-        COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
-        COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
+        COUNT(CASE WHEN subscription_status = 'active\' THEN 1 END) as active_clients,
+        COUNT(CASE WHEN subscription_status = 'pending\' THEN 1 END) as pending_clients,
+        COUNT(CASE WHEN subscription_status = 'expired\' THEN 1 END) as expired_clients
       FROM users 
       WHERE 'client' = ANY(roles) AND city IS NOT NULL AND city != ''
       GROUP BY city, state
@@ -4912,7 +4912,7 @@ app.post("/api/users/:id/activate", authenticate, authorize(["admin"]), async (r
     
     // Update subscription status and expiry
     const updatedUserResult = await pool.query(
-      `UPDATE users 
+      \`UPDATE users 
        SET subscription_status = 'active', 
            subscription_expiry = $1,
            updated_at = NOW()
@@ -5071,47 +5071,47 @@ app.get("/api/audit-logs", authenticate, authorize(["admin"]), async (req, res) 
 
     if (user_id) {
       paramCount++;
-      query += ` AND al.user_id = $${paramCount}`;
+      query += \` AND al.user_id = $${paramCount}`;
       params.push(user_id);
     }
 
     if (action) {
       paramCount++;
-      query += ` AND al.action = $${paramCount}`;
+      query += \` AND al.action = $${paramCount}`;
       params.push(action);
     }
 
     if (table_name) {
       paramCount++;
-      query += ` AND al.table_name = $${paramCount}`;
+      query += \` AND al.table_name = $${paramCount}`;
       params.push(table_name);
     }
 
-    query += ` ORDER BY al.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+    query += \` ORDER BY al.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
     params.push(limit, offset);
 
     const logsResult = await pool.query(query, params);
 
     // Get total count for pagination
-    let countQuery = `SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
+    let countQuery = \`SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
     const countParams = [];
     let countParamCount = 0;
 
     if (user_id) {
       countParamCount++;
-      countQuery += ` AND al.user_id = $${countParamCount}`;
+      countQuery += \` AND al.user_id = $${countParamCount}`;
       countParams.push(user_id);
     }
 
     if (action) {
       countParamCount++;
-      countQuery += ` AND al.action = $${countParamCount}`;
+      countQuery += \` AND al.action = $${countParamCount}`;
       countParams.push(action);
     }
 
     if (table_name) {
       countParamCount++;
-      countQuery += ` AND al.table_name = $${countParamCount}`;
+      countQuery += \` AND al.table_name = $${countParamCount}`;
       countParams.push(table_name);
     }
 
@@ -5196,12 +5196,12 @@ const startServer = async () => {
 
     // Start listening
     app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(`📊 Database: Connected`);
-      console.log(`💳 MercadoPago: Configured`);
-      console.log(`📋 Consultations System: Active`);
-      console.log(`✅ All systems operational`);
+      console.log(\`🚀 Server running on port ${PORT}`);
+      console.log(\`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log(\`📊 Database: Connected`);
+      console.log(\`💳 MercadoPago: Configured`);
+      console.log(\`📋 Consultations System: Active`);
+      console.log(\`✅ All systems operational`);
     });
   } catch (error) {
     console.error("❌ Failed to start server:", error);
@@ -5238,3 +5238,6 @@ process.on("SIGINT", async () => {
 
 // Start the server
 startServer();
+  }
+}
+)
