@@ -4506,10 +4506,10 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
     console.log("🔄 [CANCELLED] Fetching cancelled consultations for period:", start_date, "to", end_date);
 
     // Convert frontend dates to UTC for proper database filtering
-    const startDateUtc = new Date(`${start_date}T00:00:00`);
-    const endDateUtc = new Date(`${end_date}T23:59:59`);
-    const startDateUtcString = new Date(startDateUtc.getTime() + (3 * 60 * 60 * 1000)).toISOString();
-    const endDateUtcString = new Date(endDateUtc.getTime() + (3 * 60 * 60 * 1000)).toISOString();
+    const cancelledStartDateUtc = new Date(`${start_date}T00:00:00`);
+    const cancelledEndDateUtc = new Date(`${end_date}T23:59:59`);
+    const cancelledUtcStartDate = new Date(cancelledStartDateUtc.getTime() + (3 * 60 * 60 * 1000));
+    const cancelledUtcEndDate = new Date(cancelledEndDateUtc.getTime() + (3 * 60 * 60 * 1000));
 
     // Convert frontend dates to UTC for database filtering
     const startDateUtc = new Date(`${start_date}T00:00:00`);
@@ -4549,7 +4549,7 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
-      WHERE c.status = 'cancelled'
+      WHERE c.status = 'cancelled' AND c.date >= $1 AND c.date <= $2
         AND c.date >= $1::timestamp AND c.date <= $2::timestamp
 
     const params = [startUtcString, endUtcString];
@@ -5126,7 +5126,7 @@ app.get("/api/audit-logs", authenticate, authorize(["admin"]), async (req, res) 
       WHERE 1=1
     `;
     const params = [];
-    const params = [startDateUtcString, endDateUtcString];
+    const params = [cancelledUtcStartDate.toISOString(), cancelledUtcEndDate.toISOString()];
 
     if (user_id) {
       paramCount++;
