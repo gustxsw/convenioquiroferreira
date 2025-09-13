@@ -4727,6 +4727,10 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
 
     const stats = statsResult.rows[0];
 
+    // Calculate amount to pay based on convenio revenue and clinic percentage
+    const clinicPercentage = 100 - professionalPercentage;
+    const amountToPay = (parseFloat(stats.convenio_revenue) * clinicPercentage) / 100;
+
     const report = {
       summary: {
         total_consultations: parseInt(stats.total_consultations),
@@ -4736,7 +4740,7 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         convenio_revenue: parseFloat(stats.convenio_revenue),
         private_revenue: parseFloat(stats.private_revenue),
         professional_percentage: professionalPercentage,
-        amount_to_pay: parseFloat(stats.amount_to_pay),
+        amount_to_pay: amountToPay,
       },
     };
 
