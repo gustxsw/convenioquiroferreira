@@ -638,7 +638,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
       {/* Grant/Extend Access Modal */}
       {isModalOpen && selectedProfessional && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-md">
+          <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200">
               <h2 className="text-xl font-bold flex items-center">
                 <Gift className="h-6 w-6 text-green-600 mr-2" />
@@ -715,7 +715,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="bg-blue-50 p-4 rounded-lg mt-4">
+              <div className="bg-blue-50 p-4 rounded-lg mt-4 mb-4">
                 <h4 className="font-medium text-blue-900 mb-2">
                   🎁 Acesso Promocional Gratuito - O que está incluído:
                 </h4>
@@ -737,7 +737,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-3 mt-6">
+              <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
                 <button
                   type="button"
                   onClick={closeModal}
@@ -774,7 +774,8 @@ const ManageSchedulingAccessPage: React.FC = () => {
       {/* Revoke confirmation modal */}
       {showRevokeConfirm && professionalToRevoke && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-md p-6">
+          <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
             <h2 className="text-xl font-bold mb-4 flex items-center">
               <AlertCircle className="h-6 w-6 text-red-600 mr-2" />
               Confirmar Revogação
@@ -825,6 +826,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
                   </>
                 )}
               </button>
+            </div>
             </div>
           </div>
         </div>
