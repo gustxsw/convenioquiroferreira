@@ -1,4 +1,4 @@
-Looking at your script file, I can see it has several missing closing brackets. Here's the corrected version with all the missing brackets added:
+Looking at your script file, I can see there are several missing closing brackets. Here's the corrected version with all the missing brackets added:
 
 import express from "express";
 import cors from "cors";
@@ -1738,13 +1738,10 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), che
 
     if (date !== undefined) {
       // Convert from Brazil local time to UTC for storage
-      const updateLocalDate = new Date(date);
-      const updateUtcDate = new Date(updateLocalDate.getTime() + (3 * 60 * 60 * 1000));
-      // Convert from Brazil local time to UTC for storage
       const localDate = new Date(date);
       const utcDate = new Date(localDate.getTime() + (3 * 60 * 60 * 1000));
       updateFields.push(`date = $${paramCount++}`);
-      updateValues.push(updateUtcDate.toISOString()); // Save in UTC
+      updateValues.push(utcDate.toISOString()); // Save in UTC
     }
 
     if (status !== undefined) {
@@ -1925,7 +1922,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
     res.json({
       message: `${createdConsultations.length} consultas recorrentes criadas com sucesso`,
       created_count: createdConsultations.length,
-      consultations: createdConsultations,
+      consultations: createdConsultations
     });
   } catch (error) {
     console.error('❌ Error creating recurring consultations:', error);
