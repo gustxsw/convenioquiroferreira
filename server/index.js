@@ -1268,56 +1268,6 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
       if (crm !== undefined) updateData.crm = crm?.trim() || null;
     }
 
-    // Add activate client route
-    app.post("/api/users/:id/activate", authenticate, authorize(["admin"]), async (req, res) => {
-      try {
-        const { id } = req.params;
-        
-        console.log("🔄 Activating client:", id);
-        
-        // Get user data
-        const userResult = await pool.query(
-          "SELECT * FROM users WHERE id = $1 AND 'client' = ANY(roles)",
-          [id]
-        );
-        
-        if (userResult.rows.length === 0) {
-          return res.status(404).json({ message: "Cliente não encontrado" });
-        }
-        
-        // Set expiry date to 1 year from now
-        const expiryDate = new Date();
-        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-        
-        // Update subscription status and expiry
-        const updatedUserResult = await pool.query(
-          `UPDATE users 
-           SET subscription_status = 'active', 
-               subscription_expiry = $1,
-               updated_at = NOW()
-           WHERE id = $2
-           RETURNING 
-             id, name, cpf, email, phone, 
-             birth_date::text as birth_date,
-             address, address_number, address_complement, neighborhood, city, state,
-             roles, subscription_status, 
-             subscription_expiry::text as subscription_expiry,
-             photo_url, category_name, percentage, crm, 
-             created_at::text as created_at, updated_at::text as updated_at`,
-          [expiryDate, id]
-        );
-        
-        console.log("✅ Client activated successfully:", id);
-        
-        res.json({
-          message: "Cliente ativado com sucesso",
-          user: updatedUserResult.rows[0]
-        });
-      } catch (error) {
-        console.error("❌ Error activating client:", error);
-        res.status(500).json({ message: "Erro ao ativar cliente" });
-      }
-    });
     updateData.updated_at = new Date();
 
     // Update user
@@ -1738,9 +1688,6 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), che
       // Convert from Brazil local time to UTC for storage
       const consultationUpdateLocalDate = new Date(date);
       const consultationUpdateUtcDate = new Date(consultationUpdateLocalDate.getTime() + (3 * 60 * 60 * 1000));
-      // Convert from Brazil local time to UTC for storage
-      const updateLocalDate = new Date(date);
-      const updateUtcDate = new Date(updateLocalDate.getTime() + (3 * 60 * 60 * 1000));
       updateFields.push(`date = $${paramCount++}`);
       updateValues.push(consultationUpdateUtcDate.toISOString()); // Save in UTC
     }
@@ -4510,12 +4457,6 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
     // Convert frontend dates to UTC for proper database filtering
     const startDateUtc = new Date(`${start_date}T00:00:00`);
     const endDateUtc = new Date(`${end_date}T23:59:59`);
-    const startDateUtcString = new Date(startDateUtc.getTime() + (3 * 60 * 60 * 1000)).toISOString();
-    const endDateUtcString = new Date(endDateUtc.getTime() + (3 * 60 * 60 * 1000)).toISOString();
-
-    // Convert frontend dates to UTC for database filtering
-    const startDateUtc = new Date(`${start_date}T00:00:00`);
-    const endDateUtc = new Date(`${end_date}T23:59:59`);
     const startUtcString = new Date(startDateUtc.getTime() + (3 * 60 * 60 * 1000)).toISOString();
     const endUtcString = new Date(endDateUtc.getTime() + (3 * 60 * 60 * 1000)).toISOString();
 
@@ -4588,8 +4529,8 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
     console.log("🔄 [REVENUE-REPORT] Generating revenue report for period:", start_date, "to", end_date);
 
     // Convert frontend dates to UTC for database queries
-    const revenueStartDateUtc = new Date(\`${start_date}T00:00:00`);
-    const revenueEndDateUtc = new Date(\`${end_date}T23:59:59`);
+    const revenueStartDateUtc = new Date(`${start_date}T00:00:00`);
+    const revenueEndDateUtc = new Date(`${end_date}T23:59:59`);
     const revenueUtcStartDate = new Date(revenueStartDateUtc.getTime() + (3 * 60 * 60 * 1000));
     const revenueUtcEndDate = new Date(revenueEndDateUtc.getTime() + (3 * 60 * 60 * 1000));
 
@@ -4677,10 +4618,10 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
     console.log("🔄 [PROF-REVENUE] Generating professional revenue report for:", req.user.id, "period:", start_date, "to", end_date);
 
     // Get professional percentage
-    const profRevenueStartDateUtc = new Date(`${start_date}T00:00:00`);
-    const profRevenueEndDateUtc = new Date(`${end_date}T23:59:59`);
-    const profRevenueUtcStartDate = new Date(profRevenueStartDateUtc.getTime() + (3 * 60 * 60 * 1000));
-    const profRevenueUtcEndDate = new Date(profRevenueEndDateUtc.getTime() + (3 * 60 * 60 * 1000));
+    const professionalResult = await pool.query(
+      `SELECT percentage FROM users WHERE id = $1`,
+      [req.user.id]
+    );
 
     const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
 
@@ -4755,12 +4696,18 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
     console.log("🔄 [PROF-DETAILED] Generating detailed professional report for:", req.user.id, "period:", start_date, "to", end_date);
 
     // Get professional percentage
+    const professionalResult = await pool.query(
+      `SELECT percentage FROM users WHERE id = $1`,
+      [req.user.id]
+    );
+
+    const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
+
+    // Convert frontend dates to UTC for database queries
     const profDetailedStartDateUtc = new Date(`${start_date}T00:00:00`);
     const profDetailedEndDateUtc = new Date(`${end_date}T23:59:59`);
     const profDetailedUtcStartDate = new Date(profDetailedStartDateUtc.getTime() + (3 * 60 * 60 * 1000));
     const profDetailedUtcEndDate = new Date(profDetailedEndDateUtc.getTime() + (3 * 60 * 60 * 1000));
-
-    const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
 
     // Get detailed consultation statistics
     const statsResult = await pool.query(
@@ -4774,9 +4721,9 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
         COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
-      WHERE c.professional_id = $1 AND DATE(c.date) >= $2::date AND DATE(c.date) <= $4::date AND c.status != 'cancelled'
+      WHERE c.professional_id = $1 AND c.date >= $2 AND c.date <= $4 AND c.status != 'cancelled'
     `,
-      [req.user.id, start_date, 100 - professionalPercentage, end_date]
+      [req.user.id, profDetailedUtcStartDate.toISOString(), 100 - professionalPercentage, profDetailedUtcEndDate.toISOString()]
     );
 
     const stats = statsResult.rows[0];
