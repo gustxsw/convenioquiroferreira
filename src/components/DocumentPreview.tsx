@@ -379,7 +379,8 @@ const MedicalRecordsPage: React.FC = () => {
     const utcDate = new Date(dateString);
     const docPreviewUtcDate = new Date(dateString);
     const docPreviewLocalDate = new Date(docPreviewUtcDate.getTime() - (3 * 60 * 60 * 1000));
-    return docPreviewLocalDate.toLocaleDateString("pt-BR");
+    return docPreviewLocalDate.toLocaleDateString("pt-BR", {
+      day: "2-digit",
       month: "2-digit",
       year: "numeric",
       hour: "2-digit",
