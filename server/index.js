@@ -4630,6 +4630,11 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       `
       SELECT 
         c.date, c.value,
+    // Get consultations for the period
+    const consultationsResult = await pool.query(
+      `SELECT 
+        c.date, 
+        c.value,
         c.value as total_value,
         s.name as service_name,
         CASE 
@@ -4637,11 +4642,6 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
           WHEN c.dependent_id IS NOT NULL THEN d.name
           WHEN c.private_patient_id IS NOT NULL THEN pp.name
         END as client_name,
-        CASE 
-          WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0)
-          ELSE 0
-        END as amount_to_pay
-        c.value as total_value,
         CASE 
           WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0)
           ELSE 0
@@ -4655,8 +4655,7 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
         AND c.date >= $2::timestamp 
         AND c.date <= $4::timestamp 
         AND c.status != 'cancelled'
-      ORDER BY c.date DESC
-    `,
+      ORDER BY c.date DESC`,
       [req.user.id, profRevenueStartDateTime, 100 - professionalPercentage, profRevenueEndDateTime]
     );
 
