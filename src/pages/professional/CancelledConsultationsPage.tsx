@@ -130,9 +130,9 @@ const CancelledConsultationsPage: React.FC = () => {
 
   const formatDate = (dateString: string) => {
     // Convert from UTC (database) to Brazil local time for display
-    const utcDate = new Date(dateString);
-    const localDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-    return localDate.toLocaleDateString('pt-BR', {
+    const cancelledPageUtcDate = new Date(dateString);
+    const cancelledPageLocalDate = new Date(cancelledPageUtcDate.getTime() - (3 * 60 * 60 * 1000));
+    return cancelledPageLocalDate.toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',

@@ -387,9 +387,9 @@ const PrivatePatientsPage: React.FC = () => {
   const formatDate = (dateString: string) => {
     if (!dateString) return '';
     // Convert from UTC (database) to Brazil local time for display
-    const utcDate = new Date(dateString);
-    const localDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-    return localDate.toLocaleDateString('pt-BR');
+    const patientsUtcDate = new Date(dateString);
+    const patientsLocalDate = new Date(patientsUtcDate.getTime() - (3 * 60 * 60 * 1000));
+    return patientsLocalDate.toLocaleDateString('pt-BR');
   };
 
   return (

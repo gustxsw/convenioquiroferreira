@@ -211,8 +211,16 @@ const ProfessionalHomePage: React.FC = () => {
 
   const formatDate = (dateString: string) => {
     try {
-      const date = new Date(dateString);
-      return format(localDate, "dd 'de' MMMM 'de' yyyy 'às' HH:mm", {
+      const profHomeUtcDate = new Date(dateString);
+      const profHomeLocalDate = new Date(profHomeUtcDate.getTime() - (3 * 60 * 60 * 1000));
+      return profHomeLocalDate.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      return format(profHomeLocalDate, "dd 'de' MMMM 'de' yyyy 'às' HH:mm", {
         locale: ptBR,
       });
     } catch (error) {

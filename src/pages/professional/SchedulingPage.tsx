@@ -702,9 +702,9 @@ const SchedulingPage: React.FC = () => {
   };
   const formatTime = (dateString: string) => {
     // 🔥 FIXED: Use date as stored (no timezone conversion)
-    const utcDate = new Date(dateString);
-    return format(utcDate, 'HH:mm');
-  };
+    const schedulingUtcDate = new Date(dateString);
+    const schedulingLocalDate = new Date(schedulingUtcDate.getTime() - (3 * 60 * 60 * 1000));
+    return schedulingLocalDate.toLocaleDateString('pt-BR', {
 
   const getStatusInfo = (status: string) => {
     switch (status) {

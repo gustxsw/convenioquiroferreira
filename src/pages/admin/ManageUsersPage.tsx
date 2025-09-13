@@ -447,10 +447,9 @@ const ManageUsersPage: React.FC = () => {
 
   const formatDate = (dateString: string) => {
     // Convert from UTC (database) to Brazil local time for display
-    const utcDate = new Date(dateString);
-    const localDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-    return localDate.toLocaleDateString("pt-BR");
-    return date.toLocaleDateString('pt-BR');
+    const manageUsersUtcDate = new Date(dateString);
+    const manageUsersLocalDate = new Date(manageUsersUtcDate.getTime() - (3 * 60 * 60 * 1000));
+    return manageUsersLocalDate.toLocaleDateString("pt-BR");
   };
 
   const getRoleDisplay = (roles: string[]) => {

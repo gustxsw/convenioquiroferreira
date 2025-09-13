@@ -377,9 +377,9 @@ const MedicalRecordsPage: React.FC = () => {
   const formatDate = (dateString: string) => {
     // Convert from UTC (database) to Brazil local time for display
     const utcDate = new Date(dateString);
-    const localDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-    return localDate.toLocaleDateString("pt-BR", {
-      day: "2-digit",
+    const docPreviewUtcDate = new Date(dateString);
+    const docPreviewLocalDate = new Date(docPreviewUtcDate.getTime() - (3 * 60 * 60 * 1000));
+    return docPreviewLocalDate.toLocaleDateString("pt-BR");
       month: "2-digit",
       year: "numeric",
       hour: "2-digit",

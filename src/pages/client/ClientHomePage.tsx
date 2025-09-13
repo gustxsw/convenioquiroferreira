@@ -231,8 +231,15 @@ const ClientHomePage: React.FC = () => {
   }, [consultations, selectedFilter, dependents, user?.name]);
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return format(localDate, "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+    const clientHomeUtcDate = new Date(dateString);
+    const clientHomeLocalDate = new Date(clientHomeUtcDate.getTime() - (3 * 60 * 60 * 1000));
+    return clientHomeLocalDate.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   const formatCurrency = (value: number) => {

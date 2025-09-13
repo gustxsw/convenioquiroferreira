@@ -65,12 +65,12 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
   useEffect(() => {
     if (isOpen && consultation) {
       // Initialize form with consultation data
-      const consultationDate = new Date(consultation.date);
+      const editConsultationDate = new Date(consultation.date);
       // Convert from UTC to Brazil time for editing
-      const brazilDate = new Date(consultationDate.getTime() - (3 * 60 * 60 * 1000));
+      const editBrazilDate = new Date(editConsultationDate.getTime() - (3 * 60 * 60 * 1000));
       setFormData({
-        date: brazilDate.toISOString().split('T')[0],
-        time: format(brazilDate, 'HH:mm'),
+        date: editBrazilDate.toISOString().split('T')[0],
+        time: editBrazilDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false }),
         value: consultation.value.toString(),
         location_id: '', // Will be set after locations are loaded
         notes: consultation.notes || '',
