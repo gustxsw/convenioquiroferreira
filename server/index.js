@@ -4537,6 +4537,7 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
       LEFT JOIN attendance_locations al ON c.location_id = al.id
       WHERE c.status = 'cancelled'
         AND DATE(c.date) >= $1::date AND DATE(c.date) <= $2::date
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
     `;
 
     const params = [start_date, end_date];
@@ -4577,6 +4578,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       SELECT COALESCE(SUM(c.value), 0) as total_revenue
       FROM consultations c
       WHERE DATE(c.date) >= $1::date AND DATE(c.date) <= $2::date
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
     `,
@@ -4598,6 +4600,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       FROM users u
       LEFT JOIN consultations c ON u.id = c.professional_id 
         AND DATE(c.date) >= $1::date AND DATE(c.date) <= $2::date
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       WHERE 'professional' = ANY(u.roles)
@@ -4618,6 +4621,7 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       FROM services s
       LEFT JOIN consultations c ON s.id = c.service_id 
         AND DATE(c.date) >= $1::date AND DATE(c.date) <= $2::date
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       GROUP BY s.id, s.name
@@ -4682,7 +4686,8 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       LEFT JOIN users u ON c.user_id = u.id
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
-      WHERE c.professional_id = $1 AND DATE(c.date) >= $2::date AND DATE(c.date) <= $4::date AND c.status != 'cancelled'
+      WHERE c.professional_id = $1 AND c.date >= $2::timestamp AND c.date <= $4::timestamp
+        AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `,
       [req.user.id, start_date, 100 - professionalPercentage, end_date]
@@ -4752,7 +4757,9 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         COALESCE(SUM(CASE WHEN c.private_patient_id IS NOT NULL THEN c.value ELSE 0 END), 0) as private_revenue,
         COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
-      WHERE c.professional_id = $1 AND DATE(c.date) >= $2::date AND DATE(c.date) <= $4::date
+      WHERE c.professional_id = $1 AND DATE(c.date) >= $2::date AND DATE(c.date) <= $4::date AND c.status != 'cancelled'
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') >= $2::date 
+        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $4::date 
         AND c.status != 'cancelled'
     `,
       [req.user.id, start_date, 100 - professionalPercentage, end_date]
@@ -4918,6 +4925,57 @@ app.get("/api/admin/dependents", authenticate, authorize(["admin"]), async (req,
   } catch (error) {
     console.error("❌ Error fetching all dependents:", error);
     res.status(500).json({ message: "Erro ao carregar dependentes" });
+  }
+});
+
+// Add activate client route
+app.post("/api/users/:id/activate", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    console.log("🔄 Activating client:", id);
+    
+    // Get user data
+    const userResult = await pool.query(
+      "SELECT * FROM users WHERE id = $1 AND 'client' = ANY(roles)",
+      [id]
+    );
+    
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ message: "Cliente não encontrado" });
+    }
+    
+    // Set expiry date to 1 year from now
+    const expiryDate = new Date();
+    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+    
+    // Update subscription status and expiry
+    const updatedUserResult = await pool.query(
+      `UPDATE users 
+       SET subscription_status = 'active', 
+           subscription_expiry = $1,
+           updated_at = NOW()
+       WHERE id = $2
+       RETURNING 
+         id, name, cpf, email, phone, 
+         birth_date::text as birth_date,
+         address, address_number, address_complement, neighborhood, city, state,
+         roles, subscription_status, 
+         subscription_expiry::text as subscription_expiry,
+         photo_url, category_name, percentage, crm, 
+         created_at::text as created_at, updated_at::text as updated_at`,
+      [expiryDate, id]
+    );
+    
+    console.log("✅ Client activated successfully:", id);
+    
+    res.json({
+      message: "Cliente ativado com sucesso",
+      user: updatedUserResult.rows[0]
+    });
+  } catch (error) {
+    console.error("❌ Error activating client:", error);
+    res.status(500).json({ message: "Erro ao ativar cliente" });
   }
 });
 
