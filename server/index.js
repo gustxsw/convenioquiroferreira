@@ -1870,6 +1870,8 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
 
     const createdConsultations = [];
     
+    // Parse start date and time
+    const currentLocalDate = new Date(`${start_date}T${start_time}`);
     const recurringUtcStartDateTime = new Date(currentLocalDate.getTime() + (3 * 60 * 60 * 1000));
     let currentUtcDate = new Date(recurringUtcStartDateTime);
     
@@ -4506,10 +4508,10 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
     console.log("🔄 [CANCELLED] Fetching cancelled consultations for period:", start_date, "to", end_date);
 
     // Convert frontend dates to UTC for proper database filtering
-    const cancelledStartDateUtc = new Date(`${start_date}T00:00:00`);
-    const cancelledEndDateUtc = new Date(`${end_date}T23:59:59`);
-    const cancelledUtcStartDate = new Date(cancelledStartDateUtc.getTime() + (3 * 60 * 60 * 1000));
-    const cancelledUtcEndDate = new Date(cancelledEndDateUtc.getTime() + (3 * 60 * 60 * 1000));
+    const startDateUtc = new Date(`${start_date}T00:00:00`);
+    const endDateUtc = new Date(`${end_date}T23:59:59`);
+    const startDateUtcString = new Date(startDateUtc.getTime() + (3 * 60 * 60 * 1000)).toISOString();
+    const endDateUtcString = new Date(endDateUtc.getTime() + (3 * 60 * 60 * 1000)).toISOString();
 
     // Convert frontend dates to UTC for database filtering
     const startDateUtc = new Date(`${start_date}T00:00:00`);
@@ -4549,8 +4551,9 @@ app.get("/api/reports/cancelled-consultations", authenticate, authorize(["profes
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
-      WHERE c.status = 'cancelled' AND c.date >= $1 AND c.date <= $2
+      WHERE c.status = 'cancelled'
         AND c.date >= $1::timestamp AND c.date <= $2::timestamp
+    `;
 
     const params = [startUtcString, endUtcString];
 
@@ -4585,8 +4588,8 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
     console.log("🔄 [REVENUE-REPORT] Generating revenue report for period:", start_date, "to", end_date);
 
     // Convert frontend dates to UTC for database queries
-    const revenueStartDateUtc = new Date(`${start_date}T00:00:00`);
-    const revenueEndDateUtc = new Date(`${end_date}T23:59:59`);
+    const revenueStartDateUtc = new Date(\`${start_date}T00:00:00`);
+    const revenueEndDateUtc = new Date(\`${end_date}T23:59:59`);
     const revenueUtcStartDate = new Date(revenueStartDateUtc.getTime() + (3 * 60 * 60 * 1000));
     const revenueUtcEndDate = new Date(revenueEndDateUtc.getTime() + (3 * 60 * 60 * 1000));
 
@@ -4596,7 +4599,6 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       SELECT COALESCE(SUM(c.value), 0) as total_revenue
       FROM consultations c
       WHERE c.date >= $1 AND c.date <= $2
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
     `,
@@ -4618,7 +4620,6 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       FROM users u
       LEFT JOIN consultations c ON u.id = c.professional_id 
         AND c.date >= $1 AND c.date <= $2
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       WHERE 'professional' = ANY(u.roles)
@@ -4639,7 +4640,6 @@ app.get("/api/reports/revenue", authenticate, authorize(["admin"]), async (req, 
       FROM services s
       LEFT JOIN consultations c ON s.id = c.service_id 
         AND c.date >= $1 AND c.date <= $2
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $2::date
         AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
         AND c.status != 'cancelled'
       GROUP BY s.id, s.name
@@ -4678,7 +4678,7 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
 
     // Get professional percentage
     const professionalResult = await pool.query(
-      \`SELECT percentage FROM users WHERE id = $1`,
+      `SELECT percentage FROM users WHERE id = $1`,
       [req.user.id]
     );
 
@@ -4705,9 +4705,6 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       WHERE c.professional_id = $1 AND DATE(c.date) >= $2::date AND DATE(c.date) <= $4::date AND c.status != 'cancelled'
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') >= $2::date 
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $4::date 
-        AND c.status != 'cancelled'
       ORDER BY c.date DESC
     `,
       [req.user.id, start_date, 100 - professionalPercentage, end_date]
@@ -4759,7 +4756,7 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
 
     // Get professional percentage
     const professionalResult = await pool.query(
-      \`SELECT percentage FROM users WHERE id = $1`,
+      `SELECT percentage FROM users WHERE id = $1`,
       [req.user.id]
     );
 
@@ -4778,9 +4775,6 @@ app.get("/api/reports/professional-detailed", authenticate, authorize(["professi
         COALESCE(SUM(CASE WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0) ELSE 0 END), 0) as amount_to_pay
       FROM consultations c
       WHERE c.professional_id = $1 AND DATE(c.date) >= $2::date AND DATE(c.date) <= $4::date AND c.status != 'cancelled'
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') >= $2::date 
-        AND DATE(c.date AT TIME ZONE 'America/Sao_Paulo') <= $4::date 
-        AND c.status != 'cancelled'
     `,
       [req.user.id, start_date, 100 - professionalPercentage, end_date]
     );
@@ -4816,9 +4810,9 @@ app.get("/api/reports/clients-by-city", authenticate, authorize(["admin"]), asyn
         city,
         state,
         COUNT(*) as client_count,
-        COUNT(CASE WHEN subscription_status = 'active\' THEN 1 END) as active_clients,
-        COUNT(CASE WHEN subscription_status = 'pending\' THEN 1 END) as pending_clients,
-        COUNT(CASE WHEN subscription_status = 'expired\' THEN 1 END) as expired_clients
+        COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
+        COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
+        COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
       FROM users 
       WHERE 'client' = ANY(roles) AND city IS NOT NULL AND city != ''
       GROUP BY city, state
@@ -4971,7 +4965,7 @@ app.post("/api/users/:id/activate", authenticate, authorize(["admin"]), async (r
     
     // Update subscription status and expiry
     const updatedUserResult = await pool.query(
-      \`UPDATE users 
+      `UPDATE users 
        SET subscription_status = 'active', 
            subscription_expiry = $1,
            updated_at = NOW()
@@ -5126,51 +5120,51 @@ app.get("/api/audit-logs", authenticate, authorize(["admin"]), async (req, res) 
       WHERE 1=1
     `;
     const params = [];
-    const params = [cancelledUtcStartDate.toISOString(), cancelledUtcEndDate.toISOString()];
+    let paramCount = 0;
 
     if (user_id) {
       paramCount++;
-      query += \` AND al.user_id = $${paramCount}`;
+      query += ` AND al.user_id = $${paramCount}`;
       params.push(user_id);
     }
 
     if (action) {
       paramCount++;
-      query += \` AND al.action = $${paramCount}`;
+      query += ` AND al.action = $${paramCount}`;
       params.push(action);
     }
 
     if (table_name) {
       paramCount++;
-      query += \` AND al.table_name = $${paramCount}`;
+      query += ` AND al.table_name = $${paramCount}`;
       params.push(table_name);
     }
 
-    query += \` ORDER BY al.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+    query += ` ORDER BY al.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
     params.push(limit, offset);
 
     const logsResult = await pool.query(query, params);
 
     // Get total count for pagination
-    let countQuery = \`SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
+    let countQuery = `SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
     const countParams = [];
     let countParamCount = 0;
 
     if (user_id) {
       countParamCount++;
-      countQuery += \` AND al.user_id = $${countParamCount}`;
+      countQuery += ` AND al.user_id = $${countParamCount}`;
       countParams.push(user_id);
     }
 
     if (action) {
       countParamCount++;
-      countQuery += \` AND al.action = $${countParamCount}`;
+      countQuery += ` AND al.action = $${countParamCount}`;
       countParams.push(action);
     }
 
     if (table_name) {
       countParamCount++;
-      countQuery += \` AND al.table_name = $${countParamCount}`;
+      countQuery += ` AND al.table_name = $${countParamCount}`;
       countParams.push(table_name);
     }
 
@@ -5255,12 +5249,12 @@ const startServer = async () => {
 
     // Start listening
     app.listen(PORT, () => {
-      console.log(\`🚀 Server running on port ${PORT}`);
-      console.log(\`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(\`📊 Database: Connected`);
-      console.log(\`💳 MercadoPago: Configured`);
-      console.log(\`📋 Consultations System: Active`);
-      console.log(\`✅ All systems operational`);
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log(`📊 Database: Connected`);
+      console.log(`💳 MercadoPago: Configured`);
+      console.log(`📋 Consultations System: Active`);
+      console.log(`✅ All systems operational`);
     });
   } catch (error) {
     console.error("❌ Failed to start server:", error);
@@ -5297,6 +5291,3 @@ process.on("SIGINT", async () => {
 
 // Start the server
 startServer();
-  }
-}
-)
