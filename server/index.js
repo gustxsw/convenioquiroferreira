@@ -4677,10 +4677,10 @@ app.get("/api/reports/professional-revenue", authenticate, authorize(["professio
     console.log("🔄 [PROF-REVENUE] Generating professional revenue report for:", req.user.id, "period:", start_date, "to", end_date);
 
     // Get professional percentage
-    const professionalResult = await pool.query(
-      `SELECT percentage FROM users WHERE id = $1`,
-      [req.user.id]
-    );
+    const profRevenueStartDateUtc = new Date(`${start_date}T00:00:00`);
+    const profRevenueEndDateUtc = new Date(`${end_date}T23:59:59`);
+    const profRevenueUtcStartDate = new Date(profRevenueStartDateUtc.getTime() + (3 * 60 * 60 * 1000));
+    const profRevenueUtcEndDate = new Date(profRevenueEndDateUtc.getTime() + (3 * 60 * 60 * 1000));
 
     const professionalPercentage = professionalResult.rows[0]?.percentage || 50;
 
