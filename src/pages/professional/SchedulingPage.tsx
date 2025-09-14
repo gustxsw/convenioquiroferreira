@@ -766,23 +766,12 @@ const SchedulingPage: React.FC = () => {
     const brazilLocalDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
     const timeSlot = format(brazilLocalDate, "HH:mm");
     
-    console.log('🔍 [TIME-MAPPING] Consultation:', consultation.client_name, {
-      original_date: consultation.date,
-      utc_date: utcDate.toISOString(),
-      brazil_date: brazilLocalDate.toISOString(),
-      time_slot: timeSlot
-    });
+    console.log('🔄 [GROUPING] Consultation:', consultation.client_name);
+    console.log('🔄 [GROUPING] UTC from DB:', utcDate.toISOString());
+    console.log('🔄 [GROUPING] Brazil local (-3h):', brazilLocalDate.toISOString());
+    console.log('🔄 [GROUPING] Time slot:', timeSlot);
     
     acc[timeSlot] = consultation;
-    return acc;
-  }, {} as Record<string, Consultation>);
-
-  const dailyStats = {
-    scheduled: consultations.filter((c) => c.status === "scheduled").length,
-    confirmed: consultations.filter((c) => c.status === "confirmed").length,
-    completed: consultations.filter((c) => c.status === "completed").length,
-    cancelled: consultations.filter((c) => c.status === "cancelled").length,
-  };
 
   const getSlotDurationLabel = (duration: SlotDuration) => {
     switch (duration) {
@@ -904,6 +893,14 @@ const SchedulingPage: React.FC = () => {
             >
               <Plus className="h-5 w-5 mr-2" />
               Nova Consulta
+            </button>
+            
+            <button
+              onClick={() => setShowRecurringModal(true)}
+              className="btn btn-outline flex items-center"
+            >
+              <Repeat className="h-5 w-5 mr-2" />
+              Consultas Recorrentes
             </button>
             
             <button
@@ -1546,11 +1543,7 @@ const SchedulingPage: React.FC = () => {
                   </p>
                   <p className="text-sm text-gray-600 mb-1">
                     <strong>Data/Hora:</strong>{" "}
-                    {(() => {
-                      const utcDate = new Date(selectedConsultation.date);
-                      const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-                      return format(brazilDate, "dd/MM/yyyy 'às' HH:mm");
-                    })()}
+                    {format(new Date(new Date(selectedConsultation.date).getTime() - (3 * 60 * 60 * 1000)), "dd/MM/yyyy 'às' HH:mm")}
                   </p>
                   <p className="text-sm text-gray-600">
                     <strong>Valor:</strong> {formatCurrency(selectedConsultation.value)}
