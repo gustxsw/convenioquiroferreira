@@ -521,7 +521,7 @@ const SchedulingPage: React.FC = () => {
       patient_type: "private",
       client_cpf: "",
       private_patient_id: "",
-      date: format(new Date(), "yyyy-MM-dd"),
+      date: format(selectedDate, "yyyy-MM-dd"),
       time: "",
       service_id: "",
       value: "",
@@ -1368,7 +1368,7 @@ const SchedulingPage: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Data *
+                        Data {formData.is_recurring ? "de Início" : ""} *
                       </label>
                       <input
                         type="date"
@@ -1538,7 +1538,11 @@ const SchedulingPage: React.FC = () => {
                   </p>
                   <p className="text-sm text-gray-600 mb-1">
                     <strong>Data/Hora:</strong>{" "}
-                    {format(new Date(new Date(selectedConsultation.date).getTime() - (3 * 60 * 60 * 1000)), "dd/MM/yyyy 'às' HH:mm")}
+                    {(() => {
+                      const utcDate = new Date(selectedConsultation.date);
+                      const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
+                      return format(brazilDate, "dd/MM/yyyy 'às' HH:mm");
+                    })()}
                   </p>
                   <p className="text-sm text-gray-600">
                     <strong>Valor:</strong> {formatCurrency(selectedConsultation.value)}
