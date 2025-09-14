@@ -521,7 +521,7 @@ const SchedulingPage: React.FC = () => {
       patient_type: "private",
       client_cpf: "",
       private_patient_id: "",
-      date: format(selectedDate, "yyyy-MM-dd"),
+      date: format(new Date(), "yyyy-MM-dd"),
       time: "",
       service_id: "",
       value: "",
@@ -1368,7 +1368,7 @@ const SchedulingPage: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Data {formData.is_recurring ? "de Início" : ""} *
+                        Data *
                       </label>
                       <input
                         type="date"
@@ -1494,7 +1494,11 @@ const SchedulingPage: React.FC = () => {
                     }`}
                     disabled={isCreating}
                   >
-                    {isCreating ? "Criando..." : "Criar Consulta"}
+                    {isCreating ? (
+                      "Criando..."
+                    ) : (
+                      "Criar Consulta"
+                    )}
                   </button>
                 </div>
               </form>
