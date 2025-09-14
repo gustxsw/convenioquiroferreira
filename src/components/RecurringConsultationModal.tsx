@@ -64,7 +64,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([]);
   const [weeklyCount, setWeeklyCount] = useState(4);
   const [recurrenceInterval, setRecurrenceInterval] = useState(1);
-  const [endDate, setEndDate] = useState('');
   const [occurrences, setOccurrences] = useState(10);
   const [notes, setNotes] = useState('');
 
@@ -153,7 +152,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
     setSelectedWeekdays([]);
     setWeeklyCount(4);
     setRecurrenceInterval(1);
-    setEndDate('');
     setOccurrences(10);
     setNotes('');
     setClientSearchResult(null);
@@ -300,7 +298,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
         recurrence_interval: recurrenceType === 'weekly' ? 1 : recurrenceInterval,
         weekly_count: recurrenceType === 'weekly' ? weeklyCount : null,
         selected_weekdays: recurrenceType === 'daily' ? selectedWeekdays : [],
-        end_date: endDate || null,
         occurrences: occurrences,
         notes: notes.trim() || null,
       };
@@ -541,36 +538,24 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
             {/* Value and Location */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Valor (R$)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  className="input"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Local de Atendimento
-                </label>
-                <select
-                  value={locationId}
-                  onChange={(e) => setLocationId(e.target.value)}
-                  className="input"
-                >
-                  <option value="">Selecione um local</option>
-                  {attendanceLocations.map((location) => (
-                    <option key={location.id} value={location.id}>
-                      {location.name} {location.is_default && '(Padrão)'}
-                    </option>
-                  ))}
+            {/* Maximum Occurrences Only */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Número de Consultas
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="50"
+                value={occurrences}
+                onChange={(e) => setOccurrences(parseInt(e.target.value))}
+                className="input"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Quantas consultas você quer criar no total
+              </p>
+            </div>
                 </select>
               </div>
             </div>
