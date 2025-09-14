@@ -300,7 +300,7 @@ const ProfessionalReportsPage: React.FC = () => {
               <h3 className="font-semibold text-gray-900 mb-3">Resumo do Período</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p><strong>Período:</strong> {startDate ? new Date(startDate).toLocaleDateString('pt-BR') : ''} a {endDate ? new Date(endDate).toLocaleDateString('pt-BR') : ''}</p>
+                  <p><strong>Período:</strong> {startDate ? new Date(startDate + 'T12:00:00').toLocaleDateString('pt-BR') : ''} a {endDate ? new Date(endDate + 'T12:00:00').toLocaleDateString('pt-BR') : ''}</p>
                   <p><strong>Total de Consultas:</strong> {report.summary.total_consultations}</p>
                   <p><strong>Faturamento Bruto:</strong> {formatCurrency(report.summary.total_revenue)}</p>
                 </div>
