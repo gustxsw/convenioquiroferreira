@@ -742,7 +742,7 @@ const SchedulingPage: React.FC = () => {
     return brazilLocalDate.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
-      hour12: false
+      hour12: false,
       day: '2-digit',
       month: '2-digit',
       year: 'numeric'
@@ -837,18 +837,18 @@ const SchedulingPage: React.FC = () => {
     console.log('🔄 [GROUPING] Brazil local:', brazilLocalDate.toLocaleString('pt-BR'));
     console.log('🔄 [GROUPING] Time slot:', time);
     
-    const utcDate = new Date(consultation.date);
-    const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-    const time = format(brazilDate, "HH:mm");
+    const consultationUtcDate = new Date(consultation.date);
+    const consultationBrazilDate = new Date(consultationUtcDate.getTime() - (3 * 60 * 60 * 1000));
+    const formattedTime = format(consultationBrazilDate, "HH:mm");
     
     console.log('🔍 [TIME-MAPPING] Consultation:', consultation.client_name, {
       original_date: consultation.date,
       utc_date: utcDate.toISOString(),
-      brazil_date: brazilDate.toISOString(),
-      extracted_time: time
-    });
+    console.log('🔄 [GROUPING] UTC date:', consultationUtcDate.toISOString());
+    console.log('🔄 [GROUPING] Brazil date:', consultationBrazilDate.toISOString());
+    console.log('🔄 [GROUPING] Formatted time:', formattedTime);
     
-    acc[time] = consultation;
+    acc[formattedTime] = consultation;
     return acc;
   }, {} as Record<string, Consultation>);
 
