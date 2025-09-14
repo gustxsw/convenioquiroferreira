@@ -672,17 +672,13 @@ const SchedulingPage: React.FC = () => {
     localStorage.setItem('scheduling-slot-duration', duration.toString());
   };
   const formatTime = (dateString: string) => {
-    // 🔥 URGENT FIX: Simple UTC to Brazil conversion
+    // Convert from UTC (database) to Brazil local time for display
     const utcDate = new Date(dateString);
     const brazilLocalDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-    
-    console.log('🔄 [FORMAT-TIME] UTC:', utcDate.toISOString());
-    console.log('🔄 [FORMAT-TIME] Brazil:', brazilLocalDate.toISOString());
-    
     return brazilLocalDate.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
-      hour12: false,
+      hour12: false
     });
   };
 
@@ -771,7 +767,7 @@ const SchedulingPage: React.FC = () => {
     const timeSlot = brazilLocalDate.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
-      hour12: false,
+      hour12: false
     });
     // 🔥 URGENT FIX: Use formatTime function for consistent conversion
     const timeSlot2 = formatTime(consultation.date);
@@ -1570,7 +1566,11 @@ const SchedulingPage: React.FC = () => {
                     {(() => {
                       const utcDate = new Date(selectedConsultation.date);
                       const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-                      return format(brazilDate, "dd/MM/yyyy 'às' HH:mm");
+                      return brazilDate.toLocaleDateString('pt-BR') + ' às ' + brazilDate.toLocaleTimeString('pt-BR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false
+                      });
                     })()}
                   </p>
                   <p className="text-sm text-gray-600">
