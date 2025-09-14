@@ -149,12 +149,10 @@ const SchedulingPage: React.FC = () => {
     location_id: "",
     notes: "",
   });
-
-  // Client search state
+  const [isSearching, setIsSearching] = useState(false);
   const [clientSearchResult, setClientSearchResult] = useState<any>(null);
   const [dependents, setDependents] = useState<any[]>([]);
   const [selectedDependentId, setSelectedDependentId] = useState<number | null>(null);
-  const [isSearching, setIsSearching] = useState(false);
 
   // Get API URL
   const getApiUrl = () => {
@@ -1368,7 +1366,7 @@ const SchedulingPage: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Data {formData.is_recurring ? "de Início" : ""} *
+                        Data *
                       </label>
                       <input
                         type="date"
@@ -1538,11 +1536,7 @@ const SchedulingPage: React.FC = () => {
                   </p>
                   <p className="text-sm text-gray-600 mb-1">
                     <strong>Data/Hora:</strong>{" "}
-                    {(() => {
-                      const utcDate = new Date(selectedConsultation.date);
-                      const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-                      return format(brazilDate, "dd/MM/yyyy 'às' HH:mm");
-                    })()}
+                    {format(new Date(new Date(selectedConsultation.date).getTime() - (3 * 60 * 60 * 1000)), "dd/MM/yyyy 'às' HH:mm")}
                   </p>
                   <p className="text-sm text-gray-600">
                     <strong>Valor:</strong> {formatCurrency(selectedConsultation.value)}
