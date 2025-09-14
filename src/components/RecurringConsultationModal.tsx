@@ -767,9 +767,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      {formData.recurrence_type === 'monthly' && (
-                        'Máximo de Ocorrências *'
-                      )}
+                      Máximo de Ocorrências *
                     </label>
                     <input
                       type="number"
@@ -819,7 +817,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                         {formData.start_time && (
                           <p>⏰ Horário: {formData.start_time}</p>
                         )}
-                        <p>📊 Total: {formData.weekly_count} consulta{formData.weekly_count > 1 ? 's' : ''}</p>
+                        <p>📊 Total: {formData.weekly_count} consulta{formData.weekly_count !== 1 ? 's' : ''}</p>
                       </>
                     )}
                     <div className="border-t border-blue-300 pt-2 mt-3">

@@ -1437,13 +1437,15 @@ app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), 
       // Frontend sends YYYY-MM-DD, we need to check the Brazil date portion
       console.log("🔍 [AGENDA-QUERY] Filtering by date:", date);
       
-      // Create date range for the entire day in Brazil timezone
-      // Start: YYYY-MM-DD 03:00:00 UTC (00:00 Brazil time)
-      // End: YYYY-MM-DD+1 02:59:59 UTC (23:59 Brazil time)
+      // 🔥 FIXED: Proper Brazil timezone handling
+      // Brazil is UTC-3, so to get all consultations for a Brazil date:
+      // Start: YYYY-MM-DD 03:00:00 UTC (which is 00:00 Brazil time)
+      // End: YYYY-MM-DD+1 02:59:59 UTC (which is 23:59 Brazil time)
+      const nextDate = new Date(date);
+      nextDate.setDate(nextDate.getDate() + 1);
+      
       const startDateTime = `${date} 03:00:00`;
-      const endDate = new Date(date);
-      endDate.setDate(endDate.getDate() + 1);
-      const endDateTime = `${endDate.toISOString().split('T')[0]} 02:59:59`;
+      const endDateTime = `${nextDate.toISOString().split('T')[0]} 02:59:59`;
       
       console.log("🔍 [AGENDA-QUERY] Date range:", { startDateTime, endDateTime });
       
