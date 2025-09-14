@@ -758,34 +758,23 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
               )}
 
               {/* End Date and Occurrences */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Data Final (opcional)
-                  </label>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="input"
-                    min={startDate}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Máximo de Ocorrências
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={occurrences}
-                    onChange={(e) => setOccurrences(parseInt(e.target.value))}
-                    className="input"
-                    required
-                  />
-                </div>
+              {/* Number of Occurrences Only */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Número de Consultas
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={occurrences}
+                  onChange={(e) => setOccurrences(parseInt(e.target.value))}
+                  className="input"
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Quantas consultas você quer criar no total (máximo 50)
+                </p>
               </div>
 
               {/* Preview */}
