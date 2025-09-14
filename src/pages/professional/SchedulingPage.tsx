@@ -672,13 +672,20 @@ const SchedulingPage: React.FC = () => {
     localStorage.setItem('scheduling-slot-duration', duration.toString());
   };
   const formatTime = (dateString: string) => {
-    // Convert from UTC (database) to Brazil local time for display
+    // 🔥 FIXED: Convert from UTC (database) to Brazil local time for display
     const utcDate = new Date(dateString);
     const brazilLocalDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
+    
+    console.log('🔄 [FRONTEND] UTC from DB:', utcDate.toISOString());
+    console.log('🔄 [FRONTEND] Brazil local time:', brazilLocalDate.toLocaleString('pt-BR'));
+    
     return brazilLocalDate.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
-      hour12: false
+      hour12: false,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
     });
   };
 
@@ -774,6 +781,10 @@ const SchedulingPage: React.FC = () => {
     });
     
     acc[timeSlot] = consultation;
+    return acc;
+  }, {} as Record<string, Consultation>);
+
+  const dailyStats = {
     scheduled: consultations.filter((c) => c.status === "scheduled").length,
     confirmed: consultations.filter((c) => c.status === "confirmed").length,
     completed: consultations.filter((c) => c.status === "completed").length,
@@ -917,14 +928,6 @@ const SchedulingPage: React.FC = () => {
             >
               <Settings className="h-5 w-5 mr-2" />
               Slots ({getSlotDurationLabel(slotDuration)})
-            </button>
-            
-            <button
-              onClick={() => setShowRecurringModal(true)}
-              className="btn btn-outline flex items-center"
-            >
-              <Repeat className="h-5 w-5 mr-2" />
-              Consultas Recorrentes
             </button>
           </div>
         </div>
@@ -1672,17 +1675,6 @@ const SchedulingPage: React.FC = () => {
             selectedSlot={selectedSlot}
           />
         )}
-
-        {/* Recurring Consultation Modal */}
-        <RecurringConsultationModal
-          isOpen={showRecurringModal}
-          onClose={() => setShowRecurringModal(false)}
-          onSuccess={() => {
-            fetchData();
-            setSuccess("Consultas recorrentes criadas com sucesso!");
-            setTimeout(() => setSuccess(""), 3000);
-          }}
-        />
 
         {/* Recurring Consultation Modal */}
         <RecurringConsultationModal
