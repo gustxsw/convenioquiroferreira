@@ -4198,9 +4198,10 @@ app.post("/api/professional/create-payment", authenticate, authorize(["professio
 
 app.post("/api/professional/create-agenda-payment", authenticate, authorize(["professional"]), async (req, res) => {
   try {
-    const { duration_days = 30 } = req.body;
+    // 🔥 FIXED: Agenda payment is always for 1 MONTH (30 days)
+    const duration_days = 30; // Always 1 month
 
-    console.log("🔄 Creating agenda payment for duration:", duration_days);
+    console.log("🔄 Creating agenda payment for 1 MONTH (30 days)");
 
     const preference = new Preference(client);
     const urls = getProductionUrls();
@@ -4209,7 +4210,7 @@ app.post("/api/professional/create-agenda-payment", authenticate, authorize(["pr
       items: [
         {
           title: "Acesso à Agenda - Quiro Ferreira",
-          description: `Acesso ao sistema de agendamentos por ${duration_days} dias`,
+          description: "Assinatura mensal do sistema de agendamentos (30 dias)",
           quantity: 1,
           unit_price: 24.99,
           currency_id: "BRL",
