@@ -922,14 +922,6 @@ const SchedulingPage: React.FC = () => {
               <Settings className="h-5 w-5 mr-2" />
               Slots ({getSlotDurationLabel(slotDuration)})
             </button>
-            
-            <button
-              onClick={() => setShowRecurringModal(true)}
-              className="btn btn-outline flex items-center"
-            >
-              <Repeat className="h-5 w-5 mr-2" />
-              Consultas Recorrentes
-            </button>
           </div>
         </div>
 
