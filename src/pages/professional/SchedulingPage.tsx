@@ -167,21 +167,18 @@ const SchedulingPage: React.FC = () => {
     return "http://localhost:3001";
   };
 
-  // Timezone conversion utilities
-  const convertBrazilTimeToUTC = (date: string, time: string): string => {
-    // Create date in Brazil timezone (GMT-3)
-    const brazilDateTime = new Date(`${date}T${time}:00`);
-    // Add 3 hours to convert to UTC
-    const utcDateTime = new Date(brazilDateTime.getTime() + (3 * 60 * 60 * 1000));
-    return utcDateTime.toISOString();
-  };
-
-  const convertUTCToBrazilTime = (utcDateString: string): string => {
-    // Parse UTC date
+  // 🔥 FUNÇÃO ÚNICA PARA CONVERSÃO DE TIMEZONE
+  const formatTime = (utcDateString: string): string => {
+    console.log('🔄 [TIMEZONE] Converting UTC to Brazil time:', utcDateString);
     const utcDate = new Date(utcDateString);
-    // Subtract 3 hours to convert to Brazil time
     const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-    return format(brazilDate, 'HH:mm');
+    const timeString = brazilDate.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    console.log('✅ [TIMEZONE] Result:', timeString);
+    return timeString;
   };
 
   useEffect(() => {
@@ -679,16 +676,6 @@ const SchedulingPage: React.FC = () => {
     console.log('🔄 [FORMAT-TIME] UTC:', utcDate.toISOString());
     console.log('🔄 [FORMAT-TIME] Brazil:', brazilLocalDate.toLocaleString('pt-BR'));
     
-    
-    console.log('🔄 [FORMAT-TIME] UTC:', utcDate.toISOString());
-    console.log('🔄 [FORMAT-TIME] Brazil:', brazilLocalDate.toISOString());
-    
-    return brazilLocalDate.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-  };
 
   const getStatusInfo = (status: string) => {
     switch (status) {
@@ -768,12 +755,7 @@ const SchedulingPage: React.FC = () => {
   const timeSlots = generateTimeSlots(slotDuration);
   
   // Group consultations by time for display
-  const consultationsByTime = consultations.reduce((acc, consultation) => {
-    // 🔥 FIXED: Use formatTime function for consistent conversion
-    const timeSlot = formatTime(consultation.date);
-    
     console.log('🔄 [GROUPING] Consultation:', consultation.client_name, 'Time slot:', timeSlot);
-    const timeSlot2 = formatTime(consultation.date);
     console.log('🔄 [GROUPING] Consultation:', consultation.client_name, 'Time slot:', timeSlot2);
     acc[timeSlot2] = consultation;
     return acc;
