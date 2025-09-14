@@ -4327,22 +4327,52 @@ const processSubscriptionPayment = async (payment) => {
     const externalReference = payment.external_reference;
     const userId = externalReference.split("_")[1];
 
-    console.log("🔄 Processing subscription payment for user:", userId);
+    console.log("🔄 [SUBSCRIPTION-PAYMENT] Processing subscription payment for user:", userId);
+    console.log("🔄 [SUBSCRIPTION-PAYMENT] Payment ID:", payment.id);
+    console.log("🔄 [SUBSCRIPTION-PAYMENT] External reference:", externalReference);
+
+    // Validate user exists and has client role
+    const userResult = await pool.query(
+      "SELECT id, name, email FROM users WHERE id = $1 AND 'client' = ANY(roles)",
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      console.error("❌ [SUBSCRIPTION-PAYMENT] User not found or not a client:", userId);
+      return;
+    }
+
+    const user = userResult.rows[0];
+    console.log("✅ [SUBSCRIPTION-PAYMENT] User validated:", user.name);
+
+    // Set expiry date to 1 year from now
+    const expiryDate = new Date();
+    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+    console.log("🔄 [SUBSCRIPTION-PAYMENT] Setting expiry date to:", expiryDate.toISOString());
 
     // Update user subscription status
-    await pool.query(
+    const updateResult = await pool.query(
       `
       UPDATE users 
       SET 
         subscription_status = 'active',
-        subscription_expiry = CURRENT_TIMESTAMP + INTERVAL '1 year'
+        subscription_expiry = $2,
+        updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
+      RETURNING id, name, subscription_status, subscription_expiry
     `,
-      [userId]
+      [userId, expiryDate]
     );
 
+    if (updateResult.rows.length === 0) {
+      console.error("❌ [SUBSCRIPTION-PAYMENT] Failed to update user subscription");
+      return;
+    }
+
+    console.log("✅ [SUBSCRIPTION-PAYMENT] User subscription updated:", updateResult.rows[0]);
+
     // Update payment record
-    await pool.query(
+    const paymentUpdateResult = await pool.query(
       `
       UPDATE client_payments 
       SET 
@@ -4350,27 +4380,34 @@ const processSubscriptionPayment = async (payment) => {
         mp_payment_id = $1,
         processed_at = CURRENT_TIMESTAMP
       WHERE payment_reference LIKE $2
+      RETURNING id, payment_reference
     `,
       [payment.id, `subscription_${userId}_%`]
     );
 
+    console.log("✅ [SUBSCRIPTION-PAYMENT] Payment record updated:", paymentUpdateResult.rows);
+
     // Create notification
-    await pool.query(
+    const notificationResult = await pool.query(
       `
       INSERT INTO notifications (user_id, title, message, type)
       VALUES ($1, $2, $3, $4)
+      RETURNING id
     `,
       [
         userId,
         "Assinatura Ativada",
-        "Sua assinatura foi ativada com sucesso! Agora você pode utilizar todos os serviços do convênio.",
+        `Sua assinatura foi ativada com sucesso! Válida até ${expiryDate.toLocaleDateString('pt-BR')}. Agora você pode utilizar todos os serviços do convênio.`,
         "success",
       ]
     );
 
-    console.log("✅ Subscription activated for user:", userId);
+    console.log("✅ [SUBSCRIPTION-PAYMENT] Notification created:", notificationResult.rows[0]);
+    console.log("✅ [SUBSCRIPTION-PAYMENT] Subscription activated for user:", userId);
   } catch (error) {
-    console.error("❌ Error processing subscription payment:", error);
+    console.error("❌ [SUBSCRIPTION-PAYMENT] Error processing subscription payment:", error);
+    console.error("❌ [SUBSCRIPTION-PAYMENT] Error details:", error.message);
+    console.error("❌ [SUBSCRIPTION-PAYMENT] Error stack:", error.stack);
   }
 };
 
@@ -4380,23 +4417,53 @@ const processDependentPayment = async (payment) => {
     const externalReference = payment.external_reference;
     const dependentId = externalReference.split("_")[1];
 
-    console.log("🔄 Processing dependent payment for dependent:", dependentId);
+    console.log("🔄 [DEPENDENT-PAYMENT] Processing dependent payment for dependent:", dependentId);
+    console.log("🔄 [DEPENDENT-PAYMENT] Payment ID:", payment.id);
+    console.log("🔄 [DEPENDENT-PAYMENT] External reference:", externalReference);
+
+    // Validate dependent exists
+    const dependentCheckResult = await pool.query(
+      "SELECT id, name, user_id FROM dependents WHERE id = $1",
+      [dependentId]
+    );
+
+    if (dependentCheckResult.rows.length === 0) {
+      console.error("❌ [DEPENDENT-PAYMENT] Dependent not found:", dependentId);
+      return;
+    }
+
+    const dependent = dependentCheckResult.rows[0];
+    console.log("✅ [DEPENDENT-PAYMENT] Dependent validated:", dependent.name);
+
+    // Set expiry date to 1 year from now
+    const expiryDate = new Date();
+    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+    console.log("🔄 [DEPENDENT-PAYMENT] Setting expiry date to:", expiryDate.toISOString());
 
     // Update dependent subscription status
-    await pool.query(
+    const updateResult = await pool.query(
       `
       UPDATE dependents 
       SET 
         subscription_status = 'active',
-        subscription_expiry = CURRENT_TIMESTAMP + INTERVAL '1 year',
-        activated_at = CURRENT_TIMESTAMP
+        subscription_expiry = $2,
+        activated_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
+      RETURNING id, name, subscription_status, subscription_expiry, activated_at
     `,
-      [dependentId]
+      [dependentId, expiryDate]
     );
 
+    if (updateResult.rows.length === 0) {
+      console.error("❌ [DEPENDENT-PAYMENT] Failed to update dependent subscription");
+      return;
+    }
+
+    console.log("✅ [DEPENDENT-PAYMENT] Dependent subscription updated:", updateResult.rows[0]);
+
     // Update payment record
-    await pool.query(
+    const paymentUpdateResult = await pool.query(
       `
       UPDATE dependent_payments 
       SET 
@@ -4404,9 +4471,12 @@ const processDependentPayment = async (payment) => {
         mp_payment_id = $1,
         processed_at = CURRENT_TIMESTAMP
       WHERE payment_reference LIKE $2
+      RETURNING id, payment_reference
     `,
       [payment.id, `dependent_${dependentId}_%`]
     );
+
+    console.log("✅ [DEPENDENT-PAYMENT] Payment record updated:", paymentUpdateResult.rows);
 
     // Get dependent and client info for notification
     const dependentInfo = await pool.query(
@@ -4421,25 +4491,33 @@ const processDependentPayment = async (payment) => {
 
     if (dependentInfo.rows.length > 0) {
       const info = dependentInfo.rows[0];
+      console.log("✅ [DEPENDENT-PAYMENT] Client info for notification:", info.client_name);
 
       // Create notification for client
-      await pool.query(
+      const notificationResult = await pool.query(
         `
         INSERT INTO notifications (user_id, title, message, type)
         VALUES ($1, $2, $3, $4)
+        RETURNING id
       `,
         [
           info.user_id,
           "Dependente Ativado",
-          `O dependente ${info.dependent_name} foi ativado com sucesso!`,
+          `O dependente ${info.dependent_name} foi ativado com sucesso! Válido até ${expiryDate.toLocaleDateString('pt-BR')}.`,
           "success",
         ]
       );
+
+      console.log("✅ [DEPENDENT-PAYMENT] Notification created:", notificationResult.rows[0]);
+    } else {
+      console.warn("⚠️ [DEPENDENT-PAYMENT] Could not find client info for notification");
     }
 
-    console.log("✅ Dependent activated:", dependentId);
+    console.log("✅ [DEPENDENT-PAYMENT] Dependent activated:", dependentId);
   } catch (error) {
-    console.error("❌ Error processing dependent payment:", error);
+    console.error("❌ [DEPENDENT-PAYMENT] Error processing dependent payment:", error);
+    console.error("❌ [DEPENDENT-PAYMENT] Error details:", error.message);
+    console.error("❌ [DEPENDENT-PAYMENT] Error stack:", error.stack);
   }
 };
 
