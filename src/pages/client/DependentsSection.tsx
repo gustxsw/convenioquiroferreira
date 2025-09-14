@@ -357,10 +357,17 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
 
   const formatDate = (dateString: string) => {
     if (!dateString) return "";
-    const date = new Date(dateString);
-    const dependentsUtcDate = new Date(dateString);
-    const dependentsLocalDate = new Date(dependentsUtcDate.getTime() - (3 * 60 * 60 * 1000));
-    return dependentsLocalDate.toLocaleDateString("pt-BR");
+    // For birth dates, don't apply timezone conversion - just format the date as-is
+    if (dateString.includes('T')) {
+      // If it's a datetime string, extract just the date part
+      const datePart = dateString.split('T')[0];
+      const [year, month, day] = datePart.split('-');
+      return `${day}/${month}/${year}`;
+    } else {
+      // If it's already a date string, format it directly
+      const [year, month, day] = dateString.split('-');
+      return `${day}/${month}/${year}`;
+    }
   };
 
   return (
