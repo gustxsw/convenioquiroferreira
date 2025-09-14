@@ -1494,11 +1494,7 @@ const SchedulingPage: React.FC = () => {
                     }`}
                     disabled={isCreating}
                   >
-                    {isCreating ? (
-                      "Criando..."
-                    ) : (
-                      "Criar Consulta"
-                    )}
+                    {isCreating ? "Criando..." : "Criar Consulta"}
                   </button>
                 </div>
               </form>
