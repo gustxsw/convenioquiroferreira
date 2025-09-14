@@ -4494,6 +4494,20 @@ const processAgendaPayment = async (payment) => {
 
     console.log("🔄 Processing agenda payment for professional:", professionalId, "duration:", durationDays);
 
+    // Validate professional exists and has professional role
+    const professionalCheck = await pool.query(
+      `SELECT id, name FROM users WHERE id = $1 AND 'professional' = ANY(roles)`,
+      [professionalId]
+    );
+
+    if (professionalCheck.rows.length === 0) {
+      console.error("❌ Professional not found for agenda payment:", professionalId);
+      return;
+    }
+
+    const professional = professionalCheck.rows[0];
+    console.log("✅ Professional found:", professional.name);
+
     // Deactivate any existing access
     await pool.query(
       `
@@ -4502,20 +4516,25 @@ const processAgendaPayment = async (payment) => {
       [professionalId]
     );
 
+    console.log("✅ Existing access deactivated for professional:", professionalId);
+
     // Grant new access
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + durationDays);
 
-    await pool.query(
+    const accessResult = await pool.query(
       `
-      INSERT INTO scheduling_access (professional_id, expires_at, reason)
-      VALUES ($1, $2, $3)
+      INSERT INTO scheduling_access (professional_id, expires_at, reason, is_active, starts_at)
+      VALUES ($1, $2, $3, true, CURRENT_TIMESTAMP)
+      RETURNING *
     `,
-      [professionalId, expiresAt, "Pagamento via MercadoPago"]
+      [professionalId, expiresAt.toISOString(), "Pagamento via MercadoPago"]
     );
 
+    console.log("✅ New scheduling access granted:", accessResult.rows[0]);
+
     // Update payment record
-    await pool.query(
+    const paymentUpdateResult = await pool.query(
       `
       UPDATE agenda_payments 
       SET 
@@ -4523,27 +4542,51 @@ const processAgendaPayment = async (payment) => {
         mp_payment_id = $1,
         processed_at = CURRENT_TIMESTAMP
       WHERE payment_reference LIKE $2
+      RETURNING *
     `,
       [payment.id, `agenda_${professionalId}_${durationDays}_%`]
     );
 
+    console.log("✅ Payment record updated:", paymentUpdateResult.rows[0]);
+
     // Create notification
-    await pool.query(
+    const notificationResult = await pool.query(
       `
       INSERT INTO notifications (user_id, title, message, type)
       VALUES ($1, $2, $3, $4)
+      RETURNING *
     `,
       [
         professionalId,
         "Acesso à Agenda Ativado",
-        `Seu acesso à agenda foi ativado por ${durationDays} dias!`,
+        `Seu acesso à agenda foi ativado por ${durationDays} dias! Válido até ${expiresAt.toLocaleDateString('pt-BR')}.`,
         "success",
       ]
     );
 
-    console.log("✅ Agenda access activated for professional:", professionalId);
+    console.log("✅ Notification created:", notificationResult.rows[0]);
+    console.log("✅ Agenda access activated for professional:", professionalId, "expires at:", expiresAt.toISOString());
+    
+    // Verify access was granted correctly
+    const verifyResult = await pool.query(
+      `SELECT * FROM scheduling_access WHERE professional_id = $1 AND is_active = true ORDER BY created_at DESC LIMIT 1`,
+      [professionalId]
+    );
+    
+    if (verifyResult.rows.length > 0) {
+      console.log("✅ VERIFICATION: Access successfully granted and verified:", verifyResult.rows[0]);
+    } else {
+      console.error("❌ VERIFICATION: Access was not granted properly!");
+    }
+    
   } catch (error) {
     console.error("❌ Error processing agenda payment:", error);
+    console.error("❌ Error details:", {
+      message: error.message,
+      stack: error.stack,
+      payment_id: payment?.id,
+      external_reference: payment?.external_reference
+    });
   }
 };
 
