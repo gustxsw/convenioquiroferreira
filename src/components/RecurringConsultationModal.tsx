@@ -822,12 +822,14 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                         <p>📊 Total: {formData.weekly_count} consulta{formData.weekly_count !== 1 ? 's' : ''}</p>
                       </>
                     )}
-                    <div className="border-t border-blue-300 pt-2 mt-3">
-                      <p className="font-medium">
-                        🎯 <strong>Máximo:</strong> {formData.occurrences} consultas
-                        {formData.end_date && ` até ${new Date(formData.end_date).toLocaleDateString('pt-BR')}`}
-                      </p>
-                    </div>
+                    {formData.start_date && formData.start_time && (
+                      <div className="border-t border-blue-300 pt-2 mt-3">
+                        <p className="font-medium">
+                          🎯 <strong>Máximo:</strong> {formData.occurrences} consultas
+                          {formData.end_date && ` até ${new Date(formData.end_date).toLocaleDateString('pt-BR')}`}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

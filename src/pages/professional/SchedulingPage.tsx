@@ -668,14 +668,6 @@ const SchedulingPage: React.FC = () => {
     setSlotDuration2(duration);
     localStorage.setItem('scheduling-slot-duration', duration.toString());
   };
-  const formatTime = (dateString: string) => {
-    // 🔥 FIXED: Single conversion UTC to Brazil time
-    const utcDate = new Date(dateString);
-    const brazilLocalDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-    
-    console.log('🔄 [FORMAT-TIME] UTC:', utcDate.toISOString());
-    console.log('🔄 [FORMAT-TIME] Brazil:', brazilLocalDate.toLocaleString('pt-BR'));
-    
 
   const getStatusInfo = (status: string) => {
     switch (status) {
@@ -755,9 +747,10 @@ const SchedulingPage: React.FC = () => {
   const timeSlots = generateTimeSlots(slotDuration);
   
   // Group consultations by time for display
+  const consultationsByTime = consultations.reduce((acc, consultation) => {
+    const timeSlot = formatTime(consultation.date);
     console.log('🔄 [GROUPING] Consultation:', consultation.client_name, 'Time slot:', timeSlot);
-    console.log('🔄 [GROUPING] Consultation:', consultation.client_name, 'Time slot:', timeSlot2);
-    acc[timeSlot2] = consultation;
+    acc[timeSlot] = consultation;
     return acc;
   }, {} as Record<string, Consultation>);
 
@@ -1548,15 +1541,7 @@ const SchedulingPage: React.FC = () => {
                   </p>
                   <p className="text-sm text-gray-600 mb-1">
                     <strong>Data/Hora:</strong>{" "}
-                    {(() => {
-                      const utcDate = new Date(selectedConsultation.date);
-                      const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-                      return brazilDate.toLocaleDateString('pt-BR') + ' às ' + brazilDate.toLocaleTimeString('pt-BR', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        hour12: false
-                      });
-                    })()}
+                    {new Date(selectedConsultation.date).toLocaleDateString('pt-BR')} às {formatTime(selectedConsultation.date)}
                   </p>
                   <p className="text-sm text-gray-600">
                     <strong>Valor:</strong> {formatCurrency(selectedConsultation.value)}
