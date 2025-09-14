@@ -284,7 +284,9 @@ const SchedulingPage: React.FC = () => {
       const apiUrl = getApiUrl();
       const dateStr = format(selectedDate, "yyyy-MM-dd");
 
-      console.log("🔄 Fetching consultations for date:", dateStr);
+      console.log("🔄 [AGENDA] Fetching consultations for date:", dateStr);
+      console.log("🔄 [AGENDA] Selected date object:", selectedDate);
+      console.log("🔄 [AGENDA] Formatted date string:", dateStr);
 
       // Fetch consultations for the selected date
       const consultationsResponse = await fetch(
@@ -297,6 +299,8 @@ const SchedulingPage: React.FC = () => {
         }
       );
 
+      console.log("📡 [AGENDA] Consultations response status:", consultationsResponse.status);
+
       if (consultationsResponse.status === 403) {
         // No scheduling access
         const errorData = await consultationsResponse.json();
@@ -308,10 +312,25 @@ const SchedulingPage: React.FC = () => {
         }
       } else if (consultationsResponse.ok) {
         const consultationsData = await consultationsResponse.json();
-        console.log("✅ Consultations loaded:", consultationsData.length);
+        console.log("✅ [AGENDA] Consultations loaded:", consultationsData.length);
+        console.log("✅ [AGENDA] Consultations data:", consultationsData);
+        
+        // Debug each consultation's date
+        consultationsData.forEach((consultation, index) => {
+          console.log(`🔍 [AGENDA] Consultation ${index + 1}:`, {
+            id: consultation.id,
+            client_name: consultation.client_name,
+            date: consultation.date,
+            date_parsed: new Date(consultation.date),
+            date_brazil: new Date(new Date(consultation.date).getTime() - (3 * 60 * 60 * 1000)),
+            time_extracted: format(new Date(consultation.date), "HH:mm")
+          });
+        });
+        
         setConsultations(consultationsData);
       } else {
-        console.error("Consultations response error:", consultationsResponse.status);
+        const errorText = await consultationsResponse.text();
+        console.error("❌ [AGENDA] Consultations response error:", consultationsResponse.status, errorText);
         setConsultations([]);
       }
 
@@ -537,6 +556,12 @@ const SchedulingPage: React.FC = () => {
       await fetchData();
       setShowNewModal(false);
       resetForm();
+      
+      // Force refresh the current date view
+      setTimeout(() => {
+        fetchData();
+      }, 1000);
+      
       setTimeout(() => setSuccess(""), 3000);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Erro ao criar consulta");
@@ -707,12 +732,15 @@ const SchedulingPage: React.FC = () => {
     localStorage.setItem('scheduling-slot-duration', duration.toString());
   };
   const formatTime = (dateString: string) => {
-    // 🔥 FIXED: Use date as stored (no timezone conversion)
-    const schedulingUtcDate = new Date(dateString);
-    const schedulingLocalDate = new Date(schedulingUtcDate.getTime() - (3 * 60 * 60 * 1000));
-    return schedulingLocalDate.toLocaleDateString('pt-BR', {
+    // Convert from UTC (database) to Brazil local time for display
+    const utcDate = new Date(dateString);
+    const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
+    return brazilDate.toLocaleDateString('pt-BR', {
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
     });
   };
 
@@ -795,7 +823,18 @@ const SchedulingPage: React.FC = () => {
   
   // Group consultations by time for display
   const consultationsByTime = consultations.reduce((acc, consultation) => {
-    const time = format(new Date(consultation.date), "HH:mm");
+    // Convert from UTC (database) to Brazil local time for display
+    const utcDate = new Date(consultation.date);
+    const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
+    const time = format(brazilDate, "HH:mm");
+    
+    console.log('🔍 [TIME-MAPPING] Consultation:', consultation.client_name, {
+      original_date: consultation.date,
+      utc_date: utcDate.toISOString(),
+      brazil_date: brazilDate.toISOString(),
+      extracted_time: time
+    });
+    
     acc[time] = consultation;
     return acc;
   }, {} as Record<string, Consultation>);

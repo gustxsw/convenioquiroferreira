@@ -1395,7 +1395,7 @@ app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), 
     const { date } = req.query;
     const professionalId = req.user.id;
 
-    console.log("🔄 Fetching consultations for agenda - Professional:", professionalId, "Date:", date);
+    console.log("🔄 [AGENDA-QUERY] Fetching consultations for agenda - Professional:", professionalId, "Date:", date);
 
     let query = `
       SELECT 
@@ -1433,18 +1433,50 @@ app.get("/api/consultations/agenda", authenticate, authorize(["professional"]), 
     const params = [professionalId];
 
     if (date) {
-      query += " AND DATE(c.date) = $2";
-      params.push(date);
+      // Convert the date filter to handle UTC storage properly
+      // Frontend sends YYYY-MM-DD, we need to check the Brazil date portion
+      console.log("🔍 [AGENDA-QUERY] Filtering by date:", date);
+      
+      // Create date range for the entire day in Brazil timezone
+      // Start: YYYY-MM-DD 03:00:00 UTC (00:00 Brazil time)
+      // End: YYYY-MM-DD+1 02:59:59 UTC (23:59 Brazil time)
+      const startDateTime = `${date} 03:00:00`;
+      const endDate = new Date(date);
+      endDate.setDate(endDate.getDate() + 1);
+      const endDateTime = `${endDate.toISOString().split('T')[0]} 02:59:59`;
+      
+      console.log("🔍 [AGENDA-QUERY] Date range:", { startDateTime, endDateTime });
+      
+      query += " AND c.date >= $2::timestamp AND c.date <= $3::timestamp";
+      params.push(startDateTime, endDateTime);
     }
 
     query += " ORDER BY c.date";
 
+    console.log("🔍 [AGENDA-QUERY] Final query:", query);
+    console.log("🔍 [AGENDA-QUERY] Query params:", params);
+
     const result = await pool.query(query, params);
 
-    console.log("✅ Consultations loaded for agenda:", result.rows.length);
+    console.log("✅ [AGENDA-QUERY] Consultations loaded for agenda:", result.rows.length);
+    
+    // Debug each consultation found
+    result.rows.forEach((consultation, index) => {
+      const utcDate = new Date(consultation.date);
+      const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
+      console.log(`🔍 [AGENDA-QUERY] Consultation ${index + 1}:`, {
+        id: consultation.id,
+        client_name: consultation.client_name,
+        date_utc: consultation.date,
+        date_brazil: brazilDate.toISOString(),
+        date_brazil_formatted: brazilDate.toLocaleDateString('pt-BR'),
+        time_brazil: brazilDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })
+      });
+    });
+    
     res.json(result.rows);
   } catch (error) {
-    console.error("❌ Error fetching consultations for agenda:", error);
+    console.error("❌ [AGENDA-QUERY] Error fetching consultations for agenda:", error);
     res.status(500).json({ message: "Erro ao carregar consultas da agenda" });
   }
 });
