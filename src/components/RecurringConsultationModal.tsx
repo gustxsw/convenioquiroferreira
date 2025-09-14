@@ -581,13 +581,11 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                       ].map((day) => (
                         <label
                           key={day.value}
-                          className={`
-                            flex flex-col items-center p-4 rounded-xl border-2 cursor-pointer transition-all transform hover:scale-105
-                            ${formData.selected_weekdays.includes(day.value)
-                              ? `border-${day.color}-500 bg-${day.color}-50 text-${day.color}-700 shadow-md`
+                          className={`flex flex-col items-center p-4 rounded-xl border-2 cursor-pointer transition-all transform hover:scale-105 ${
+                            formData.selected_weekdays.includes(day.value)
+                              ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md'
                               : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm'
-                            }
-                          `}
+                          }`}
                         >
                           <input
                             type="checkbox"
@@ -606,7 +604,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                           <div className="text-center">
                             <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-2 ${
                               formData.selected_weekdays.includes(day.value)
-                                ? `bg-${day.color}-500 text-white`
+                                ? 'bg-blue-500 text-white'
                                 : 'bg-gray-100 text-gray-600'
                             }`}>
                               <span className="text-xs font-bold">{day.short.charAt(0)}</span>

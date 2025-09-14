@@ -672,9 +672,13 @@ const SchedulingPage: React.FC = () => {
     localStorage.setItem('scheduling-slot-duration', duration.toString());
   };
   const formatTime = (dateString: string) => {
-    // 🔥 URGENT FIX: Simple UTC to Brazil conversion
+    // 🔥 FIXED: Single conversion UTC to Brazil time
     const utcDate = new Date(dateString);
     const brazilLocalDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
+    
+    console.log('🔄 [FORMAT-TIME] UTC:', utcDate.toISOString());
+    console.log('🔄 [FORMAT-TIME] Brazil:', brazilLocalDate.toLocaleString('pt-BR'));
+    
     
     console.log('🔄 [FORMAT-TIME] UTC:', utcDate.toISOString());
     console.log('🔄 [FORMAT-TIME] Brazil:', brazilLocalDate.toISOString());
@@ -765,15 +769,10 @@ const SchedulingPage: React.FC = () => {
   
   // Group consultations by time for display
   const consultationsByTime = consultations.reduce((acc, consultation) => {
-    // 🔥 FIXED: Simple UTC to Brazil conversion for grouping
-    const utcDate = new Date(consultation.date);
-    const brazilLocalDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-    const timeSlot = brazilLocalDate.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-    // 🔥 URGENT FIX: Use formatTime function for consistent conversion
+    // 🔥 FIXED: Use formatTime function for consistent conversion
+    const timeSlot = formatTime(consultation.date);
+    
+    console.log('🔄 [GROUPING] Consultation:', consultation.client_name, 'Time slot:', timeSlot);
     const timeSlot2 = formatTime(consultation.date);
     console.log('🔄 [GROUPING] Consultation:', consultation.client_name, 'Time slot:', timeSlot2);
     acc[timeSlot2] = consultation;
@@ -1568,6 +1567,10 @@ const SchedulingPage: React.FC = () => {
                   <p className="text-sm text-gray-600 mb-1">
                     <strong>Data/Hora:</strong>{" "}
                     {(() => {
+                      const utcDate = new Date(selectedConsultation.date);
+                      const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
+                      return format(brazilDate, "dd/MM/yyyy 'às' HH:mm");
+                    })()}
                       const utcDate = new Date(selectedConsultation.date);
                       const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
                       return brazilDate.toLocaleDateString('pt-BR') + ' às ' + brazilDate.toLocaleTimeString('pt-BR', {

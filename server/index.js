@@ -1576,12 +1576,12 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
     console.log("🔄 Date received from frontend:", date);
     console.log("🔄 Date type:", typeof date);
     
-    // 🔥 FIXED: Frontend sends Brazil local time, convert to UTC for storage
-    const brazilLocalDate = new Date(date); // Frontend sends Brazil local time (08:00)
-    const utcDate = new Date(brazilLocalDate.getTime() + (3 * 60 * 60 * 1000)); // Convert to UTC (11:00)
+    // 🔥 FIXED: Frontend sends Brazil local time, store as UTC
+    const brazilDateTime = new Date(date);
+    const utcDateTime = new Date(brazilDateTime.getTime() + (3 * 60 * 60 * 1000));
     
-    console.log("🔄 Brazil local date from frontend:", brazilLocalDate.toLocaleString('pt-BR'));
-    console.log("🔄 UTC date for storage:", utcDate.toISOString());
+    console.log("🔄 [CREATE] Brazil time from frontend:", brazilDateTime.toLocaleString('pt-BR'));
+    console.log("🔄 [CREATE] UTC time for storage:", utcDateTime.toISOString());
     
     
     // Create consultation
@@ -1602,7 +1602,7 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
         service_id,
         location_id || null,
         parseFloat(value),
-        utcDate.toISOString(), // Save in UTC
+        utcDateTime.toISOString(),
         status,
         notes?.trim() || null,
       ]
@@ -1729,12 +1729,12 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
       }
 
       if (shouldCreateConsultation) {
-        // 🔥 FIXED: Convert Brazil local time to UTC for storage
-        const brazilDateTime = `${iterationDate.toISOString().split('T')[0]}T${start_time}:00`;
-        const brazilDate = new Date(brazilDateTime);
-        const utcDateTime = new Date(brazilDate.getTime() + (3 * 60 * 60 * 1000));
+        // 🔥 FIXED: Convert Brazil time to UTC for storage
+        const brazilDateTimeStr = `${iterationDate.toISOString().split('T')[0]}T${start_time}:00`;
+        const brazilDateTime = new Date(brazilDateTimeStr);
+        const utcDateTime = new Date(brazilDateTime.getTime() + (3 * 60 * 60 * 1000));
         
-        console.log('🔄 [RECURRING] Brazil time:', brazilDateTime);
+        console.log('🔄 [RECURRING] Brazil time:', brazilDateTimeStr);
         console.log('🔄 [RECURRING] UTC time for storage:', utcDateTime.toISOString());
 
         try {
@@ -1765,6 +1765,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
           }
           
           console.log('✅ [RECURRING] Created consultation for Brazil date:', brazilDateTime, 'stored as UTC:', utcDateTime.toISOString());
+          console.log('✅ [RECURRING] Created consultation for Brazil date:', brazilDateTimeStr, 'stored as UTC:', utcDateTime.toISOString());
         } catch (error) {
           console.error('❌ [RECURRING] Error creating consultation for date:', iterationDate.toISOString().split('T')[0], error);
           // Continue with next date instead of failing completely
@@ -1899,14 +1900,14 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), che
     }
 
     if (date !== undefined) {
-      // 🔥 FIXED: Convert Brazil local time to UTC for storage
-      const brazilLocalDate = new Date(date);
-      const utcDate = new Date(brazilLocalDate.getTime() + (3 * 60 * 60 * 1000));
+      // 🔥 FIXED: Convert Brazil time to UTC for storage
+      const brazilDateTime = new Date(date);
+      const utcDateTime = new Date(brazilDateTime.getTime() + (3 * 60 * 60 * 1000));
       updateFields.push(`date = $${paramCount++}`);
-      updateValues.push(utcDate.toISOString()); // Save in UTC
+      updateValues.push(utcDateTime.toISOString());
       
-      console.log('🔄 [UPDATE] Brazil time:', brazilLocalDate.toLocaleString('pt-BR'));
-      console.log('🔄 [UPDATE] UTC time for storage:', utcDate.toISOString());
+      console.log('🔄 [UPDATE] Brazil time:', brazilDateTime.toLocaleString('pt-BR'));
+      console.log('🔄 [UPDATE] UTC time for storage:', utcDateTime.toISOString());
     }
 
     if (status !== undefined) {
