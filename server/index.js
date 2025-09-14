@@ -666,7 +666,7 @@ const getProductionUrls = () => {
       pending: `${baseUrl}/professional?payment=pending&type=agenda`,
     },
     webhook: process.env.NODE_ENV === "production"
-      ? "https://www.cartaoquiroferreira.com.br/api/webhook/mercadopago"
+      ? "https://www.cartaoquiroferreira.com.br/api/webhooks/mercadopago"
       : "http://localhost:3001/api/webhook/mercadopago"
   };
 };
