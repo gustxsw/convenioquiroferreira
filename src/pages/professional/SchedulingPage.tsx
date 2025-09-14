@@ -749,8 +749,10 @@ const SchedulingPage: React.FC = () => {
   // Group consultations by time for display
   const consultationsByTime = consultations.reduce((acc, consultation) => {
     const timeSlot = formatTime(consultation.date);
+    const timeSlot2 = formatTime(consultation.date);
     console.log('🔄 [GROUPING] Consultation:', consultation.client_name, 'Time slot:', timeSlot);
-    acc[timeSlot] = consultation;
+    console.log('🔄 [GROUPING] Consultation:', consultation.client_name, 'Time slot:', timeSlot2);
+    acc[timeSlot2] = consultation;
     return acc;
   }, {} as Record<string, Consultation>);
 
