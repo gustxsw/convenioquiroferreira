@@ -732,12 +732,17 @@ const SchedulingPage: React.FC = () => {
     localStorage.setItem('scheduling-slot-duration', duration.toString());
   };
   const formatTime = (dateString: string) => {
-    // Convert from UTC (database) to Brazil local time for display
+    // 🔥 FIXED: Convert from UTC (database) to Brazil local time for display
     const utcDate = new Date(dateString);
-    const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-    return brazilDate.toLocaleDateString('pt-BR', {
+    const brazilLocalDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
+    
+    console.log('🔄 [FRONTEND] UTC from DB:', utcDate.toISOString());
+    console.log('🔄 [FRONTEND] Brazil local time:', brazilLocalDate.toLocaleString('pt-BR'));
+    
+    return brazilLocalDate.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
+      hour12: false
       day: '2-digit',
       month: '2-digit',
       year: 'numeric'
@@ -823,7 +828,15 @@ const SchedulingPage: React.FC = () => {
   
   // Group consultations by time for display
   const consultationsByTime = consultations.reduce((acc, consultation) => {
-    // Convert from UTC (database) to Brazil local time for display
+    // 🔥 FIXED: Convert from UTC (database) to Brazil local time for grouping
+    const utcDate = new Date(consultation.date);
+    const brazilLocalDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
+    const time = format(brazilLocalDate, "HH:mm");
+    
+    console.log('🔄 [GROUPING] Consultation UTC:', utcDate.toISOString());
+    console.log('🔄 [GROUPING] Brazil local:', brazilLocalDate.toLocaleString('pt-BR'));
+    console.log('🔄 [GROUPING] Time slot:', time);
+    
     const utcDate = new Date(consultation.date);
     const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
     const time = format(brazilDate, "HH:mm");

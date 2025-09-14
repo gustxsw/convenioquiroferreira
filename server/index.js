@@ -1574,11 +1574,11 @@ app.post("/api/consultations", authenticate, authorize(["professional"]), checkS
     console.log("🔄 Date received from frontend:", date);
     console.log("🔄 Date type:", typeof date);
     
-    // 🔥 FIXED: Frontend sends local time, convert to UTC for storage
-    const frontendLocalDate = new Date(date); // Frontend sends Brazil local time (11:00)
-    const utcDate = new Date(frontendLocalDate.getTime() + (3 * 60 * 60 * 1000)); // Convert to UTC (14:00)
+    // 🔥 FIXED: Frontend sends Brazil local time, convert to UTC for storage
+    const brazilLocalDate = new Date(date); // Frontend sends Brazil local time (08:00)
+    const utcDate = new Date(brazilLocalDate.getTime() + (3 * 60 * 60 * 1000)); // Convert to UTC (11:00)
     
-    console.log("🔄 Local date from frontend:", frontendLocalDate.toLocaleString('pt-BR'));
+    console.log("🔄 Brazil local date from frontend:", brazilLocalDate.toLocaleString('pt-BR'));
     console.log("🔄 UTC date for storage:", utcDate.toISOString());
     
     
@@ -1727,7 +1727,13 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
       }
 
       if (shouldCreateConsultation) {
-        const consultationDateTime = `${iterationDate.toISOString().split('T')[0]}T${start_time}:00`;
+        // 🔥 FIXED: Convert Brazil local time to UTC for storage
+        const brazilDateTime = `${iterationDate.toISOString().split('T')[0]}T${start_time}:00`;
+        const brazilDate = new Date(brazilDateTime);
+        const utcDateTime = new Date(brazilDate.getTime() + (3 * 60 * 60 * 1000));
+        
+        console.log('🔄 [RECURRING] Brazil time:', brazilDateTime);
+        console.log('🔄 [RECURRING] UTC time for storage:', utcDateTime.toISOString());
 
         try {
           const result = await pool.query(`
@@ -1744,7 +1750,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
             parseInt(service_id),
             location_id ? parseInt(location_id) : null,
             parseFloat(value),
-            consultationDateTime,
+            utcDateTime.toISOString(),
             'scheduled',
             notes?.trim() || null
           ]);
@@ -1756,7 +1762,7 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
             weeklyCreatedCount++;
           }
           
-          console.log('✅ [RECURRING] Created consultation for date:', consultationDateTime);
+          console.log('✅ [RECURRING] Created consultation for Brazil date:', brazilDateTime, 'stored as UTC:', utcDateTime.toISOString());
         } catch (error) {
           console.error('❌ [RECURRING] Error creating consultation for date:', iterationDate.toISOString().split('T')[0], error);
           // Continue with next date instead of failing completely
@@ -1891,11 +1897,14 @@ app.put("/api/consultations/:id", authenticate, authorize(["professional"]), che
     }
 
     if (date !== undefined) {
-      // Convert from Brazil local time to UTC for storage
-      const consultationUpdateLocalDate = new Date(date);
-      const consultationUpdateUtcDate = new Date(consultationUpdateLocalDate.getTime() + (3 * 60 * 60 * 1000));
+      // 🔥 FIXED: Convert Brazil local time to UTC for storage
+      const brazilLocalDate = new Date(date);
+      const utcDate = new Date(brazilLocalDate.getTime() + (3 * 60 * 60 * 1000));
       updateFields.push(`date = $${paramCount++}`);
-      updateValues.push(consultationUpdateUtcDate.toISOString()); // Save in UTC
+      updateValues.push(utcDate.toISOString()); // Save in UTC
+      
+      console.log('🔄 [UPDATE] Brazil time:', brazilLocalDate.toLocaleString('pt-BR'));
+      console.log('🔄 [UPDATE] UTC time for storage:', utcDate.toISOString());
     }
 
     if (status !== undefined) {
@@ -1991,12 +2000,15 @@ app.get('/api/consultations/:id/whatsapp', authenticate, authorize(['professiona
     // Format date and time - Convert from UTC (database) to Brazil local time for WhatsApp
     console.log('🔄 Consultation date from DB:', consultation.date);
     
-    // Convert from UTC (database) to Brazil local time for display
-    const whatsappConsultationDate = new Date(consultation.date);
-    const whatsappLocalDate = new Date(whatsappConsultationDate.getTime() - (3 * 60 * 60 * 1000));
+    // 🔥 FIXED: Convert from UTC (database) to Brazil local time for display
+    const utcDate = new Date(consultation.date);
+    const brazilLocalDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
     
-    const formattedDate = whatsappLocalDate.toLocaleDateString('pt-BR');
-    const formattedTime = whatsappLocalDate.toLocaleTimeString('pt-BR', { 
+    console.log('🔄 [WHATSAPP] UTC from DB:', utcDate.toISOString());
+    console.log('🔄 [WHATSAPP] Brazil local time:', brazilLocalDate.toLocaleString('pt-BR'));
+    
+    const formattedDate = brazilLocalDate.toLocaleDateString('pt-BR');
+    const formattedTime = brazilLocalDate.toLocaleTimeString('pt-BR', { 
       hour: '2-digit',
       minute: '2-digit',
       hour12: false
