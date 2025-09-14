@@ -4631,7 +4631,7 @@ const processAgendaPayment = async (payment) => {
     const externalReference = payment.external_reference;
     const parts = externalReference.split("_");
     const professionalId = parts[1];
-    const durationDays = parseInt(parts[2]);
+    const durationDays = 30; // Always 30 days for agenda access
 
     console.log("🔄 Processing agenda payment for professional:", professionalId, "duration:", durationDays);
 
