@@ -707,19 +707,21 @@ const SchedulingPage: React.FC = () => {
           .padStart(2, "0")}`;
         slots.push(timeStr);
       }
-    }
-    return slots;
-  };
-
-  const timeSlots = generateTimeSlots(slotDuration);
-  
-  // Group consultations by time for display
+  // 🔥 FIXED: Group consultations by time - NO TIMEZONE CONVERSION
   const consultationsByTime = consultations.reduce((acc, consultation) => {
-    const timeSlot = formatTime(consultation.date);
-    const timeSlot2 = formatTime(consultation.date);
-    console.log('🔄 [GROUPING] Consultation:', consultation.client_name, 'Time slot:', timeSlot);
-    console.log('🔄 [GROUPING] Consultation:', consultation.client_name, 'Time slot:', timeSlot2);
-    acc[timeSlot2] = consultation;
+    // Backend already sends correct Brazil time, just extract HH:mm
+    const consultationDate = new Date(consultation.date);
+    const timeSlot = consultationDate.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    
+    console.log('🔄 [GROUPING] Consultation:', consultation.client_name);
+    console.log('🔄 [GROUPING] Date from backend:', consultation.date);
+    console.log('🔄 [GROUPING] Time slot extracted:', timeSlot);
+    
+    acc[timeSlot] = consultation;
     return acc;
   }, {} as Record<string, Consultation>);
 
