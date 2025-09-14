@@ -761,10 +761,14 @@ const SchedulingPage: React.FC = () => {
   
   // Group consultations by time for display
   const consultationsByTime = consultations.reduce((acc, consultation) => {
-    // 🔥 FIXED: Convert from UTC (database) to Brazil local time for grouping
+    // 🔥 FIXED: Simple UTC to Brazil conversion for grouping
     const utcDate = new Date(consultation.date);
     const brazilLocalDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-    const timeSlot = format(brazilLocalDate, "HH:mm");
+    const timeSlot = brazilLocalDate.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
     
     console.log('🔄 [GROUPING] Consultation:', consultation.client_name);
     console.log('🔄 [GROUPING] UTC from DB:', utcDate.toISOString());
@@ -776,13 +780,12 @@ const SchedulingPage: React.FC = () => {
   }, {} as Record<string, Consultation>);
 
   // Calculate daily statistics
-  const dailyStats = consultations.reduce(
-    (stats, consultation) => {
-      stats[consultation.status]++;
-      return stats;
-    },
-    { scheduled: 0, confirmed: 0, completed: 0, cancelled: 0 }
-  );
+  const dailyStats = {
+    scheduled: consultations.filter((c) => c.status === "scheduled").length,
+    confirmed: consultations.filter((c) => c.status === "confirmed").length,
+    completed: consultations.filter((c) => c.status === "completed").length,
+    cancelled: consultations.filter((c) => c.status === "cancelled").length,
+  };
 
   const getSlotDurationLabel = (duration: SlotDuration) => {
     switch (duration) {
@@ -1563,7 +1566,15 @@ const SchedulingPage: React.FC = () => {
                   </p>
                   <p className="text-sm text-gray-600 mb-1">
                     <strong>Data/Hora:</strong>{" "}
-                    {format(new Date(new Date(selectedConsultation.date).getTime() - (3 * 60 * 60 * 1000)), "dd/MM/yyyy 'às' HH:mm")}
+                    {(() => {
+                      const utcDate = new Date(selectedConsultation.date);
+                      const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
+                      return brazilDate.toLocaleDateString('pt-BR') + ' às ' + brazilDate.toLocaleTimeString('pt-BR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false
+                      });
+                    })()}
                   </p>
                   <p className="text-sm text-gray-600">
                     <strong>Valor:</strong> {formatCurrency(selectedConsultation.value)}
@@ -1691,15 +1702,17 @@ const SchedulingPage: React.FC = () => {
         )}
 
         {/* Recurring Consultation Modal */}
-        <RecurringConsultationModal
-          isOpen={showRecurringModal}
-          onClose={() => setShowRecurringModal(false)}
-          onSuccess={() => {
-            fetchData();
-            setSuccess("Consultas recorrentes criadas com sucesso!");
-            setTimeout(() => setSuccess(""), 3000);
-          }}
-        />
+        {showRecurringModal && (
+          <RecurringConsultationModal
+            isOpen={showRecurringModal}
+            onClose={() => setShowRecurringModal(false)}
+            onSuccess={() => {
+              fetchData();
+              setSuccess("Consultas recorrentes criadas com sucesso!");
+              setTimeout(() => setSuccess(""), 3000);
+            }}
+          />
+        )}
 
       </div>
     );
