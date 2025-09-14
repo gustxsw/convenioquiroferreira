@@ -148,6 +148,12 @@ const SchedulingPage: React.FC = () => {
     value: "",
     location_id: "",
     notes: "",
+  });
+
+  // Client search state
+  const [clientSearchResult, setClientSearchResult] = useState<any>(null);
+  const [dependents, setDependents] = useState<any[]>([]);
+  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
   // Get API URL
@@ -766,6 +772,17 @@ const SchedulingPage: React.FC = () => {
     console.log('🔄 [GROUPING] Time slot:', timeSlot);
     
     acc[timeSlot] = consultation;
+    return acc;
+  }, {} as Record<string, Consultation>);
+
+  // Calculate daily statistics
+  const dailyStats = consultations.reduce(
+    (stats, consultation) => {
+      stats[consultation.status]++;
+      return stats;
+    },
+    { scheduled: 0, confirmed: 0, completed: 0, cancelled: 0 }
+  );
 
   const getSlotDurationLabel = (duration: SlotDuration) => {
     switch (duration) {
