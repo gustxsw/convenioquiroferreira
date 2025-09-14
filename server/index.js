@@ -666,8 +666,8 @@ const getProductionUrls = () => {
       pending: `${baseUrl}/professional?payment=pending&type=agenda`,
     },
     webhook: process.env.NODE_ENV === "production"
-      ? "https://www.cartaoquiroferreira.com.br/api/webhooks/mercadopago"
-      : "http://localhost:3001/api/webhook/mercadopago"
+      ? "https://www.cartaoquiroferreira.com.br/api/webhooks/payment-success"
+      : "http://localhost:3001/api/webhooks/payment-success"
   };
 };
 
@@ -3993,6 +3993,8 @@ app.post("/api/create-subscription", authenticate, authorize(["client"]), async 
       auto_return: "approved",
       notification_url: urls.webhook,
       external_reference: `subscription_${user_id}_${Date.now()}`,
+      statement_descriptor: "QUIRO FERREIRA",
+      expires: false,
       payer: {
         name: user.name,
         email: user.email || `user${user_id}@temp.com`,
@@ -4085,6 +4087,8 @@ app.post("/api/dependents/:id/create-payment", authenticate, authorize(["client"
       auto_return: "approved",
       notification_url: urls.webhook,
       external_reference: `dependent_${dependent_id}_${Date.now()}`,
+      statement_descriptor: "QUIRO FERREIRA",
+      expires: false,
       payer: {
         name: dependent.client_name,
         email: dependent.client_email || `client${dependent.user_id}@temp.com`,
@@ -4159,6 +4163,8 @@ app.post("/api/professional/create-payment", authenticate, authorize(["professio
       auto_return: "approved",
       notification_url: urls.webhook,
       external_reference: `professional_${req.user.id}_${Date.now()}`,
+      statement_descriptor: "QUIRO FERREIRA",
+      expires: false,
       payer: {
         name: req.user.name,
         email: req.user.email || `professional${req.user.id}@temp.com`,
@@ -4224,6 +4230,8 @@ app.post("/api/professional/create-agenda-payment", authenticate, authorize(["pr
       auto_return: "approved",
       notification_url: urls.webhook,
       external_reference: `agenda_${req.user.id}_${duration_days}_${Date.now()}`,
+      statement_descriptor: "QUIRO FERREIRA",
+      expires: false,
       payer: {
         name: req.user.name,
         email: req.user.email || `professional${req.user.id}@temp.com`,
