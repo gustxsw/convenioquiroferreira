@@ -1570,7 +1570,11 @@ const SchedulingPage: React.FC = () => {
                     {(() => {
                       const utcDate = new Date(selectedConsultation.date);
                       const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-                      return format(brazilDate, "dd/MM/yyyy 'às' HH:mm");
+                      return brazilDate.toLocaleDateString('pt-BR') + ' às ' + brazilDate.toLocaleTimeString('pt-BR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false
+                      });
                     })()}
                   </p>
                   <p className="text-sm text-gray-600">
