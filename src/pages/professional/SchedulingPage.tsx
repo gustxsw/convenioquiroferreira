@@ -1541,7 +1541,15 @@ const SchedulingPage: React.FC = () => {
                   </p>
                   <p className="text-sm text-gray-600 mb-1">
                     <strong>Data/Hora:</strong>{" "}
-                    {new Date(selectedConsultation.date).toLocaleDateString('pt-BR')} às {formatTime(selectedConsultation.date)}
+                    {(() => {
+                      const utcDate = new Date(selectedConsultation.date);
+                      const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
+                      return brazilDate.toLocaleDateString('pt-BR') + ' às ' + brazilDate.toLocaleTimeString('pt-BR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false
+                      });
+                    })()}
                   </p>
                   <p className="text-sm text-gray-600">
                     <strong>Valor:</strong> {formatCurrency(selectedConsultation.value)}
