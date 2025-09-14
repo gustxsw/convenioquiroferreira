@@ -844,6 +844,7 @@ const SchedulingPage: React.FC = () => {
     console.log('🔍 [TIME-MAPPING] Consultation:', consultation.client_name, {
       original_date: consultation.date,
       utc_date: utcDate.toISOString(),
+    });
     console.log('🔄 [GROUPING] UTC date:', consultationUtcDate.toISOString());
     console.log('🔄 [GROUPING] Brazil date:', consultationBrazilDate.toISOString());
     console.log('🔄 [GROUPING] Formatted time:', formattedTime);
