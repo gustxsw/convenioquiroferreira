@@ -65,6 +65,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
   const [weeklyCount, setWeeklyCount] = useState(4);
   const [recurrenceInterval, setRecurrenceInterval] = useState(1);
   const [occurrences, setOccurrences] = useState(10);
+  const [endDate, setEndDate] = useState('');
   const [notes, setNotes] = useState('');
 
   // Client search state
@@ -153,6 +154,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
     setWeeklyCount(4);
     setRecurrenceInterval(1);
     setOccurrences(10);
+    setEndDate('');
     setNotes('');
     setClientSearchResult(null);
     setDependents([]);
@@ -538,6 +540,40 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
             {/* Value and Location */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Valor
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  className="input"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Local de Atendimento
+                </label>
+                <select
+                  value={locationId}
+                  onChange={(e) => setLocationId(e.target.value)}
+                  className="input"
+                >
+                  <option value="">Selecione um local</option>
+                  {attendanceLocations.map((location) => (
+                    <option key={location.id} value={location.id}>
+                      {location.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             {/* Maximum Occurrences Only */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
