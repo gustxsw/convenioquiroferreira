@@ -94,48 +94,15 @@ const SchedulingPage: React.FC = () => {
   } | null>(null);
 
   const [showRecurringModal, setShowRecurringModal] = useState(false);
-  // New consultation modal
   const [showNewModal, setShowNewModal] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-
-  // Status change modal
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedConsultation, setSelectedConsultation] = useState<Consultation | null>(null);
   const [newStatus, setNewStatus] = useState<"scheduled" | "confirmed" | "completed" | "cancelled">("scheduled");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-
-  // Edit consultation modal
   const [showEditModal, setShowEditModal] = useState(false);
   const [consultationToEdit, setConsultationToEdit] = useState<Consultation | null>(null);
-
-  // Cancel consultation modal
   const [showCancelModal, setShowCancelModal] = useState(false);
-
-  // Slot customization
-  const [slotDuration2, setSlotDuration2] = useState<SlotDuration>(() => {
-    const saved = localStorage.getItem('scheduling-slot-duration');
-    return (saved ? parseInt(saved) : 30) as SlotDuration;
-  });
-  const [showSlotModal2, setShowSlotModal2] = useState(false);
-
-  // Recurring consultation form state
-  const [recurringFormData, setRecurringFormData] = useState({
-    patient_type: 'convenio' as 'convenio' | 'private',
-    client_cpf: '',
-    private_patient_id: '',
-    service_id: '',
-    value: '',
-    location_id: '',
-    start_date: '',
-    start_time: '',
-    recurrence_type: 'weekly' as 'daily' | 'weekly' | 'monthly',
-    recurrence_interval: 1,
-    weekly_count: 4,
-    selected_weekdays: [] as number[],
-    end_date: '',
-    occurrences: 10,
-    notes: '',
-  });
 
   // Form state
   const [formData, setFormData] = useState({
