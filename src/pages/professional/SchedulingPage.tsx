@@ -152,6 +152,8 @@ const SchedulingPage: React.FC = () => {
     recurrence_type: "weekly" as "daily" | "weekly",
     recurrence_interval: 1,
     occurrences: 4,
+    weekly_count: 4,
+    selected_weekdays: [] as number[],
   });
 
   // Client search state
@@ -455,6 +457,8 @@ const SchedulingPage: React.FC = () => {
           recurrence_type: formData.recurrence_type,
           recurrence_interval: formData.recurrence_interval,
           occurrences: formData.occurrences,
+          weekly_count: formData.weekly_count,
+          selected_weekdays: formData.selected_weekdays,
           notes: formData.notes || null,
         };
 
@@ -556,6 +560,8 @@ const SchedulingPage: React.FC = () => {
       recurrence_type: "weekly",
       recurrence_interval: 1,
       occurrences: 4,
+      weekly_count: 4,
+      selected_weekdays: [],
     });
     setClientSearchResult(null);
     setDependents([]);
@@ -1411,7 +1417,7 @@ const SchedulingPage: React.FC = () => {
                                   key={day.value}
                                   className={`
                                     flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all transform hover:scale-105
-                                    ${recurringFormData.selected_weekdays.includes(day.value)
+                                    ${formData.selected_weekdays.includes(day.value)
                                       ? `border-${day.color}-500 bg-${day.color}-50 text-${day.color}-700 shadow-md`
                                       : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm'
                                     }
@@ -1419,10 +1425,10 @@ const SchedulingPage: React.FC = () => {
                                 >
                                   <input
                                     type="checkbox"
-                                    checked={recurringFormData.selected_weekdays.includes(day.value)}
+                                    checked={formData.selected_weekdays.includes(day.value)}
                                     onChange={(e) => {
                                       const isChecked = e.target.checked;
-                                      setRecurringFormData(prev => ({
+                                      setFormData(prev => ({
                                         ...prev,
                                         selected_weekdays: isChecked
                                           ? [...prev.selected_weekdays, day.value]
@@ -1433,7 +1439,7 @@ const SchedulingPage: React.FC = () => {
                                   />
                                   <div className="text-center">
                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-2 ${
-                                      recurringFormData.selected_weekdays.includes(day.value)
+                                      formData.selected_weekdays.includes(day.value)
                                         ? `bg-${day.color}-500 text-white`
                                         : 'bg-gray-100 text-gray-600'
                                     }`}>
@@ -1444,6 +1450,13 @@ const SchedulingPage: React.FC = () => {
                                 </label>
                               ))}
                             </div>
+                            {formData.selected_weekdays.length === 0 && (
+                              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                                <p className="text-sm text-red-600 font-medium">
+                                  ⚠️ Selecione pelo menos um dia da semana
+                                </p>
+                              </div>
+                            )}
                           </div>
                         )}
                         
@@ -1458,6 +1471,7 @@ const SchedulingPage: React.FC = () => {
                               setFormData((prev) => ({
                                 ...prev,
                                 recurrence_type: e.target.value as "daily" | "weekly",
+                                selected_weekdays: e.target.value === 'daily' ? [] : prev.selected_weekdays,
                               }))
                             }
                             className="input"
@@ -1471,23 +1485,23 @@ const SchedulingPage: React.FC = () => {
                         {formData.recurrence_type === 'weekly' && (
                           <div>
                           <label className="block text-sm font-medium text-blue-700 mb-1">
-                            Intervalo
+                            Quantas Semanas
                           </label>
                           <input
                             type="number"
                             min="1"
-                            max="30"
-                            value={formData.recurrence_interval}
+                            max="52"
+                            value={formData.weekly_count}
                             onChange={(e) =>
                               setFormData((prev) => ({
                                 ...prev,
-                                recurrence_interval: parseInt(e.target.value),
+                                weekly_count: parseInt(e.target.value),
                               }))
                             }
                             className="input"
                           />
                           <p className="text-xs text-blue-600 mt-1">
-                              A cada quantas semanas
+                              Número de semanas seguidas
                           </p>
                           </div>
                         )}

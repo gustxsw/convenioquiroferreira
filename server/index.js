@@ -1650,6 +1650,9 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
       }
       
       console.log('✅ [RECURRING] Valid weekdays found:', validWeekdays);
+      
+      // Update selected_weekdays with validated array
+      req.body.selected_weekdays = validWeekdays;
     } else if (recurrence_type === 'weekly') {
       if (!weekly_count || weekly_count < 1) {
         return res.status(400).json({ message: 'Para recorrência semanal, é necessário especificar o número de semanas' });
@@ -1681,18 +1684,10 @@ app.post('/api/consultations/recurring', authenticate, authorize(['professional'
       if (recurrence_type === 'daily') {
         // For daily recurrence, check if current day is in selected weekdays
         
-        // Handle both array and single values for selected_weekdays
-        let weekdaysToCheck = selected_weekdays;
-        if (!Array.isArray(selected_weekdays)) {
-          weekdaysToCheck = [selected_weekdays];
-        }
+        // Use the validated selected_weekdays from request body
+        shouldCreateConsultation = req.body.selected_weekdays.includes(dayOfWeek);
         
-        // Convert to numbers and check if current day is included
-        const validWeekdays = weekdaysToCheck.map(day => parseInt(day)).filter(day => !isNaN(day));
-        shouldCreateConsultation = validWeekdays.includes(dayOfWeek);
-        
-        console.log('🔄 [RECURRING-DAILY] Day of week:', dayOfWeek, 'Selected weekdays:', selected_weekdays, 'Should create:', shouldCreateConsultation);
-        console.log('🔄 [RECURRING-DAILY] Valid weekdays to check:', validWeekdays);
+        console.log('🔄 [RECURRING-DAILY] Day of week:', dayOfWeek, 'Selected weekdays:', req.body.selected_weekdays, 'Should create:', shouldCreateConsultation);
       } else if (recurrence_type === 'weekly') {
         // For weekly recurrence, create consultation and check weekly limit
         shouldCreateConsultation = true;
