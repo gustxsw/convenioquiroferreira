@@ -556,9 +556,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                 Quantas consultas você quer criar no total
               </p>
             </div>
-                </select>
-              </div>
-            </div>
 
             {/* Start Date and Time */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
