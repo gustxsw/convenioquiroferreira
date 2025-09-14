@@ -148,12 +148,6 @@ const SchedulingPage: React.FC = () => {
     value: "",
     location_id: "",
     notes: "",
-  });
-
-  // Client search state
-  const [clientSearchResult, setClientSearchResult] = useState<any>(null);
-  const [dependents, setDependents] = useState<any[]>([]);
-  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
   // Get API URL
