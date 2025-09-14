@@ -149,10 +149,12 @@ const SchedulingPage: React.FC = () => {
     location_id: "",
     notes: "",
   });
-  const [isSearching, setIsSearching] = useState(false);
+
+  // Client search state
   const [clientSearchResult, setClientSearchResult] = useState<any>(null);
   const [dependents, setDependents] = useState<any[]>([]);
   const [selectedDependentId, setSelectedDependentId] = useState<number | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
 
   // Get API URL
   const getApiUrl = () => {
@@ -1361,9 +1363,31 @@ const SchedulingPage: React.FC = () => {
                   )}
 
                   {/* Recurring Consultation Checkbox */}
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <Repeat className="h-5 w-5 text-blue-600 mr-2" />
+                        <span className="font-medium text-blue-900">Consultas Recorrentes</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowNewModal(false);
+                          setShowRecurringModal(true);
+                        }}
+                        className="btn btn-secondary flex items-center"
+                      >
+                        <Repeat className="h-4 w-4 mr-2" />
+                        Abrir Modal Recorrente
+                      </button>
+                    </div>
+                    <p className="text-sm text-blue-700 mt-2">
+                      Para criar múltiplas consultas com padrão de repetição, use o modal dedicado.
+                    </p>
+                  </div>
 
                   {/* Date and Time */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Data *
@@ -1378,7 +1402,6 @@ const SchedulingPage: React.FC = () => {
                         required
                       />
                     </div>
-
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Horário *
@@ -1390,52 +1413,47 @@ const SchedulingPage: React.FC = () => {
                           setFormData((prev) => ({ ...prev, time: e.target.value }))
                         }
                         className="input"
-                        step="60"
                         required
                       />
-                      <p className="text-xs text-gray-500 mt-1">
-                        Digite o horário desejado (ex: 09:30)
-                      </p>
                     </div>
                   </div>
 
-                  {/* Service and Value */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Serviço *
-                      </label>
-                      <select
-                        value={formData.service_id}
-                        onChange={handleServiceChange}
-                        className="input"
-                        required
-                      >
-                        <option value="">Selecione um serviço</option>
-                        {services.map((service) => (
-                          <option key={service.id} value={service.id}>
-                            {service.name} - {formatCurrency(service.base_price)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                  {/* Service */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Serviço *
+                    </label>
+                    <select
+                      value={formData.service_id}
+                      onChange={handleServiceChange}
+                      className="input"
+                      required
+                    >
+                      <option value="">Selecione um serviço</option>
+                      {services.map((service) => (
+                        <option key={service.id} value={service.id}>
+                          {service.name} - {formatCurrency(service.base_price)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Valor (R$) *
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={formData.value}
-                        onChange={(e) =>
-                          setFormData((prev) => ({ ...prev, value: e.target.value }))
-                        }
-                        className="input"
-                        required
-                      />
-                    </div>
+                  {/* Value */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Valor *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.value}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, value: e.target.value }))
+                      }
+                      className="input"
+                      placeholder="0.00"
+                      required
+                    />
                   </div>
 
                   {/* Location */}
@@ -1446,7 +1464,7 @@ const SchedulingPage: React.FC = () => {
                     <select
                       value={formData.location_id}
                       onChange={(e) =>
-                        setFormData(prev => ({ ...prev, location_id: e.target.value }))
+                        setFormData((prev) => ({ ...prev, location_id: e.target.value }))
                       }
                       className="input"
                     >
@@ -1493,9 +1511,15 @@ const SchedulingPage: React.FC = () => {
                     disabled={isCreating}
                   >
                     {isCreating ? (
-                      "Criando..."
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Criando...
+                      </>
                     ) : (
-                      "Criar Consulta"
+                      <>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Criar Consulta
+                      </>
                     )}
                   </button>
                 </div>
@@ -1510,7 +1534,10 @@ const SchedulingPage: React.FC = () => {
             <div className="bg-white rounded-xl w-full max-w-md">
               <div className="p-6 border-b border-gray-200">
                 <div className="flex justify-between items-center">
-                  <h2 className="text-xl font-bold">Alterar Status</h2>
+                  <h2 className="text-xl font-bold flex items-center">
+                    <Settings className="h-6 w-6 text-blue-600 mr-2" />
+                    Alterar Status
+                  </h2>
                   <button
                     onClick={closeStatusModal}
                     className="text-gray-400 hover:text-gray-600"
