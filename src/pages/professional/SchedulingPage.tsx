@@ -148,12 +148,6 @@ const SchedulingPage: React.FC = () => {
     value: "",
     location_id: "",
     notes: "",
-    is_recurring: false,
-    recurrence_type: "weekly" as "daily" | "weekly",
-    recurrence_interval: 1,
-    occurrences: 4,
-    weekly_count: 4,
-    selected_weekdays: [] as number[],
   });
 
   // Client search state
@@ -465,93 +459,45 @@ const SchedulingPage: React.FC = () => {
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      if (formData.is_recurring) {
-        // Create recurring consultations
-        const recurringData: any = {
-          service_id: parseInt(formData.service_id),
-          location_id: formData.location_id ? parseInt(formData.location_id) : null,
-          value: parseFloat(formData.value),
-          start_date: formData.date,
-          start_time: formData.time,
-          recurrence_type: formData.recurrence_type,
-          recurrence_interval: formData.recurrence_interval,
-          occurrences: formData.occurrences,
-          weekly_count: formData.weekly_count,
-          selected_weekdays: formData.selected_weekdays,
-          notes: formData.notes || null,
-        };
+      // Create single consultation only (recurring moved to separate modal)
+      const consultationData: any = {
+        professional_id: user?.id,
+        service_id: parseInt(formData.service_id),
+        location_id: formData.location_id ? parseInt(formData.location_id) : null,
+        value: parseFloat(formData.value),
+        date: `${formData.date}T${formData.time}`,
+        status: "scheduled",
+        notes: formData.notes || null,
+      };
 
-        // Set patient based on type
-        if (formData.patient_type === "private") {
-          recurringData.private_patient_id = parseInt(formData.private_patient_id || '');
-        } else {
-          if (selectedDependentId) {
-            recurringData.dependent_id = selectedDependentId;
-          } else {
-            recurringData.user_id = clientSearchResult?.id;
-          }
-        }
-
-        console.log("🔄 Recurring consultation data:", recurringData);
-        const response = await fetch(`${apiUrl}/api/consultations/recurring`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(recurringData),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.error("❌ Recurring consultation error:", errorData);
-          throw new Error(errorData.message || "Falha ao criar consultas recorrentes");
-        }
-
-        const result = await response.json();
-        setSuccess(`${result.created_count} consultas recorrentes criadas com sucesso!`);
+      // Set patient based on type
+      if (formData.patient_type === "private") {
+        consultationData.private_patient_id = parseInt(formData.private_patient_id || '');
       } else {
-        // Create single consultation
-        const consultationData: any = {
-          professional_id: user?.id,
-          service_id: parseInt(formData.service_id),
-          location_id: formData.location_id ? parseInt(formData.location_id) : null,
-          value: parseFloat(formData.value),
-          // 🔥 FIXED: Send date/time exactly as entered (no timezone conversion)
-          date: `${formData.date}T${formData.time}`,
-          status: "scheduled",
-          notes: formData.notes || null,
-        };
-
-        // Set patient based on type
-        if (formData.patient_type === "private") {
-          consultationData.private_patient_id = parseInt(formData.private_patient_id || '');
+        if (selectedDependentId) {
+          consultationData.dependent_id = selectedDependentId;
         } else {
-          if (selectedDependentId) {
-            consultationData.dependent_id = selectedDependentId;
-          } else {
-            consultationData.user_id = clientSearchResult?.id;
-          }
+          consultationData.user_id = clientSearchResult?.id;
         }
-
-        console.log("🔄 Single consultation data:", consultationData);
-        const response = await fetch(`${apiUrl}/api/consultations`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(consultationData),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.error("❌ Single consultation error:", errorData);
-          throw new Error(errorData.message || "Falha ao criar consulta");
-        }
-
-        setSuccess("Consulta criada com sucesso!");
       }
+
+      console.log("🔄 Single consultation data:", consultationData);
+      const response = await fetch(`${apiUrl}/api/consultations`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(consultationData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("❌ Single consultation error:", errorData);
+        throw new Error(errorData.message || "Falha ao criar consulta");
+      }
+
+      setSuccess("Consulta criada com sucesso!");
 
       await fetchData();
       setShowNewModal(false);
@@ -581,12 +527,6 @@ const SchedulingPage: React.FC = () => {
       value: "",
       location_id: "",
       notes: "",
-      is_recurring: false,
-      recurrence_type: "weekly",
-      recurrence_interval: 1,
-      occurrences: 4,
-      weekly_count: 4,
-      selected_weekdays: [],
     });
     setClientSearchResult(null);
     setDependents([]);
@@ -831,25 +771,20 @@ const SchedulingPage: React.FC = () => {
     // 🔥 FIXED: Convert from UTC (database) to Brazil local time for grouping
     const utcDate = new Date(consultation.date);
     const brazilLocalDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-    const time = format(brazilLocalDate, "HH:mm");
+    const timeSlot = format(brazilLocalDate, "HH:mm");
     
     console.log('🔄 [GROUPING] Consultation UTC:', utcDate.toISOString());
     console.log('🔄 [GROUPING] Brazil local:', brazilLocalDate.toLocaleString('pt-BR'));
-    console.log('🔄 [GROUPING] Time slot:', time);
-    
-    const consultationUtcDate = new Date(consultation.date);
-    const consultationBrazilDate = new Date(consultationUtcDate.getTime() - (3 * 60 * 60 * 1000));
-    const formattedTime = format(consultationBrazilDate, "HH:mm");
+    console.log('🔄 [GROUPING] Time slot:', timeSlot);
     
     console.log('🔍 [TIME-MAPPING] Consultation:', consultation.client_name, {
       original_date: consultation.date,
       utc_date: utcDate.toISOString(),
+      brazil_date: brazilLocalDate.toISOString(),
+      time_slot: timeSlot
     });
-    console.log('🔄 [GROUPING] UTC date:', consultationUtcDate.toISOString());
-    console.log('🔄 [GROUPING] Brazil date:', consultationBrazilDate.toISOString());
-    console.log('🔄 [GROUPING] Formatted time:', formattedTime);
     
-    acc[formattedTime] = consultation;
+    acc[timeSlot] = consultation;
     return acc;
   }, {} as Record<string, Consultation>);
 
@@ -981,6 +916,14 @@ const SchedulingPage: React.FC = () => {
             >
               <Plus className="h-5 w-5 mr-2" />
               Nova Consulta
+            </button>
+            
+            <button
+              onClick={() => setShowRecurringModal(true)}
+              className="btn btn-outline flex items-center"
+            >
+              <Repeat className="h-5 w-5 mr-2" />
+              Consultas Recorrentes
             </button>
             
             <button
@@ -1432,158 +1375,6 @@ const SchedulingPage: React.FC = () => {
                   )}
 
                   {/* Recurring Consultation Checkbox */}
-                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={formData.is_recurring}
-                        onChange={(e) =>
-                          setFormData((prev) => ({ ...prev, is_recurring: e.target.checked }))
-                        }
-                        className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                      />
-                      <span className="ml-3 flex items-center">
-                        <Calendar className="h-4 w-4 text-blue-600 mr-2" />
-                        <span className="font-medium text-blue-900">Consulta Recorrente</span>
-                      </span>
-                    </label>
-                    
-                    {formData.is_recurring && (
-                      <div className="mt-4 space-y-4">
-                        {/* Weekday Selection for Daily Recurrence */}
-                        {formData.recurrence_type === 'daily' && (
-                          <div>
-                            <label className="block text-sm font-medium text-blue-700 mb-3">
-                              Selecione os dias da semana *
-                            </label>
-                            <div className="grid grid-cols-7 gap-2">
-                              {[
-                                { value: 1, label: 'Segunda', short: 'SEG', color: 'red' },
-                                { value: 2, label: 'Terça', short: 'TER', color: 'red' },
-                                { value: 3, label: 'Quarta', short: 'QUA', color: 'red' },
-                                { value: 4, label: 'Quinta', short: 'QUI', color: 'red' },
-                                { value: 5, label: 'Sexta', short: 'SEX', color: 'red' },
-                                { value: 6, label: 'Sábado', short: 'SÁB', color: 'red' },
-                                { value: 0, label: 'Domingo', short: 'DOM', color: 'red' }
-                              ].map((day) => (
-                                <label
-                                  key={day.value}
-                                  className={`
-                                    flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all transform hover:scale-105
-                                    ${formData.selected_weekdays.includes(day.value)
-                                      ? `border-${day.color}-500 bg-${day.color}-50 text-${day.color}-700 shadow-md`
-                                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm'
-                                    }
-                                  `}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={formData.selected_weekdays.includes(day.value)}
-                                    onChange={(e) => {
-                                      const isChecked = e.target.checked;
-                                      setFormData(prev => ({
-                                        ...prev,
-                                        selected_weekdays: isChecked
-                                          ? [...prev.selected_weekdays, day.value]
-                                          : prev.selected_weekdays.filter(d => d !== day.value)
-                                      }));
-                                    }}
-                                    className="sr-only"
-                                  />
-                                  <div className="text-center">
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-2 ${
-                                      formData.selected_weekdays.includes(day.value)
-                                        ? `bg-${day.color}-500 text-white`
-                                        : 'bg-gray-100 text-gray-600'
-                                    }`}>
-                                      <span className="text-xs font-bold">{day.short.charAt(0)}</span>
-                                    </div>
-                                    <span className="text-xs font-medium">{day.short}</span>
-                                  </div>
-                                </label>
-                              ))}
-                            </div>
-                            {formData.selected_weekdays.length === 0 && (
-                              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                                <p className="text-sm text-red-600 font-medium">
-                                  ⚠️ Selecione pelo menos um dia da semana
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-blue-700 mb-1">
-                            Tipo de Recorrência
-                          </label>
-                          <select
-                            value={formData.recurrence_type}
-                            onChange={(e) =>
-                              setFormData((prev) => ({
-                                ...prev,
-                                recurrence_type: e.target.value as "daily" | "weekly",
-                                selected_weekdays: e.target.value === 'daily' ? [] : prev.selected_weekdays,
-                              }))
-                            }
-                            className="input"
-                          >
-                            <option value="daily">Diário</option>
-                            <option value="weekly">Semanal</option>
-                          </select>
-                        </div>
-
-                        {/* Only show interval for weekly recurrence */}
-                        {formData.recurrence_type === 'weekly' && (
-                          <div>
-                          <label className="block text-sm font-medium text-blue-700 mb-1">
-                            Quantas Semanas
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            max="52"
-                            value={formData.weekly_count}
-                            onChange={(e) =>
-                              setFormData((prev) => ({
-                                ...prev,
-                                weekly_count: parseInt(e.target.value),
-                              }))
-                            }
-                            className="input"
-                          />
-                          <p className="text-xs text-blue-600 mt-1">
-                              Número de semanas seguidas
-                          </p>
-                          </div>
-                        )}
-
-                        <div>
-                          <label className="block text-sm font-medium text-blue-700 mb-1">
-                            Quantidade
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            max="52"
-                            value={formData.occurrences}
-                            onChange={(e) =>
-                              setFormData((prev) => ({
-                                ...prev,
-                                occurrences: parseInt(e.target.value),
-                              }))
-                            }
-                            className="input"
-                          />
-                          <p className="text-xs text-blue-600 mt-1">
-                            Número de consultas
-                          </p>
-                        </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
 
                   {/* Date and Time */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1716,9 +1507,9 @@ const SchedulingPage: React.FC = () => {
                     disabled={isCreating}
                   >
                     {isCreating ? (
-                      formData.is_recurring ? "Criando Consultas..." : "Criando..."
+                      "Criando..."
                     ) : (
-                      formData.is_recurring ? "Criar Consultas Recorrentes" : "Criar Consulta"
+                      "Criar Consulta"
                     )}
                   </button>
                 </div>
@@ -1889,6 +1680,17 @@ const SchedulingPage: React.FC = () => {
             selectedSlot={selectedSlot}
           />
         )}
+
+        {/* Recurring Consultation Modal */}
+        <RecurringConsultationModal
+          isOpen={showRecurringModal}
+          onClose={() => setShowRecurringModal(false)}
+          onSuccess={() => {
+            fetchData();
+            setSuccess("Consultas recorrentes criadas com sucesso!");
+            setTimeout(() => setSuccess(""), 3000);
+          }}
+        />
 
       </div>
     );
