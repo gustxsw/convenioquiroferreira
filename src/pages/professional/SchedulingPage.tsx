@@ -631,11 +631,6 @@ const SchedulingPage: React.FC = () => {
     }
   };
 
-  const handleSlotDurationChange2 = (duration: SlotDuration) => {
-    setSlotDuration2(duration);
-    localStorage.setItem('scheduling-slot-duration', duration.toString());
-  };
-
   const getStatusInfo = (status: string) => {
     switch (status) {
       case "scheduled":
@@ -1649,18 +1644,12 @@ const SchedulingPage: React.FC = () => {
         {showRecurringModal && (
           <RecurringConsultationModal
             isOpen={showRecurringModal}
-            onClose={() => {
-              console.log('🔄 [RECURRING] Closing modal');
-              setShowRecurringModal(false);
-            }}
+            onClose={() => setShowRecurringModal(false)}
             onSuccess={() => {
-              console.log('✅ [RECURRING] Success callback');
               fetchData();
               setSuccess("Consultas recorrentes criadas com sucesso!");
               setTimeout(() => setSuccess(""), 3000);
             }}
-          />
-        )}
           />
         )}
 
