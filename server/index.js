@@ -4480,7 +4480,32 @@ const processDependentPayment = async (payment) => {
     const externalReference = payment.external_reference;
     const dependentId = externalReference.split("_")[1];
 
-    console.log("🔄 [DEPENDENT-PAYMENT] Processing dependent payment for dependent:", dependentId);
+    console.log("🔄 [DEPENDENT-WEBHOOK] Processing dependent payment for dependent:", dependentId);
+    console.log("🔄 [DEPENDENT-WEBHOOK] Payment details:", {
+      id: payment.id,
+      status: payment.status,
+      amount: payment.transaction_amount,
+      external_reference: externalReference
+    });
+
+    // Validate dependent exists
+    const dependentCheckResult = await pool.query(
+      `SELECT id, name, user_id, subscription_status FROM dependents WHERE id = $1`,
+      [dependentId]
+    );
+
+    if (dependentCheckResult.rows.length === 0) {
+      console.error("❌ [DEPENDENT-WEBHOOK] Dependent not found:", dependentId);
+      throw new Error(`Dependent not found: ${dependentId}`);
+    }
+
+    const dependent = dependentCheckResult.rows[0];
+    console.log("✅ [DEPENDENT-WEBHOOK] Dependent validated:", dependent.name, "Current status:", dependent.subscription_status);
+
+    // Calculate expiry date (1 year = 365 days from now)
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + 365);
+    console.log("🔄 [DEPENDENT-WEBHOOK] Setting expiry date to:", expiryDate.toISOString());
     console.log("🔄 [DEPENDENT-PAYMENT] Payment ID:", payment.id);
     console.log("🔄 [DEPENDENT-PAYMENT] External reference:", externalReference);
 
@@ -4503,7 +4528,7 @@ const processDependentPayment = async (payment) => {
     expiryDate.setFullYear(expiryDate.getFullYear() + 1);
     console.log("🔄 [DEPENDENT-PAYMENT] Setting expiry date to:", expiryDate.toISOString());
 
-    // Update dependent subscription status
+    // Update dependent subscription status with explicit expiry date
     const updateResult = await pool.query(
       `
       UPDATE dependents 
@@ -4512,7 +4537,9 @@ const processDependentPayment = async (payment) => {
         subscription_expiry = $2,
         activated_at = CURRENT_TIMESTAMP,
         updated_at = CURRENT_TIMESTAMP
+        updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
+       RETURNING id, subscription_status, subscription_expiry
       RETURNING id, name, subscription_status, subscription_expiry, activated_at
     `,
       [dependentId, expiryDate]
@@ -4549,8 +4576,15 @@ const processDependentPayment = async (payment) => {
       JOIN users u ON d.user_id = u.id
       WHERE d.id = $1
     `,
-      [dependentId]
+      [dependentId, expiryDate]
     );
+
+    if (updateResult.rows.length === 0) {
+      console.error("❌ [DEPENDENT-WEBHOOK] Failed to update dependent subscription");
+      throw new Error("Failed to update dependent subscription");
+    }
+
+    console.log("✅ [DEPENDENT-WEBHOOK] Dependent subscription updated:", updateResult.rows[0]);
 
     if (dependentInfo.rows.length > 0) {
       const info = dependentInfo.rows[0];
@@ -4593,7 +4627,7 @@ const processProfessionalPayment = async (payment) => {
     console.log("🔄 Processing professional payment for professional:", professionalId);
 
     // Update payment record
-    await pool.query(
+    const paymentUpdateResult = await pool.query(
       `
       UPDATE professional_payments 
       SET 
@@ -4601,9 +4635,12 @@ const processProfessionalPayment = async (payment) => {
         mp_payment_id = $1,
         processed_at = CURRENT_TIMESTAMP
       WHERE payment_reference LIKE $2
+       RETURNING id
     `,
       [payment.id, `professional_${professionalId}_%`]
     );
+
+    console.log("✅ [DEPENDENT-WEBHOOK] Payment record updated:", paymentUpdateResult.rows.length);
 
     // Create notification
     await pool.query(
@@ -5140,12 +5177,15 @@ app.post("/api/upload-image", authenticate, async (req, res) => {
       console.log("✅ Image uploaded successfully:", req.file.path);
 
       // Update user photo URL
-      await pool.query(
+      const notificationResult = await pool.query(
         `
-        UPDATE users SET photo_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2
-      `,
+          "🎉 Dependente Ativado!",
+          \`O dependente ${info.dependent_name} foi ativado com sucesso! Válido até ${expiryDate.toLocaleDateString('pt-BR')}.`,
+         RETURNING id
         [req.file.path, req.user.id]
       );
+
+      console.log("✅ [DEPENDENT-WEBHOOK] Notification created:", notificationResult.rows[0].id);
 
       res.json({
         message: "Imagem enviada com sucesso",
@@ -5163,11 +5203,14 @@ app.post("/api/upload-image", authenticate, async (req, res) => {
 app.get("/api/admin/dependents", authenticate, authorize(["admin"]), async (req, res) => {
   try {
     const dependentsResult = await pool.query(`
+      )
       SELECT 
         d.*, u.name as client_name, u.subscription_status as client_subscription_status
       FROM dependents d
       JOIN users u ON d.user_id = u.id
       ORDER BY d.created_at DESC
+    }
+    )
     `);
 
     res.json(dependentsResult.rows);
@@ -5200,7 +5243,7 @@ app.post("/api/users/:id/activate", authenticate, authorize(["admin"]), async (r
     
     // Update subscription status and expiry
     const updatedUserResult = await pool.query(
-      `UPDATE users 
+      \`UPDATE users 
        SET subscription_status = 'active', 
            subscription_expiry = $1,
            updated_at = NOW()
@@ -5359,47 +5402,47 @@ app.get("/api/audit-logs", authenticate, authorize(["admin"]), async (req, res) 
 
     if (user_id) {
       paramCount++;
-      query += ` AND al.user_id = $${paramCount}`;
+      query += \` AND al.user_id = $${paramCount}`;
       params.push(user_id);
     }
 
     if (action) {
       paramCount++;
-      query += ` AND al.action = $${paramCount}`;
+      query += \` AND al.action = $${paramCount}`;
       params.push(action);
     }
 
     if (table_name) {
       paramCount++;
-      query += ` AND al.table_name = $${paramCount}`;
+      query += \` AND al.table_name = $${paramCount}`;
       params.push(table_name);
     }
 
-    query += ` ORDER BY al.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+    query += \` ORDER BY al.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
     params.push(limit, offset);
 
     const logsResult = await pool.query(query, params);
 
     // Get total count for pagination
-    let countQuery = `SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
+    let countQuery = \`SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
     const countParams = [];
     let countParamCount = 0;
 
     if (user_id) {
       countParamCount++;
-      countQuery += ` AND al.user_id = $${countParamCount}`;
+      countQuery += \` AND al.user_id = $${countParamCount}`;
       countParams.push(user_id);
     }
 
     if (action) {
       countParamCount++;
-      countQuery += ` AND al.action = $${countParamCount}`;
+      countQuery += \` AND al.action = $${countParamCount}`;
       countParams.push(action);
     }
 
     if (table_name) {
       countParamCount++;
-      countQuery += ` AND al.table_name = $${countParamCount}`;
+      countQuery += \` AND al.table_name = $${countParamCount}`;
       countParams.push(table_name);
     }
 
@@ -5484,16 +5527,18 @@ const startServer = async () => {
 
     // Start listening
     app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(`📊 Database: Connected`);
-      console.log(`💳 MercadoPago: Configured`);
-      console.log(`📋 Consultations System: Active`);
-      console.log(`✅ All systems operational`);
+      console.log(\`🚀 Server running on port ${PORT}`);
+      console.log(\`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log(\`📊 Database: Connected`);
+      console.log(\`💳 MercadoPago: Configured`);
+      console.log(\`📋 Consultations System: Active`);
+      console.log(\`✅ All systems operational`);
     });
-  } catch (error) {
+    console.log("🎉 [DEPENDENT-WEBHOOK] Dependent successfully activated:", dependentId, "valid until:", expiryDate.toLocaleDateString('pt-BR'));
+
     console.error("❌ Failed to start server:", error);
-    process.exit(1);
+    console.error("❌ [DEPENDENT-WEBHOOK] Error processing dependent payment:", error);
+    console.error("❌ [DEPENDENT-WEBHOOK] Stack trace:", error.stack);
   }
 };
 
@@ -5526,3 +5571,6 @@ process.on("SIGINT", async () => {
 
 // Start the server
 startServer();
+  }
+}
+)
