@@ -672,13 +672,17 @@ const SchedulingPage: React.FC = () => {
     localStorage.setItem('scheduling-slot-duration', duration.toString());
   };
   const formatTime = (dateString: string) => {
-    // Convert from UTC (database) to Brazil local time for display
+    // 🔥 URGENT FIX: Simple UTC to Brazil conversion
     const utcDate = new Date(dateString);
     const brazilLocalDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
+    
+    console.log('🔄 [FORMAT-TIME] UTC:', utcDate.toISOString());
+    console.log('🔄 [FORMAT-TIME] Brazil:', brazilLocalDate.toISOString());
+    
     return brazilLocalDate.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
-      hour12: false
+      hour12: false,
     });
   };
 
@@ -765,16 +769,9 @@ const SchedulingPage: React.FC = () => {
     const utcDate = new Date(consultation.date);
     const brazilLocalDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
     const timeSlot = brazilLocalDate.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-    
-    console.log('🔄 [GROUPING] Consultation:', consultation.client_name);
-    console.log('🔄 [GROUPING] UTC from DB:', utcDate.toISOString());
-    console.log('🔄 [GROUPING] Brazil local (-3h):', brazilLocalDate.toISOString());
-    console.log('🔄 [GROUPING] Time slot:', timeSlot);
-    
+    // 🔥 URGENT FIX: Use formatTime function for consistent conversion
+    const timeSlot = formatTime(consultation.date);
+    console.log('🔄 [GROUPING] Consultation:', consultation.client_name, 'Time slot:', timeSlot);
     acc[timeSlot] = consultation;
     return acc;
   }, {} as Record<string, Consultation>);
@@ -1569,6 +1566,10 @@ const SchedulingPage: React.FC = () => {
                     {(() => {
                       const utcDate = new Date(selectedConsultation.date);
                       const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
+                      return format(brazilDate, "dd/MM/yyyy 'às' HH:mm");
+                    })()}
+                      const utcDate = new Date(selectedConsultation.date);
+                      const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
                       return brazilDate.toLocaleDateString('pt-BR') + ' às ' + brazilDate.toLocaleTimeString('pt-BR', {
                         hour: '2-digit',
                         minute: '2-digit',
@@ -1711,6 +1712,8 @@ const SchedulingPage: React.FC = () => {
               setSuccess("Consultas recorrentes criadas com sucesso!");
               setTimeout(() => setSuccess(""), 3000);
             }}
+          />
+        )}
           />
         )}
 
