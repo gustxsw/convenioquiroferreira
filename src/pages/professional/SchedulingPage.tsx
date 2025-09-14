@@ -922,6 +922,14 @@ const SchedulingPage: React.FC = () => {
               <Settings className="h-5 w-5 mr-2" />
               Slots ({getSlotDurationLabel(slotDuration)})
             </button>
+            
+            <button
+              onClick={() => setShowRecurringModal(true)}
+              className="btn btn-outline flex items-center"
+            >
+              <Repeat className="h-5 w-5 mr-2" />
+              Consultas Recorrentes
+            </button>
           </div>
         </div>
 
@@ -1668,6 +1676,17 @@ const SchedulingPage: React.FC = () => {
             selectedSlot={selectedSlot}
           />
         )}
+
+        {/* Recurring Consultation Modal */}
+        <RecurringConsultationModal
+          isOpen={showRecurringModal}
+          onClose={() => setShowRecurringModal(false)}
+          onSuccess={() => {
+            fetchData();
+            setSuccess("Consultas recorrentes criadas com sucesso!");
+            setTimeout(() => setSuccess(""), 3000);
+          }}
+        />
 
         {/* Recurring Consultation Modal */}
         <RecurringConsultationModal
