@@ -350,7 +350,17 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
     return numericValue.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
   };
 
-  if (!isOpen) return null;
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(value);
+  };
+
+  // Don't render if not open
+  if (!isOpen) {
+    return null;
+  }
 
   console.log('🔄 [RECURRING-MODAL] Rendering modal...');
 
@@ -365,14 +375,14 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
   ];
 
   const weeklyOptions = [
-    { value: 1, label: '1 semana', desc: 'Apenas 1 vez' },
-    { value: 2, label: '2 semanas', desc: '2 consultas' },
-    { value: 3, label: '3 semanas', desc: '3 consultas' },
-    { value: 4, label: '4 semanas', desc: '1 mês' },
-    { value: 6, label: '6 semanas', desc: '1,5 mês' },
-    { value: 8, label: '8 semanas', desc: '2 meses' },
-    { value: 12, label: '12 semanas', desc: '3 meses' },
-    { value: 24, label: '24 semanas', desc: '6 meses' }
+    { value: 1, label: '1 semana' },
+    { value: 2, label: '2 semanas' },
+    { value: 3, label: '3 semanas' },
+    { value: 4, label: '4 semanas' },
+    { value: 6, label: '6 semanas' },
+    { value: 8, label: '8 semanas' },
+    { value: 12, label: '12 semanas' },
+    { value: 24, label: '24 semanas' }
   ];
 
   return (
@@ -408,7 +418,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
             {/* Patient Type Selection */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tipo de Paciente *
+                Tipo de Paciente
               </label>
               <select
                 value={patientType}
@@ -432,7 +442,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
             {patientType === 'private' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Paciente Particular *
+                  Paciente Particular
                 </label>
                 <select
                   value={privatePatientId}
@@ -454,7 +464,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
             {patientType === 'convenio' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  CPF do Cliente *
+                  CPF do Cliente
                 </label>
                 <div className="flex space-x-2">
                   <input
@@ -512,7 +522,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
             {/* Service Selection */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Serviço *
+                Serviço
               </label>
               <select
                 value={serviceId}
@@ -523,7 +533,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                 <option value="">Selecione um serviço</option>
                 {services.map((service) => (
                   <option key={service.id} value={service.id}>
-                    {service.name} - R$ {service.base_price.toFixed(2)}
+                    {service.name} - {formatCurrency(service.base_price)}
                   </option>
                 ))}
               </select>
@@ -533,7 +543,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Valor (R$) *
+                  Valor (R$)
                 </label>
                 <input
                   type="number"
@@ -569,7 +579,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Data de Início *
+                  Data de Início
                 </label>
                 <input
                   type="date"
@@ -597,7 +607,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
               {/* Recurrence Type */}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Tipo de Recorrência *
+                  Tipo de Recorrência
                 </label>
                 <select
                   value={recurrenceType}
@@ -624,50 +634,43 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
               {recurrenceType === 'daily' && (
                 <div className="mb-6">
                   <label className="block text-sm font-medium text-gray-700 mb-3">
-                    Selecione os dias da semana *
+                    Selecione os dias da semana
                   </label>
                   <div className="grid grid-cols-3 md:grid-cols-7 gap-2">
-                    {weekdays.map((day) => (
-                      <label
-                        key={day.value}
-                        className={`
-                          flex flex-col items-center p-4 rounded-xl border-2 cursor-pointer transition-all transform hover:scale-105
-                          ${selectedWeekdays.includes(day.value)
-                            ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md'
-                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm'
-                          }
-                        `}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedWeekdays.includes(day.value)}
-                          onChange={() => handleWeekdayToggle(day.value)}
-                          className="sr-only"
-                        />
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-2 ${
-                          selectedWeekdays.includes(day.value)
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-100 text-gray-600'
-                        }`}>
-                          <span className="text-xs font-bold">{day.short.charAt(0)}</span>
-                        </div>
-                        <span className="text-xs font-medium">{day.short}</span>
-                      </label>
-                    ))}
+                    {weekdays.map((day) => {
+                      const isSelected = selectedWeekdays.includes(day.value);
+                      return (
+                        <label
+                          key={day.value}
+                          className={`flex flex-col items-center p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                            isSelected
+                              ? 'border-blue-500 bg-blue-50 text-blue-700'
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleWeekdayToggle(day.value)}
+                            className="sr-only"
+                          />
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-2 ${
+                            isSelected
+                              ? 'bg-blue-500 text-white'
+                              : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            <span className="text-xs font-bold">{day.short.charAt(0)}</span>
+                          </div>
+                          <span className="text-xs font-medium">{day.short}</span>
+                        </label>
+                      );
+                    })}
                   </div>
                   
                   {selectedWeekdays.length === 0 && (
                     <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
                       <p className="text-sm text-red-600 font-medium">
-                        ⚠️ Selecione pelo menos um dia da semana
-                      </p>
-                    </div>
-                  )}
-                  
-                  {selectedWeekdays.length > 0 && (
-                    <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                      <p className="text-sm text-green-700">
-                        ✅ Selecionados: {selectedWeekdays.length} dia{selectedWeekdays.length > 1 ? 's' : ''} da semana
+                        Selecione pelo menos um dia da semana
                       </p>
                     </div>
                   )}
@@ -678,46 +681,39 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
               {recurrenceType === 'weekly' && (
                 <div className="mb-6">
                   <label className="block text-sm font-medium text-gray-700 mb-3">
-                    Quantas semanas seguidas? *
+                    Quantas semanas seguidas?
                   </label>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {weeklyOptions.map((option) => (
-                      <label
-                        key={option.value}
-                        className={`
-                          flex flex-col items-center p-4 rounded-xl border-2 cursor-pointer transition-all transform hover:scale-105
-                          ${weeklyCount === option.value
-                            ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md'
-                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm'
-                          }
-                        `}
-                      >
-                        <input
-                          type="radio"
-                          name="weekly_count"
-                          value={option.value}
-                          checked={weeklyCount === option.value}
-                          onChange={(e) => setWeeklyCount(parseInt(e.target.value))}
-                          className="sr-only"
-                        />
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${
-                          weeklyCount === option.value
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-100 text-gray-600'
-                        }`}>
-                          <span className="text-sm font-bold">{option.value}</span>
-                        </div>
-                        <span className="text-xs font-medium text-center">{option.label}</span>
-                        <span className="text-xs text-center opacity-75">{option.desc}</span>
-                      </label>
-                    ))}
-                  </div>
-                  
-                  <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-xs text-blue-700">
-                      📅 <strong>Como funciona:</strong> A consulta será repetida no mesmo dia da semana 
-                      por {weeklyCount} semana{weeklyCount > 1 ? 's' : ''} seguida{weeklyCount > 1 ? 's' : ''}.
-                    </p>
+                    {weeklyOptions.map((option) => {
+                      const isSelected = weeklyCount === option.value;
+                      return (
+                        <label
+                          key={option.value}
+                          className={`flex flex-col items-center p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                            isSelected
+                              ? 'border-blue-500 bg-blue-50 text-blue-700'
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="weekly_count"
+                            value={option.value}
+                            checked={isSelected}
+                            onChange={(e) => setWeeklyCount(parseInt(e.target.value))}
+                            className="sr-only"
+                          />
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${
+                            isSelected
+                              ? 'bg-blue-500 text-white'
+                              : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            <span className="text-sm font-bold">{option.value}</span>
+                          </div>
+                          <span className="text-xs font-medium text-center">{option.label}</span>
+                        </label>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -726,7 +722,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
               {recurrenceType === 'monthly' && (
                 <div className="mb-6">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    A cada quantos meses? *
+                    A cada quantos meses?
                   </label>
                   <select
                     value={recurrenceInterval}
@@ -740,9 +736,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                     <option value={6}>A cada 6 meses</option>
                     <option value={12}>A cada 12 meses (anual)</option>
                   </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    A consulta será repetida no mesmo dia do mês
-                  </p>
                 </div>
               )}
 
@@ -763,7 +756,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Máximo de Ocorrências *
+                    Máximo de Ocorrências
                   </label>
                   <input
                     type="number"
@@ -774,61 +767,42 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                     className="input"
                     required
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Limite de consultas a serem criadas
-                  </p>
                 </div>
               </div>
 
               {/* Preview */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
-                <h4 className="font-medium text-blue-900 mb-3 flex items-center">
-                  📅 <span className="ml-2">Resumo da Recorrência:</span>
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <h4 className="font-medium text-blue-900 mb-3">
+                  Resumo da Recorrência:
                 </h4>
                 <div className="text-sm text-blue-700 space-y-2">
                   {recurrenceType === 'daily' && selectedWeekdays.length > 0 && (
-                    <>
+                    <div>
                       <p className="font-medium">
-                        🔄 Consultas serão criadas {selectedWeekdays.length === 7 ? 'todos os dias' : 
-                        `nas ${weekdays
+                        Consultas nos dias: {weekdays
                           .filter(day => selectedWeekdays.includes(day.value))
                           .map(day => day.label)
-                          .join(', ')}`}
+                          .join(', ')}
                       </p>
-                      {startTime && (
-                        <p>⏰ Horário: {startTime}</p>
-                      )}
-                      <p>📊 Estimativa: {selectedWeekdays.length} consulta{selectedWeekdays.length > 1 ? 's' : ''} por semana</p>
-                    </>
+                      <p>Estimativa: {selectedWeekdays.length} consulta(s) por semana</p>
+                    </div>
                   )}
                   {recurrenceType === 'weekly' && (
-                    <>
+                    <div>
                       <p className="font-medium">
-                        🔄 Consultas semanais por {weeklyCount} semana{weeklyCount > 1 ? 's' : ''}
+                        Consultas semanais por {weeklyCount} semana(s)
                       </p>
-                      {startTime && (
-                        <p>⏰ Horário: {startTime}</p>
-                      )}
-                      <p>📊 Total: {weeklyCount} consulta{weeklyCount !== 1 ? 's' : ''}</p>
-                    </>
+                      <p>Total: {weeklyCount} consulta(s)</p>
+                    </div>
                   )}
                   {recurrenceType === 'monthly' && (
-                    <>
+                    <div>
                       <p className="font-medium">
-                        🔄 Consultas mensais a cada {recurrenceInterval} mês{recurrenceInterval > 1 ? 'es' : ''}
+                        Consultas mensais a cada {recurrenceInterval} mês(es)
                       </p>
-                      {startTime && (
-                        <p>⏰ Horário: {startTime}</p>
-                      )}
-                      <p>📊 Máximo: {occurrences} consultas</p>
-                    </>
+                      <p>Máximo: {occurrences} consultas</p>
+                    </div>
                   )}
-                  <div className="border-t border-blue-300 pt-2 mt-3">
-                    <p className="font-medium">
-                      🎯 <strong>Máximo:</strong> {occurrences} consultas
-                      {endDate && ` até ${new Date(endDate).toLocaleDateString('pt-BR')}`}
-                    </p>
-                  </div>
                 </div>
               </div>
             </div>
