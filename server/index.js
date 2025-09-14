@@ -92,6 +92,7 @@ const initializeDatabase = async () => {
         category_name VARCHAR(100),
         percentage DECIMAL(5,2) DEFAULT 50.00,
         crm VARCHAR(20),
+        professional_type VARCHAR(20) DEFAULT 'convenio',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -250,6 +251,13 @@ const initializeDatabase = async () => {
           WHERE table_name = 'users' AND column_name = 'signature_url'
         ) THEN
           ALTER TABLE users ADD COLUMN signature_url TEXT;
+        END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'users' AND column_name = 'professional_type'
+        ) THEN
+          ALTER TABLE users ADD COLUMN professional_type VARCHAR(20) DEFAULT 'convenio';
         END IF;
       END $$;
     `);
@@ -973,7 +981,7 @@ app.get("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
       SELECT 
         id, name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, roles, subscription_status,
-        subscription_expiry, photo_url, category_name, percentage, crm, created_at
+        subscription_expiry, photo_url, category_name, percentage, crm, professional_type, created_at
       FROM users 
       ORDER BY created_at DESC
     `);
@@ -1001,7 +1009,7 @@ app.get("/api/users/:id", authenticate, async (req, res) => {
       SELECT 
         id, name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, roles, subscription_status,
-        subscription_expiry, photo_url, category_name, percentage, crm, created_at
+        subscription_expiry, photo_url, category_name, percentage, crm, professional_type, created_at
       FROM users 
       WHERE id = $1
     `,
@@ -1069,6 +1077,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
       category_name,
       percentage,
       crm,
+      professional_type,
     } = req.body;
 
     // Validate required fields
@@ -1131,8 +1140,8 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
         name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, password, roles,
         subscription_status, subscription_expiry, category_name, 
-        percentage, crm, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW())
+        percentage, crm, professional_type, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW())
       RETURNING id, name, cpf, email, roles
     `,
       [
@@ -1154,6 +1163,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
         category_name?.trim() || null,
         percentage || null,
         crm?.trim() || null,
+        professional_type || 'convenio',
       ]
     );
 
@@ -1200,6 +1210,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
       crm,
       currentPassword,
       newPassword,
+      professional_type,
     } = req.body;
 
     // Users can only update their own data unless they're admin
@@ -1264,6 +1275,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
       if (category_name !== undefined) updateData.category_name = category_name?.trim() || null;
       if (percentage !== undefined) updateData.percentage = percentage;
       if (crm !== undefined) updateData.crm = crm?.trim() || null;
+      if (professional_type !== undefined) updateData.professional_type = professional_type || 'convenio';
     }
 
     updateData.updated_at = new Date();
@@ -1275,11 +1287,12 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
         name = $1, email = $2, phone = $3, birth_date = $4, address = $5,
         address_number = $6, address_complement = $7, neighborhood = $8,
         city = $9, state = $10, password = $11, roles = $12, subscription_status = $13,
-        subscription_expiry = $14, category_name = $15, percentage = $16, crm = $17, updated_at = $18
-      WHERE id = $19
+        subscription_expiry = $14, category_name = $15, percentage = $16, crm = $17, 
+        professional_type = $18, updated_at = $19
+      WHERE id = $20
       RETURNING id, name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, roles, subscription_status, 
-        subscription_expiry, photo_url, category_name, percentage, crm, created_at, updated_at
+        subscription_expiry, photo_url, category_name, percentage, crm, professional_type, created_at, updated_at
     `,
       [
         updateData.name,
@@ -1299,6 +1312,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
         updateData.category_name,
         updateData.percentage,
         updateData.crm,
+        updateData.professional_type,
         updateData.updated_at,
         id,
       ]
@@ -2749,9 +2763,9 @@ app.get("/api/professionals", authenticate, async (req, res) => {
     const professionalsResult = await pool.query(`
       SELECT 
         id, name, email, phone, address, address_number, address_complement,
-        neighborhood, city, state, category_name, photo_url, crm, percentage
+        neighborhood, city, state, category_name, photo_url, crm, percentage, professional_type
       FROM users 
-      WHERE 'professional' = ANY(roles)
+      WHERE 'professional' = ANY(roles) AND professional_type = 'convenio'
       ORDER BY name
     `);
 
@@ -5168,6 +5182,170 @@ app.post("/api/upload-image", authenticate, async (req, res) => {
         [req.file.path, req.user.id]
       );
 
+app.post("/api/webhooks/payment-success", express.json(), async (req, res) => {
+  try {
+    console.log("🔔 [NEW-WEBHOOK] Payment success webhook received");
+    console.log("🔔 [NEW-WEBHOOK] Headers:", req.headers);
+    console.log("🔔 [NEW-WEBHOOK] Body:", req.body);
+
+    // Handle both raw and parsed JSON
+    let data;
+    if (typeof req.body === 'string') {
+      try {
+        data = JSON.parse(req.body);
+      } catch (parseError) {
+        console.error("❌ [NEW-WEBHOOK] JSON parse error:", parseError);
+        return res.status(400).json({ message: "Invalid JSON format" });
+      }
+    } else if (typeof req.body === 'object' && req.body !== null) {
+      data = req.body;
+    } else {
+      console.error("❌ [NEW-WEBHOOK] Invalid body type:", typeof req.body);
+      return res.status(400).json({ message: "Invalid request body" });
+    }
+
+    console.log("✅ [NEW-WEBHOOK] Parsed webhook data:", data);
+
+    if (data.type === "payment") {
+      const paymentId = data.data.id;
+      console.log("💰 [NEW-WEBHOOK] Processing payment notification:", paymentId);
+
+      if (!paymentId) {
+        console.error("❌ [NEW-WEBHOOK] Payment ID not found in webhook data");
+        return res.status(400).json({ message: "Payment ID missing" });
+      }
+
+      // Get payment details from MercadoPago
+      const paymentResponse = await fetch(
+        `https://api.mercadopago.com/v1/payments/${paymentId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`,
+          },
+        }
+      );
+
+      if (!paymentResponse.ok) {
+        console.error("❌ [NEW-WEBHOOK] Failed to get payment details from MercadoPago:", paymentResponse.status);
+        return res
+          .status(400)
+          .json({ message: "Erro ao obter detalhes do pagamento" });
+      }
+
+      const payment = await paymentResponse.json();
+      console.log("💰 [NEW-WEBHOOK] Payment details:", {
+        id: payment.id,
+        status: payment.status,
+        external_reference: payment.external_reference,
+        transaction_amount: payment.transaction_amount
+      });
+
+      const externalReference = payment.external_reference;
+      const status = payment.status;
+
+      if (!externalReference) {
+        console.error("❌ [NEW-WEBHOOK] External reference not found in payment");
+        return res.status(400).json({ message: "External reference missing" });
+      }
+
+      if (status === "approved") {
+        console.log("✅ [NEW-WEBHOOK] Payment approved, processing:", externalReference);
+
+        // Process different payment types
+        if (externalReference.startsWith("subscription_")) {
+          await processSubscriptionPayment(payment);
+        } else if (externalReference.startsWith("dependent_")) {
+          await processDependentPayment(payment);
+        } else if (externalReference.startsWith("professional_")) {
+          await processProfessionalPayment(payment);
+        } else if (externalReference.startsWith("agenda_")) {
+          await processAgendaPayment(payment);
+        } else {
+          console.warn("⚠️ [NEW-WEBHOOK] Unknown payment type:", externalReference);
+        }
+      } else {
+        console.log("⚠️ [NEW-WEBHOOK] Payment not approved, status:", status);
+        
+        // Update payment records for failed/pending payments
+        if (externalReference.startsWith("subscription_")) {
+          const userId = externalReference.split("_")[1];
+          await pool.query(
+            `UPDATE client_payments SET status = $1, mp_payment_id = $2 WHERE payment_reference LIKE $3`,
+            [status, payment.id, `subscription_${userId}_%`]
+          );
+        } else if (externalReference.startsWith("dependent_")) {
+          const dependentId = externalReference.split("_")[1];
+          await pool.query(
+            `UPDATE dependent_payments SET status = $1, mp_payment_id = $2 WHERE payment_reference LIKE $3`,
+            [status, payment.id, `dependent_${dependentId}_%`]
+          );
+        } else if (externalReference.startsWith("professional_")) {
+          const professionalId = externalReference.split("_")[1];
+          await pool.query(
+            `UPDATE professional_payments SET status = $1, mp_payment_id = $2 WHERE payment_reference LIKE $3`,
+            [status, payment.id, `professional_${professionalId}_%`]
+          );
+        } else if (externalReference.startsWith("agenda_")) {
+          const professionalId = externalReference.split("_")[1];
+          await pool.query(
+            `UPDATE agenda_payments SET status = $1, mp_payment_id = $2 WHERE payment_reference LIKE $3`,
+            [status, payment.id, `agenda_${professionalId}_%`]
+          );
+        }
+      }
+    } else {
+      console.log("ℹ️ [NEW-WEBHOOK] Non-payment webhook received:", data.type);
+    }
+
+    res.status(200).json({ received: true });
+  } catch (error) {
+    console.error("❌ [NEW-WEBHOOK] Webhook error:", error.message);
+    console.error("❌ [NEW-WEBHOOK] Webhook error stack:", error.stack);
+    res.status(500).json({ message: "Erro no webhook" });
+  }
+});
+
+// ===== TEST PAYMENT PROCESSING ENDPOINT =====
+
+app.post("/api/test-payment-processing", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const { payment_id, external_reference } = req.body;
+
+    if (!payment_id || !external_reference) {
+      return res.status(400).json({ message: "Payment ID e external reference são obrigatórios" });
+    }
+
+    console.log("🔄 [TEST-PAYMENT] Manual payment processing:", { payment_id, external_reference });
+
+    // Create mock payment object
+    const mockPayment = {
+      id: payment_id,
+      status: "approved",
+      external_reference: external_reference,
+      transaction_amount: 24.99
+    };
+
+    // Process based on external reference type
+    if (external_reference.startsWith("agenda_")) {
+      await processAgendaPayment(mockPayment);
+      res.json({ message: "Pagamento da agenda processado manualmente com sucesso" });
+    } else if (external_reference.startsWith("subscription_")) {
+      await processSubscriptionPayment(mockPayment);
+      res.json({ message: "Pagamento da assinatura processado manualmente com sucesso" });
+    } else if (external_reference.startsWith("dependent_")) {
+      await processDependentPayment(mockPayment);
+      res.json({ message: "Pagamento do dependente processado manualmente com sucesso" });
+    } else if (external_reference.startsWith("professional_")) {
+      await processProfessionalPayment(mockPayment);
+      res.json({ message: "Pagamento do profissional processado manualmente com sucesso" });
+    } else {
+      return res.status(400).json({ message: "Tipo de pagamento não reconhecido" });
+    }
+  } catch (error) {
+    console.error("❌ [TEST-PAYMENT] Error processing manual payment:", error);
+    res.status(500).json({ message: "Erro ao processar pagamento manualmente" });
+  }
+});
 
       res.json({
         message: "Imagem enviada com sucesso",

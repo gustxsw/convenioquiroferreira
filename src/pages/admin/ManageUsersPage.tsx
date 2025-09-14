@@ -38,6 +38,7 @@ type User = {
   category_name: string;
   percentage: number;
   crm: string;
+  professional_type: string;
 };
 
 const ManageUsersPage: React.FC = () => {
@@ -244,7 +245,8 @@ const ManageUsersPage: React.FC = () => {
       subscription_expiry: formattedExpiryDate,
       category_name: user.category_name || '',
       percentage: user.percentage || 50,
-      crm: user.crm || ''
+      crm: user.crm || '',
+      professional_type: user.professional_type || 'convenio'
     });
     setSelectedUser(user);
     setIsModalOpen(true);
@@ -753,8 +755,11 @@ const ManageUsersPage: React.FC = () => {
                           {user.crm && (
                             <div className="text-gray-500 text-xs">Registro: {user.crm}</div>
                           )}
-                          {user.percentage && user.roles?.includes('professional') && (
+                          {user.percentage && user.roles?.includes('professional') && user.professional_type === 'convenio' && (
                             <div className="text-blue-600 text-xs">{user.percentage}%</div>
+                          )}
+                          {user.roles?.includes('professional') && user.professional_type === 'agenda_only' && (
+                            <div className="text-purple-600 text-xs">Apenas Agenda</div>
                           )}
                           {!user.category_name && !user.crm && (
                             <span className="text-gray-400 text-sm">-</span>
@@ -976,7 +981,30 @@ const ManageUsersPage: React.FC = () => {
                       Informações Profissionais
                     </h3>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Tipo de Profissional *
+                        </label>
+                        <select
+                          name="professional_type"
+                          value={formData.professional_type}
+                          onChange={handleInputChange}
+                          className="input"
+                          required
+                        >
+                          <option value="convenio">Profissional do Convênio</option>
+                          <option value="agenda_only">Apenas Agenda (não aparece para clientes)</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {formData.professional_type === 'convenio' 
+                            ? 'Aparece na lista de profissionais para clientes e pode atender pelo convênio'
+                            : 'Não aparece para clientes, apenas usa o sistema de agenda para pacientes particulares'
+                          }
+                        </p>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           Categoria/Especialidade
@@ -991,7 +1019,8 @@ const ManageUsersPage: React.FC = () => {
                         />
                       </div>
 
-                      <div>
+                      {formData.professional_type === 'convenio' && (
+                        <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           Porcentagem (%)
                         </label>
@@ -1008,7 +1037,8 @@ const ManageUsersPage: React.FC = () => {
                         <p className="text-xs text-gray-500 mt-1">
                           Porcentagem que o profissional recebe das consultas
                         </p>
-                      </div>
+                        </div>
+                      )}
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1023,6 +1053,7 @@ const ManageUsersPage: React.FC = () => {
                           placeholder="Ex: CREFITO 12345/GO, CRM 12345/GO"
                         />
                       </div>
+                    </div>
                     </div>
                   </div>
                 )}
