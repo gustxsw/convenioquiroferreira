@@ -5627,6 +5627,21 @@ app.get("/api/audit-logs", authenticate, authorize(["admin"]), async (req, res) 
 
 // ===== HEALTH CHECK =====
 
+// ===== MAINTENANCE ROUTE (NO AUTH REQUIRED) =====
+
+app.get("/api/maintenance-status", (req, res) => {
+  res.json({
+    status: "maintenance",
+    message: "Sistema em manutenção programada",
+    estimated_return: "Em breve",
+    contact: {
+      phone: "(64) 98124-9199",
+      email: "contato@cartaoquiroferreira.com.br"
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
 app.get("/api/health", (req, res) => {
   res.json({
     status: "OK",
