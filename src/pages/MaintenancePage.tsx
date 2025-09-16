@@ -95,7 +95,7 @@ const MaintenancePage: React.FC = () => {
                     Envie sua dúvida por email
                   </p>
                   <a 
-                    href="mailto:contato@cartaoquiroferreira.com.br"
+                    href="mailto:convenioquiroferreira@gmail.com"
                     className="inline-flex items-center text-blue-600 hover:text-blue-700 font-medium transition-colors"
                   >
                     <Mail className="h-4 w-4 mr-2" />
