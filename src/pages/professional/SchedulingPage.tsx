@@ -148,6 +148,26 @@ const SchedulingPage: React.FC = () => {
     return timeString;
   };
 
+  // Check for payment feedback on component mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const paymentStatus = urlParams.get('payment');
+    const paymentType = urlParams.get('type');
+
+    if (paymentStatus === 'success' && paymentType === 'agenda') {
+      console.log('🎉 [SCHEDULING] Payment success detected, rechecking access...');
+      
+      // Clear URL parameters
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+      
+      // Recheck access after payment success
+      setTimeout(() => {
+        checkSchedulingAccess();
+      }, 2000);
+    }
+  }, []);
+
   useEffect(() => {
     checkSchedulingAccess();
     fetchData();

@@ -62,6 +62,12 @@ const SchedulingAccessPayment: React.FC<SchedulingAccessPaymentProps> = ({
       console.log('✅ Payment preference created:', data);
 
       setSuccess('Redirecionando para o pagamento...');
+      
+      // Clear any existing payment feedback
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.delete('payment');
+      currentUrl.searchParams.delete('type');
+      window.history.replaceState({}, document.title, currentUrl.toString());
 
       // Redirect to MercadoPago
       setTimeout(() => {
