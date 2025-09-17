@@ -4303,41 +4303,41 @@ app.use('/api/webhook*', (req, res, next) => {
   next();
 });
 
-// Webhook principal - URL corrigida
-app.post("/api/webhooks/payment-success", express.raw({ type: 'application/json' }), async (req, res) => {
+// Main webhook endpoint
+app.post("/api/webhooks/payment-success", express.json(), async (req, res) => {
   try {
-    console.log("🔔 [NEW-WEBHOOK] MercadoPago webhook received");
-    console.log("🔔 [NEW-WEBHOOK] Method:", req.method);
-    console.log("🔔 [NEW-WEBHOOK] Headers:", JSON.stringify(req.headers, null, 2));
-    console.log("🔔 [NEW-WEBHOOK] Raw body type:", typeof req.body);
-    console.log("🔔 [NEW-WEBHOOK] Raw body length:", req.body ? req.body.length : 0);
-    console.log("🔔 [NEW-WEBHOOK] User-Agent:", req.get('User-Agent'));
+    console.log("🔔 [WEBHOOK] MercadoPago webhook received");
+    console.log("🔔 [WEBHOOK] Headers:", req.headers);
+    console.log("🔔 [WEBHOOK] Body:", req.body);
 
-    // Parse body - handle both Buffer and string
+    // Handle different body types (mobile vs desktop)
     let data;
-    try {
-      const bodyString = req.body.toString('utf8');
-      console.log("🔔 [NEW-WEBHOOK] Body string:", bodyString);
-      data = JSON.parse(bodyString);
-    } catch (parseError) {
-      console.error("❌ [NEW-WEBHOOK] JSON parse error:", parseError);
-      console.error("❌ [NEW-WEBHOOK] Raw body:", req.body);
-      return res.status(400).json({ message: "Invalid JSON format" });
+    if (typeof req.body === 'string') {
+      try {
+        data = JSON.parse(req.body);
+      } catch (parseError) {
+        console.error("❌ [WEBHOOK] JSON parse error:", parseError);
+        return res.status(400).json({ message: "Invalid JSON format" });
+      }
+    } else if (typeof req.body === 'object' && req.body !== null) {
+      data = req.body;
+    } else {
+      console.error("❌ [WEBHOOK] Invalid body type:", typeof req.body);
+      return res.status(400).json({ message: "Invalid request body" });
     }
 
-    console.log("✅ [NEW-WEBHOOK] Parsed webhook data:", JSON.stringify(data, null, 2));
+    console.log("✅ [WEBHOOK] Parsed webhook data:", data);
 
     if (data.type === "payment") {
-      const paymentId = data.data?.id;
-      console.log("💰 [NEW-WEBHOOK] Processing payment notification:", paymentId);
+      const paymentId = data.data.id;
+      console.log("💰 [WEBHOOK] Processing payment notification:", paymentId);
 
       if (!paymentId) {
-        console.error("❌ [NEW-WEBHOOK] Payment ID not found in webhook data");
+        console.error("❌ [WEBHOOK] Payment ID not found in webhook data");
         return res.status(400).json({ message: "Payment ID missing" });
       }
-
+      
       // Get payment details from MercadoPago
-      console.log("🔄 [NEW-WEBHOOK] Fetching payment details from MercadoPago...");
       const paymentResponse = await fetch(
         `https://api.mercadopago.com/v1/payments/${paymentId}`,
         {
@@ -4348,67 +4348,81 @@ app.post("/api/webhooks/payment-success", express.raw({ type: 'application/json'
       );
 
       if (!paymentResponse.ok) {
-        console.error("❌ [NEW-WEBHOOK] Failed to get payment details:", paymentResponse.status);
-        const errorText = await paymentResponse.text();
-        console.error("❌ [NEW-WEBHOOK] MercadoPago error:", errorText);
-        return res.status(400).json({ message: "Erro ao obter detalhes do pagamento" });
+        console.error("❌ [WEBHOOK] Failed to get payment details from MercadoPago:", paymentResponse.status);
+        return res
+          .status(400)
+          .json({ message: "Erro ao obter detalhes do pagamento" });
       }
 
       const payment = await paymentResponse.json();
-      console.log("💰 [NEW-WEBHOOK] Payment details received:", {
+      console.log("💰 [WEBHOOK] Payment details:", {
         id: payment.id,
         status: payment.status,
         external_reference: payment.external_reference,
-        transaction_amount: payment.transaction_amount,
-        payment_method_id: payment.payment_method_id,
-        status_detail: payment.status_detail
+        transaction_amount: payment.transaction_amount
       });
 
       const externalReference = payment.external_reference;
       const status = payment.status;
 
       if (!externalReference) {
-        console.error("❌ [NEW-WEBHOOK] External reference not found in payment");
+        console.error("❌ [WEBHOOK] External reference not found in payment");
         return res.status(400).json({ message: "External reference missing" });
       }
 
       if (status === "approved") {
-        console.log("✅ [NEW-WEBHOOK] Payment approved, processing:", externalReference);
+        console.log("✅ [WEBHOOK] Payment approved, processing:", externalReference);
 
         // Process different payment types
         if (externalReference.startsWith("subscription_")) {
-          console.log("🔄 [NEW-WEBHOOK] Processing subscription payment...");
           await processSubscriptionPayment(payment);
         } else if (externalReference.startsWith("dependent_")) {
-          console.log("🔄 [NEW-WEBHOOK] Processing dependent payment...");
           await processDependentPayment(payment);
         } else if (externalReference.startsWith("professional_")) {
-          console.log("🔄 [NEW-WEBHOOK] Processing professional payment...");
           await processProfessionalPayment(payment);
         } else if (externalReference.startsWith("agenda_")) {
-          console.log("🔄 [NEW-WEBHOOK] Processing agenda payment...");
           await processAgendaPayment(payment);
         } else {
-          console.warn("⚠️ [NEW-WEBHOOK] Unknown payment type:", externalReference);
+          console.warn("⚠️ [WEBHOOK] Unknown payment type:", externalReference);
         }
       } else {
-        console.log("⚠️ [NEW-WEBHOOK] Payment not approved, status:", status);
+        console.log("⚠️ [WEBHOOK] Payment not approved, status:", status);
         
         // Update payment records for failed/pending payments
-        await updatePaymentStatus(externalReference, status, payment.id);
+        if (externalReference.startsWith("subscription_")) {
+          const userId = externalReference.split("_")[1];
+          await pool.query(
+            `UPDATE client_payments SET status = $1, mp_payment_id = $2 WHERE payment_reference LIKE $3`,
+            [status, payment.id, `subscription_${userId}_%`]
+          );
+        } else if (externalReference.startsWith("dependent_")) {
+          const dependentId = externalReference.split("_")[1];
+          await pool.query(
+            `UPDATE dependent_payments SET status = $1, mp_payment_id = $2 WHERE payment_reference LIKE $3`,
+            [status, payment.id, `dependent_${dependentId}_%`]
+          );
+        } else if (externalReference.startsWith("professional_")) {
+          const professionalId = externalReference.split("_")[1];
+          await pool.query(
+            `UPDATE professional_payments SET status = $1, mp_payment_id = $2 WHERE payment_reference LIKE $3`,
+            [status, payment.id, `professional_${professionalId}_%`]
+          );
+        } else if (externalReference.startsWith("agenda_")) {
+          const professionalId = externalReference.split("_")[1];
+          await pool.query(
+            `UPDATE agenda_payments SET status = $1, mp_payment_id = $2 WHERE payment_reference LIKE $3`,
+            [status, payment.id, `agenda_${professionalId}_%`]
+          );
+        }
       }
     } else {
-      console.log("ℹ️ [NEW-WEBHOOK] Non-payment webhook received:", data.type);
+      console.log("ℹ️ [WEBHOOK] Non-payment webhook received:", data.type);
     }
 
-    res.status(200).json({ 
-      received: true, 
-      timestamp: new Date().toISOString(),
-      processed: true 
-    });
+    res.status(200).json({ received: true });
   } catch (error) {
-    console.error("❌ [NEW-WEBHOOK] Webhook error:", error.message);
-    console.error("❌ [NEW-WEBHOOK] Webhook error stack:", error.stack);
+    console.error("❌ [WEBHOOK] Webhook error:", error.message);
+    console.error("❌ [WEBHOOK] Webhook error stack:", error.stack);
     res.status(500).json({ message: "Erro no webhook" });
   }
 });
@@ -4628,40 +4642,44 @@ app.all("/api/webhook/mercadopago", (req, res, next) => {
 // Manual payment processing endpoint for testing
 app.post("/api/test-payment-processing", authenticate, authorize(["admin"]), async (req, res) => {
   try {
-    const { payment_id, external_reference } = req.body;
-
-    if (!payment_id || !external_reference) {
-      return res.status(400).json({ message: "payment_id e external_reference são obrigatórios" });
+    const { external_reference, payment_id } = req.body;
+    
+    console.log('🔧 [MANUAL] Manual payment processing requested:', { external_reference, payment_id });
+    
+    if (!external_reference) {
+      return res.status(400).json({ message: 'external_reference é obrigatório' });
     }
-
-    console.log("🔧 [MANUAL-PAYMENT] Processing payment manually:", { payment_id, external_reference });
-
-    // Create a mock payment object
+    
+    // Create mock payment object for processing
     const mockPayment = {
-      id: payment_id,
-      status: "approved",
+      id: payment_id || 'manual_test',
+      status: 'approved',
       external_reference: external_reference,
-      transaction_amount: 24.99 // Default for agenda
+      transaction_amount: 24.99
     };
-
-    // Process based on type
-    if (external_reference.startsWith("subscription_")) {
+    
+    console.log('🔧 [MANUAL] Processing with mock payment:', mockPayment);
+    
+    // Process based on payment type
+    if (external_reference.startsWith("agenda_")) {
+      await processAgendaPayment(mockPayment);
+      console.log('✅ [MANUAL] Agenda payment processed successfully');
+      res.json({ message: 'Pagamento da agenda processado com sucesso' });
+    } else if (external_reference.startsWith("subscription_")) {
       await processSubscriptionPayment(mockPayment);
+      console.log('✅ [MANUAL] Subscription payment processed successfully');
+      res.json({ message: 'Pagamento da assinatura processado com sucesso' });
     } else if (external_reference.startsWith("dependent_")) {
       await processDependentPayment(mockPayment);
-    } else if (external_reference.startsWith("professional_")) {
-      await processProfessionalPayment(mockPayment);
-    } else if (external_reference.startsWith("agenda_")) {
-      await processAgendaPayment(mockPayment);
+      console.log('✅ [MANUAL] Dependent payment processed successfully');
+      res.json({ message: 'Pagamento do dependente processado com sucesso' });
     } else {
-      return res.status(400).json({ message: "Tipo de pagamento não reconhecido" });
+      console.log('❌ [MANUAL] Unknown payment type:', external_reference);
+      res.status(400).json({ message: 'Tipo de pagamento não reconhecido' });
     }
-
-    console.log("✅ [MANUAL-PAYMENT] Payment processed successfully");
-    res.json({ message: "Pagamento processado manualmente com sucesso" });
   } catch (error) {
-    console.error("❌ [MANUAL-PAYMENT] Error processing manual payment:", error);
-    res.status(500).json({ message: "Erro ao processar pagamento manualmente" });
+    console.error('❌ [MANUAL] Error in manual processing:', error);
+    res.status(500).json({ message: 'Erro ao processar pagamento manualmente' });
   }
 });
 

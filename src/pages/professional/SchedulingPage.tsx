@@ -773,7 +773,7 @@ const SchedulingPage: React.FC = () => {
       }));
     }
   };
-
+          const delay = 3000; // 3 seconds between attempts
   const generateTimeSlots = (duration: number = 30) => {
     const slots = [];
     for (let hour = 8; hour <= 18; hour++) {
