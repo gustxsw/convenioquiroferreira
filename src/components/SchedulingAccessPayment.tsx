@@ -71,7 +71,14 @@ const SchedulingAccessPayment: React.FC<SchedulingAccessPaymentProps> = ({
 
       // Redirect to MercadoPago
       setTimeout(() => {
-        window.location.href = data.init_point;
+        // Force redirect to ensure it works on mobile
+        if (window.navigator.userAgent.includes('Mobile')) {
+          console.log('📱 [PAYMENT] Mobile detected, using window.open');
+          window.open(data.init_point, '_self');
+        } else {
+          console.log('💻 [PAYMENT] Desktop detected, using window.location');
+          window.location.href = data.init_point;
+        }
       }, 1000);
 
     } catch (error) {
