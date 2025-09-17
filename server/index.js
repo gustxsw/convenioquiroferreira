@@ -4305,6 +4305,8 @@ app.use('/api/webhooks', (req, res, next) => {
 // ===== MERCADOPAGO WEBHOOK =====
 
 app.post("/api/webhooks/payment-success", express.raw({ type: 'application/json' }), async (req, res) => {
+}
+)
 app.use('/api/webhook*', (req, res, next) => {
   console.log('🔔 [WEBHOOK-MIDDLEWARE] Incoming webhook request');
   console.log('🔔 [WEBHOOK-MIDDLEWARE] Method:', req.method);
