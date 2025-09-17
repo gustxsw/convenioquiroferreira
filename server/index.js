@@ -4290,9 +4290,21 @@ app.post("/api/professional/create-agenda-payment", authenticate, authorize(["pr
   }
 });
 
+// Add webhook logging middleware
+app.use('/api/webhooks', (req, res, next) => {
+  console.log("🔔 [WEBHOOK-MIDDLEWARE] Incoming webhook request");
+  console.log("🔔 [WEBHOOK-MIDDLEWARE] Method:", req.method);
+  console.log("🔔 [WEBHOOK-MIDDLEWARE] URL:", req.url);
+  console.log("🔔 [WEBHOOK-MIDDLEWARE] Headers:", JSON.stringify(req.headers, null, 2));
+  console.log("🔔 [WEBHOOK-MIDDLEWARE] User-Agent:", req.get('User-Agent'));
+  console.log("🔔 [WEBHOOK-MIDDLEWARE] Content-Type:", req.get('Content-Type'));
+  console.log("🔔 [WEBHOOK-MIDDLEWARE] Content-Length:", req.get('Content-Length'));
+  next();
+});
+
 // ===== MERCADOPAGO WEBHOOK =====
 
-// Middleware para logs detalhados de webhook
+app.post("/api/webhooks/payment-success", express.raw({ type: 'application/json' }), async (req, res) => {
 app.use('/api/webhook*', (req, res, next) => {
   console.log('🔔 [WEBHOOK-MIDDLEWARE] Incoming webhook request');
   console.log('🔔 [WEBHOOK-MIDDLEWARE] Method:', req.method);
@@ -4513,34 +4525,49 @@ app.post("/api/test-payment-processing", authenticate, authorize(["admin", "prof
 // New webhook endpoint that matches your configuration
 app.post("/api/webhooks/payment-success", express.json(), async (req, res) => {
   try {
-    console.log("🔔 [NEW-WEBHOOK] MercadoPago webhook received at /api/webhooks/payment-success");
-    console.log("🔔 [NEW-WEBHOOK] Headers:", req.headers);
-    console.log("🔔 [NEW-WEBHOOK] Body:", req.body);
-
-    // Handle both raw and parsed JSON
+    console.log("🔔 [WEBHOOK] MercadoPago webhook received");
+    console.log("🔔 [WEBHOOK] Headers:", req.headers);
+    console.log("🔔 [WEBHOOK] Body type:", typeof req.body);
+    console.log("🔔 [WEBHOOK] Body content:", req.body);
+    // Parse the body correctly
     let data;
-    if (typeof req.body === 'string') {
+    
+    if (Buffer.isBuffer(req.body)) {
+      // If it's a Buffer, convert to string first
       try {
+        const bodyString = req.body.toString('utf8');
+        console.log("🔔 [WEBHOOK] Buffer converted to string:", bodyString);
+        data = JSON.parse(bodyString);
+      } catch (parseError) {
+        console.error("❌ [WEBHOOK] JSON parse error from buffer:", parseError);
+        return res.status(400).json({ message: "Invalid JSON format" });
+      }
+    } else if (typeof req.body === 'string') {
+      // If it's already a string
+      try {
+        console.log("🔔 [WEBHOOK] Parsing string body:", req.body);
         data = JSON.parse(req.body);
       } catch (parseError) {
-        console.error("❌ [NEW-WEBHOOK] JSON parse error:", parseError);
+        console.error("❌ [WEBHOOK] JSON parse error from string:", parseError);
         return res.status(400).json({ message: "Invalid JSON format" });
       }
     } else if (typeof req.body === 'object' && req.body !== null) {
+      // If it's already an object
+      console.log("🔔 [WEBHOOK] Body is already an object");
       data = req.body;
     } else {
-      console.error("❌ [NEW-WEBHOOK] Invalid body type:", typeof req.body);
+      console.error("❌ [WEBHOOK] Invalid body type:", typeof req.body);
       return res.status(400).json({ message: "Invalid request body" });
     }
 
-    console.log("✅ [NEW-WEBHOOK] Parsed webhook data:", data);
+    console.log("✅ [WEBHOOK] Parsed webhook data:", data);
 
     if (data.type === "payment") {
       const paymentId = data.data.id;
-      console.log("💰 [NEW-WEBHOOK] Processing payment notification:", paymentId);
+      console.log("💰 [WEBHOOK] Processing payment notification:", paymentId);
 
       if (!paymentId) {
-        console.error("❌ [NEW-WEBHOOK] Payment ID not found in webhook data");
+        console.error("❌ [WEBHOOK] Payment ID not found in webhook data");
         return res.status(400).json({ message: "Payment ID missing" });
       }
 
@@ -4555,12 +4582,12 @@ app.post("/api/webhooks/payment-success", express.json(), async (req, res) => {
       );
 
       if (!paymentResponse.ok) {
-        console.error("❌ [NEW-WEBHOOK] Failed to get payment details from MercadoPago:", paymentResponse.status);
+        console.error("❌ [WEBHOOK] Failed to get payment details from MercadoPago:", paymentResponse.status);
         return res.status(400).json({ message: "Erro ao obter detalhes do pagamento" });
       }
 
       const payment = await paymentResponse.json();
-      console.log("💰 [NEW-WEBHOOK] Payment details:", {
+      console.log("💰 [WEBHOOK] Payment details:", {
         id: payment.id,
         status: payment.status,
         external_reference: payment.external_reference,
@@ -4571,12 +4598,12 @@ app.post("/api/webhooks/payment-success", express.json(), async (req, res) => {
       const status = payment.status;
 
       if (!externalReference) {
-        console.error("❌ [NEW-WEBHOOK] External reference not found in payment");
+        console.error("❌ [WEBHOOK] External reference not found in payment");
         return res.status(400).json({ message: "External reference missing" });
       }
 
       if (status === "approved") {
-        console.log("✅ [NEW-WEBHOOK] Payment approved, processing:", externalReference);
+        console.log("✅ [WEBHOOK] Payment approved, processing:", externalReference);
 
         // Process different payment types
         if (externalReference.startsWith("subscription_")) {
@@ -4588,10 +4615,10 @@ app.post("/api/webhooks/payment-success", express.json(), async (req, res) => {
         } else if (externalReference.startsWith("agenda_")) {
           await processAgendaPayment(payment);
         } else {
-          console.warn("⚠️ [NEW-WEBHOOK] Unknown payment type:", externalReference);
+          console.warn("⚠️ [WEBHOOK] Unknown payment type:", externalReference);
         }
       } else {
-        console.log("⚠️ [NEW-WEBHOOK] Payment not approved, status:", status);
+        console.log("⚠️ [WEBHOOK] Payment not approved, status:", status);
         
         // Update payment records for failed/pending payments
         if (externalReference.startsWith("subscription_")) {
@@ -4621,13 +4648,15 @@ app.post("/api/webhooks/payment-success", express.json(), async (req, res) => {
         }
       }
     } else {
-      console.log("ℹ️ [NEW-WEBHOOK] Non-payment webhook received:", data.type);
+      console.log("ℹ️ [WEBHOOK] Non-payment webhook received:", data.type);
     }
 
     res.status(200).json({ received: true });
   } catch (error) {
-    console.error("❌ [NEW-WEBHOOK] Webhook error:", error.message);
-    console.error("❌ [NEW-WEBHOOK] Webhook error stack:", error.stack);
+    console.error("❌ [WEBHOOK] Webhook error:", error.message);
+    console.error("❌ [WEBHOOK] Webhook error stack:", error.stack);
+    console.error("❌ [WEBHOOK] Request body type:", typeof req.body);
+    console.error("❌ [WEBHOOK] Request body content:", req.body);
     res.status(500).json({ message: "Erro no webhook" });
   }
 });
@@ -5161,6 +5190,63 @@ const processAgendaPayment = async (payment) => {
     });
   }
 };
+
+// Test endpoint to manually process payments
+app.post("/api/test-payment-processing", authenticate, authorize(["admin", "professional"]), async (req, res) => {
+  try {
+    const { external_reference, payment_id } = req.body;
+    
+    if (!external_reference) {
+      return res.status(400).json({ message: "external_reference é obrigatório" });
+    }
+    
+    console.log("🔧 [TEST-PAYMENT] Manual payment processing:", { external_reference, payment_id });
+    
+    // Create a mock payment object for processing
+    const mockPayment = {
+      id: payment_id || `test_${Date.now()}`,
+      status: "approved",
+      external_reference: external_reference,
+      transaction_amount: 24.99
+    };
+    
+    // Process based on payment type
+    if (external_reference.startsWith("agenda_")) {
+      await processAgendaPayment(mockPayment);
+      res.json({ 
+        message: "Pagamento da agenda processado manualmente com sucesso",
+        processed: true
+      });
+    } else if (external_reference.startsWith("subscription_")) {
+      await processSubscriptionPayment(mockPayment);
+      res.json({ 
+        message: "Pagamento da assinatura processado manualmente com sucesso",
+        processed: true
+      });
+    } else if (external_reference.startsWith("dependent_")) {
+      await processDependentPayment(mockPayment);
+      res.json({ 
+        message: "Pagamento do dependente processado manualmente com sucesso",
+        processed: true
+      });
+    } else if (external_reference.startsWith("professional_")) {
+      await processProfessionalPayment(mockPayment);
+      res.json({ 
+        message: "Pagamento do profissional processado manualmente com sucesso",
+        processed: true
+      });
+    } else {
+      res.status(400).json({ message: "Tipo de pagamento não reconhecido" });
+    }
+    
+  } catch (error) {
+    console.error("❌ [TEST-PAYMENT] Error in manual processing:", error);
+    res.status(500).json({ 
+      message: "Erro ao processar pagamento manualmente",
+      error: error.message 
+    });
+  }
+});
 
 // ===== REPORTS ROUTES =====
 
