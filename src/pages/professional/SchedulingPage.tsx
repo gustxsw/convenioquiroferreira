@@ -156,6 +156,13 @@ const SchedulingPage: React.FC = () => {
     const paymentStatus = urlParams.get('payment');
     const paymentType = urlParams.get('type');
 
+    if (paymentStatus === 'success' && paymentType === 'agenda') {
+      console.log('🎉 [SCHEDULING] Payment success detected, rechecking access...');
+      
+      // Clear URL parameters
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    }
     if (paymentStatus === 'success' && (paymentType === 'agenda' || !paymentType)) {
       console.log('🎉 [SCHEDULING] Payment success detected, rechecking access...');
       setPaymentCheckMessage('Pagamento detectado! Verificando acesso...');
@@ -827,12 +834,7 @@ const SchedulingPage: React.FC = () => {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">
-            {isCheckingPayment ? 'Verificando pagamento e ativando acesso...' : 'Verificando acesso à agenda...'}
-          </p>
-          {paymentCheckMessage && (
-            <p className="text-blue-600 mt-2 font-medium">{paymentCheckMessage}</p>
-          )}
+          <p className="text-gray-600">Verificando acesso à agenda...</p>
         </div>
       </div>
     );
@@ -1305,4 +1307,454 @@ const SchedulingPage: React.FC = () => {
                   {formData.patient_type === "private" && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Paciente Particular
+                        Paciente Particular *
+                      </label>
+                      <select
+                        value={formData.private_patient_id}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            private_patient_id: e.target.value,
+                          }))
+                        }
+                        className="input"
+                        required
+                      >
+                        <option value="">Selecione um paciente</option>
+                        {privatePatients.map((patient) => (
+                          <option key={patient.id} value={patient.id}>
+                            {patient.name} - {patient.cpf ? formatCpf(patient.cpf) : "CPF não informado"}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Convenio Client Search */}
+                  {formData.patient_type === "convenio" && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        CPF do Cliente *
+                      </label>
+                      <div className="flex space-x-2">
+                        <input
+                          type="text"
+                          value={formatCpf(formData.client_cpf)}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              client_cpf: e.target.value.replace(/\D/g, ""),
+                            }))
+                          }
+                          className="input flex-1"
+                          placeholder="000.000.000-00"
+                        />
+                        <button
+                          type="button"
+                          onClick={searchClientByCpf}
+                          className="btn btn-secondary"
+                          disabled={isSearching}
+                        >
+                          {isSearching ? "Buscando..." : "Buscar"}
+                        </button>
+                      </div>
+
+                      {/* Client Search Result */}
+                      {clientSearchResult && (
+                        <div className="mt-3 p-3 bg-green-50 rounded-lg">
+                          <p className="font-medium text-green-800">
+                            Cliente: {clientSearchResult.name}
+                          </p>
+                          
+                          {/* Dependent Selection */}
+                          {dependents.length > 0 && (
+                            <div className="mt-2">
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Dependente (opcional)
+                              </label>
+                              <select
+                                value={selectedDependentId || ""}
+                                onChange={(e) =>
+                                  setSelectedDependentId(e.target.value ? Number(e.target.value) : null)
+                                }
+                                className="input"
+                              >
+                                <option value="">Consulta para o titular</option>
+                                {dependents.map((dependent) => (
+                                  <option key={dependent.id} value={dependent.id}>
+                                    {dependent.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Recurring Consultation Checkbox */}
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <Repeat className="h-5 w-5 text-blue-600 mr-2" />
+                        <span className="font-medium text-blue-900">Consultas Recorrentes</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowNewModal(false);
+                          setShowRecurringModal(true);
+                        }}
+                        className="btn btn-secondary flex items-center"
+                      >
+                        <Repeat className="h-4 w-4 mr-2" />
+                        Abrir Modal Recorrente
+                      </button>
+                    </div>
+                    <p className="text-sm text-blue-700 mt-2">
+                      Para criar múltiplas consultas com padrão de repetição, use o modal dedicado.
+                    </p>
+                  </div>
+
+                  {/* Date and Time */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Data *
+                      </label>
+                      <input
+                        type="date"
+                        value={formData.date}
+                        onChange={(e) =>
+                          setFormData((prev) => ({ ...prev, date: e.target.value }))
+                        }
+                        className="input"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Horário *
+                      </label>
+                      <input
+                        type="time"
+                        value={formData.time}
+                        onChange={(e) =>
+                          setFormData((prev) => ({ ...prev, time: e.target.value }))
+                        }
+                        className="input"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Service */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Serviço *
+                    </label>
+                    <select
+                      value={formData.service_id}
+                      onChange={handleServiceChange}
+                      className="input"
+                      required
+                    >
+                      <option value="">Selecione um serviço</option>
+                      {services.map((service) => (
+                        <option key={service.id} value={service.id}>
+                          {service.name} - {formatCurrency(service.base_price)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Value */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Valor *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.value}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, value: e.target.value }))
+                      }
+                      className="input"
+                      placeholder="0.00"
+                      required
+                    />
+                  </div>
+
+                  {/* Location */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Local de Atendimento
+                    </label>
+                    <select
+                      value={formData.location_id}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, location_id: e.target.value }))
+                      }
+                      className="input"
+                    >
+                      <option value="">Selecione um local</option>
+                      {attendanceLocations.map((location) => (
+                        <option key={location.id} value={location.id}>
+                          {location.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Notes */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Observações
+                    </label>
+                    <textarea
+                      value={formData.notes}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, notes: e.target.value }))
+                      }
+                      className="input"
+                      rows={3}
+                      placeholder="Observações sobre a consulta..."
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setShowNewModal(false)}
+                    className="btn btn-secondary"
+                    disabled={isCreating}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className={`btn btn-primary ${
+                      isCreating ? "opacity-70 cursor-not-allowed" : ""
+                    }`}
+                    disabled={isCreating}
+                  >
+                    {isCreating ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Criando...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Criar Consulta
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Status Change Modal */}
+        {showStatusModal && selectedConsultation && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl w-full max-w-md">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-bold flex items-center">
+                    <Settings className="h-6 w-6 text-blue-600 mr-2" />
+                    Alterar Status
+                  </h2>
+                  <button
+                    onClick={closeStatusModal}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6">
+                {/* Consultation Info */}
+                <div className="bg-gray-50 p-4 rounded-lg mb-6">
+                  <div className="flex items-center mb-2">
+                    {selectedConsultation.is_dependent ? (
+                      <Users className="h-4 w-4 text-blue-600 mr-2" />
+                    ) : (
+                      <User className="h-4 w-4 text-green-600 mr-2" />
+                    )}
+                    <span className="font-medium">{selectedConsultation.client_name}</span>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-1">
+                    <strong>Serviço:</strong> {selectedConsultation.service_name}
+                  </p>
+                  <p className="text-sm text-gray-600 mb-1">
+                    <strong>Data/Hora:</strong>{" "}
+                    {(() => {
+                      const utcDate = new Date(selectedConsultation.date);
+                      const brazilDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
+                      return brazilDate.toLocaleDateString('pt-BR') + ' às ' + brazilDate.toLocaleTimeString('pt-BR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false
+                      });
+                    })()}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <strong>Valor:</strong> {formatCurrency(selectedConsultation.value)}
+                  </p>
+                </div>
+
+                {/* Status Selection */}
+                <div className="space-y-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-3">
+                    Selecione o novo status:
+                  </label>
+
+                  <div className="space-y-2">
+                    {[
+                      { value: "scheduled", label: "Agendado", icon: <Clock className="h-4 w-4" />, color: "blue" },
+                      { value: "confirmed", label: "Confirmado", icon: <CheckCircle className="h-4 w-4" />, color: "green" },
+                      { value: "completed", label: "Concluído", icon: <Check className="h-4 w-4" />, color: "gray" },
+                      { value: "cancelled", label: "Cancelado", icon: <XCircle className="h-4 w-4" />, color: "red" },
+                    ].map((status) => (
+                      <label
+                        key={status.value}
+                        className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                          newStatus === status.value
+                            ? `border-${status.color}-300 bg-${status.color}-50`
+                            : "border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="status"
+                          value={status.value}
+                          checked={newStatus === status.value}
+                          onChange={(e) => setNewStatus(e.target.value as any)}
+                          className={`text-${status.color}-600 focus:ring-${status.color}-500`}
+                        />
+                        <div className="ml-3 flex items-center">
+                          <div className={`text-${status.color}-600 mr-2`}>
+                            {status.icon}
+                          </div>
+                          <div>
+                            <div className="font-medium text-gray-900">{status.label}</div>
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                    type="button"
+                    onClick={closeStatusModal}
+                    className="btn btn-secondary"
+                    disabled={isUpdatingStatus}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={updateConsultationStatus}
+                    className={`btn btn-primary ${
+                      isUpdatingStatus ? "opacity-70 cursor-not-allowed" : ""
+                    }`}
+                    disabled={isUpdatingStatus || newStatus === selectedConsultation.status}
+                  >
+                    {isUpdatingStatus ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Atualizando...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="h-4 w-4 mr-2" />
+                        Atualizar Status
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Consultation Modal */}
+        <EditConsultationModal
+          isOpen={showEditModal}
+          consultation={consultationToEdit}
+          onClose={closeEditModal}
+          onSuccess={handleEditSuccess}
+        />
+
+        {/* Cancel Consultation Modal */}
+        <CancelConsultationModal
+          isOpen={showCancelModal}
+          onClose={closeModals}
+          onConfirm={handleCancelConsultation}
+          consultationData={selectedConsultation ? {
+            id: selectedConsultation.id,
+            patient_name: selectedConsultation.client_name,
+            service_name: selectedConsultation.service_name,
+            date: selectedConsultation.date,
+            professional_name: user?.name || '',
+            location_name: selectedConsultation.location_name || '',
+            is_dependent: selectedConsultation.is_dependent,
+            patient_type: selectedConsultation.patient_type
+          } : null}
+        />
+
+        {/* Slot Customization Modal */}
+        <SlotCustomizationModal
+          isOpen={showSlotModal}
+          currentSlotDuration={slotDuration}
+          onClose={() => setShowSlotModal(false)}
+          onSlotDurationChange={handleSlotDurationChange}
+        />
+
+
+        {/* Quick Schedule Modal */}
+        {showQuickScheduleModal && (
+          <QuickScheduleModal
+            isOpen={showQuickScheduleModal}
+            onClose={closeQuickScheduleModal}
+            onSuccess={handleQuickScheduleSuccess}
+            selectedSlot={selectedSlot}
+          />
+        )}
+
+        {/* Recurring Consultation Modal */}
+        {showRecurringModal && (
+          <RecurringConsultationModal
+            isOpen={showRecurringModal}
+            onClose={() => setShowRecurringModal(false)}
+            onSuccess={() => {
+              fetchData();
+              setSuccess("Consultas recorrentes criadas com sucesso!");
+              setTimeout(() => setSuccess(""), 3000);
+            }}
+          />
+        )}
+
+      </div>
+    );
+  }
+
+  // Fallback loading state
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
+        <p className="text-gray-600">Carregando agenda...</p>
+      </div>
+    </div>
+  );
+};
+
+export default SchedulingPage;
