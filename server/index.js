@@ -5089,8 +5089,10 @@ const processAgendaPayment = async (payment) => {
     const professionalId = parts[1];
     const durationDays = 30; // Always 30 days for agenda access
 
-    console.log("🔄 [AGENDA-WEBHOOK] Processing agenda payment for professional:", professionalId, "duration:", durationDays);
-    console.log("🔄 [AGENDA-WEBHOOK] Payment details:", {
+    console.log('🔄 [AGENDA-WEBHOOK] ===== STARTING AGENDA PAYMENT PROCESSING =====');
+    console.log('🔄 [AGENDA-WEBHOOK] Professional ID:', professionalId);
+    console.log('🔄 [AGENDA-WEBHOOK] Duration days:', durationDays);
+    console.log('🔄 [AGENDA-WEBHOOK] Payment details:', {
       id: payment.id,
       status: payment.status,
       amount: payment.transaction_amount,
@@ -5104,14 +5106,15 @@ const processAgendaPayment = async (payment) => {
     );
 
     if (professionalCheck.rows.length === 0) {
-      console.error("❌ [AGENDA-WEBHOOK] Professional not found:", professionalId);
+      console.error('❌ [AGENDA-WEBHOOK] Professional not found:', professionalId);
       return;
     }
 
     const professional = professionalCheck.rows[0];
-    console.log("✅ [AGENDA-WEBHOOK] Professional validated:", professional.name);
+    console.log('✅ [AGENDA-WEBHOOK] Professional validated:', professional.name);
 
     // Deactivate any existing access
+    console.log('🔄 [AGENDA-WEBHOOK] Deactivating existing access...');
     await pool.query(
       `
       UPDATE scheduling_access SET is_active = false WHERE professional_id = $1
@@ -5119,24 +5122,38 @@ const processAgendaPayment = async (payment) => {
       [professionalId]
     );
 
-    console.log("✅ [AGENDA-WEBHOOK] Existing access deactivated for professional:", professionalId);
+    console.log('✅ [AGENDA-WEBHOOK] Existing access deactivated');
 
     // Grant new access
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + durationDays);
 
+    console.log('🔄 [AGENDA-WEBHOOK] Creating new scheduling access...');
+    console.log('🔄 [AGENDA-WEBHOOK] Expires at:', expiresAt.toISOString());
+    
     const accessResult = await pool.query(
       `
       INSERT INTO scheduling_access (professional_id, expires_at, reason, is_active, starts_at)
       VALUES ($1, $2, $3, true, CURRENT_TIMESTAMP)
       RETURNING *
     `,
-      [professionalId, expiresAt.toISOString(), "Pagamento via MercadoPago"]
+      [professionalId, expiresAt.toISOString(), 'Pagamento via MercadoPago - Webhook']
     );
 
-    console.log("✅ [AGENDA-WEBHOOK] New scheduling access created:", accessResult.rows[0]);
+    if (accessResult.rows.length === 0) {
+      console.error('❌ [AGENDA-WEBHOOK] FAILED TO CREATE SCHEDULING ACCESS!');
+      throw new Error('Failed to create scheduling access');
+    }
+    
+    console.log('✅ [AGENDA-WEBHOOK] New scheduling access created successfully:', {
+      id: accessResult.rows[0].id,
+      professional_id: accessResult.rows[0].professional_id,
+      expires_at: accessResult.rows[0].expires_at,
+      is_active: accessResult.rows[0].is_active
+    });
 
     // Update payment record
+    console.log('🔄 [AGENDA-WEBHOOK] Updating payment record...');
     const paymentUpdateResult = await pool.query(
       `
       UPDATE agenda_payments 
@@ -5150,9 +5167,22 @@ const processAgendaPayment = async (payment) => {
       [payment.id, `agenda_${professionalId}_${durationDays}_%`]
     );
 
-    console.log("✅ [AGENDA-WEBHOOK] Payment record updated:", paymentUpdateResult.rows);
+    if (paymentUpdateResult.rows.length === 0) {
+      console.error('❌ [AGENDA-WEBHOOK] FAILED TO UPDATE PAYMENT RECORD!');
+      console.error('❌ [AGENDA-WEBHOOK] Looking for pattern:', `agenda_${professionalId}_${durationDays}_%`);
+      
+      // Try to find the payment record
+      const findPaymentResult = await pool.query(
+        'SELECT * FROM agenda_payments WHERE professional_id = $1 ORDER BY created_at DESC LIMIT 5',
+        [professionalId]
+      );
+      console.log('🔍 [AGENDA-WEBHOOK] Recent payments for professional:', findPaymentResult.rows);
+    } else {
+      console.log('✅ [AGENDA-WEBHOOK] Payment record updated successfully:', paymentUpdateResult.rows[0]);
+    }
 
     // Create notification
+    console.log('🔄 [AGENDA-WEBHOOK] Creating notification...');
     const notificationResult = await pool.query(
       `
       INSERT INTO notifications (user_id, title, message, type)
@@ -5161,35 +5191,44 @@ const processAgendaPayment = async (payment) => {
     `,
       [
         professionalId,
-        "Acesso à Agenda Ativado",
+        'Acesso à Agenda Ativado',
         `Seu acesso à agenda foi ativado por ${durationDays} dias! Válido até ${expiresAt.toLocaleDateString('pt-BR')}.`,
-        "success",
+        'success'
       ]
     );
 
-    console.log("✅ [AGENDA-WEBHOOK] Notification created:", notificationResult.rows[0]);
+    console.log('✅ [AGENDA-WEBHOOK] Notification created:', notificationResult.rows[0].id);
     
     // Verify access was granted correctly
+    console.log('🔄 [AGENDA-WEBHOOK] FINAL VERIFICATION - Checking if access was granted...');
     const verifyResult = await pool.query(
       `SELECT * FROM scheduling_access WHERE professional_id = $1 AND is_active = true ORDER BY created_at DESC LIMIT 1`,
       [professionalId]
     );
     
     if (verifyResult.rows.length > 0) {
-      console.log("✅ [AGENDA-WEBHOOK] VERIFICATION: Access successfully granted and verified:", verifyResult.rows[0]);
-      console.log("🎉 [AGENDA-WEBHOOK] Agenda access successfully activated for professional:", professionalId, "valid until:", expiresAt.toLocaleDateString('pt-BR'));
+      const access = verifyResult.rows[0];
+      console.log('🎉 [AGENDA-WEBHOOK] ===== SUCCESS! AGENDA ACCESS ACTIVATED =====');
+      console.log('🎉 [AGENDA-WEBHOOK] Professional:', professionalId);
+      console.log('🎉 [AGENDA-WEBHOOK] Access ID:', access.id);
+      console.log('🎉 [AGENDA-WEBHOOK] Expires:', access.expires_at);
+      console.log('🎉 [AGENDA-WEBHOOK] Is Active:', access.is_active);
+      console.log('🎉 [AGENDA-WEBHOOK] Valid until:', expiresAt.toLocaleDateString('pt-BR'));
     } else {
-      console.error("❌ [AGENDA-WEBHOOK] VERIFICATION: Access was not granted properly!");
+      console.error('❌ [AGENDA-WEBHOOK] ===== CRITICAL ERROR: ACCESS NOT GRANTED! =====');
+      throw new Error('Verification failed - access not found after creation');
     }
     
   } catch (error) {
-    console.error("❌ [AGENDA-WEBHOOK] Error processing agenda payment:", error);
-    console.error("❌ [AGENDA-WEBHOOK] Error details:", {
+    console.error('❌ [AGENDA-WEBHOOK] ===== CRITICAL ERROR IN AGENDA PAYMENT =====');
+    console.error('❌ [AGENDA-WEBHOOK] Error message:', error.message);
+    console.error('❌ [AGENDA-WEBHOOK] Error stack:', error.stack);
+    console.error('❌ [AGENDA-WEBHOOK] Error details:', {
       message: error.message,
-      stack: error.stack,
       payment_id: payment?.id,
       external_reference: payment?.external_reference
     });
+    throw error; // Re-throw to be caught by main webhook handler
   }
 };
 
