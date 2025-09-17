@@ -80,6 +80,8 @@ const SchedulingPage: React.FC = () => {
   const [accessExpiresAt, setAccessExpiresAt] = useState<string | null>(null);
   const [isCheckingAccess, setIsCheckingAccess] = useState(true);
   const [accessError, setAccessError] = useState('');
+  const [isCheckingPayment, setIsCheckingPayment] = useState(false);
+  const [paymentCheckMessage, setPaymentCheckMessage] = useState('');
 
   // Slot customization state
   const [slotDuration, setSlotDuration] = useState<SlotDuration>(() => {
@@ -160,11 +162,69 @@ const SchedulingPage: React.FC = () => {
       // Clear URL parameters
       const newUrl = window.location.pathname;
       window.history.replaceState({}, document.title, newUrl);
+    if (paymentStatus === 'success' && (paymentType === 'agenda' || !paymentType)) {
+      console.log('🎉 [SCHEDULING] Payment success detected, rechecking access...');
+      setPaymentCheckMessage('Pagamento detectado! Verificando acesso...');
+      setIsCheckingPayment(true);
       
-      // Recheck access after payment success
-      setTimeout(() => {
-        checkSchedulingAccess();
-      }, 2000);
+      // Clear URL parameters
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+      
+      // Recheck access multiple times with increasing delays
+      const recheckAccess = async (attempt = 1, maxAttempts = 5) => {
+        console.log(`🔄 [SCHEDULING] Recheck attempt ${attempt}/${maxAttempts}`);
+        
+        try {
+          const token = localStorage.getItem('token');
+          const apiUrl = getApiUrl();
+          
+          const response = await fetch(`${apiUrl}/api/professional/scheduling-access`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (response.ok) {
+            const accessData = await response.json();
+            console.log(`✅ [SCHEDULING] Access check ${attempt} result:`, accessData);
+            
+            if (accessData.hasAccess) {
+              setHasAccess(true);
+              setAccessLoading(false);
+              setIsCheckingPayment(false);
+              setPaymentCheckMessage('Acesso ativado com sucesso! 🎉');
+              
+              // Clear success message after 3 seconds
+              setTimeout(() => {
+                setPaymentCheckMessage('');
+              }, 3000);
+              
+              return;
+            }
+          }
+          
+          // If still no access and we have attempts left, try again
+          if (attempt < maxAttempts) {
+            const delay = attempt * 2000; // Increasing delay: 2s, 4s, 6s, 8s, 10s
+            console.log(`⏳ [SCHEDULING] Waiting ${delay}ms before next attempt...`);
+            setTimeout(() => recheckAccess(attempt + 1, maxAttempts), delay);
+          } else {
+            console.warn('⚠️ [SCHEDULING] Max recheck attempts reached, access still not granted');
+            setIsCheckingPayment(false);
+            setPaymentCheckMessage('Pagamento processado, mas acesso ainda não ativado. Tente recarregar a página.');
+          }
+        } catch (error) {
+          console.error(`❌ [SCHEDULING] Recheck attempt ${attempt} failed:`, error);
+          if (attempt < maxAttempts) {
+            setTimeout(() => recheckAccess(attempt + 1, maxAttempts), 2000);
+          } else {
+            setIsCheckingPayment(false);
+            setPaymentCheckMessage('Erro ao verificar acesso. Tente recarregar a página.');
+          }
+        }
+      };
+      
+      // Start rechecking
+      recheckAccess();
     }
   }, []);
 
