@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
-import DocumentViewModal from '../../components/DocumentViewModal';
+"use client";
+
+import type React from "react";
+import { useState, useEffect } from "react";
+import { useAuth } from "../../contexts/AuthContext";
+import DocumentViewModal from "../../components/DocumentViewModal";
 import {
   FileText,
   Plus,
   Search,
   User,
   Calendar,
-  Edit,
   Trash2,
   Eye,
   X,
@@ -15,8 +17,7 @@ import {
   Download,
   Printer,
   AlertCircle,
-  FileImage,
-} from 'lucide-react';
+} from "lucide-react";
 
 type SavedDocument = {
   id: number;
@@ -39,18 +40,21 @@ const DocumentsPage: React.FC = () => {
   const { user } = useAuth();
   const [documents, setDocuments] = useState<SavedDocument[]>([]);
   const [patients, setPatients] = useState<PrivatePatient[]>([]);
-  const [filteredDocuments, setFilteredDocuments] = useState<SavedDocument[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedPatient, setSelectedPatient] = useState<string>('');
-  const [selectedDocumentType, setSelectedDocumentType] = useState<string>('');
+  const [filteredDocuments, setFilteredDocuments] = useState<SavedDocument[]>(
+    []
+  );
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedPatient, setSelectedPatient] = useState<string>("");
+  const [selectedDocumentType, setSelectedDocumentType] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
-  const [selectedDocument, setSelectedDocument] = useState<SavedDocument | null>(null);
+  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
+  const [selectedDocument, setSelectedDocument] =
+    useState<SavedDocument | null>(null);
 
   // Document view modal state
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -62,35 +66,38 @@ const DocumentsPage: React.FC = () => {
 
   // Form state for document generation
   const [formData, setFormData] = useState({
-    patient_type: 'private' as 'convenio' | 'private',
-    client_cpf: '',
-    document_type: 'certificate',
-    private_patient_id: '',
-    title: '',
-    description: '',
-    days: '1',
-    cid: '',
-    prescription: '',
-    procedure: '',
-    risks: '',
-    content: '',
+    patient_type: "private" as "convenio" | "private",
+    client_cpf: "",
+    document_type: "certificate",
+    private_patient_id: "",
+    title: "",
+    description: "",
+    days: "1",
+    cid: "",
+    prescription: "",
+    procedure: "",
+    risks: "",
+    content: "",
   });
 
   // Client search state (for convenio patients)
   const [clientSearchResult, setClientSearchResult] = useState<any>(null);
   const [dependents, setDependents] = useState<any[]>([]);
-  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(null);
+  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(
+    null
+  );
   const [isSearching, setIsSearching] = useState(false);
 
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [documentToDelete, setDocumentToDelete] = useState<SavedDocument | null>(null);
+  const [documentToDelete, setDocumentToDelete] =
+    useState<SavedDocument | null>(null);
 
   // Professional data
   const [professionalData, setProfessionalData] = useState({
-    name: '',
-    specialty: '',
-    crm: '',
+    name: "",
+    specialty: "",
+    crm: "",
     signatureUrl: null as string | null,
   });
 
@@ -123,12 +130,16 @@ const DocumentsPage: React.FC = () => {
 
     if (selectedPatient) {
       filtered = filtered.filter(
-        (doc) => doc.patient_name === patients.find((p) => p.id.toString() === selectedPatient)?.name
+        (doc) =>
+          doc.patient_name ===
+          patients.find((p) => p.id.toString() === selectedPatient)?.name
       );
     }
 
     if (selectedDocumentType) {
-      filtered = filtered.filter((doc) => doc.document_type === selectedDocumentType);
+      filtered = filtered.filter(
+        (doc) => doc.document_type === selectedDocumentType
+      );
     }
 
     setFilteredDocuments(filtered);
@@ -137,63 +148,79 @@ const DocumentsPage: React.FC = () => {
   const fetchData = async () => {
     try {
       setIsLoading(true);
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       // Fetch professional data
       const userResponse = await fetch(`${apiUrl}/api/users/${user?.id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (userResponse.ok) {
         const userData = await userResponse.json();
         setProfessionalData({
-          name: userData.name || user?.name || 'Profissional',
-          specialty: userData.category_name || '',
-          crm: userData.crm || '',
+          name: userData.name || user?.name || "Profissional",
+          specialty: userData.category_name || "",
+          crm: userData.crm || "",
           signatureUrl: null, // Will be fetched separately
         });
 
         // Fetch signature separately
         try {
-          const signatureResponse = await fetch(`${apiUrl}/api/professionals/${user?.id}/signature`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
+          const signatureResponse = await fetch(
+            `${apiUrl}/api/professionals/${user?.id}/signature`,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          );
           if (signatureResponse.ok) {
             const signatureData = await signatureResponse.json();
-            setProfessionalData(prev => ({
+            setProfessionalData((prev) => ({
               ...prev,
-              signatureUrl: signatureData.signature_url
+              signatureUrl: signatureData.signature_url,
             }));
           }
         } catch (signatureError) {
-          console.warn('Could not load signature:', signatureError);
+          console.warn("Could not load signature:", signatureError);
         }
       }
 
       // Fetch saved documents
-      console.log('🔄 [DOCUMENTS] Fetching medical documents from:', `${apiUrl}/api/documents/medical`);
-      
+      console.log(
+        "🔄 [DOCUMENTS] Fetching medical documents from:",
+        `${apiUrl}/api/documents/medical`
+      );
+
       const documentsResponse = await fetch(`${apiUrl}/api/documents/medical`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
 
-      console.log('📡 [DOCUMENTS] Medical documents response status:', documentsResponse.status);
+      console.log(
+        "📡 [DOCUMENTS] Medical documents response status:",
+        documentsResponse.status
+      );
 
       if (documentsResponse.ok) {
         const documentsData = await documentsResponse.json();
-        console.log('✅ [DOCUMENTS] Medical documents loaded:', documentsData.length);
-        console.log('✅ [DOCUMENTS] Documents data:', documentsData);
+        console.log(
+          "✅ [DOCUMENTS] Medical documents loaded:",
+          documentsData.length
+        );
+        console.log("✅ [DOCUMENTS] Documents data:", documentsData);
         setDocuments(documentsData);
       } else {
         const errorText = await documentsResponse.text();
-        console.error('❌ [DOCUMENTS] Medical documents error:', documentsResponse.status, errorText);
+        console.error(
+          "❌ [DOCUMENTS] Medical documents error:",
+          documentsResponse.status,
+          errorText
+        );
         setDocuments([]);
       }
 
       // Fetch patients
       const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (patientsResponse.ok) {
@@ -201,28 +228,28 @@ const DocumentsPage: React.FC = () => {
         setPatients(patientsData);
       }
     } catch (error) {
-      console.error('❌ [DOCUMENTS] Error fetching data:', error);
-      setError('Não foi possível carregar os dados');
+      console.error("❌ [DOCUMENTS] Error fetching data:", error);
+      setError("Não foi possível carregar os dados");
     } finally {
       setIsLoading(false);
     }
   };
 
   const openCreateModal = () => {
-    setModalMode('create');
+    setModalMode("create");
     setFormData({
-      patient_type: 'private',
-      client_cpf: '',
-      document_type: 'certificate',
-      private_patient_id: '',
-      title: '',
-      description: '',
-      days: '1',
-      cid: '',
-      prescription: '',
-      procedure: '',
-      risks: '',
-      content: '',
+      patient_type: "private",
+      client_cpf: "",
+      document_type: "certificate",
+      private_patient_id: "",
+      title: "",
+      description: "",
+      days: "1",
+      cid: "",
+      prescription: "",
+      procedure: "",
+      risks: "",
+      content: "",
     });
     setSelectedDocument(null);
     setClientSearchResult(null);
@@ -246,12 +273,14 @@ const DocumentsPage: React.FC = () => {
     setClientSearchResult(null);
     setDependents([]);
     setSelectedDependentId(null);
-    setError('');
-    setSuccess('');
+    setError("");
+    setSuccess("");
   };
 
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -262,11 +291,11 @@ const DocumentsPage: React.FC = () => {
 
     try {
       setIsSearching(true);
-      setError('');
+      setError("");
 
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
-      const cleanCpf = formData.client_cpf.replace(/\D/g, '');
+      const cleanCpf = formData.client_cpf.replace(/\D/g, "");
 
       // First, try to find a dependent
       const dependentResponse = await fetch(
@@ -279,15 +308,15 @@ const DocumentsPage: React.FC = () => {
       if (dependentResponse.ok) {
         const dependentData = await dependentResponse.json();
 
-        if (dependentData.status !== 'active') {
-          setError('Este dependente não possui assinatura ativa.');
+        if (dependentData.status !== "active") {
+          setError("Este dependente não possui assinatura ativa.");
           return;
         }
 
         setClientSearchResult({
           id: dependentData.client_id,
           name: dependentData.client_name,
-          subscription_status: 'active',
+          subscription_status: "active",
         });
         setSelectedDependentId(dependentData.id);
         setDependents([]);
@@ -304,17 +333,17 @@ const DocumentsPage: React.FC = () => {
 
       if (!clientResponse.ok) {
         if (clientResponse.status === 404) {
-          setError('Cliente ou dependente não encontrado.');
+          setError("Cliente ou dependente não encontrado.");
         } else {
-          setError('Erro ao buscar cliente.');
+          setError("Erro ao buscar cliente.");
         }
         return;
       }
 
       const clientData = await clientResponse.json();
 
-      if (clientData.subscription_status !== 'active') {
-        setError('Este cliente não possui assinatura ativa.');
+      if (clientData.subscription_status !== "active") {
+        setError("Este cliente não possui assinatura ativa.");
         return;
       }
 
@@ -334,50 +363,54 @@ const DocumentsPage: React.FC = () => {
         setDependents(dependentsData);
       }
     } catch (error) {
-      setError('Erro ao buscar paciente.');
+      setError("Erro ao buscar paciente.");
     } finally {
       setIsSearching(false);
     }
   };
 
   const formatCpf = (value: string) => {
-    if (!value) return '';
-    const numericValue = value.replace(/\D/g, '');
-    return numericValue.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    if (!value) return "";
+    const numericValue = value.replace(/\D/g, "");
+    return numericValue.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setSuccess('');
+    setError("");
+    setSuccess("");
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       let patientData;
-      
+
       // Get patient data based on type
-      if (formData.patient_type === 'private') {
-        const patient = patients.find((p) => p.id.toString() === formData.private_patient_id);
+      if (formData.patient_type === "private") {
+        const patient = patients.find(
+          (p) => p.id.toString() === formData.private_patient_id
+        );
         if (!patient) {
-          setError('Paciente particular não encontrado');
+          setError("Paciente particular não encontrado");
           return;
         }
         patientData = {
           name: patient.name,
-          cpf: patient.cpf || '',
+          cpf: patient.cpf || "",
         };
       } else {
         // Convenio patient
         if (!clientSearchResult) {
-          setError('Busque e selecione um cliente ou dependente do convênio');
+          setError("Busque e selecione um cliente ou dependente do convênio");
           return;
         }
-        
+
         // If dependent is selected, use dependent's name
         if (selectedDependentId) {
-          const dependent = dependents.find(d => d.id === selectedDependentId);
+          const dependent = dependents.find(
+            (d) => d.id === selectedDependentId
+          );
           patientData = {
             name: dependent ? dependent.name : clientSearchResult.name,
             cpf: dependent ? dependent.cpf : formData.client_cpf,
@@ -410,15 +443,18 @@ const DocumentsPage: React.FC = () => {
 
       // Generate document using the documents route
       const response = await fetch(`${apiUrl}/api/documents/medical`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           title: formData.title,
           document_type: formData.document_type,
-          private_patient_id: formData.patient_type === 'private' ? parseInt(formData.private_patient_id) : null,
+          private_patient_id:
+            formData.patient_type === "private"
+              ? Number.parseInt(formData.private_patient_id)
+              : null,
           patient_name: patientData.name,
           patient_cpf: patientData.cpf,
           template_data: templateData,
@@ -427,22 +463,24 @@ const DocumentsPage: React.FC = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        console.error('❌ [DOCUMENTS] Document creation error:', errorData);
-        throw new Error(errorData.message || 'Erro ao gerar documento');
+        console.error("❌ [DOCUMENTS] Document creation error:", errorData);
+        throw new Error(errorData.message || "Erro ao gerar documento");
       }
 
       const result = await response.json();
-      console.log('✅ [DOCUMENTS] Document generated:', result);
+      console.log("✅ [DOCUMENTS] Document generated:", result);
 
-      setSuccess('Documento gerado com sucesso!');
+      setSuccess("Documento gerado com sucesso!");
       await fetchData();
 
       setTimeout(() => {
         closeModal();
       }, 1500);
     } catch (error) {
-      console.error('❌ [DOCUMENTS] Error generating document:', error);
-      setError(error instanceof Error ? error.message : 'Erro ao gerar documento');
+      console.error("❌ [DOCUMENTS] Error generating document:", error);
+      setError(
+        error instanceof Error ? error.message : "Erro ao gerar documento"
+      );
     }
   };
 
@@ -460,27 +498,39 @@ const DocumentsPage: React.FC = () => {
     if (!documentToDelete) return;
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      console.log('🔄 [DOCUMENTS] Deleting medical document:', documentToDelete.id);
+      console.log(
+        "🔄 [DOCUMENTS] Deleting medical document:",
+        documentToDelete.id
+      );
 
-      const response = await fetch(`${apiUrl}/api/documents/medical/${documentToDelete.id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await fetch(
+        `${apiUrl}/api/documents/medical/${documentToDelete.id}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Erro ao excluir documento médico');
+        throw new Error(
+          errorData.message || "Erro ao excluir documento médico"
+        );
       }
 
-      console.log('✅ [DOCUMENTS] Medical document deleted successfully');
+      console.log("✅ [DOCUMENTS] Medical document deleted successfully");
       await fetchData();
-      setSuccess('Documento médico excluído com sucesso!');
+      setSuccess("Documento médico excluído com sucesso!");
     } catch (error) {
-      console.error('❌ [DOCUMENTS] Error deleting medical document:', error);
-      setError(error instanceof Error ? error.message : 'Erro ao excluir documento médico');
+      console.error("❌ [DOCUMENTS] Error deleting medical document:", error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Erro ao excluir documento médico"
+      );
     } finally {
       setDocumentToDelete(null);
       setShowDeleteConfirm(false);
@@ -490,24 +540,24 @@ const DocumentsPage: React.FC = () => {
   // Função de impressão direta para documentos (igual aos prontuários)
   const printDocumentDirect = (document: SavedDocument) => {
     try {
-      console.log('🔄 Starting direct document print for:', document.title);
-      
+      console.log("🔄 Starting direct document print for:", document.title);
+
       // Create a new window for printing
-      const printWindow = window.open('', '_blank', 'width=800,height=600');
-      
+      const printWindow = window.open("", "_blank", "width=800,height=600");
+
       if (!printWindow) {
-        throw new Error('Popup foi bloqueado. Permita popups para imprimir.');
+        throw new Error("Popup foi bloqueado. Permita popups para imprimir.");
       }
 
       // If it's an HTML document, fetch and print it
-      if (document.document_url.includes('.html')) {
+      if (document.document_url.includes(".html")) {
         fetch(document.document_url)
-          .then(response => response.text())
-          .then(htmlContent => {
+          .then((response) => response.text())
+          .then((htmlContent) => {
             // Write the HTML content directly
             printWindow.document.write(htmlContent);
             printWindow.document.close();
-            
+
             // Auto-print when loaded
             printWindow.onload = () => {
               setTimeout(() => {
@@ -518,80 +568,87 @@ const DocumentsPage: React.FC = () => {
               }, 500);
             };
           })
-          .catch(error => {
-            console.error('Error fetching document:', error);
+          .catch((error) => {
+            console.error("Error fetching document:", error);
             printWindow.close();
-            setError('Erro ao carregar documento para impressão');
+            setError("Erro ao carregar documento para impressão");
           });
       } else {
         // For PDF documents, just open in new window
         printWindow.location.href = document.document_url;
       }
-      
-      setSuccess('Janela de impressão aberta! Use Ctrl+P se necessário.');
-      
+
+      setSuccess("Janela de impressão aberta! Use Ctrl+P se necessário.");
     } catch (error) {
-      console.error('Error printing document:', error);
-      setError(error instanceof Error ? error.message : 'Erro ao imprimir documento');
+      console.error("Error printing document:", error);
+      setError(
+        error instanceof Error ? error.message : "Erro ao imprimir documento"
+      );
     }
   };
 
   const formatDate = (dateString: string) => {
     // Convert from UTC (database) to Brazil local time for display
     const documentsUtcDate = new Date(dateString);
-    const documentsLocalDate = new Date(documentsUtcDate.getTime() - (3 * 60 * 60 * 1000));
-    return documentsLocalDate.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+    const documentsLocalDate = new Date(
+      documentsUtcDate.getTime() - 3 * 60 * 60 * 1000
+    );
+    return documentsLocalDate.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
   const getDocumentTypeDisplay = (type: string) => {
     const types = {
-      certificate: 'Atestado',
-      prescription: 'Receituário',
-      consent_form: 'Termo de Consentimento',
-      exam_request: 'Solicitação de Exames',
-      declaration: 'Declaração',
-      lgpd: 'Termo LGPD',
-      other: 'Outro',
+      certificate: "Atestado",
+      prescription: "Receituário",
+      consent_form: "Termo de Consentimento",
+      exam_request: "Solicitação de Exames",
+      declaration: "Declaração",
+      lgpd: "Termo LGPD",
+      other: "Outro",
     };
     return types[type as keyof typeof types] || type;
   };
 
   const getDocumentTypeColor = (type: string) => {
     const colors = {
-      certificate: 'bg-blue-100 text-blue-800',
-      prescription: 'bg-green-100 text-green-800',
-      consent_form: 'bg-purple-100 text-purple-800',
-      exam_request: 'bg-yellow-100 text-yellow-800',
-      declaration: 'bg-orange-100 text-orange-800',
-      lgpd: 'bg-red-100 text-red-800',
-      other: 'bg-gray-100 text-gray-800',
+      certificate: "bg-blue-100 text-blue-800",
+      prescription: "bg-green-100 text-green-800",
+      consent_form: "bg-purple-100 text-purple-800",
+      exam_request: "bg-yellow-100 text-yellow-800",
+      declaration: "bg-orange-100 text-orange-800",
+      lgpd: "bg-red-100 text-red-800",
+      other: "bg-gray-100 text-gray-800",
     };
-    return colors[type as keyof typeof colors] || 'bg-gray-100 text-gray-800';
+    return colors[type as keyof typeof colors] || "bg-gray-100 text-gray-800";
   };
 
   const documentTypes = [
-    { value: '', label: 'Todos os tipos' },
-    { value: 'certificate', label: 'Atestados' },
-    { value: 'prescription', label: 'Receituários' },
-    { value: 'consent_form', label: 'Termos de Consentimento' },
-    { value: 'exam_request', label: 'Solicitações de Exames' },
-    { value: 'declaration', label: 'Declarações' },
-    { value: 'lgpd', label: 'Termos LGPD' },
-    { value: 'other', label: 'Outros' },
+    { value: "", label: "Todos os tipos" },
+    { value: "certificate", label: "Atestados" },
+    { value: "prescription", label: "Receituários" },
+    { value: "consent_form", label: "Termos de Consentimento" },
+    { value: "exam_request", label: "Solicitações de Exames" },
+    { value: "declaration", label: "Declarações" },
+    { value: "lgpd", label: "Termos LGPD" },
+    { value: "other", label: "Outros" },
   ];
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Documentos Médicos</h1>
-          <p className="text-gray-600">Gerencie os documentos dos seus pacientes</p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Documentos Médicos
+          </h1>
+          <p className="text-gray-600">
+            Gerencie os documentos dos seus pacientes
+          </p>
         </div>
 
         <button
@@ -612,7 +669,7 @@ const DocumentsPage: React.FC = () => {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar por paciente, título ou tipo..."
-            className="input pl-10"
+            className="w-full pl-12 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
           />
         </div>
 
@@ -666,13 +723,13 @@ const DocumentsPage: React.FC = () => {
             <FileText className="h-16 w-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">
               {searchTerm || selectedPatient || selectedDocumentType
-                ? 'Nenhum documento encontrado'
-                : 'Nenhum documento cadastrado'}
+                ? "Nenhum documento encontrado"
+                : "Nenhum documento cadastrado"}
             </h3>
             <p className="text-gray-600 mb-4">
               {searchTerm || selectedPatient || selectedDocumentType
-                ? 'Tente ajustar os filtros de busca.'
-                : 'Comece criando o primeiro documento médico.'}
+                ? "Tente ajustar os filtros de busca."
+                : "Comece criando o primeiro documento médico."}
             </p>
             {!searchTerm && !selectedPatient && !selectedDocumentType && (
               <button
@@ -722,7 +779,11 @@ const DocumentsPage: React.FC = () => {
                           </div>
                           {document.patient_cpf && (
                             <div className="text-sm text-gray-500">
-                              CPF: {document.patient_cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}
+                              CPF:{" "}
+                              {document.patient_cpf.replace(
+                                /(\d{3})(\d{3})(\d{3})(\d{2})/,
+                                "$1.$2.$3-$4"
+                              )}
                             </div>
                           )}
                         </div>
@@ -730,11 +791,15 @@ const DocumentsPage: React.FC = () => {
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm text-gray-900">
-                        {document.title || 'Sem título'}
+                        {document.title || "Sem título"}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getDocumentTypeColor(document.document_type)}`}>
+                      <span
+                        className={`px-2 py-1 text-xs font-medium rounded-full ${getDocumentTypeColor(
+                          document.document_type
+                        )}`}
+                      >
                         {getDocumentTypeDisplay(document.document_type)}
                       </span>
                     </td>
@@ -759,13 +824,6 @@ const DocumentsPage: React.FC = () => {
                           title="Imprimir"
                         >
                           <Printer className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => window.open(document.document_url, '_blank')}
-                          className="text-blue-600 hover:text-blue-900"
-                          title="Baixar"
-                        >
-                          <Download className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => confirmDelete(document)}
@@ -815,11 +873,11 @@ const DocumentsPage: React.FC = () => {
                     name="patient_type"
                     value={formData.patient_type}
                     onChange={(e) => {
-                      setFormData(prev => ({
+                      setFormData((prev) => ({
                         ...prev,
-                        patient_type: e.target.value as 'convenio' | 'private',
-                        client_cpf: '',
-                        private_patient_id: '',
+                        patient_type: e.target.value as "convenio" | "private",
+                        client_cpf: "",
+                        private_patient_id: "",
                       }));
                       setClientSearchResult(null);
                       setDependents([]);
@@ -834,7 +892,7 @@ const DocumentsPage: React.FC = () => {
                 </div>
 
                 {/* Convenio Patient Search */}
-                {formData.patient_type === 'convenio' && (
+                {formData.patient_type === "convenio" && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Buscar por CPF *
@@ -844,9 +902,9 @@ const DocumentsPage: React.FC = () => {
                         type="text"
                         value={formatCpf(formData.client_cpf)}
                         onChange={(e) =>
-                          setFormData(prev => ({
+                          setFormData((prev) => ({
                             ...prev,
-                            client_cpf: e.target.value.replace(/\D/g, ''),
+                            client_cpf: e.target.value.replace(/\D/g, ""),
                           }))
                         }
                         className="input flex-1"
@@ -858,7 +916,7 @@ const DocumentsPage: React.FC = () => {
                         className="btn btn-secondary"
                         disabled={isSearching || !formData.client_cpf}
                       >
-                        {isSearching ? 'Buscando...' : 'Buscar'}
+                        {isSearching ? "Buscando..." : "Buscar"}
                       </button>
                     </div>
 
@@ -879,9 +937,11 @@ const DocumentsPage: React.FC = () => {
                               Dependente (opcional)
                             </label>
                             <select
-                              value={selectedDependentId || ''}
+                              value={selectedDependentId || ""}
                               onChange={(e) =>
-                                setSelectedDependentId(e.target.value ? Number(e.target.value) : null)
+                                setSelectedDependentId(
+                                  e.target.value ? Number(e.target.value) : null
+                                )
                               }
                               className="input"
                             >
@@ -922,7 +982,7 @@ const DocumentsPage: React.FC = () => {
                 </div>
 
                 {/* Private Patient Selection */}
-                {formData.patient_type === 'private' && (
+                {formData.patient_type === "private" && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Paciente Particular *
@@ -961,7 +1021,7 @@ const DocumentsPage: React.FC = () => {
                 </div>
 
                 {/* Dynamic fields based on document type */}
-                {formData.document_type === 'certificate' && (
+                {formData.document_type === "certificate" && (
                   <>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1008,7 +1068,7 @@ const DocumentsPage: React.FC = () => {
                   </>
                 )}
 
-                {formData.document_type === 'prescription' && (
+                {formData.document_type === "prescription" && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Prescrição *
@@ -1024,7 +1084,7 @@ const DocumentsPage: React.FC = () => {
                   </div>
                 )}
 
-                {formData.document_type === 'consent_form' && (
+                {formData.document_type === "consent_form" && (
                   <>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1069,9 +1129,9 @@ const DocumentsPage: React.FC = () => {
                   </>
                 )}
 
-                {(formData.document_type === 'exam_request' || 
-                  formData.document_type === 'declaration' || 
-                  formData.document_type === 'other') && (
+                {(formData.document_type === "exam_request" ||
+                  formData.document_type === "declaration" ||
+                  formData.document_type === "other") && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Conteúdo *
@@ -1082,9 +1142,9 @@ const DocumentsPage: React.FC = () => {
                       onChange={handleInputChange}
                       className="input min-h-[150px]"
                       placeholder={
-                        formData.document_type === 'exam_request'
-                          ? 'Liste os exames solicitados...'
-                          : 'Digite o conteúdo do documento...'
+                        formData.document_type === "exam_request"
+                          ? "Liste os exames solicitados..."
+                          : "Digite o conteúdo do documento..."
                       }
                       required
                     />
@@ -1113,8 +1173,8 @@ const DocumentsPage: React.FC = () => {
       <DocumentViewModal
         isOpen={isViewModalOpen}
         onClose={() => setIsViewModalOpen(false)}
-        documentUrl={documentToView?.url || ''}
-        documentTitle={documentToView?.title || ''}
+        documentUrl={documentToView?.url || ""}
+        documentTitle={documentToView?.title || ""}
         documentType={documentToView?.type}
       />
 
@@ -1128,8 +1188,9 @@ const DocumentsPage: React.FC = () => {
             </h2>
 
             <p className="mb-6">
-              Tem certeza que deseja excluir o documento{' '}
-              <strong>{documentToDelete.title}</strong>? Esta ação não pode ser desfeita.
+              Tem certeza que deseja excluir o documento{" "}
+              <strong>{documentToDelete.title}</strong>? Esta ação não pode ser
+              desfeita.
             </p>
 
             <div className="flex justify-end space-x-3">

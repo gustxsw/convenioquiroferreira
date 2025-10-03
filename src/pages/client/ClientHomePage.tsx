@@ -1,18 +1,18 @@
-import React, { useState, useEffect } from "react";
+"use client";
+
+import type React from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import {
   CalendarClock,
   AlertCircle,
-  Filter,
   User,
   Users,
-  Check,
   Clock,
   CheckCircle,
   XCircle,
   X,
+  Search,
 } from "lucide-react";
 import DependentsSection from "./DependentsSection";
 import PaymentSection from "./PaymentSection";
@@ -43,6 +43,7 @@ const ClientHomePage: React.FC = () => {
   >([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState("all");
+  const [selectedPatient, setSelectedPatient] = useState("all");
   const [error, setError] = useState("");
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>("");
   const [subscriptionExpiry, setSubscriptionExpiry] = useState<string | null>(
@@ -217,7 +218,9 @@ const ClientHomePage: React.FC = () => {
     if (selectedFilter === "titular") {
       filtered = filtered.filter((c) => c.client_name === user?.name);
     } else if (selectedFilter !== "all") {
-      const dependent = dependents.find((d) => d.id.toString() === selectedFilter);
+      const dependent = dependents.find(
+        (d) => d.id.toString() === selectedFilter
+      );
       if (dependent) {
         filtered = filtered.filter((c) => c.client_name === dependent.name);
       }
@@ -226,10 +229,11 @@ const ClientHomePage: React.FC = () => {
     // Filter by search term
     if (searchTerm.trim()) {
       const searchValue = searchTerm.toLowerCase().trim();
-      filtered = filtered.filter(consultation =>
-        consultation.client_name?.toLowerCase().includes(searchValue) ||
-        consultation.service_name?.toLowerCase().includes(searchValue) ||
-        consultation.professional_name?.toLowerCase().includes(searchValue)
+      filtered = filtered.filter(
+        (consultation) =>
+          consultation.client_name?.toLowerCase().includes(searchValue) ||
+          consultation.service_name?.toLowerCase().includes(searchValue) ||
+          consultation.professional_name?.toLowerCase().includes(searchValue)
       );
     }
 
@@ -238,13 +242,15 @@ const ClientHomePage: React.FC = () => {
 
   const formatDate = (dateString: string) => {
     const clientHomeUtcDate = new Date(dateString);
-    const clientHomeLocalDate = new Date(clientHomeUtcDate.getTime() - (3 * 60 * 60 * 1000));
-    return clientHomeLocalDate.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+    const clientHomeLocalDate = new Date(
+      clientHomeUtcDate.getTime() - 3 * 60 * 60 * 1000
+    );
+    return clientHomeLocalDate.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
@@ -368,10 +374,11 @@ const ClientHomePage: React.FC = () => {
                 Sua assinatura está ativa
               </p>
               <p className="text-green-600 text-sm">
-                Válida até: {new Date(subscriptionExpiry).toLocaleDateString('pt-BR', {
-                  day: '2-digit',
-                  month: 'long',
-                  year: 'numeric'
+                Válida até:{" "}
+                {new Date(subscriptionExpiry).toLocaleDateString("pt-BR", {
+                  day: "2-digit",
+                  month: "long",
+                  year: "numeric",
                 })}
               </p>
             </div>
@@ -411,14 +418,26 @@ const ClientHomePage: React.FC = () => {
             <h2 className="text-xl font-semibold">Histórico de Consultas</h2>
           </div>
 
-          {/* Filter dropdown */}
-          {(consultations.length > 0 || dependents.length > 0) && (
-            <div className="flex items-center space-x-2">
-              <Filter className="h-5 w-5 text-gray-500" />
+          {/* Filters */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {/* Search input */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Buscar por cliente ou serviço..."
+                className="w-full pl-12 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              />
+            </div>
+
+            {/* Filter dropdown */}
+            {(consultations.length > 0 || dependents.length > 0) && (
               <select
                 value={selectedFilter}
                 onChange={(e) => setSelectedFilter(e.target.value)}
-                className="input w-auto min-w-[200px]"
+                className="input"
               >
                 {getFilterOptions().map((option) => (
                   <option key={option.value} value={option.value}>
@@ -426,8 +445,8 @@ const ClientHomePage: React.FC = () => {
                   </option>
                 ))}
               </select>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {isLoading ? (

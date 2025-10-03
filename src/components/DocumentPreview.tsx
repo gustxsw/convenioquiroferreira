@@ -1,19 +1,20 @@
-import React, { useState, useEffect } from "react";
-import { useAuth } from '../contexts/AuthContext';
-import SimplePDFGenerator from './SimplePDFGenerator';
+"use client";
+
+import type React from "react";
+import { useState, useEffect } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import SimplePDFGenerator from "./SimplePDFGenerator";
 import {
   Stethoscope,
   Plus,
   Search,
   User,
   Calendar,
-  FileText,
   Edit,
   Trash2,
   Eye,
   X,
   Check,
-  Download,
   Printer,
 } from "lucide-react";
 
@@ -90,11 +91,13 @@ const MedicalRecordsPage: React.FC = () => {
 
   // Preview state
   const [showPreviewModal, setShowPreviewModal] = useState(false);
-  const [recordToPreview, setRecordToPreview] = useState<MedicalRecord | null>(null);
+  const [recordToPreview, setRecordToPreview] = useState<MedicalRecord | null>(
+    null
+  );
   const [professionalData, setProfessionalData] = useState({
-    name: '',
-    specialty: '',
-    crm: ''
+    name: "",
+    specialty: "",
+    crm: "",
   });
 
   // Get API URL
@@ -149,15 +152,15 @@ const MedicalRecordsPage: React.FC = () => {
 
       // Fetch professional data
       const userResponse = await fetch(`${apiUrl}/api/users/${user?.id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (userResponse.ok) {
         const userData = await userResponse.json();
         setProfessionalData({
-          name: userData.name || user?.name || 'Profissional',
-          specialty: userData.category_name || '',
-          crm: userData.crm || ''
+          name: userData.name || user?.name || "Profissional",
+          specialty: userData.category_name || "",
+          crm: userData.crm || "",
         });
       }
 
@@ -378,7 +381,9 @@ const MedicalRecordsPage: React.FC = () => {
     // Convert from UTC (database) to Brazil local time for display
     const utcDate = new Date(dateString);
     const docPreviewUtcDate = new Date(dateString);
-    const docPreviewLocalDate = new Date(docPreviewUtcDate.getTime() - (3 * 60 * 60 * 1000));
+    const docPreviewLocalDate = new Date(
+      docPreviewUtcDate.getTime() - 3 * 60 * 60 * 1000
+    );
     return docPreviewLocalDate.toLocaleDateString("pt-BR", {
       day: "2-digit",
       month: "2-digit",
@@ -418,7 +423,7 @@ const MedicalRecordsPage: React.FC = () => {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar por paciente, queixa ou diagnóstico..."
-            className="input pl-10"
+            className="w-full pl-12 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
           />
         </div>
 
@@ -983,7 +988,7 @@ const MedicalRecordsPage: React.FC = () => {
 
       {/* Medical Record Preview Modal */}
       {showPreviewModal && recordToPreview && (
-        <MedicalRecordPreviewModal
+        <SimplePDFGenerator
           isOpen={showPreviewModal}
           onClose={closePreviewModal}
           recordData={recordToPreview}

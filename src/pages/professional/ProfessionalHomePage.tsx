@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+"use client";
+
+import type React from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { Link } from "react-router-dom";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import {
   CalendarClock,
   PlusCircle,
@@ -29,7 +30,7 @@ type ConsultationsTableProps = {
     amount_to_pay: number;
   }[];
   formatDate: (date: string) => string;
-  formatCurrency: (value: number) => string;
+  formatCurrency: (value: number | string) => string;
 };
 
 const ConsultationsTable: React.FC<ConsultationsTableProps> = ({
@@ -38,13 +39,19 @@ const ConsultationsTable: React.FC<ConsultationsTableProps> = ({
   formatCurrency,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
-  const [filteredConsultations, setFilteredConsultations] = useState(consultations);
+  const [filteredConsultations, setFilteredConsultations] =
+    useState(consultations);
 
   useEffect(() => {
     if (searchTerm.trim()) {
-      const filtered = consultations.filter(consultation =>
-        consultation.client_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        consultation.service_name?.toLowerCase().includes(searchTerm.toLowerCase())
+      const filtered = consultations.filter(
+        (consultation) =>
+          consultation.client_name
+            ?.toLowerCase()
+            .includes(searchTerm.toLowerCase()) ||
+          consultation.service_name
+            ?.toLowerCase()
+            .includes(searchTerm.toLowerCase())
       );
       setFilteredConsultations(filtered);
     } else {
@@ -63,12 +70,13 @@ const ConsultationsTable: React.FC<ConsultationsTableProps> = ({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar por cliente ou serviço..."
-            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            className="w-full pl-12 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
           />
         </div>
         {searchTerm && (
           <p className="text-sm text-gray-600 mt-2">
-            {filteredConsultations.length} de {consultations.length} consulta(s) encontrada(s)
+            {filteredConsultations.length} de {consultations.length} consulta(s)
+            encontrada(s)
           </p>
         )}
       </div>
@@ -122,19 +130,34 @@ const ConsultationsTable: React.FC<ConsultationsTableProps> = ({
             </tbody>
           </table>
         </div>
-        
+
         {/* Table Footer with Summary */}
         <div className="bg-gray-50 px-4 py-3 border-t border-gray-200">
           <div className="flex justify-between items-center text-sm">
             <span className="text-gray-600">
-              {filteredConsultations.length} consulta(s) {searchTerm && 'filtrada(s)'}
+              {filteredConsultations.length} consulta(s){" "}
+              {searchTerm && "filtrada(s)"}
             </span>
             <div className="flex space-x-6">
               <span className="text-gray-900 font-medium">
-                Total: {formatCurrency(filteredConsultations.reduce((sum, c) => sum + (c.total_value || 0), 0))}
+                Total:{" "}
+                {formatCurrency(
+                  filteredConsultations.reduce(
+                    (sum, c) =>
+                      sum + Number.parseFloat(String(c.total_value || 0)),
+                    0
+                  )
+                )}
               </span>
               <span className="text-red-600 font-medium">
-                A Pagar: {formatCurrency(filteredConsultations.reduce((sum, c) => sum + (c.amount_to_pay || 0), 0))}
+                A Pagar:{" "}
+                {formatCurrency(
+                  filteredConsultations.reduce(
+                    (sum, c) =>
+                      sum + Number.parseFloat(String(c.amount_to_pay || 0)),
+                    0
+                  )
+                )}
               </span>
             </div>
           </div>
@@ -249,11 +272,7 @@ const ProfessionalHomePage: React.FC = () => {
 
       const revenueData = await revenueResponse.json();
       console.log("✅ Revenue data received:", revenueData);
-     
-     // Force refresh of data to ensure latest calculations
-     setTimeout(() => {
-       setRevenueReport(revenueData);
-     }, 100);
+
       setRevenueReport(revenueData);
     } catch (error) {
       console.error("❌ Error fetching data:", error);
@@ -337,17 +356,13 @@ const ProfessionalHomePage: React.FC = () => {
 
   const formatDate = (dateString: string) => {
     try {
-      const profHomeUtcDate = new Date(dateString);
-      const profHomeLocalDate = new Date(profHomeUtcDate.getTime() - (3 * 60 * 60 * 1000));
-      return profHomeLocalDate.toLocaleDateString('pt-BR', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-      return format(profHomeLocalDate, "dd 'de' MMMM 'de' yyyy 'às' HH:mm", {
-        locale: ptBR,
+      const date = new Date(dateString);
+      return date.toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
       });
     } catch (error) {
       console.error("Error formatting date:", error);
@@ -356,7 +371,8 @@ const ProfessionalHomePage: React.FC = () => {
   };
 
   const formatCurrency = (value: number | string) => {
-    const numericValue = typeof value === "string" ? parseFloat(value) : value;
+    const numericValue =
+      typeof value === "string" ? Number.parseFloat(value) : value;
     if (isNaN(numericValue)) return "R$ 0,00";
 
     return new Intl.NumberFormat("pt-BR", {
@@ -378,7 +394,7 @@ const ProfessionalHomePage: React.FC = () => {
             <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-red-100">
               {photoUrl ? (
                 <img
-                  src={photoUrl}
+                  src={photoUrl || "/placeholder.svg"}
                   alt={`Foto de ${user?.name}`}
                   className="w-full h-full object-cover"
                   onError={(e) => {
@@ -611,7 +627,7 @@ const ProfessionalHomePage: React.FC = () => {
                 </Link>
               </div>
             ) : (
-              <ConsultationsTable 
+              <ConsultationsTable
                 consultations={revenueReport.consultations}
                 formatDate={formatDate}
                 formatCurrency={formatCurrency}

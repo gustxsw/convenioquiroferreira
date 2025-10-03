@@ -1,6 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { Calendar, Clock, User, Users, Search, X, Check, AlertCircle } from 'lucide-react';
+"use client";
+
+import type React from "react";
+import { useState, useEffect } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import {
+  Calendar,
+  Clock,
+  User,
+  Users,
+  X,
+  Check,
+  AlertCircle,
+} from "lucide-react";
 
 type Service = {
   id: number;
@@ -55,26 +66,33 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
 }) => {
   const { user } = useAuth();
   const [services, setServices] = useState<Service[]>([]);
-  const [attendanceLocations, setAttendanceLocations] = useState<AttendanceLocation[]>([]);
+  const [attendanceLocations, setAttendanceLocations] = useState<
+    AttendanceLocation[]
+  >([]);
   const [isCreating, setIsCreating] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   // Patient search state
-  const [patientType, setPatientType] = useState<'convenio' | 'private'>('convenio');
-  const [searchCpf, setSearchCpf] = useState('');
+  const [patientType, setPatientType] = useState<"convenio" | "private">(
+    "convenio"
+  );
+  const [searchCpf, setSearchCpf] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [foundClient, setFoundClient] = useState<Client | null>(null);
   const [foundDependent, setFoundDependent] = useState<Dependent | null>(null);
   const [dependents, setDependents] = useState<Dependent[]>([]);
-  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(null);
+  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(
+    null
+  );
   const [privatePatients, setPrivatePatients] = useState<PrivatePatient[]>([]);
 
   // Form state
   const [formData, setFormData] = useState({
-    service_id: '',
-    value: '',
-    location_id: '',
-    notes: '',
+    service_id: "",
+    value: "",
+    location_id: "",
+    notes: "",
+    private_patient_id: "",
   });
 
   // Get API URL
@@ -97,7 +115,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
 
   const fetchData = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       // Fetch services
@@ -111,18 +129,23 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
       }
 
       // Fetch attendance locations
-      const locationsResponse = await fetch(`${apiUrl}/api/attendance-locations`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const locationsResponse = await fetch(
+        `${apiUrl}/api/attendance-locations`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
 
       if (locationsResponse.ok) {
         const locationsData = await locationsResponse.json();
         setAttendanceLocations(locationsData);
 
         // Set default location
-        const defaultLocation = locationsData.find((loc: AttendanceLocation) => loc.is_default);
+        const defaultLocation = locationsData.find(
+          (loc: AttendanceLocation) => loc.is_default
+        );
         if (defaultLocation) {
-          setFormData(prev => ({
+          setFormData((prev) => ({
             ...prev,
             location_id: defaultLocation.id.toString(),
           }));
@@ -139,24 +162,25 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
         setPrivatePatients(patientsData);
       }
     } catch (error) {
-      console.error('Error fetching data:', error);
-      setError('Não foi possível carregar os dados necessários');
+      console.error("Error fetching data:", error);
+      setError("Não foi possível carregar os dados necessários");
     }
   };
 
   const resetForm = () => {
-    setSearchCpf('');
+    setSearchCpf("");
     setFoundClient(null);
     setFoundDependent(null);
     setDependents([]);
     setSelectedDependentId(null);
     setFormData({
-      service_id: '',
-      value: '',
-      location_id: '',
-      notes: '',
+      service_id: "",
+      value: "",
+      location_id: "",
+      notes: "",
+      private_patient_id: "",
     });
-    setError('');
+    setError("");
   };
 
   const searchByCpf = async () => {
@@ -164,11 +188,11 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
 
     try {
       setIsSearching(true);
-      setError('');
+      setError("");
 
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
-      const cleanCpf = searchCpf.replace(/\D/g, '');
+      const cleanCpf = searchCpf.replace(/\D/g, "");
 
       // First, try to find a dependent
       const dependentResponse = await fetch(
@@ -181,8 +205,8 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
       if (dependentResponse.ok) {
         const dependentData = await dependentResponse.json();
 
-        if (dependentData.status !== 'active') {
-          setError('Este dependente não possui assinatura ativa.');
+        if (dependentData.status !== "active") {
+          setError("Este dependente não possui assinatura ativa.");
           return;
         }
 
@@ -203,17 +227,17 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
 
       if (!clientResponse.ok) {
         if (clientResponse.status === 404) {
-          setError('Cliente ou dependente não encontrado.');
+          setError("Cliente ou dependente não encontrado.");
         } else {
-          setError('Erro ao buscar cliente.');
+          setError("Erro ao buscar cliente.");
         }
         return;
       }
 
       const clientData = await clientResponse.json();
 
-      if (clientData.subscription_status !== 'active') {
-        setError('Este cliente não possui assinatura ativa.');
+      if (clientData.subscription_status !== "active") {
+        setError("Este cliente não possui assinatura ativa.");
         return;
       }
 
@@ -234,7 +258,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
         setDependents(dependentsData);
       }
     } catch (error) {
-      setError('Erro ao buscar paciente.');
+      setError("Erro ao buscar paciente.");
     } finally {
       setIsSearching(false);
     }
@@ -242,11 +266,11 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
 
   const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const serviceId = e.target.value;
-    setFormData(prev => ({ ...prev, service_id: serviceId }));
+    setFormData((prev) => ({ ...prev, service_id: serviceId }));
 
-    const service = services.find(s => s.id.toString() === serviceId);
+    const service = services.find((s) => s.id.toString() === serviceId);
     if (service) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         value: service.base_price.toString(),
       }));
@@ -255,26 +279,26 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
     if (!selectedSlot) return;
 
     // Validate patient selection
-    if (patientType === 'convenio') {
+    if (patientType === "convenio") {
       if (!foundClient && !foundDependent) {
-        setError('Busque e selecione um cliente ou dependente');
+        setError("Busque e selecione um cliente ou dependente");
         return;
       }
     } else {
       if (!formData.private_patient_id) {
-        setError('Selecione um paciente particular');
+        setError("Selecione um paciente particular");
         return;
       }
     }
 
     try {
       setIsCreating(true);
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       // Send date and time as entered (backend will handle UTC conversion)
@@ -282,17 +306,21 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
 
       const consultationData: any = {
         professional_id: user?.id,
-        service_id: parseInt(formData.service_id),
-        location_id: formData.location_id ? parseInt(formData.location_id) : null,
-        value: parseFloat(formData.value),
+        service_id: Number.parseInt(formData.service_id),
+        location_id: formData.location_id
+          ? Number.parseInt(formData.location_id)
+          : null,
+        value: Number.parseFloat(formData.value),
         date: dateTimeString,
-        status: 'scheduled',
+        status: "scheduled",
         notes: formData.notes.trim() || null,
       };
 
       // Set patient based on type
-      if (patientType === 'private') {
-        consultationData.private_patient_id = parseInt(formData.private_patient_id || '');
+      if (patientType === "private") {
+        consultationData.private_patient_id = Number.parseInt(
+          formData.private_patient_id || ""
+        );
       } else {
         if (foundDependent) {
           consultationData.dependent_id = foundDependent.id;
@@ -305,10 +333,10 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
 
       console.log("🔄 Quick schedule consultation data:", consultationData);
       const response = await fetch(`${apiUrl}/api/consultations`, {
-        method: 'POST',
+        method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(consultationData),
       });
@@ -316,27 +344,37 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
       if (!response.ok) {
         const errorData = await response.json();
         console.error("❌ Quick schedule error:", errorData);
-        throw new Error(errorData.message || 'Falha ao agendar consulta');
+        if (response.status === 409 && errorData.conflict) {
+          setError(
+            errorData.message ||
+              "Este horário já está ocupado. Por favor, escolha outro horário."
+          );
+        } else {
+          setError(errorData.message || "Falha ao agendar consulta");
+        }
+        return;
       }
 
       onSuccess();
       onClose();
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Erro ao agendar consulta');
+      setError(
+        error instanceof Error ? error.message : "Erro ao agendar consulta"
+      );
     } finally {
       setIsCreating(false);
     }
   };
 
   const formatCpf = (value: string) => {
-    const numericValue = value.replace(/\D/g, '');
-    return numericValue.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    const numericValue = value.replace(/\D/g, "");
+    return numericValue.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   };
 
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
     }).format(value);
   };
 
@@ -367,11 +405,11 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
             <Clock className="h-5 w-5 text-blue-600 mr-2" />
             <div>
               <p className="font-medium text-blue-900">
-                {new Date(selectedSlot.date).toLocaleDateString('pt-BR', {
-                  weekday: 'long',
-                  day: '2-digit',
-                  month: 'long',
-                  year: 'numeric'
+                {new Date(selectedSlot.date).toLocaleDateString("pt-BR", {
+                  weekday: "long",
+                  day: "2-digit",
+                  month: "long",
+                  year: "numeric",
                 })}
               </p>
               <p className="text-sm text-blue-700">
@@ -398,7 +436,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
               <select
                 value={patientType}
                 onChange={(e) => {
-                  setPatientType(e.target.value as 'convenio' | 'private');
+                  setPatientType(e.target.value as "convenio" | "private");
                   resetForm();
                 }}
                 className="input"
@@ -410,7 +448,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
             </div>
 
             {/* Convenio Patient Search */}
-            {patientType === 'convenio' && (
+            {patientType === "convenio" && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Buscar por CPF *
@@ -419,7 +457,9 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
                   <input
                     type="text"
                     value={formatCpf(searchCpf)}
-                    onChange={(e) => setSearchCpf(e.target.value.replace(/\D/g, ''))}
+                    onChange={(e) =>
+                      setSearchCpf(e.target.value.replace(/\D/g, ""))
+                    }
                     className="input flex-1"
                     placeholder="000.000.000-00"
                   />
@@ -429,7 +469,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
                     className="btn btn-secondary"
                     disabled={isSearching || !searchCpf}
                   >
-                    {isSearching ? 'Buscando...' : 'Buscar'}
+                    {isSearching ? "Buscando..." : "Buscar"}
                   </button>
                 </div>
 
@@ -450,9 +490,11 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
                           Dependente (opcional)
                         </label>
                         <select
-                          value={selectedDependentId || ''}
+                          value={selectedDependentId || ""}
                           onChange={(e) =>
-                            setSelectedDependentId(e.target.value ? Number(e.target.value) : null)
+                            setSelectedDependentId(
+                              e.target.value ? Number(e.target.value) : null
+                            )
                           }
                           className="input"
                         >
@@ -488,7 +530,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
             )}
 
             {/* Private Patient Selection */}
-            {patientType === 'private' && (
+            {patientType === "private" && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Paciente Particular *
@@ -496,7 +538,10 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
                 <select
                   value={formData.private_patient_id}
                   onChange={(e) =>
-                    setFormData(prev => ({ ...prev, private_patient_id: e.target.value }))
+                    setFormData((prev) => ({
+                      ...prev,
+                      private_patient_id: e.target.value,
+                    }))
                   }
                   className="input"
                   required
@@ -504,7 +549,10 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
                   <option value="">Selecione um paciente</option>
                   {privatePatients.map((patient) => (
                     <option key={patient.id} value={patient.id}>
-                      {patient.name} - {patient.cpf ? formatCpf(patient.cpf) : 'CPF não informado'}
+                      {patient.name} -{" "}
+                      {patient.cpf
+                        ? formatCpf(patient.cpf)
+                        : "CPF não informado"}
                     </option>
                   ))}
                 </select>
@@ -544,7 +592,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
                   step="0.01"
                   value={formData.value}
                   onChange={(e) =>
-                    setFormData(prev => ({ ...prev, value: e.target.value }))
+                    setFormData((prev) => ({ ...prev, value: e.target.value }))
                   }
                   className="input"
                   required
@@ -558,14 +606,17 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
                 <select
                   value={formData.location_id}
                   onChange={(e) =>
-                    setFormData(prev => ({ ...prev, location_id: e.target.value }))
+                    setFormData((prev) => ({
+                      ...prev,
+                      location_id: e.target.value,
+                    }))
                   }
                   className="input"
                 >
                   <option value="">Selecione um local</option>
                   {attendanceLocations.map((location) => (
                     <option key={location.id} value={location.id}>
-                      {location.name} {location.is_default && '(Padrão)'}
+                      {location.name} {location.is_default && "(Padrão)"}
                     </option>
                   ))}
                 </select>
@@ -580,7 +631,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
               <textarea
                 value={formData.notes}
                 onChange={(e) =>
-                  setFormData(prev => ({ ...prev, notes: e.target.value }))
+                  setFormData((prev) => ({ ...prev, notes: e.target.value }))
                 }
                 className="input min-h-[80px]"
                 placeholder="Observações sobre a consulta..."
@@ -600,11 +651,14 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
             <button
               type="submit"
               className={`btn btn-primary ${
-                isCreating ? 'opacity-70 cursor-not-allowed' : ''
+                isCreating ? "opacity-70 cursor-not-allowed" : ""
               }`}
-              disabled={isCreating || 
-                (patientType === 'convenio' && !foundClient && !foundDependent) ||
-                (patientType === 'private' && !formData.private_patient_id) ||
+              disabled={
+                isCreating ||
+                (patientType === "convenio" &&
+                  !foundClient &&
+                  !foundDependent) ||
+                (patientType === "private" && !formData.private_patient_id) ||
                 !formData.service_id ||
                 !formData.value
               }

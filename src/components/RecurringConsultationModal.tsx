@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Repeat, X, Check, AlertCircle, User, Users } from 'lucide-react';
-import TimeInput from './TimeInput';
+"use client";
+
+import type React from "react";
+import { useState, useEffect } from "react";
+import { Repeat, X, AlertCircle, User } from "lucide-react";
+import TimeInput from "./TimeInput";
 
 type Service = {
   id: number;
@@ -47,31 +50,42 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
   // Data states
   const [services, setServices] = useState<Service[]>([]);
   const [privatePatients, setPrivatePatients] = useState<PrivatePatient[]>([]);
-  const [attendanceLocations, setAttendanceLocations] = useState<AttendanceLocation[]>([]);
+  const [attendanceLocations, setAttendanceLocations] = useState<
+    AttendanceLocation[]
+  >([]);
   const [isCreating, setIsCreating] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   // Form state
-  const [patientType, setPatientType] = useState<'convenio' | 'private'>('private');
-  const [clientCpf, setClientCpf] = useState('');
-  const [privatePatientId, setPrivatePatientId] = useState('');
-  const [serviceId, setServiceId] = useState('');
-  const [value, setValue] = useState('');
-  const [locationId, setLocationId] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [startTime, setStartTime] = useState('');
-  const [recurrenceType, setRecurrenceType] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
+  const [patientType, setPatientType] = useState<"convenio" | "private">(
+    "private"
+  );
+  const [clientCpf, setClientCpf] = useState("");
+  const [privatePatientId, setPrivatePatientId] = useState("");
+  const [serviceId, setServiceId] = useState("");
+  const [value, setValue] = useState("");
+  const [locationId, setLocationId] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [recurrenceType, setRecurrenceType] = useState<
+    "daily" | "weekly" | "monthly"
+  >("weekly");
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([]);
   const [weeklyCount, setWeeklyCount] = useState(4);
   const [recurrenceInterval, setRecurrenceInterval] = useState(1);
   const [occurrences, setOccurrences] = useState(10);
-  const [endDate, setEndDate] = useState('');
-  const [notes, setNotes] = useState('');
+  const [endDate, setEndDate] = useState("");
+  const [notes, setNotes] = useState("");
 
   // Client search state
-  const [clientSearchResult, setClientSearchResult] = useState<Client | null>(null);
+  const [clientSearchResult, setClientSearchResult] = useState<Client | null>(
+    null
+  );
   const [dependents, setDependents] = useState<Dependent[]>([]);
-  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(null);
+  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(
+    null
+  );
   const [isSearching, setIsSearching] = useState(false);
 
   // Get API URL
@@ -87,7 +101,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      console.log('🔄 [RECURRING-MODAL] Modal opened, fetching data...');
+      console.log("🔄 [RECURRING-MODAL] Modal opened, fetching data...");
       fetchData();
       resetForm();
     }
@@ -95,71 +109,86 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
   const fetchData = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      console.log('🔄 [RECURRING-MODAL] Fetching services...');
+      console.log("🔄 [RECURRING-MODAL] Fetching services...");
       const servicesResponse = await fetch(`${apiUrl}/api/services`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
       if (servicesResponse.ok) {
         const servicesData = await servicesResponse.json();
-        console.log('✅ [RECURRING-MODAL] Services loaded:', servicesData.length);
+        console.log(
+          "✅ [RECURRING-MODAL] Services loaded:",
+          servicesData.length
+        );
         setServices(servicesData);
       }
 
-      console.log('🔄 [RECURRING-MODAL] Fetching private patients...');
+      console.log("🔄 [RECURRING-MODAL] Fetching private patients...");
       const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
       if (patientsResponse.ok) {
         const patientsData = await patientsResponse.json();
-        console.log('✅ [RECURRING-MODAL] Private patients loaded:', patientsData.length);
+        console.log(
+          "✅ [RECURRING-MODAL] Private patients loaded:",
+          patientsData.length
+        );
         setPrivatePatients(Array.isArray(patientsData) ? patientsData : []);
       }
 
-      console.log('🔄 [RECURRING-MODAL] Fetching attendance locations...');
-      const locationsResponse = await fetch(`${apiUrl}/api/attendance-locations`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      console.log("🔄 [RECURRING-MODAL] Fetching attendance locations...");
+      const locationsResponse = await fetch(
+        `${apiUrl}/api/attendance-locations`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
 
       if (locationsResponse.ok) {
         const locationsData = await locationsResponse.json();
-        console.log('✅ [RECURRING-MODAL] Locations loaded:', locationsData.length);
+        console.log(
+          "✅ [RECURRING-MODAL] Locations loaded:",
+          locationsData.length
+        );
         setAttendanceLocations(locationsData);
 
-        const defaultLocation = locationsData.find((loc: AttendanceLocation) => loc.is_default);
+        const defaultLocation = locationsData.find(
+          (loc: AttendanceLocation) => loc.is_default
+        );
         if (defaultLocation) {
           setLocationId(defaultLocation.id.toString());
         }
       }
     } catch (error) {
-      console.error('❌ [RECURRING-MODAL] Error fetching data:', error);
-      setError('Não foi possível carregar os dados necessários');
+      console.error("❌ [RECURRING-MODAL] Error fetching data:", error);
+      setError("Não foi possível carregar os dados necessários");
     }
   };
 
   const resetForm = () => {
-    setPatientType('private');
-    setClientCpf('');
-    setPrivatePatientId('');
-    setServiceId('');
-    setValue('');
-    setStartDate('');
-    setStartTime('');
-    setRecurrenceType('weekly');
+    setPatientType("private");
+    setClientCpf("");
+    setPrivatePatientId("");
+    setServiceId("");
+    setValue("");
+    setStartDate("");
+    setStartTime("");
+    setRecurrenceType("weekly");
     setSelectedWeekdays([]);
     setWeeklyCount(4);
     setRecurrenceInterval(1);
     setOccurrences(10);
-    setEndDate('');
-    setNotes('');
+    setEndDate("");
+    setNotes("");
     setClientSearchResult(null);
     setDependents([]);
     setSelectedDependentId(null);
-    setError('');
+    setError("");
+    setSuccess("");
   };
 
   const searchClientByCpf = async () => {
@@ -167,13 +196,13 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
     try {
       setIsSearching(true);
-      setError('');
+      setError("");
 
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
-      const cleanCpf = clientCpf.replace(/\D/g, '');
+      const cleanCpf = clientCpf.replace(/\D/g, "");
 
-      console.log('🔄 [RECURRING-MODAL] Searching client by CPF:', cleanCpf);
+      console.log("🔄 [RECURRING-MODAL] Searching client by CPF:", cleanCpf);
 
       const clientResponse = await fetch(
         `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`,
@@ -184,9 +213,9 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
       if (clientResponse.ok) {
         const clientData = await clientResponse.json();
-        
-        if (clientData.subscription_status !== 'active') {
-          setError('Cliente não possui assinatura ativa');
+
+        if (clientData.subscription_status !== "active") {
+          setError("Cliente não possui assinatura ativa");
           return;
         }
 
@@ -213,7 +242,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
         if (dependentResponse.ok) {
           const dependentData = await dependentResponse.json();
-          
+
           if (dependentData.status !== "active") {
             setError("Dependente não possui status ativo");
             return;
@@ -222,17 +251,17 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
           setClientSearchResult({
             id: dependentData.user_id,
             name: dependentData.client_name,
-            subscription_status: 'active',
+            subscription_status: "active",
           });
           setSelectedDependentId(dependentData.id);
           setDependents([]);
         } else {
-          setError('Cliente ou dependente não encontrado');
+          setError("Cliente ou dependente não encontrado");
         }
       }
     } catch (error) {
-      console.error('❌ [RECURRING-MODAL] Error searching client:', error);
-      setError('Erro ao buscar cliente');
+      console.error("❌ [RECURRING-MODAL] Error searching client:", error);
+      setError("Erro ao buscar cliente");
     } finally {
       setIsSearching(false);
     }
@@ -242,16 +271,16 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
     const selectedServiceId = e.target.value;
     setServiceId(selectedServiceId);
 
-    const service = services.find(s => s.id.toString() === selectedServiceId);
+    const service = services.find((s) => s.id.toString() === selectedServiceId);
     if (service) {
       setValue(service.base_price.toString());
     }
   };
 
   const handleWeekdayToggle = (dayValue: number) => {
-    setSelectedWeekdays(prev => {
+    setSelectedWeekdays((prev) => {
       if (prev.includes(dayValue)) {
-        return prev.filter(d => d !== dayValue);
+        return prev.filter((d) => d !== dayValue);
       } else {
         return [...prev, dayValue];
       }
@@ -260,52 +289,56 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
+    setSuccess("");
 
-    console.log('🔄 [RECURRING-MODAL] Submitting form...');
+    console.log("🔄 [RECURRING-MODAL] Submitting form...");
 
     // Validation
-    if (patientType === 'convenio' && !clientSearchResult) {
-      setError('Busque e selecione um cliente ou dependente');
+    if (patientType === "convenio" && !clientSearchResult) {
+      setError("Busque e selecione um cliente ou dependente");
       return;
     }
 
-    if (patientType === 'private' && !privatePatientId) {
-      setError('Selecione um paciente particular');
+    if (patientType === "private" && !privatePatientId) {
+      setError("Selecione um paciente particular");
       return;
     }
 
     if (!serviceId || !value || !startDate || !startTime) {
-      setError('Preencha todos os campos obrigatórios');
+      setError("Preencha todos os campos obrigatórios");
       return;
     }
 
-    if (recurrenceType === 'daily' && selectedWeekdays.length === 0) {
-      setError('Para recorrência diária, selecione pelo menos um dia da semana');
+    if (recurrenceType === "daily" && selectedWeekdays.length === 0) {
+      setError(
+        "Para recorrência diária, selecione pelo menos um dia da semana"
+      );
       return;
     }
 
     try {
       setIsCreating(true);
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       const consultationData: any = {
-        service_id: parseInt(serviceId),
-        location_id: locationId ? parseInt(locationId) : null,
-        value: parseFloat(value),
+        service_id: Number.parseInt(serviceId),
+        location_id: locationId ? Number.parseInt(locationId) : null,
+        value: Number.parseFloat(value),
         start_date: startDate,
         start_time: startTime,
         recurrence_type: recurrenceType,
-        recurrence_interval: recurrenceType === 'weekly' ? 1 : recurrenceInterval,
-        weekly_count: recurrenceType === 'weekly' ? weeklyCount : null,
-        selected_weekdays: recurrenceType === 'daily' ? selectedWeekdays : [],
+        recurrence_interval:
+          recurrenceType === "weekly" ? 1 : recurrenceInterval,
+        weekly_count: recurrenceType === "weekly" ? weeklyCount : null,
+        selected_weekdays: recurrenceType === "daily" ? selectedWeekdays : [],
         occurrences: occurrences,
         notes: notes.trim() || null,
       };
 
-      if (patientType === 'private') {
-        consultationData.private_patient_id = parseInt(privatePatientId);
+      if (patientType === "private") {
+        consultationData.private_patient_id = Number.parseInt(privatePatientId);
       } else {
         if (selectedDependentId) {
           consultationData.dependent_id = selectedDependentId;
@@ -314,45 +347,72 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
         }
       }
 
-      console.log('🔄 [RECURRING-MODAL] Sending data:', consultationData);
+      console.log("🔄 [RECURRING-MODAL] Sending data:", consultationData);
 
       const response = await fetch(`${apiUrl}/api/consultations/recurring`, {
-        method: 'POST',
+        method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(consultationData),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Falha ao criar consultas recorrentes');
+        if (response.status === 409 && errorData.conflict) {
+          setError(
+            errorData.message ||
+              "Alguns horários já estão ocupados. Por favor, escolha outros horários."
+          );
+        } else {
+          setError(errorData.message || "Falha ao criar consultas recorrentes");
+        }
+        return;
       }
 
       const result = await response.json();
-      console.log('✅ [RECURRING-MODAL] Recurring consultations created:', result);
+      console.log(
+        "✅ [RECURRING-MODAL] Recurring consultations created:",
+        result
+      );
 
-      onSuccess();
-      onClose();
+      if (result.conflicts && result.conflicts.length > 0) {
+        const conflictMessage = `${result.created_count} consulta(s) criada(s) com sucesso. ${result.conflicts.length} horário(s) já estavam ocupados e foram ignorados.`;
+        setSuccess(conflictMessage);
+        setTimeout(() => {
+          onSuccess();
+          onClose();
+        }, 3000);
+      } else {
+        onSuccess();
+        onClose();
+      }
     } catch (error) {
-      console.error('❌ [RECURRING-MODAL] Error creating consultations:', error);
-      setError(error instanceof Error ? error.message : 'Erro ao criar consultas recorrentes');
+      console.error(
+        "❌ [RECURRING-MODAL] Error creating consultations:",
+        error
+      );
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Erro ao criar consultas recorrentes"
+      );
     } finally {
       setIsCreating(false);
     }
   };
 
   const formatCpf = (value: string) => {
-    if (!value) return '';
-    const numericValue = value.replace(/\D/g, '');
-    return numericValue.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    if (!value) return "";
+    const numericValue = value.replace(/\D/g, "");
+    return numericValue.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   };
 
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
     }).format(value);
   };
 
@@ -361,27 +421,27 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
     return null;
   }
 
-  console.log('🔄 [RECURRING-MODAL] Rendering modal...');
+  console.log("🔄 [RECURRING-MODAL] Rendering modal...");
 
   const weekdays = [
-    { value: 1, label: 'Segunda', short: 'SEG' },
-    { value: 2, label: 'Terça', short: 'TER' },
-    { value: 3, label: 'Quarta', short: 'QUA' },
-    { value: 4, label: 'Quinta', short: 'QUI' },
-    { value: 5, label: 'Sexta', short: 'SEX' },
-    { value: 6, label: 'Sábado', short: 'SÁB' },
-    { value: 0, label: 'Domingo', short: 'DOM' }
+    { value: 1, label: "Segunda", short: "SEG" },
+    { value: 2, label: "Terça", short: "TER" },
+    { value: 3, label: "Quarta", short: "QUA" },
+    { value: 4, label: "Quinta", short: "QUI" },
+    { value: 5, label: "Sexta", short: "SEX" },
+    { value: 6, label: "Sábado", short: "SÁB" },
+    { value: 0, label: "Domingo", short: "DOM" },
   ];
 
   const weeklyOptions = [
-    { value: 1, label: '1 semana' },
-    { value: 2, label: '2 semanas' },
-    { value: 3, label: '3 semanas' },
-    { value: 4, label: '4 semanas' },
-    { value: 6, label: '6 semanas' },
-    { value: 8, label: '8 semanas' },
-    { value: 12, label: '12 semanas' },
-    { value: 24, label: '24 semanas' }
+    { value: 1, label: "1 semana" },
+    { value: 2, label: "2 semanas" },
+    { value: 3, label: "3 semanas" },
+    { value: 4, label: "4 semanas" },
+    { value: 6, label: "6 semanas" },
+    { value: 8, label: "8 semanas" },
+    { value: 12, label: "12 semanas" },
+    { value: 24, label: "24 semanas" },
   ];
 
   return (
@@ -412,6 +472,13 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
           </div>
         )}
 
+        {success && (
+          <div className="mx-6 mt-4 bg-yellow-50 text-yellow-800 p-3 rounded-lg flex items-center">
+            <AlertCircle className="h-5 w-5 mr-2" />
+            {success}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="p-6">
           <div className="space-y-6">
             {/* Patient Type Selection */}
@@ -422,9 +489,9 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
               <select
                 value={patientType}
                 onChange={(e) => {
-                  setPatientType(e.target.value as 'convenio' | 'private');
-                  setClientCpf('');
-                  setPrivatePatientId('');
+                  setPatientType(e.target.value as "convenio" | "private");
+                  setClientCpf("");
+                  setPrivatePatientId("");
                   setClientSearchResult(null);
                   setDependents([]);
                   setSelectedDependentId(null);
@@ -438,7 +505,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
             </div>
 
             {/* Private Patient Selection */}
-            {patientType === 'private' && (
+            {patientType === "private" && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Paciente Particular
@@ -452,7 +519,10 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                   <option value="">Selecione um paciente</option>
                   {privatePatients.map((patient) => (
                     <option key={patient.id} value={patient.id}>
-                      {patient.name} - {patient.cpf ? formatCpf(patient.cpf) : 'CPF não informado'}
+                      {patient.name} -{" "}
+                      {patient.cpf
+                        ? formatCpf(patient.cpf)
+                        : "CPF não informado"}
                     </option>
                   ))}
                 </select>
@@ -460,7 +530,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
             )}
 
             {/* Convenio Client Search */}
-            {patientType === 'convenio' && (
+            {patientType === "convenio" && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   CPF do Cliente
@@ -469,7 +539,9 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                   <input
                     type="text"
                     value={formatCpf(clientCpf)}
-                    onChange={(e) => setClientCpf(e.target.value.replace(/\D/g, ''))}
+                    onChange={(e) =>
+                      setClientCpf(e.target.value.replace(/\D/g, ""))
+                    }
                     className="input flex-1"
                     placeholder="000.000.000-00"
                   />
@@ -479,7 +551,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                     className="btn btn-secondary"
                     disabled={isSearching}
                   >
-                    {isSearching ? 'Buscando...' : 'Buscar'}
+                    {isSearching ? "Buscando..." : "Buscar"}
                   </button>
                 </div>
 
@@ -492,7 +564,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                         Cliente: {clientSearchResult.name}
                       </span>
                     </div>
-                    
+
                     {/* Dependent Selection */}
                     {dependents.length > 0 && (
                       <div>
@@ -500,8 +572,12 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                           Dependente (opcional)
                         </label>
                         <select
-                          value={selectedDependentId || ''}
-                          onChange={(e) => setSelectedDependentId(e.target.value ? Number(e.target.value) : null)}
+                          value={selectedDependentId || ""}
+                          onChange={(e) =>
+                            setSelectedDependentId(
+                              e.target.value ? Number(e.target.value) : null
+                            )
+                          }
                           className="input"
                         >
                           <option value="">Consulta para o titular</option>
@@ -584,7 +660,9 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                 min="1"
                 max="50"
                 value={occurrences}
-                onChange={(e) => setOccurrences(parseInt(e.target.value))}
+                onChange={(e) =>
+                  setOccurrences(Number.parseInt(e.target.value))
+                }
                 className="input"
                 required
               />
@@ -630,12 +708,15 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                 <select
                   value={recurrenceType}
                   onChange={(e) => {
-                    const newType = e.target.value as 'daily' | 'weekly' | 'monthly';
+                    const newType = e.target.value as
+                      | "daily"
+                      | "weekly"
+                      | "monthly";
                     setRecurrenceType(newType);
-                    if (newType !== 'daily') {
+                    if (newType !== "daily") {
                       setSelectedWeekdays([]);
                     }
-                    if (newType !== 'weekly') {
+                    if (newType !== "weekly") {
                       setWeeklyCount(4);
                     }
                   }}
@@ -649,7 +730,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
               </div>
 
               {/* Daily Recurrence - Weekday Selection */}
-              {recurrenceType === 'daily' && (
+              {recurrenceType === "daily" && (
                 <div className="mb-6">
                   <label className="block text-sm font-medium text-gray-700 mb-3">
                     Selecione os dias da semana
@@ -662,8 +743,8 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                           key={day.value}
                           className={`flex flex-col items-center p-4 rounded-xl border-2 cursor-pointer transition-all ${
                             isSelected
-                              ? 'border-blue-500 bg-blue-50 text-blue-700'
-                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                              ? "border-blue-500 bg-blue-50 text-blue-700"
+                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
                           }`}
                         >
                           <input
@@ -672,19 +753,25 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                             onChange={() => handleWeekdayToggle(day.value)}
                             className="sr-only"
                           />
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-2 ${
-                            isSelected
-                              ? 'bg-blue-500 text-white'
-                              : 'bg-gray-100 text-gray-600'
-                          }`}>
-                            <span className="text-xs font-bold">{day.short.charAt(0)}</span>
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center mb-2 ${
+                              isSelected
+                                ? "bg-blue-500 text-white"
+                                : "bg-gray-100 text-gray-600"
+                            }`}
+                          >
+                            <span className="text-xs font-bold">
+                              {day.short.charAt(0)}
+                            </span>
                           </div>
-                          <span className="text-xs font-medium">{day.short}</span>
+                          <span className="text-xs font-medium">
+                            {day.short}
+                          </span>
                         </label>
                       );
                     })}
                   </div>
-                  
+
                   {selectedWeekdays.length === 0 && (
                     <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
                       <p className="text-sm text-red-600 font-medium">
@@ -696,7 +783,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
               )}
 
               {/* Weekly Recurrence - Number of Weeks */}
-              {recurrenceType === 'weekly' && (
+              {recurrenceType === "weekly" && (
                 <div className="mb-6">
                   <label className="block text-sm font-medium text-gray-700 mb-3">
                     Quantas semanas seguidas?
@@ -709,8 +796,8 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                           key={option.value}
                           className={`flex flex-col items-center p-4 rounded-xl border-2 cursor-pointer transition-all ${
                             isSelected
-                              ? 'border-blue-500 bg-blue-50 text-blue-700'
-                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                              ? "border-blue-500 bg-blue-50 text-blue-700"
+                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
                           }`}
                         >
                           <input
@@ -718,17 +805,25 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                             name="weekly_count"
                             value={option.value}
                             checked={isSelected}
-                            onChange={(e) => setWeeklyCount(parseInt(e.target.value))}
+                            onChange={(e) =>
+                              setWeeklyCount(Number.parseInt(e.target.value))
+                            }
                             className="sr-only"
                           />
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${
-                            isSelected
-                              ? 'bg-blue-500 text-white'
-                              : 'bg-gray-100 text-gray-600'
-                          }`}>
-                            <span className="text-sm font-bold">{option.value}</span>
+                          <div
+                            className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${
+                              isSelected
+                                ? "bg-blue-500 text-white"
+                                : "bg-gray-100 text-gray-600"
+                            }`}
+                          >
+                            <span className="text-sm font-bold">
+                              {option.value}
+                            </span>
                           </div>
-                          <span className="text-xs font-medium text-center">{option.label}</span>
+                          <span className="text-xs font-medium text-center">
+                            {option.label}
+                          </span>
                         </label>
                       );
                     })}
@@ -737,14 +832,16 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
               )}
 
               {/* Monthly Recurrence Interval */}
-              {recurrenceType === 'monthly' && (
+              {recurrenceType === "monthly" && (
                 <div className="mb-6">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     A cada quantos meses?
                   </label>
                   <select
                     value={recurrenceInterval}
-                    onChange={(e) => setRecurrenceInterval(parseInt(e.target.value))}
+                    onChange={(e) =>
+                      setRecurrenceInterval(Number.parseInt(e.target.value))
+                    }
                     className="input"
                     required
                   >
@@ -768,7 +865,9 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                   min="1"
                   max="50"
                   value={occurrences}
-                  onChange={(e) => setOccurrences(parseInt(e.target.value))}
+                  onChange={(e) =>
+                    setOccurrences(Number.parseInt(e.target.value))
+                  }
                   className="input"
                   required
                 />
@@ -783,18 +882,25 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                   Resumo da Recorrência:
                 </h4>
                 <div className="text-sm text-blue-700 space-y-2">
-                  {recurrenceType === 'daily' && selectedWeekdays.length > 0 && (
-                    <div>
-                      <p className="font-medium">
-                        Consultas nos dias: {weekdays
-                          .filter(day => selectedWeekdays.includes(day.value))
-                          .map(day => day.label)
-                          .join(', ')}
-                      </p>
-                      <p>Estimativa: {selectedWeekdays.length} consulta(s) por semana</p>
-                    </div>
-                  )}
-                  {recurrenceType === 'weekly' && (
+                  {recurrenceType === "daily" &&
+                    selectedWeekdays.length > 0 && (
+                      <div>
+                        <p className="font-medium">
+                          Consultas nos dias:{" "}
+                          {weekdays
+                            .filter((day) =>
+                              selectedWeekdays.includes(day.value)
+                            )
+                            .map((day) => day.label)
+                            .join(", ")}
+                        </p>
+                        <p>
+                          Estimativa: {selectedWeekdays.length} consulta(s) por
+                          semana
+                        </p>
+                      </div>
+                    )}
+                  {recurrenceType === "weekly" && (
                     <div>
                       <p className="font-medium">
                         Consultas semanais por {weeklyCount} semana(s)
@@ -802,7 +908,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                       <p>Total: {weeklyCount} consulta(s)</p>
                     </div>
                   )}
-                  {recurrenceType === 'monthly' && (
+                  {recurrenceType === "monthly" && (
                     <div>
                       <p className="font-medium">
                         Consultas mensais a cada {recurrenceInterval} mês(es)
@@ -841,16 +947,17 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
             <button
               type="submit"
               className={`btn btn-primary ${
-                isCreating ? 'opacity-70 cursor-not-allowed' : ''
+                isCreating ? "opacity-70 cursor-not-allowed" : ""
               }`}
-              disabled={isCreating || 
-                (patientType === 'convenio' && !clientSearchResult) ||
-                (patientType === 'private' && !privatePatientId) ||
+              disabled={
+                isCreating ||
+                (patientType === "convenio" && !clientSearchResult) ||
+                (patientType === "private" && !privatePatientId) ||
                 !serviceId ||
                 !value ||
                 !startDate ||
                 !startTime ||
-                (recurrenceType === 'daily' && selectedWeekdays.length === 0)
+                (recurrenceType === "daily" && selectedWeekdays.length === 0)
               }
             >
               {isCreating ? (

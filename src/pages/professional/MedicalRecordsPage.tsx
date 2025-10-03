@@ -1,4 +1,7 @@
-import React, { useState, useEffect } from "react";
+"use client";
+
+import type React from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import MedicalRecordPreviewModal from "../../components/MedicalRecordPreviewModal";
 import {
@@ -7,7 +10,6 @@ import {
   Search,
   User,
   Calendar,
-  FileText,
   Edit,
   Trash2,
   Eye,
@@ -61,10 +63,10 @@ const MedicalRecordsPage: React.FC = () => {
 
   // Form state
   const [formData, setFormData] = useState({
-    patient_type: 'private' as 'convenio' | 'private',
-    client_cpf: '',
-    patient_name: '',
-    patient_cpf: '',
+    patient_type: "private" as "convenio" | "private",
+    client_cpf: "",
+    patient_name: "",
+    patient_cpf: "",
     private_patient_id: "",
     chief_complaint: "",
     history_present_illness: "",
@@ -89,7 +91,9 @@ const MedicalRecordsPage: React.FC = () => {
   // Client search state (for convenio patients)
   const [clientSearchResult, setClientSearchResult] = useState<any>(null);
   const [dependents, setDependents] = useState<any[]>([]);
-  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(null);
+  const [selectedDependentId, setSelectedDependentId] = useState<number | null>(
+    null
+  );
   const [isSearching, setIsSearching] = useState(false);
 
   // Delete confirmation state
@@ -100,11 +104,13 @@ const MedicalRecordsPage: React.FC = () => {
 
   // Preview state
   const [showPreviewModal, setShowPreviewModal] = useState(false);
-  const [recordToPreview, setRecordToPreview] = useState<MedicalRecord | null>(null);
+  const [recordToPreview, setRecordToPreview] = useState<MedicalRecord | null>(
+    null
+  );
   const [professionalData, setProfessionalData] = useState({
-    name: '',
-    specialty: '',
-    crm: ''
+    name: "",
+    specialty: "",
+    crm: "",
   });
 
   // Get API URL
@@ -159,15 +165,15 @@ const MedicalRecordsPage: React.FC = () => {
 
       // Fetch professional data
       const userResponse = await fetch(`${apiUrl}/api/users/${user?.id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (userResponse.ok) {
         const userData = await userResponse.json();
         setProfessionalData({
-          name: userData.name || user?.name || 'Profissional',
-          specialty: userData.category_name || '',
-          crm: userData.crm || ''
+          name: userData.name || user?.name || "Profissional",
+          specialty: userData.category_name || "",
+          crm: userData.crm || "",
         });
       }
 
@@ -201,10 +207,10 @@ const MedicalRecordsPage: React.FC = () => {
   const openCreateModal = () => {
     setModalMode("create");
     setFormData({
-      patient_type: 'private',
-      client_cpf: '',
-      patient_name: '',
-      patient_cpf: '',
+      patient_type: "private",
+      client_cpf: "",
+      patient_name: "",
+      patient_cpf: "",
       private_patient_id: "",
       chief_complaint: "",
       history_present_illness: "",
@@ -234,12 +240,17 @@ const MedicalRecordsPage: React.FC = () => {
 
   const openEditModal = (record: MedicalRecord) => {
     setModalMode("edit");
+
+    const matchingPatient = patients.find(
+      (p) => p.name === record.patient_name || p.cpf === record.patient_cpf
+    );
+
     setFormData({
-      patient_type: 'private', // Default to private for editing
-      client_cpf: '',
-      patient_name: '',
-      patient_cpf: '',
-      private_patient_id: "", // Would need to be set based on the record
+      patient_type: "private", // Default to private for editing
+      client_cpf: "",
+      patient_name: record.patient_name || "",
+      patient_cpf: record.patient_cpf || "",
+      private_patient_id: matchingPatient ? matchingPatient.id.toString() : "",
       chief_complaint: record.chief_complaint || "",
       history_present_illness: record.history_present_illness || "",
       past_medical_history: record.past_medical_history || "",
@@ -304,11 +315,11 @@ const MedicalRecordsPage: React.FC = () => {
 
     try {
       setIsSearching(true);
-      setError('');
+      setError("");
 
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
-      const cleanCpf = formData.client_cpf.replace(/\D/g, '');
+      const cleanCpf = formData.client_cpf.replace(/\D/g, "");
 
       // First, try to find a dependent
       const dependentResponse = await fetch(
@@ -321,24 +332,24 @@ const MedicalRecordsPage: React.FC = () => {
       if (dependentResponse.ok) {
         const dependentData = await dependentResponse.json();
 
-        if (dependentData.status !== 'active') {
-          setError('Este dependente não possui assinatura ativa.');
+        if (dependentData.status !== "active") {
+          setError("Este dependente não possui assinatura ativa.");
           return;
         }
 
         setClientSearchResult({
           id: dependentData.user_id,
           name: dependentData.client_name,
-          subscription_status: 'active',
+          subscription_status: "active",
         });
         setSelectedDependentId(dependentData.id);
         setDependents([]);
-        
+
         // Set patient data for the form
-        setFormData(prev => ({
+        setFormData((prev) => ({
           ...prev,
           patient_name: dependentData.name,
-          patient_cpf: dependentData.cpf
+          patient_cpf: dependentData.cpf,
         }));
         return;
       }
@@ -353,28 +364,28 @@ const MedicalRecordsPage: React.FC = () => {
 
       if (!clientResponse.ok) {
         if (clientResponse.status === 404) {
-          setError('Cliente ou dependente não encontrado.');
+          setError("Cliente ou dependente não encontrado.");
         } else {
-          setError('Erro ao buscar cliente.');
+          setError("Erro ao buscar cliente.");
         }
         return;
       }
 
       const clientData = await clientResponse.json();
 
-      if (clientData.subscription_status !== 'active') {
-        setError('Este cliente não possui assinatura ativa.');
+      if (clientData.subscription_status !== "active") {
+        setError("Este cliente não possui assinatura ativa.");
         return;
       }
 
       setClientSearchResult(clientData);
       setSelectedDependentId(null);
-      
+
       // Set patient data for the form
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         patient_name: clientData.name,
-        patient_cpf: clientData.cpf
+        patient_cpf: clientData.cpf,
       }));
 
       // Fetch dependents
@@ -390,16 +401,16 @@ const MedicalRecordsPage: React.FC = () => {
         setDependents(dependentsData);
       }
     } catch (error) {
-      setError('Erro ao buscar paciente.');
+      setError("Erro ao buscar paciente.");
     } finally {
       setIsSearching(false);
     }
   };
 
   const formatCpf = (value: string) => {
-    if (!value) return '';
-    const numericValue = value.replace(/\D/g, '');
-    return numericValue.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    if (!value) return "";
+    const numericValue = value.replace(/\D/g, "");
+    return numericValue.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -408,13 +419,13 @@ const MedicalRecordsPage: React.FC = () => {
     setSuccess("");
 
     // Validate patient selection
-    if (formData.patient_type === 'private' && !formData.private_patient_id) {
-      setError('Selecione um paciente particular');
+    if (formData.patient_type === "private" && !formData.private_patient_id) {
+      setError("Selecione um paciente particular");
       return;
     }
 
-    if (formData.patient_type === 'convenio' && !clientSearchResult) {
-      setError('Busque e selecione um cliente ou dependente do convênio');
+    if (formData.patient_type === "convenio" && !clientSearchResult) {
+      setError("Busque e selecione um cliente ou dependente do convênio");
       return;
     }
 
@@ -424,19 +435,23 @@ const MedicalRecordsPage: React.FC = () => {
 
       // Prepare patient data for the medical record
       let patientName, patientCpf;
-      
-      if (formData.patient_type === 'private') {
-        const patient = patients.find((p) => p.id.toString() === formData.private_patient_id);
+
+      if (formData.patient_type === "private") {
+        const patient = patients.find(
+          (p) => p.id.toString() === formData.private_patient_id
+        );
         if (!patient) {
-          setError('Paciente particular não encontrado');
+          setError("Paciente particular não encontrado");
           return;
         }
         patientName = patient.name;
-        patientCpf = patient.cpf || '';
+        patientCpf = patient.cpf || "";
       } else {
         // Convenio patient
         if (selectedDependentId) {
-          const dependent = dependents.find(d => d.id === selectedDependentId);
+          const dependent = dependents.find(
+            (d) => d.id === selectedDependentId
+          );
           patientName = dependent ? dependent.name : clientSearchResult.name;
           patientCpf = dependent ? dependent.cpf : formData.client_cpf;
         } else {
@@ -548,35 +563,41 @@ const MedicalRecordsPage: React.FC = () => {
   // Função de impressão direta para prontuários
   const printMedicalRecordDirect = (record: MedicalRecord) => {
     try {
-      console.log('🔄 Starting direct medical record print');
-      
+      console.log("🔄 Starting direct medical record print");
+
       // Gerar HTML do prontuário
       const vitalSigns = record.vital_signs || {};
-      const hasVitalSigns = Object.values(vitalSigns).some(value => value && value.toString().trim());
+      const hasVitalSigns = Object.values(vitalSigns).some(
+        (value) => value && value.toString().trim()
+      );
 
-      let vitalSignsHTML = '';
+      let vitalSignsHTML = "";
       if (hasVitalSigns) {
         const vitalSignItems = [
-          { label: 'Pressão Arterial', value: vitalSigns.blood_pressure },
-          { label: 'Freq. Cardíaca', value: vitalSigns.heart_rate },
-          { label: 'Temperatura', value: vitalSigns.temperature },
-          { label: 'Freq. Respiratória', value: vitalSigns.respiratory_rate },
-          { label: 'Sat. O₂', value: vitalSigns.oxygen_saturation },
-          { label: 'Peso', value: vitalSigns.weight },
-          { label: 'Altura', value: vitalSigns.height }
-        ].filter(item => item.value && item.value.toString().trim());
+          { label: "Pressão Arterial", value: vitalSigns.blood_pressure },
+          { label: "Freq. Cardíaca", value: vitalSigns.heart_rate },
+          { label: "Temperatura", value: vitalSigns.temperature },
+          { label: "Freq. Respiratória", value: vitalSigns.respiratory_rate },
+          { label: "Sat. O₂", value: vitalSigns.oxygen_saturation },
+          { label: "Peso", value: vitalSigns.weight },
+          { label: "Altura", value: vitalSigns.height },
+        ].filter((item) => item.value && item.value.toString().trim());
 
         if (vitalSignItems.length > 0) {
           vitalSignsHTML = `
             <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: #ffffff;">
               <h3 style="margin: 0 0 10px 0; color: #c11c22; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 5px; font-weight: bold;">Sinais Vitais</h3>
               <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 15px 0;">
-                ${vitalSignItems.map(item => `
+                ${vitalSignItems
+                  .map(
+                    (item) => `
                   <div style="text-align: center; padding: 10px; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px;">
                     <div style="font-size: 11px; color: #666666; margin-bottom: 5px;">${item.label}</div>
                     <div style="font-weight: bold; color: #c11c22;">${item.value}</div>
                   </div>
-                `).join('')}
+                `
+                  )
+                  .join("")}
               </div>
             </div>
           `;
@@ -584,23 +605,33 @@ const MedicalRecordsPage: React.FC = () => {
       }
 
       const medicalSections = [
-        { title: 'Queixa Principal', content: record.chief_complaint },
-        { title: 'História da Doença Atual', content: record.history_present_illness },
-        { title: 'História Médica Pregressa', content: record.past_medical_history },
-        { title: 'Medicamentos em Uso', content: record.medications },
-        { title: 'Alergias', content: record.allergies },
-        { title: 'Exame Físico', content: record.physical_examination },
-        { title: 'Diagnóstico', content: record.diagnosis },
-        { title: 'Plano de Tratamento', content: record.treatment_plan },
-        { title: 'Observações Gerais', content: record.notes }
-      ].filter(section => section.content && section.content.trim());
+        { title: "Queixa Principal", content: record.chief_complaint },
+        {
+          title: "História da Doença Atual",
+          content: record.history_present_illness,
+        },
+        {
+          title: "História Médica Pregressa",
+          content: record.past_medical_history,
+        },
+        { title: "Medicamentos em Uso", content: record.medications },
+        { title: "Alergias", content: record.allergies },
+        { title: "Exame Físico", content: record.physical_examination },
+        { title: "Diagnóstico", content: record.diagnosis },
+        { title: "Plano de Tratamento", content: record.treatment_plan },
+        { title: "Observações Gerais", content: record.notes },
+      ].filter((section) => section.content && section.content.trim());
 
-      const medicalSectionsHTML = medicalSections.map(section => `
+      const medicalSectionsHTML = medicalSections
+        .map(
+          (section) => `
         <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; page-break-inside: avoid; background: #ffffff;">
           <h3 style="margin: 0 0 10px 0; color: #c11c22; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 5px; font-weight: bold;">${section.title}</h3>
           <p style="color: #000000; margin: 10px 0; text-align: justify;">${section.content}</p>
         </div>
-      `).join('');
+      `
+        )
+        .join("");
 
       const htmlContent = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -681,26 +712,34 @@ const MedicalRecordsPage: React.FC = () => {
 
     <div class="patient-info">
         <strong>Paciente:</strong> ${record.patient_name}<br>
-        <strong>Data do Atendimento:</strong> ${new Date(record.created_at).toLocaleDateString('pt-BR')}<br>
-        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}
+        <strong>Data do Atendimento:</strong> ${new Date(
+          record.created_at
+        ).toLocaleDateString("pt-BR")}<br>
+        <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString(
+          "pt-BR"
+        )}
     </div>
 
     ${vitalSignsHTML}
 
     ${medicalSectionsHTML}
 
-    ${medicalSections.length === 0 ? `
+    ${
+      medicalSections.length === 0
+        ? `
     <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: #ffffff;">
         <p style="color: #000000; margin: 10px 0; text-align: justify;"><em>Prontuário médico sem informações clínicas detalhadas registradas.</em></p>
     </div>
-    ` : ''}
+    `
+        : ""
+    }
 
     <div class="signature">
         <div class="signature-line"></div>
         <div>
             <strong>${professionalData.name}</strong><br>
             ${professionalData.specialty}<br>
-            ${professionalData.crm ? `Registro: ${professionalData.crm}` : ''}
+            ${professionalData.crm ? `Registro: ${professionalData.crm}` : ""}
         </div>
     </div>
 
@@ -717,23 +756,24 @@ const MedicalRecordsPage: React.FC = () => {
     </script>
 </body>
 </html>`;
-      
+
       // Criar nova janela
-      const printWindow = window.open('', '_blank', 'width=800,height=600');
-      
+      const printWindow = window.open("", "_blank", "width=800,height=600");
+
       if (!printWindow) {
-        throw new Error('Popup foi bloqueado. Permita popups para imprimir.');
+        throw new Error("Popup foi bloqueado. Permita popups para imprimir.");
       }
 
       // Escrever e fechar documento
       printWindow.document.write(htmlContent);
       printWindow.document.close();
-      
-      setSuccess('Janela de impressão aberta! Use Ctrl+P se necessário.');
-      
+
+      setSuccess("Janela de impressão aberta! Use Ctrl+P se necessário.");
     } catch (error) {
-      console.error('Error printing medical record:', error);
-      setError(error instanceof Error ? error.message : 'Erro ao imprimir prontuário');
+      console.error("Error printing medical record:", error);
+      setError(
+        error instanceof Error ? error.message : "Erro ao imprimir prontuário"
+      );
     }
   };
   const formatDate = (dateString: string) => {
@@ -777,7 +817,7 @@ const MedicalRecordsPage: React.FC = () => {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar por paciente, queixa ou diagnóstico..."
-            className="input pl-10"
+            className="w-full pl-12 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
           />
         </div>
 
@@ -901,13 +941,6 @@ const MedicalRecordsPage: React.FC = () => {
                           <Eye className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => openPreviewModal(record)}
-                          className="text-green-600 hover:text-green-900"
-                          title="Gerar Documento"
-                        >
-                          <Printer className="h-4 w-4" />
-                        </button>
-                        <button
                           onClick={() => printMedicalRecordDirect(record)}
                           className="text-purple-600 hover:text-purple-900"
                           title="Imprimir Direto"
@@ -973,11 +1006,11 @@ const MedicalRecordsPage: React.FC = () => {
                     name="patient_type"
                     value={formData.patient_type}
                     onChange={(e) => {
-                      setFormData(prev => ({
+                      setFormData((prev) => ({
                         ...prev,
-                        patient_type: e.target.value as 'convenio' | 'private',
-                        client_cpf: '',
-                        private_patient_id: '',
+                        patient_type: e.target.value as "convenio" | "private",
+                        client_cpf: "",
+                        private_patient_id: "",
                       }));
                       setClientSearchResult(null);
                       setDependents([]);
@@ -992,7 +1025,7 @@ const MedicalRecordsPage: React.FC = () => {
                 </div>
 
                 {/* Convenio Patient Search */}
-                {formData.patient_type === 'convenio' && (
+                {formData.patient_type === "convenio" && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Buscar por CPF *
@@ -1002,9 +1035,9 @@ const MedicalRecordsPage: React.FC = () => {
                         type="text"
                         value={formatCpf(formData.client_cpf)}
                         onChange={(e) =>
-                          setFormData(prev => ({
+                          setFormData((prev) => ({
                             ...prev,
-                            client_cpf: e.target.value.replace(/\D/g, ''),
+                            client_cpf: e.target.value.replace(/\D/g, ""),
                           }))
                         }
                         className="input flex-1"
@@ -1016,7 +1049,7 @@ const MedicalRecordsPage: React.FC = () => {
                         className="btn btn-secondary"
                         disabled={isSearching || !formData.client_cpf}
                       >
-                        {isSearching ? 'Buscando...' : 'Buscar'}
+                        {isSearching ? "Buscando..." : "Buscar"}
                       </button>
                     </div>
 
@@ -1037,32 +1070,38 @@ const MedicalRecordsPage: React.FC = () => {
                               Dependente (opcional)
                             </label>
                             <select
-                              value={selectedDependentId || ''}
+                              value={selectedDependentId || ""}
                               onChange={(e) => {
-                                const depId = e.target.value ? Number(e.target.value) : null;
+                                const depId = e.target.value
+                                  ? Number(e.target.value)
+                                  : null;
                                 setSelectedDependentId(depId);
-                                
+
                                 // Update patient data based on selection
                                 if (depId) {
-                                  const dependent = dependents.find(d => d.id === depId);
+                                  const dependent = dependents.find(
+                                    (d) => d.id === depId
+                                  );
                                   if (dependent) {
-                                    setFormData(prev => ({
+                                    setFormData((prev) => ({
                                       ...prev,
                                       patient_name: dependent.name,
-                                      patient_cpf: dependent.cpf
+                                      patient_cpf: dependent.cpf,
                                     }));
                                   }
                                 } else {
-                                  setFormData(prev => ({
+                                  setFormData((prev) => ({
                                     ...prev,
                                     patient_name: clientSearchResult.name,
-                                    patient_cpf: formData.client_cpf
+                                    patient_cpf: formData.client_cpf,
                                   }));
                                 }
                               }}
                               className="input"
                             >
-                              <option value="">Prontuário para o titular</option>
+                              <option value="">
+                                Prontuário para o titular
+                              </option>
                               {dependents.map((dependent) => (
                                 <option key={dependent.id} value={dependent.id}>
                                   {dependent.name}
@@ -1077,7 +1116,7 @@ const MedicalRecordsPage: React.FC = () => {
                 )}
 
                 {/* Private Patient Selection */}
-                {formData.patient_type === 'private' && (
+                {formData.patient_type === "private" && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Paciente Particular *

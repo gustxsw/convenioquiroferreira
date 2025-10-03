@@ -1,4 +1,7 @@
-import React, { useState, useEffect } from "react";
+"use client";
+
+import type React from "react";
+import { useState, useEffect } from "react";
 import {
   FilePlus,
   Edit,
@@ -195,7 +198,7 @@ const ManageServicesPage: React.FC = () => {
       const apiUrl = getApiUrl();
 
       // Validate base price
-      const priceValue = parseFloat(basePrice);
+      const priceValue = Number.parseFloat(basePrice);
       if (isNaN(priceValue) || priceValue <= 0) {
         setError("O preço base deve ser um valor numérico maior que zero");
         return;
@@ -205,7 +208,7 @@ const ManageServicesPage: React.FC = () => {
         name,
         description,
         base_price: priceValue,
-        category_id: categoryId ? parseInt(categoryId) : null,
+        category_id: categoryId ? Number.parseInt(categoryId) : null,
         is_base_service: isBaseService,
       };
 
@@ -367,30 +370,30 @@ const ManageServicesPage: React.FC = () => {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
             Gerenciar Serviços
           </h1>
-          <p className="text-gray-600">
+          <p className="text-sm sm:text-base text-gray-600">
             Adicione, edite ou remova serviços do sistema
           </p>
         </div>
 
-        <div className="flex space-x-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <button
             onClick={() => setIsCategoryModalOpen(true)}
-            className="btn btn-outline flex items-center"
+            className="btn btn-outline flex items-center justify-center text-sm sm:text-base"
           >
-            <FolderPlus className="h-5 w-5 mr-2" />
+            <FolderPlus className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
             Nova Categoria
           </button>
 
           <button
             onClick={openCreateModal}
-            className="btn btn-primary flex items-center"
+            className="btn btn-primary flex items-center justify-center text-sm sm:text-base"
           >
-            <FilePlus className="h-5 w-5 mr-2" />
+            <FilePlus className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
             Novo Serviço
           </button>
         </div>
@@ -425,69 +428,113 @@ const ManageServicesPage: React.FC = () => {
             </button>
           </div>
         ) : (
-          <div className="table-container">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Nome</th>
-                  <th>Categoria</th>
-                  <th>Descrição</th>
-                  <th>Preço Base</th>
-                  <th>Tipo</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {services.map((service) => (
-                  <tr key={service.id}>
-                    <td className="flex items-center">
-                      <FileText className="h-5 w-5 mr-2 text-gray-500" />
-                      {service.name}
-                    </td>
-                    <td>{service.category_name || "Sem categoria"}</td>
-                    <td>{service.description}</td>
-                    <td>{formatCurrency(service.base_price)}</td>
-                    <td>
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          service.is_base_service
-                            ? "bg-blue-100 text-blue-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {service.is_base_service ? "Base" : "Específico"}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => openEditModal(service)}
-                          className="p-1 text-blue-600 hover:text-blue-800"
-                          title="Editar"
-                        >
-                          <Edit className="h-5 w-5" />
-                        </button>
-                        <button
-                          onClick={() => confirmDelete(service)}
-                          className="p-1 text-red-600 hover:text-red-800"
-                          title="Excluir"
-                        >
-                          <Trash2 className="h-5 w-5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
+            <div className="inline-block min-w-full align-middle">
+              <div className="overflow-hidden">
+                <table className="table min-w-full">
+                  <thead>
+                    <tr>
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
+                        Nome
+                      </th>
+                      <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
+                        Categoria
+                      </th>
+                      <th className="hidden lg:table-cell px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
+                        Descrição
+                      </th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
+                        Preço Base
+                      </th>
+                      <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
+                        Tipo
+                      </th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
+                        Ações
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {services.map((service) => (
+                      <tr key={service.id}>
+                        <td className="px-3 sm:px-6 py-4">
+                          <div className="flex items-center">
+                            <FileText className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-gray-500 flex-shrink-0" />
+                            <div>
+                              <div className="text-xs sm:text-sm font-medium">
+                                {service.name}
+                              </div>
+                              <div className="md:hidden text-xs text-gray-500 mt-1">
+                                {service.category_name || "Sem categoria"}
+                              </div>
+                              <div className="sm:hidden mt-1">
+                                <span
+                                  className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                    service.is_base_service
+                                      ? "bg-blue-100 text-blue-800"
+                                      : "bg-gray-100 text-gray-800"
+                                  }`}
+                                >
+                                  {service.is_base_service
+                                    ? "Base"
+                                    : "Específico"}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="hidden md:table-cell px-6 py-4 text-sm">
+                          {service.category_name || "Sem categoria"}
+                        </td>
+                        <td className="hidden lg:table-cell px-6 py-4 text-sm">
+                          {service.description}
+                        </td>
+                        <td className="px-3 sm:px-6 py-4 text-xs sm:text-sm font-medium">
+                          {formatCurrency(service.base_price)}
+                        </td>
+                        <td className="hidden sm:table-cell px-6 py-4">
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              service.is_base_service
+                                ? "bg-blue-100 text-blue-800"
+                                : "bg-gray-100 text-gray-800"
+                            }`}
+                          >
+                            {service.is_base_service ? "Base" : "Específico"}
+                          </span>
+                        </td>
+                        <td className="px-3 sm:px-6 py-4">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => openEditModal(service)}
+                              className="p-1 text-blue-600 hover:text-blue-800"
+                              title="Editar"
+                            >
+                              <Edit className="h-4 w-4 sm:h-5 sm:w-5" />
+                            </button>
+                            <button
+                              onClick={() => confirmDelete(service)}
+                              className="p-1 text-red-600 hover:text-red-800"
+                              title="Excluir"
+                            >
+                              <Trash2 className="h-4 w-4 sm:h-5 sm:w-5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
       </div>
 
       {/* Service form modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold">
                 {modalMode === "create"
@@ -603,15 +650,18 @@ const ManageServicesPage: React.FC = () => {
                 </label>
               </div>
 
-              <div className="flex justify-end">
+              <div className="flex flex-col sm:flex-row justify-end gap-3">
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="btn btn-secondary mr-2"
+                  className="btn btn-secondary w-full sm:w-auto order-2 sm:order-1"
                 >
                   Cancelar
                 </button>
-                <button type="submit" className="btn btn-primary">
+                <button
+                  type="submit"
+                  className="btn btn-primary w-full sm:w-auto order-1 sm:order-2"
+                >
                   {modalMode === "create" ? "Adicionar" : "Salvar Alterações"}
                 </button>
               </div>
@@ -622,8 +672,8 @@ const ManageServicesPage: React.FC = () => {
 
       {/* Category form modal */}
       {isCategoryModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold">Nova Categoria de Serviço</h2>
               <button
@@ -680,15 +730,18 @@ const ManageServicesPage: React.FC = () => {
                 />
               </div>
 
-              <div className="flex justify-end">
+              <div className="flex flex-col sm:flex-row justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setIsCategoryModalOpen(false)}
-                  className="btn btn-secondary mr-2"
+                  className="btn btn-secondary w-full sm:w-auto order-2 sm:order-1"
                 >
                   Cancelar
                 </button>
-                <button type="submit" className="btn btn-primary">
+                <button
+                  type="submit"
+                  className="btn btn-primary w-full sm:w-auto order-1 sm:order-2"
+                >
                   Criar Categoria
                 </button>
               </div>
@@ -699,8 +752,8 @@ const ManageServicesPage: React.FC = () => {
 
       {/* Delete confirmation modal */}
       {showDeleteConfirm && serviceToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-md">
             <h2 className="text-xl font-bold mb-4">Confirmar Exclusão</h2>
 
             <p className="mb-6">
@@ -709,17 +762,17 @@ const ManageServicesPage: React.FC = () => {
               desfeita.
             </p>
 
-            <div className="flex justify-end">
+            <div className="flex flex-col sm:flex-row justify-end gap-3">
               <button
                 onClick={cancelDelete}
-                className="btn btn-secondary mr-2 flex items-center"
+                className="btn btn-secondary flex items-center justify-center w-full sm:w-auto order-2 sm:order-1"
               >
                 <X className="h-5 w-5 mr-1" />
                 Cancelar
               </button>
               <button
                 onClick={deleteService}
-                className="btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 flex items-center"
+                className="btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 flex items-center justify-center w-full sm:w-auto order-1 sm:order-2"
               >
                 <Check className="h-5 w-5 mr-1" />
                 Confirmar

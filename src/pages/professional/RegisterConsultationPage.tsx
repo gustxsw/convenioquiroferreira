@@ -1,19 +1,15 @@
-import React, { useState, useEffect } from "react";
+"use client";
+
+import type React from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import TimeInput from "../../components/TimeInput";
-import { validateTimeSlot, type SlotDuration } from "../../utils/timeSlotValidation";
 import {
-  Search,
-  Calendar,
-  User,
-  Users,
-  AlertTriangle,
-  MapPin,
-  UserPlus,
-  X,
-  Check,
-} from "lucide-react";
+  validateTimeSlot,
+  type SlotDuration,
+} from "../../utils/timeSlotValidation";
+import { Search, Calendar, User, Users, AlertTriangle } from "lucide-react";
 
 type Service = {
   id: number;
@@ -190,7 +186,7 @@ const RegisterConsultationPage: React.FC = () => {
   useEffect(() => {
     if (categoryId) {
       const filtered = services.filter(
-        (service) => service.category_id === parseInt(categoryId)
+        (service) => service.category_id === Number.parseInt(categoryId)
       );
       setFilteredServices(filtered);
       setServiceId(null);
@@ -250,7 +246,11 @@ const RegisterConsultationPage: React.FC = () => {
         setSelectedDependentId(dependentData.id);
         setDependents([]); // No dependents list needed when found directly
         setSuccess(
-          `Dependente encontrado: ${dependentData.name} (Titular: ${dependentData.client_name}) - Status: ${dependentData.status === 'active' ? 'Ativo' : 'Inativo'}`
+          `Dependente encontrado: ${dependentData.name} (Titular: ${
+            dependentData.client_name
+          }) - Status: ${
+            dependentData.status === "active" ? "Ativo" : "Inativo"
+          }`
         );
         return;
       }
@@ -369,7 +369,7 @@ const RegisterConsultationPage: React.FC = () => {
     // Validate time format and slot
     const timeValidation = validateTimeSlot(time, slotDuration);
     if (!timeValidation.isValid) {
-      setError(timeValidation.error || 'Horário inválido');
+      setError(timeValidation.error || "Horário inválido");
       return;
     }
 
@@ -415,10 +415,10 @@ const RegisterConsultationPage: React.FC = () => {
       const consultationData: any = {
         professional_id: user?.id,
         service_id: serviceId,
-        location_id: locationId ? parseInt(locationId) : null,
+        location_id: locationId ? Number.parseInt(locationId) : null,
         value: Number(value),
         date: dateTimeString,
-        status: 'scheduled',
+        status: "scheduled",
         notes: null,
       };
 
@@ -453,7 +453,15 @@ const RegisterConsultationPage: React.FC = () => {
       if (!response.ok) {
         const errorData = await response.json();
         console.error("❌ Consultation creation failed:", errorData);
-        throw new Error(errorData.message || "Falha ao registrar consulta");
+        if (response.status === 409 && errorData.conflict) {
+          setError(
+            errorData.message ||
+              "Este horário já está ocupado. Por favor, escolha outro horário."
+          );
+        } else {
+          setError(errorData.message || "Falha ao registrar consulta");
+        }
+        return;
       }
 
       const responseData = await response.json();
@@ -474,9 +482,7 @@ const RegisterConsultationPage: React.FC = () => {
       setDate("");
       setTime("");
 
-      setSuccess(
-        "Consulta registrada com sucesso!"
-      );
+      setSuccess("Consulta registrada com sucesso!");
 
       // Redirect after a delay
       setTimeout(() => {

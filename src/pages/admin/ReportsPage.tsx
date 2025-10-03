@@ -1,4 +1,7 @@
-import React, { useState } from "react";
+"use client";
+
+import type React from "react";
+import { useState } from "react";
 import {
   BarChart2,
   Download,
@@ -91,9 +94,15 @@ const ReportsPage: React.FC = () => {
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      console.log("🔄 Fetching revenue report from:", `${apiUrl}/api/reports/revenue`);
+      console.log(
+        "🔄 Fetching revenue report from:",
+        `${apiUrl}/api/reports/revenue`
+      );
       console.log("🔄 Frontend date range being sent:", { startDate, endDate });
-      console.log("🔄 URL being called:", `${apiUrl}/api/reports/revenue?start_date=${startDate}&end_date=${endDate}`);
+      console.log(
+        "🔄 URL being called:",
+        `${apiUrl}/api/reports/revenue?start_date=${startDate}&end_date=${endDate}`
+      );
 
       const response = await fetch(
         `${apiUrl}/api/reports/revenue?start_date=${startDate}&end_date=${endDate}`,
@@ -111,7 +120,9 @@ const ReportsPage: React.FC = () => {
       if (!response.ok) {
         const errorText = await response.text();
         console.error("❌ Revenue report error details:", errorText);
-        throw new Error(`Falha ao carregar relatório de receita: ${response.status}`);
+        throw new Error(
+          `Falha ao carregar relatório de receita: ${response.status}`
+        );
       }
 
       const data = await response.json();
@@ -119,7 +130,11 @@ const ReportsPage: React.FC = () => {
       setReport(data);
     } catch (error) {
       console.error("Error fetching report:", error);
-      setError(error instanceof Error ? error.message : "Não foi possível carregar o relatório de receita");
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível carregar o relatório de receita"
+      );
       setReport(null);
     } finally {
       setIsLoading(false);
@@ -139,7 +154,10 @@ const ReportsPage: React.FC = () => {
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      console.log("🔄 Fetching city reports from:", `${apiUrl}/api/reports/clients-by-city`);
+      console.log(
+        "🔄 Fetching city reports from:",
+        `${apiUrl}/api/reports/clients-by-city`
+      );
 
       // Fetch clients by city
       const clientsResponse = await fetch(
@@ -153,14 +171,20 @@ const ReportsPage: React.FC = () => {
         }
       );
 
-      console.log("📡 Clients by city response status:", clientsResponse.status);
+      console.log(
+        "📡 Clients by city response status:",
+        clientsResponse.status
+      );
 
       if (clientsResponse.ok) {
         const clientsData = await clientsResponse.json();
         console.log("✅ Clients by city loaded:", clientsData);
         setClientsReport(clientsData);
       } else {
-        console.warn("⚠️ Clients by city not available:", clientsResponse.status);
+        console.warn(
+          "⚠️ Clients by city not available:",
+          clientsResponse.status
+        );
         setClientsReport([]);
       }
 
@@ -176,14 +200,20 @@ const ReportsPage: React.FC = () => {
         }
       );
 
-      console.log("📡 Professionals by city response status:", professionalsResponse.status);
+      console.log(
+        "📡 Professionals by city response status:",
+        professionalsResponse.status
+      );
 
       if (professionalsResponse.ok) {
         const professionalsData = await professionalsResponse.json();
         console.log("✅ Professionals by city loaded:", professionalsData);
         setProfessionalsReport(professionalsData);
       } else {
-        console.warn("⚠️ Professionals by city not available:", professionalsResponse.status);
+        console.warn(
+          "⚠️ Professionals by city not available:",
+          professionalsResponse.status
+        );
         setProfessionalsReport([]);
       }
     } catch (error) {
@@ -215,22 +245,27 @@ const ReportsPage: React.FC = () => {
 
   // Format date for display (convert from UTC to Brazil local time)
   const formatDateTimeFromUTC = (utcDateString: string) => {
-    const utcDate = new Date(utcDateString);
-    // Convert from UTC to Brazil local time (-3h)
-    const localDate = new Date(utcDate.getTime() - (3 * 60 * 60 * 1000));
-    return localDate.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit', 
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+    const date = new Date(utcDateString);
+    return date.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
   const calculateTotalClinicRevenue = () => {
     if (!report) return 0;
-    if (!report.revenue_by_professional || !Array.isArray(report.revenue_by_professional)) return 0;
-   console.log('🔄 Calculating clinic revenue from:', report.revenue_by_professional);
+    if (
+      !report.revenue_by_professional ||
+      !Array.isArray(report.revenue_by_professional)
+    )
+      return 0;
+    console.log(
+      "🔄 Calculating clinic revenue from:",
+      report.revenue_by_professional
+    );
     return report.revenue_by_professional.reduce(
       (total, prof) => total + (Number(prof.clinic_revenue) || 0),
       0
@@ -239,8 +274,15 @@ const ReportsPage: React.FC = () => {
 
   const calculateTotalProfessionalPayments = () => {
     if (!report) return 0;
-    if (!report.revenue_by_professional || !Array.isArray(report.revenue_by_professional)) return 0;
-   console.log('🔄 Calculating professional payments from:', report.revenue_by_professional);
+    if (
+      !report.revenue_by_professional ||
+      !Array.isArray(report.revenue_by_professional)
+    )
+      return 0;
+    console.log(
+      "🔄 Calculating professional payments from:",
+      report.revenue_by_professional
+    );
     return report.revenue_by_professional.reduce(
       (total, prof) => total + (Number(prof.professional_payment) || 0),
       0
@@ -390,7 +432,9 @@ const ReportsPage: React.FC = () => {
                     <div className="text-center">
                       <p className="text-gray-600 mb-1">Receita do Convênio</p>
                       <p className="text-3xl font-bold text-green-600">
-                        {formatCurrency(Number(calculateTotalClinicRevenue()) || 0)}
+                        {formatCurrency(
+                          Number(calculateTotalClinicRevenue()) || 0
+                        )}
                       </p>
                     </div>
                   </div>
@@ -401,14 +445,27 @@ const ReportsPage: React.FC = () => {
                         Faturamento dos Profissionais
                       </p>
                       <p className="text-3xl font-bold text-blue-600">
-                        {formatCurrency(Number(calculateTotalProfessionalPayments()) || 0)}
+                        {formatCurrency(
+                          Number(calculateTotalProfessionalPayments()) || 0
+                        )}
                       </p>
                     </div>
                   </div>
                 </div>
 
                 <p className="text-sm text-gray-600 text-center">
-                  Período: {startDate ? new Date(startDate + 'T12:00:00').toLocaleDateString('pt-BR') : ''} a {endDate ? new Date(endDate + 'T12:00:00').toLocaleDateString('pt-BR') : ''}
+                  Período:{" "}
+                  {startDate
+                    ? new Date(startDate + "T12:00:00").toLocaleDateString(
+                        "pt-BR"
+                      )
+                    : ""}{" "}
+                  a{" "}
+                  {endDate
+                    ? new Date(endDate + "T12:00:00").toLocaleDateString(
+                        "pt-BR"
+                      )
+                    : ""}
                 </p>
               </div>
 
@@ -440,11 +497,19 @@ const ReportsPage: React.FC = () => {
                         {report.revenue_by_professional.map((item, index) => (
                           <tr key={index}>
                             <td>{item.professional_name}</td>
-                            <td>{Number(item.professional_percentage) || 0}%</td>
+                            <td>
+                              {Number(item.professional_percentage) || 0}%
+                            </td>
                             <td>{Number(item.consultation_count) || 0}</td>
                             <td>{formatCurrency(Number(item.revenue) || 0)}</td>
-                            <td>{formatCurrency(Number(item.professional_payment) || 0)}</td>
-                            <td>{formatCurrency(Number(item.clinic_revenue) || 0)}</td>
+                            <td>
+                              {formatCurrency(
+                                Number(item.professional_payment) || 0
+                              )}
+                            </td>
+                            <td>
+                              {formatCurrency(Number(item.clinic_revenue) || 0)}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -567,7 +632,8 @@ const ReportsPage: React.FC = () => {
                     </p>
                     <p className="text-2xl font-bold text-yellow-700">
                       {clientsReport.reduce(
-                        (sum, city) => sum + (Number(city.pending_clients) || 0),
+                        (sum, city) =>
+                          sum + (Number(city.pending_clients) || 0),
                         0
                       )}
                     </p>
@@ -580,7 +646,8 @@ const ReportsPage: React.FC = () => {
                     </p>
                     <p className="text-2xl font-bold text-red-700">
                       {clientsReport.reduce(
-                        (sum, city) => sum + (Number(city.expired_clients) || 0),
+                        (sum, city) =>
+                          sum + (Number(city.expired_clients) || 0),
                         0
                       )}
                     </p>
