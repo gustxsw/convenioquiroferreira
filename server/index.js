@@ -1693,13 +1693,20 @@ app.post(
         }
       }
 
-      console.log("🔄 Date received from frontend:", date);
-      console.log("🔄 Date type:", typeof date);
+      console.log(
+        "[v0] 🔄 [CREATE] Date received from frontend (Brasil):",
+        date
+      );
 
-      // Frontend sends the date in the correct format, no need to convert
-      const dateTimeForStorage = new Date(date).toISOString();
+      // Frontend envia: "2024-01-15T14:00:00" (horário do Brasil)
+      // Precisamos converter para UTC adicionando 3 horas
+      const brazilDate = new Date(date + "-03:00"); // Força interpretação como Brasil (UTC-3)
+      const dateTimeForStorage = brazilDate.toISOString(); // Converte para UTC
 
-      console.log("🔄 [CREATE] DateTime for storage:", dateTimeForStorage);
+      console.log(
+        "[v0] 🔄 [CREATE] DateTime for storage (UTC):",
+        dateTimeForStorage
+      );
 
       // Create consultation
       const consultationResult = await pool.query(
@@ -1727,9 +1734,11 @@ app.post(
 
       const consultation = consultationResult.rows[0];
 
-      console.log("✅ Consultation created with date:", consultation.date);
+      console.log(
+        "[v0] ✅ Consultation created with date (UTC):",
+        consultation.date
+      );
       console.log("✅ Consultation created:", consultation.id);
-      console.log("✅ Saved date:", consultation.date);
 
       res.status(201).json({
         message: "Consulta criada com sucesso",
@@ -1903,10 +1912,13 @@ app.post(
           const brazilDateTimeStr = `${
             iterationDate.toISOString().split("T")[0]
           }T${start_time}:00`;
-          const dateTimeForStorage = new Date(brazilDateTimeStr).toISOString();
+          console.log("[v0] 🔄 [RECURRING] Brazil time:", brazilDateTimeStr);
+
+          const brazilDateTime = new Date(brazilDateTimeStr + "-03:00"); // Força interpretação como Brasil
+          const dateTimeForStorage = brazilDateTime.toISOString(); // Converte para UTC
 
           console.log(
-            "🔄 [RECURRING] DateTime for storage:",
+            "[v0] 🔄 [RECURRING] UTC time for storage:",
             dateTimeForStorage
           );
 
@@ -1941,9 +1953,9 @@ app.post(
             }
 
             console.log(
-              "✅ [RECURRING] Created consultation for date:",
+              "[v0] ✅ [RECURRING] Created consultation for Brazil time:",
               brazilDateTimeStr,
-              "stored as:",
+              "stored as UTC:",
               dateTimeForStorage
             );
           } catch (error) {
@@ -2104,11 +2116,23 @@ app.put(
       }
 
       if (date !== undefined) {
-        const dateTimeForStorage = new Date(date).toISOString();
+        // 🔥 FIXED: Convert from Brazil time to UTC for storage
+        const brazilDateTimeStr = date;
+        console.log(
+          "[v0] 🔄 [UPDATE] Date received (Brasil):",
+          brazilDateTimeStr
+        );
+
+        const brazilDateTime = new Date(brazilDateTimeStr + "-03:00"); // Force Brazil interpretation
+        const dateTimeForStorage = brazilDateTime.toISOString(); // Convert to UTC
+
+        console.log(
+          "[v0] 🔄 [UPDATE] DateTime for storage (UTC):",
+          dateTimeForStorage
+        );
+
         updateFields.push(`date = $${paramCount++}`);
         updateValues.push(dateTimeForStorage);
-
-        console.log("🔄 [UPDATE] DateTime for storage:", dateTimeForStorage);
       }
 
       if (status !== undefined) {
@@ -5173,544 +5197,219 @@ const updatePaymentStatus = async (externalReference, status, paymentId) => {
       );
     }
   } catch (error) {
-    console.error(
-      `❌ Error updating payment status for ${externalReference}:`,
-      error
-    );
+    console.error("❌ Error updating payment status:", error);
   }
 };
 
-// Process subscription payment
+// Helper function to process subscription payment
 const processSubscriptionPayment = async (payment) => {
-  try {
-    const externalReference = payment.external_reference;
-    const userId = externalReference.split("_")[1];
+  console.log("✅ [WEBHOOK] Processing subscription payment:", payment.id);
+  const externalReference = payment.external_reference;
+  const userId = Number.parseInt(externalReference.split("_")[1]);
+  const paymentDate = new Date(payment.date_created);
+  const subscriptionPrice = 250.0; // Should ideally be fetched from settings
 
-    console.log(
-      "🔄 [SUBSCRIPTION-PAYMENT] Processing subscription payment for user:",
-      userId
+  if (payment.transaction_amount !== subscriptionPrice) {
+    console.warn(
+      `⚠️ [WEBHOOK] Subscription payment amount mismatch: Expected ${subscriptionPrice}, got ${payment.transaction_amount}`
     );
-    console.log("🔄 [SUBSCRIPTION-PAYMENT] Payment ID:", payment.id);
-    console.log(
-      "🔄 [SUBSCRIPTION-PAYMENT] External reference:",
-      externalReference
+    // Optionally, handle this mismatch (e.g., log, alert, or re-verify)
+  }
+
+  // Update client_payments table
+  await pool.query(
+    `UPDATE client_payments 
+     SET status = $1, mp_payment_id = $2, processed_at = CURRENT_TIMESTAMP
+     WHERE payment_reference LIKE $3`,
+    ["approved", payment.id, `${externalReference.split("_")[0]}_${userId}_%`]
+  );
+
+  // Update user subscription status
+  const subscriptionExpiry = new Date(
+    paymentDate.setMonth(paymentDate.getMonth() + 1)
+  );
+  await pool.query(
+    `UPDATE users 
+     SET subscription_status = 'active', subscription_expiry = $1, updated_at = NOW()
+     WHERE id = $2`,
+    [subscriptionExpiry, userId]
+  );
+
+  // Create notification for user
+  await pool.query(
+    `INSERT INTO notifications (user_id, title, message, type)
+     VALUES ($1, $2, $3, $4)`,
+    [
+      userId,
+      "Assinatura Ativada",
+      "Sua assinatura do Cartão Quiro Ferreira foi ativada com sucesso!",
+      "success",
+    ]
+  );
+
+  console.log(`✅ Subscription payment processed for user ${userId}.`);
+};
+
+// Helper function to process dependent payment
+const processDependentPayment = async (payment) => {
+  console.log("✅ [WEBHOOK] Processing dependent payment:", payment.id);
+  const externalReference = payment.external_reference;
+  const dependentId = Number.parseInt(externalReference.split("_")[1]);
+  const paymentDate = new Date(payment.date_created);
+  const dependentPrice = 50.0; // Should ideally be fetched from settings
+
+  if (payment.transaction_amount !== dependentPrice) {
+    console.warn(
+      `⚠️ [WEBHOOK] Dependent payment amount mismatch: Expected ${dependentPrice}, got ${payment.transaction_amount}`
     );
+  }
 
-    // Validate user exists and has client role
-    const userResult = await pool.query(
-      "SELECT id, name, email FROM users WHERE id = $1 AND 'client' = ANY(roles)",
-      [userId]
-    );
+  // Update dependent_payments table
+  await pool.query(
+    `UPDATE dependent_payments 
+     SET status = $1, mp_payment_id = $2, processed_at = CURRENT_TIMESTAMP
+     WHERE payment_reference LIKE $3`,
+    [
+      "approved",
+      payment.id,
+      `${externalReference.split("_")[0]}_${dependentId}_%`,
+    ]
+  );
 
-    if (userResult.rows.length === 0) {
-      console.error(
-        "❌ [SUBSCRIPTION-PAYMENT] User not found or not a client:",
-        userId
-      );
-      return;
-    }
+  // Update dependent subscription status
+  const subscriptionExpiry = new Date(
+    paymentDate.setMonth(paymentDate.getMonth() + 1)
+  );
+  await pool.query(
+    `UPDATE dependents 
+     SET subscription_status = 'active', subscription_expiry = $1, activated_at = CURRENT_TIMESTAMP, updated_at = NOW()
+     WHERE id = $2`,
+    [subscriptionExpiry, dependentId]
+  );
 
-    const user = userResult.rows[0];
-    console.log("✅ [SUBSCRIPTION-PAYMENT] User validated:", user.name);
-
-    // Set expiry date to 1 year from now
-    const expiryDate = new Date();
-    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-    console.log(
-      "🔄 [SUBSCRIPTION-PAYMENT] Setting expiry date to:",
-      expiryDate.toISOString()
-    );
-
-    // Update user subscription status
-    const updateResult = await pool.query(
-      `
-      UPDATE users 
-      SET 
-        subscription_status = 'active',
-        subscription_expiry = $2,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1
-      RETURNING id, name, subscription_status, subscription_expiry
-    `,
-      [userId, expiryDate]
-    );
-
-    if (updateResult.rows.length === 0) {
-      console.error(
-        "❌ [SUBSCRIPTION-PAYMENT] Failed to update user subscription"
-      );
-      return;
-    }
-
-    console.log(
-      "✅ [SUBSCRIPTION-PAYMENT] User subscription updated:",
-      updateResult.rows[0]
-    );
-
-    // Update payment record
-    const paymentUpdateResult = await pool.query(
-      `
-      UPDATE client_payments 
-      SET 
-        status = 'approved',
-        mp_payment_id = $1,
-        processed_at = CURRENT_TIMESTAMP
-      WHERE payment_reference LIKE $2
-      RETURNING id, payment_reference
-    `,
-      [payment.id, `subscription_${userId}_%`]
-    );
-
-    console.log(
-      "✅ [SUBSCRIPTION-PAYMENT] Payment record updated:",
-      paymentUpdateResult.rows
-    );
-
-    // Create notification
-    const notificationResult = await pool.query(
-      `
-      INSERT INTO notifications (user_id, title, message, type)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id
-    `,
+  // Fetch client_id to send notification to the main user
+  const dependentInfo = await pool.query(
+    "SELECT user_id FROM dependents WHERE id = $1",
+    [dependentId]
+  );
+  if (dependentInfo.rows.length > 0) {
+    const userId = dependentInfo.rows[0].user_id;
+    await pool.query(
+      `INSERT INTO notifications (user_id, title, message, type)
+       VALUES ($1, $2, $3, $4)`,
       [
         userId,
-        "Assinatura Ativada",
-        `Sua assinatura foi ativada com sucesso! Válida até ${expiryDate.toLocaleDateString(
-          "pt-BR"
-        )}. Agora você pode utilizar todos os serviços do convênio.`,
+        "Dependente Ativado",
+        "Um dependente foi ativado com sucesso.",
         "success",
       ]
     );
-
-    console.log(
-      "✅ [SUBSCRIPTION-PAYMENT] Notification created:",
-      notificationResult.rows[0]
-    );
-    console.log(
-      "✅ [SUBSCRIPTION-PAYMENT] Subscription activated for user:",
-      userId
-    );
-  } catch (error) {
-    console.error(
-      "❌ [SUBSCRIPTION-PAYMENT] Error processing subscription payment:",
-      error
-    );
-    console.error("❌ [SUBSCRIPTION-PAYMENT] Error details:", error.message);
-    console.error("❌ [SUBSCRIPTION-PAYMENT] Error stack:", error.stack);
   }
+
+  console.log(`✅ Dependent payment processed for dependent ${dependentId}.`);
 };
 
-// Process dependent payment
-const processDependentPayment = async (payment) => {
-  try {
-    const externalReference = payment.external_reference;
-    const dependentId = externalReference.split("_")[1];
-
-    console.log(
-      "🔄 [DEPENDENT-WEBHOOK] Processing dependent payment for dependent:",
-      dependentId
-    );
-    console.log("🔄 [DEPENDENT-WEBHOOK] Payment details:", {
-      id: payment.id,
-      status: payment.status,
-      amount: payment.transaction_amount,
-      external_reference: externalReference,
-    });
-
-    // Validate dependent exists
-    const dependentValidationResult = await pool.query(
-      "SELECT id, name, user_id FROM dependents WHERE id = $1",
-      [dependentId]
-    );
-
-    if (dependentValidationResult.rows.length === 0) {
-      console.error("❌ [DEPENDENT-PAYMENT] Dependent not found:", dependentId);
-      return;
-    }
-
-    const dependent = dependentValidationResult.rows[0];
-    console.log("✅ [DEPENDENT-PAYMENT] Dependent validated:", dependent.name);
-
-    // Set expiry date to 1 year from now
-    const expiryDate = new Date();
-    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-    console.log(
-      "🔄 [DEPENDENT-PAYMENT] Setting expiry date to:",
-      expiryDate.toISOString()
-    );
-
-    // Update dependent subscription status
-    const updateResult = await pool.query(
-      `
-      UPDATE dependents 
-      SET 
-        subscription_status = 'active',
-        subscription_expiry = $2,
-        activated_at = CURRENT_TIMESTAMP,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1
-      RETURNING id, name, subscription_status, subscription_expiry, activated_at
-    `,
-      [dependentId, expiryDate]
-    );
-
-    if (updateResult.rows.length === 0) {
-      console.error(
-        "❌ [DEPENDENT-PAYMENT] Failed to update dependent subscription"
-      );
-      return;
-    }
-
-    console.log(
-      "✅ [DEPENDENT-PAYMENT] Dependent subscription updated:",
-      updateResult.rows[0]
-    );
-
-    // Update payment record
-    const paymentUpdateResult = await pool.query(
-      `
-      UPDATE dependent_payments 
-      SET 
-        status = 'approved',
-        mp_payment_id = $1,
-        processed_at = CURRENT_TIMESTAMP
-      WHERE payment_reference LIKE $2
-      RETURNING id, payment_reference
-    `,
-      [payment.id, `dependent_${dependentId}_%`]
-    );
-
-    console.log(
-      "✅ [DEPENDENT-PAYMENT] Payment record updated:",
-      paymentUpdateResult.rows
-    );
-
-    // Get dependent and client info for notification
-    const dependentInfo = await pool.query(
-      `
-      SELECT d.name as dependent_name, d.user_id, u.name as client_name
-      FROM dependents d
-      JOIN users u ON d.user_id = u.id
-      WHERE d.id = $1
-    `,
-      [dependentId]
-    );
-
-    if (dependentInfo.rows.length > 0) {
-      const info = dependentInfo.rows[0];
-      console.log(
-        "✅ [DEPENDENT-PAYMENT] Client info for notification:",
-        info.client_name
-      );
-
-      // Create notification for client
-      const notificationResult = await pool.query(
-        `
-        INSERT INTO notifications (user_id, title, message, type)
-        VALUES ($1, $2, $3, $4)
-        RETURNING id
-      `,
-        [
-          info.user_id,
-          "Dependente Ativado",
-          `O dependente ${
-            info.dependent_name
-          } foi ativado com sucesso! Válido até ${expiryDate.toLocaleDateString(
-            "pt-BR"
-          )}.`,
-          "success",
-        ]
-      );
-
-      console.log(
-        "✅ [DEPENDENT-PAYMENT] Notification created:",
-        notificationResult.rows[0]
-      );
-    } else {
-      console.warn(
-        "⚠️ [DEPENDENT-PAYMENT] Could not find client info for notification"
-      );
-    }
-
-    console.log("✅ [DEPENDENT-PAYMENT] Dependent activated:", dependentId);
-  } catch (error) {
-    console.error(
-      "❌ [DEPENDENT-PAYMENT] Error processing dependent payment:",
-      error
-    );
-    console.error("❌ [DEPENDENT-PAYMENT] Error details:", error.message);
-    console.error("❌ [DEPENDENT-PAYMENT] Error stack:", error.stack);
-  }
-};
-
-// Process professional payment
+// Helper function to process professional payment
 const processProfessionalPayment = async (payment) => {
-  try {
-    const externalReference = payment.external_reference;
-    const professionalId = externalReference.split("_")[1];
+  console.log("✅ [WEBHOOK] Processing professional payment:", payment.id);
+  const externalReference = payment.external_reference;
+  const professionalId = Number.parseInt(externalReference.split("_")[1]);
 
-    console.log(
-      "🔄 Processing professional payment for professional:",
-      professionalId
-    );
+  // Update professional_payments table
+  await pool.query(
+    `UPDATE professional_payments 
+     SET status = $1, mp_payment_id = $2, processed_at = CURRENT_TIMESTAMP
+     WHERE payment_reference LIKE $3`,
+    [
+      "approved",
+      payment.id,
+      `${externalReference.split("_")[0]}_${professionalId}_%`,
+    ]
+  );
 
-    // Update payment record
-    const paymentUpdateResult = await pool.query(
-      `
-      UPDATE professional_payments 
-      SET 
-        status = 'approved',
-        mp_payment_id = $1,
-        processed_at = CURRENT_TIMESTAMP
-      WHERE payment_reference LIKE $2
-       RETURNING id
-    `,
-      [payment.id, `professional_${professionalId}_%`]
-    );
-
-    console.log(
-      "✅ [DEPENDENT-WEBHOOK] Payment record updated:",
-      paymentUpdateResult.rows.length
-    );
-
-    // Create notification
-    await pool.query(
-      `
-      INSERT INTO notifications (user_id, title, message, type)
-      VALUES ($1, $2, $3, $4)
-    `,
-      [
-        professionalId,
-        "Pagamento Processado",
-        `Seu pagamento de repasse ao convênio foi processado com sucesso.`,
-        "success",
-      ]
-    );
-
-    console.log("✅ Professional payment processed:", professionalId);
-  } catch (error) {
-    console.error("❌ Error processing professional payment:", error);
-  }
-};
-
-// Process agenda payment
-const processAgendaPayment = async (payment) => {
-  try {
-    const externalReference = payment.external_reference;
-    const parts = externalReference.split("_");
-    const professionalId = parts[1];
-    const durationDays = 30; // Always 30 days for agenda access
-
-    console.log(
-      "🔄 [AGENDA-WEBHOOK] Processing agenda payment for professional:",
+  // Create notification for professional
+  await pool.query(
+    `INSERT INTO notifications (user_id, title, message, type)
+     VALUES ($1, $2, $3, $4)`,
+    [
       professionalId,
-      "duration:",
-      durationDays
-    );
-    console.log("🔄 [AGENDA-WEBHOOK] Payment details:", {
-      id: payment.id,
-      status: payment.status,
-      amount: payment.transaction_amount,
-      external_reference: externalReference,
-    });
+      "Pagamento Recebido",
+      `Seu pagamento de ${payment.transaction_amount} foi recebido com sucesso.`,
+      "info",
+    ]
+  );
 
-    // Validate professional exists and has professional role
-    const professionalCheck = await pool.query(
-      `SELECT id, name FROM users WHERE id = $1 AND 'professional' = ANY(roles)`,
-      [professionalId]
-    );
-
-    if (professionalCheck.rows.length === 0) {
-      console.error(
-        "❌ [AGENDA-WEBHOOK] Professional not found:",
-        professionalId
-      );
-      return;
-    }
-
-    const professional = professionalCheck.rows[0];
-    console.log(
-      "✅ [AGENDA-WEBHOOK] Professional validated:",
-      professional.name
-    );
-
-    // Deactivate any existing access
-    await pool.query(
-      `
-      UPDATE scheduling_access SET is_active = false WHERE professional_id = $1
-    `,
-      [professionalId]
-    );
-
-    console.log(
-      "✅ [AGENDA-WEBHOOK] Existing access deactivated for professional:",
-      professionalId
-    );
-
-    // Grant new access
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + durationDays);
-
-    const accessResult = await pool.query(
-      `
-      INSERT INTO scheduling_access (professional_id, granted_by, expires_at, reason, is_active, starts_at)
-      VALUES ($1, $2, $3, $4, true, CURRENT_TIMESTAMP)
-      RETURNING *
-    `,
-      [
-        professionalId,
-        professionalId,
-        expiresAt.toISOString(),
-        "Pagamento via MercadoPago",
-      ] // Assuming professional pays for their own access, granted_by = professionalId
-    );
-
-    console.log(
-      "✅ [AGENDA-WEBHOOK] New scheduling access created:",
-      accessResult.rows[0]
-    );
-
-    // Update payment record
-    const paymentUpdateResult = await pool.query(
-      `
-      UPDATE agenda_payments 
-      SET 
-        status = 'approved',
-        mp_payment_id = $1,
-        processed_at = CURRENT_TIMESTAMP
-      WHERE payment_reference LIKE $2
-      RETURNING *
-    `,
-      [payment.id, `agenda_${professionalId}_${durationDays}_%`]
-    );
-
-    console.log(
-      "✅ [AGENDA-WEBHOOK] Payment record updated:",
-      paymentUpdateResult.rows
-    );
-
-    // Create notification
-    const notificationResult = await pool.query(
-      `
-      INSERT INTO notifications (user_id, title, message, type)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *
-    `,
-      [
-        professionalId,
-        "Acesso à Agenda Ativado",
-        `Seu acesso à agenda foi ativado por ${durationDays} dias! Válido até ${expiresAt.toLocaleDateString(
-          "pt-BR"
-        )}.`,
-        "success",
-      ]
-    );
-
-    console.log(
-      "✅ [AGENDA-WEBHOOK] Notification created:",
-      notificationResult.rows[0]
-    );
-
-    // Verify access was granted correctly
-    const verifyResult = await pool.query(
-      `SELECT * FROM scheduling_access WHERE professional_id = $1 AND is_active = true ORDER BY created_at DESC LIMIT 1`,
-      [professionalId]
-    );
-
-    if (verifyResult.rows.length > 0) {
-      console.log(
-        "✅ [AGENDA-WEBHOOK] VERIFICATION: Access successfully granted and verified:",
-        verifyResult.rows[0]
-      );
-      console.log(
-        "🎉 [AGENDA-WEBHOOK] Agenda access successfully activated for professional:",
-        professionalId,
-        "valid until:",
-        expiresAt.toLocaleDateString("pt-BR")
-      );
-    } else {
-      console.error(
-        "❌ [AGENDA-WEBHOOK] VERIFICATION: Access was not granted properly!"
-      );
-    }
-  } catch (error) {
-    console.error(
-      "❌ [AGENDA-WEBHOOK] Error processing agenda payment:",
-      error
-    );
-    console.error("❌ [AGENDA-WEBHOOK] Error details:", {
-      message: error.message,
-      stack: error.stack,
-      payment_id: payment?.id,
-      external_reference: payment?.external_reference,
-    });
-  }
+  console.log(
+    `✅ Professional payment processed for professional ${professionalId}.`
+  );
 };
 
-// Test endpoint to manually process payments
-app.post(
-  "/api/test-payment-processing",
-  authenticate,
-  authorize(["admin"]),
-  async (req, res) => {
-    try {
-      const { external_reference, payment_id } = req.body;
+// Helper function to process agenda payment
+const processAgendaPayment = async (payment) => {
+  console.log("✅ [WEBHOOK] Processing agenda payment:", payment.id);
+  const externalReference = payment.external_reference;
+  const professionalId = Number.parseInt(externalReference.split("_")[1]);
+  const durationDays = Number.parseInt(externalReference.split("_")[2]);
+  const paymentDate = new Date(payment.date_created);
 
-      console.log("🔧 [MANUAL] Manual payment processing requested:", {
-        external_reference,
-        payment_id,
-      });
+  // Update agenda_payments table
+  await pool.query(
+    `UPDATE agenda_payments 
+     SET status = $1, mp_payment_id = $2, processed_at = CURRENT_TIMESTAMP
+     WHERE payment_reference LIKE $3`,
+    [
+      "approved",
+      payment.id,
+      `${externalReference.split("_")[0]}_${professionalId}_${durationDays}_%`,
+    ]
+  );
 
-      if (!external_reference) {
-        return res
-          .status(400)
-          .json({ message: "external_reference é obrigatório" });
-      }
+  // Update professional's scheduling access
+  const expiresAt = new Date(
+    paymentDate.setDate(paymentDate.getDate() + durationDays)
+  );
+  console.log(
+    "✅ [WEBHOOK] Granting scheduling access until:",
+    expiresAt.toISOString()
+  );
 
-      // Create a mock payment object for processing
-      const mockPayment = {
-        id: payment_id || `test_${Date.now()}`,
-        status: "approved",
-        external_reference: external_reference,
-        transaction_amount: 24.99, // Default value, will be overwritten if needed by specific processing functions
-      };
+  // Deactivate any existing access first
+  await pool.query(
+    `UPDATE scheduling_access SET is_active = false WHERE professional_id = $1`,
+    [professionalId]
+  );
 
-      console.log("🔧 [MANUAL] Processing with mock payment:", mockPayment);
+  // Grant new access
+  await pool.query(
+    `INSERT INTO scheduling_access (professional_id, granted_by, expires_at, reason, is_active)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [
+      professionalId,
+      professionalId,
+      expiresAt,
+      "Pagamento de acesso à agenda",
+      true,
+    ] // granted_by is the professional themselves for self-payment
+  );
 
-      // Process based on payment type
-      if (external_reference.startsWith("agenda_")) {
-        await processAgendaPayment(mockPayment);
-        res.json({
-          message: "Pagamento da agenda processado manualmente com sucesso",
-        });
-      } else if (external_reference.startsWith("subscription_")) {
-        await processSubscriptionPayment(mockPayment);
-        res.json({
-          message: "Pagamento da assinatura processado manualmente com sucesso",
-        });
-      } else if (externalReference.startsWith("dependent_")) {
-        await processDependentPayment(mockPayment);
-        res.json({
-          message: "Pagamento do dependente processado manualmente com sucesso",
-        });
-      } else if (externalReference.startsWith("professional_")) {
-        await processProfessionalPayment(mockPayment);
-        res.json({
-          message:
-            "Pagamento do profissional processado manualmente com sucesso",
-        });
-      } else {
-        res.status(400).json({ message: "Tipo de pagamento não reconhecido" });
-      }
-    } catch (error) {
-      console.error("❌ [MANUAL] Error in manual processing:", error);
-      res
-        .status(500)
-        .json({ message: "Erro ao processar pagamento manualmente" });
-    }
-  }
-);
+  // Create notification for professional
+  await pool.query(
+    `INSERT INTO notifications (user_id, title, message, type)
+     VALUES ($1, $2, $3, $4)`,
+    [
+      professionalId,
+      "Acesso à Agenda Liberado",
+      `Seu acesso à agenda foi liberado até ${expiresAt.toLocaleDateString(
+        "pt-BR"
+      )}.`,
+      "success",
+    ]
+  );
+
+  console.log(
+    `✅ Agenda payment processed for professional ${professionalId}. Access granted until ${expiresAt}.`
+  );
+};
 
 // ===== REPORTS ROUTES =====
 
@@ -6132,7 +5831,7 @@ app.get(
     } catch (error) {
       console.error("❌ Error generating detailed professional report:", error);
       res.status(500).json({
-        message: "Erro ao gerar relatório detalhado do profissional",
+        message: "Erro ao carregar relatório detalhado do profissional",
       });
     }
   }
@@ -6230,460 +5929,10 @@ app.get(
   }
 );
 
-// ===== IMAGE UPLOAD ROUTE =====
-
-app.post("/api/upload-image", authenticate, async (req, res) => {
-  try {
-    console.log("🔄 Image upload request received");
-
-    // Create upload middleware instance
-    const upload = createUpload();
-
-    // Use multer middleware
-    upload.single("image")(req, res, async (err) => {
-      if (err) {
-        console.error("❌ Upload error:", err);
-        return res
-          .status(400)
-          .json({ message: err.message || "Erro no upload da imagem" });
-      }
-
-      if (!req.file) {
-        return res.status(400).json({ message: "Nenhuma imagem foi enviada" });
-      }
-
-      console.log("✅ Image uploaded successfully:", req.file.path);
-
-      // Update user photo URL
-      await pool.query(
-        `
-        UPDATE users SET photo_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2
-      `,
-        [req.file.path, req.user.id]
-      );
-
-      res.json({
-        message: "Imagem enviada com sucesso",
-        imageUrl: req.file.path,
-      });
-    });
-  } catch (error) {
-    console.error("❌ Error in image upload route:", error);
-    res.status(500).json({ message: "Erro interno do servidor" });
-  }
-});
-
-// ===== ADMIN ROUTES =====
-
-app.get(
-  "/api/admin/dependents",
-  authenticate,
-  authorize(["admin"]),
-  async (req, res) => {
-    try {
-      const dependentsResult = await pool.query(`
-      SELECT 
-        d.*, u.name as client_name, u.subscription_status as client_subscription_status
-      FROM dependents d
-      JOIN users u ON d.user_id = u.id
-      ORDER BY d.created_at DESC
-    `);
-
-      res.json(dependentsResult.rows);
-    } catch (error) {
-      console.error("❌ Error fetching all dependents:", error);
-      res.status(500).json({ message: "Erro ao carregar dependentes" });
-    }
-  }
-);
-
-// Add activate client route
-app.post(
-  "/api/users/:id/activate",
-  authenticate,
-  authorize(["admin"]),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-
-      console.log("🔄 Activating client:", id);
-
-      // Get user data
-      const userResult = await pool.query(
-        "SELECT * FROM users WHERE id = $1 AND 'client' = ANY(roles)",
-        [id]
-      );
-
-      if (userResult.rows.length === 0) {
-        return res.status(404).json({ message: "Cliente não encontrado" });
-      }
-
-      // Set expiry date to 1 year from now
-      const expiryDate = new Date();
-      expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-
-      // Update subscription status and expiry
-      const updatedUserResult = await pool.query(
-        `UPDATE users 
-       SET subscription_status = 'active', 
-           subscription_expiry = $1,
-           updated_at = NOW()
-       WHERE id = $2
-       RETURNING 
-         id, name, cpf, email, phone, 
-         birth_date::text as birth_date,
-         address, address_number, address_complement, neighborhood, city, state,
-         roles, subscription_status, 
-         subscription_expiry::text as subscription_expiry,
-         photo_url, category_name, percentage, crm, 
-         created_at::text as created_at, updated_at::text as updated_at`,
-        [expiryDate, id]
-      );
-
-      console.log("✅ Client activated successfully:", id);
-
-      res.json({
-        message: "Cliente ativado com sucesso",
-        user: updatedUserResult.rows[0],
-      });
-    } catch (error) {
-      console.error("❌ Error activating client:", error);
-      res.status(500).json({ message: "Erro ao ativar cliente" });
-    }
-  }
-);
-
-// ===== NOTIFICATIONS ROUTES =====
-
-app.get("/api/notifications", authenticate, async (req, res) => {
-  try {
-    const notificationsResult = await pool.query(
-      `
-      SELECT * FROM notifications 
-      WHERE user_id = $1 
-      ORDER BY created_at DESC 
-      LIMIT 50
-    `,
-      [req.user.id]
-    );
-
-    res.json(notificationsResult.rows);
-  } catch (error) {
-    console.error("❌ Error fetching notifications:", error);
-    res.status(500).json({ message: "Erro ao carregar notificações" });
-  }
-});
-
-app.put("/api/notifications/:id/read", authenticate, async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    await pool.query(
-      `
-      UPDATE notifications 
-      SET is_read = true 
-      WHERE id = $1 AND user_id = $2
-    `,
-      [id, req.user.id]
-    );
-
-    res.json({ message: "Notificação marcada como lida" });
-  } catch (error) {
-    console.error("❌ Error marking notification as read:", error);
-    res.status(500).json({ message: "Erro ao marcar notificação como lida" });
-  }
-});
-
-app.put("/api/notifications/mark-all-read", authenticate, async (req, res) => {
-  try {
-    await pool.query(
-      `
-      UPDATE notifications 
-      SET is_read = true 
-      WHERE user_id = $1 AND is_read = false
-    `,
-      [req.user.id]
-    );
-
-    res.json({ message: "Todas as notificações foram marcadas como lidas" });
-  } catch (error) {
-    console.error("❌ Error marking all notifications as read:", error);
-    res
-      .status(500)
-      .json({ message: "Erro ao marcar todas as notificações como lidas" });
-  }
-});
-
-// ===== SYSTEM SETTINGS ROUTES =====
-
-app.get(
-  "/api/system-settings",
-  authenticate,
-  authorize(["admin"]),
-  async (req, res) => {
-    try {
-      const settingsResult = await pool.query(`
-      SELECT * FROM system_settings ORDER BY key
-    `);
-
-      res.json(settingsResult.rows);
-    } catch (error) {
-      console.error("❌ Error fetching system settings:", error);
-      res
-        .status(500)
-        .json({ message: "Erro ao carregar configurações do sistema" });
-    }
-  }
-);
-
-app.put(
-  "/api/system-settings/:key",
-  authenticate,
-  authorize(["admin"]),
-  async (req, res) => {
-    try {
-      const { key } = req.params;
-      const { value, description } = req.body;
-
-      if (!value) {
-        return res.status(400).json({ message: "Valor é obrigatório" });
-      }
-
-      const settingResult = await pool.query(
-        `
-      INSERT INTO system_settings (key, value, description, updated_by, updated_at)
-      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-      ON CONFLICT (key) 
-      DO UPDATE SET 
-        value = EXCLUDED.value,
-        description = EXCLUDED.description,
-        updated_by = EXCLUDED.updated_by,
-        updated_at = EXCLUDED.updated_at
-      RETURNING *
-    `,
-        [key, value, description || null, req.user.id]
-      );
-
-      const setting = settingResult.rows[0];
-
-      console.log("✅ System setting updated:", key);
-
-      res.json({
-        message: "Configuração atualizada com sucesso",
-        setting,
-      });
-    } catch (error) {
-      console.error("❌ Error updating system setting:", error);
-      res
-        .status(500)
-        .json({ message: "Erro ao atualizar configuração do sistema" });
-    }
-  }
-);
-
-// ===== AUDIT LOGSROUTES =====
-
-app.get(
-  "/api/audit-logs",
-  authenticate,
-  authorize(["admin"]),
-  async (req, res) => {
-    try {
-      const { page = 1, limit = 50, user_id, action, table_name } = req.query;
-      const offset = (page - 1) * limit;
-
-      let query = `
-      SELECT 
-        al.*, u.name as user_name
-      FROM audit_logs al
-      LEFT JOIN users u ON al.user_id = u.id
-      WHERE 1=1
-    `;
-      const params = [];
-      let paramCount = 0;
-
-      if (user_id) {
-        paramCount++;
-        query += ` AND al.user_id = $${paramCount}`;
-        params.push(user_id);
-      }
-
-      if (action) {
-        paramCount++;
-        query += ` AND al.action = $${paramCount}`;
-        params.push(action);
-      }
-
-      if (table_name) {
-        paramCount++;
-        query += ` AND al.table_name = $${paramCount}`;
-        params.push(table_name);
-      }
-
-      query += ` LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
-      params.push(limit, offset);
-
-      const logsResult = await pool.query(query, params);
-
-      // Get total count for pagination
-      let countQuery = `SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
-      const countParams = [];
-      let countParamCount = 0;
-
-      if (user_id) {
-        countParamCount++;
-        countQuery += ` AND al.user_id = $${countParamCount}`;
-        countParams.push(user_id);
-      }
-
-      if (action) {
-        countParamCount++;
-        countQuery += ` AND al.action = $${countParamCount}`;
-        countParams.push(action);
-      }
-
-      if (table_name) {
-        countParamCount++;
-        countQuery += ` AND al.table_name = $${countParamCount}`;
-        countParams.push(table_name);
-      }
-
-      const countResult = await pool.query(countQuery, countParams);
-      const totalCount = Number.parseInt(countResult.rows[0].count);
-
-      res.json({
-        logs: logsResult.rows,
-        pagination: {
-          page: Number.parseInt(page),
-          limit: Number.parseInt(limit),
-          total: totalCount,
-          totalPages: Math.ceil(totalCount / limit),
-        },
-      });
-    } catch (error) {
-      console.error("❌ Error fetching audit logs:", error);
-      res.status(500).json({ message: "Erro ao carregar logs de auditoria" });
-    }
-  }
-);
-
-// ===== HEALTH CHECK =====
-
-// ===== MAINTENANCE ROUTE (NO AUTH REQUIRED) =====
-
-app.get("/api/maintenance-status", (req, res) => {
-  res.json({
-    status: "maintenance",
-    message: "Sistema em manutenção programada",
-    estimated_return: "Em breve",
-    contact: {
-      phone: "(64) 98124-9199",
-      email: "contato@cartaoquiroferreira.com.br",
-    },
-    timestamp: new Date().toISOString(),
-  });
-});
-
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: "OK",
-    timestamp: new Date().toISOString(),
-    version: "2.0.0",
-    database: "Connected",
-    mercadopago: "Configured",
-  });
-});
-
-// ===== ERROR HANDLERS =====
-
-// Catch-all route for SPA in production
-if (process.env.NODE_ENV === "production") {
-  app.get("*", (req, res) => {
-    res.sendFile(path.join(__dirname, "../dist/index.html"));
-  });
-}
-
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error("Global error handler:", err);
-
-  // Log error to audit logs if user is available
-  if (req.user) {
-    logAuditAction(
-      req.user.id,
-      "ERROR",
-      null,
-      null,
-      null,
-      {
-        error: err.message,
-        stack: err.stack,
-        url: req.url,
-        method: req.method,
-      },
-      req
-    ).catch(console.error);
-  }
-
-  res.status(500).json({
-    message: "Erro interno do servidor",
-    ...(process.env.NODE_ENV === "development" && { error: err.message }),
-  });
-});
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ message: "Rota não encontrada" });
-});
-
-// ===== SERVER STARTUP =====
-
-const startServer = async () => {
-  try {
-    // Initialize database
-    await initializeDatabase();
-
-    // Start listening
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(`📊 Database: Connected`);
-      console.log(`💳 MercadoPago: Configured`);
-      console.log(`📋 Consultations System: Active`);
-      console.log(`✅ All systems operational`);
-    });
-  } catch (error) {
-    console.error("❌ Failed to start server:", error);
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  initializeDatabase().catch((err) => {
+    console.error("❌ Failed to initialize database on startup:", err);
     process.exit(1);
-  }
-};
-
-// Handle graceful shutdown
-process.on("SIGTERM", async () => {
-  console.log("🔄 SIGTERM received, shutting down gracefully...");
-
-  try {
-    await pool.end();
-    console.log("✅ Database connections closed");
-    process.exit(0);
-  } catch (error) {
-    console.error("❌ Error during shutdown:", error);
-    process.exit(1);
-  }
+  });
 });
-
-process.on("SIGINT", async () => {
-  console.log("🔄 SIGINT received, shutting down gracefully...");
-
-  try {
-    await pool.end();
-    console.log("✅ Database connections closed");
-    process.exit(0);
-  } catch (error) {
-    console.error("❌ Error during shutdown:", error);
-    process.exit(1);
-  }
-});
-
-// Start the server
-startServer();

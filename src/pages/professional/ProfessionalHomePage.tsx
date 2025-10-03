@@ -356,7 +356,24 @@ const ProfessionalHomePage: React.FC = () => {
 
   const formatDate = (dateString: string) => {
     try {
-      const date = new Date(dateString);
+      console.log("[v0] Date string from backend:", dateString);
+
+      const date = new Date(
+        dateString.includes("Z") ? dateString : dateString + "Z"
+      );
+
+      console.log("[v0] Parsed date object:", date);
+      console.log(
+        "[v0] Formatted date:",
+        date.toLocaleDateString("pt-BR", {
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      );
+
       return date.toLocaleDateString("pt-BR", {
         day: "2-digit",
         month: "long",

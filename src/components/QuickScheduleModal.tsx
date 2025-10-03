@@ -301,8 +301,20 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      // Send date and time as entered (backend will handle UTC conversion)
-      const dateTimeString = `${selectedSlot.date}T${selectedSlot.time}:00`;
+      const brazilDateTime = new Date(
+        `${selectedSlot.date}T${selectedSlot.time}:00`
+      );
+      // Adicionar 3 horas para compensar o timezone do Brasil (UTC-3)
+      const utcDateTime = new Date(
+        brazilDateTime.getTime() + 3 * 60 * 60 * 1000
+      );
+      const dateTimeForBackend = utcDateTime.toISOString();
+
+      console.log(
+        "[v0] 🔄 Quick schedule - Brazil time:",
+        `${selectedSlot.date}T${selectedSlot.time}:00`
+      );
+      console.log("[v0] 🔄 Quick schedule - UTC time:", dateTimeForBackend);
 
       const consultationData: any = {
         professional_id: user?.id,
@@ -311,7 +323,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
           ? Number.parseInt(formData.location_id)
           : null,
         value: Number.parseFloat(formData.value),
-        date: dateTimeString,
+        date: dateTimeForBackend, // Enviando data em UTC
         status: "scheduled",
         notes: formData.notes.trim() || null,
       };

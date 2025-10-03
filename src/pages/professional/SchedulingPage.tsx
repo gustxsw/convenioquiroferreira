@@ -560,6 +560,11 @@ const SchedulingPage: React.FC = () => {
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
+      // O usuário seleciona horário do Brasil, enviamos como está
+      const dateTimeForBackend = `${formData.date}T${formData.time}:00`;
+
+      console.log("[v0] 🔄 DateTime selecionado (Brasil):", dateTimeForBackend);
+
       // Create single consultation only (recurring moved to separate modal)
       const consultationData: any = {
         professional_id: user?.id,
@@ -568,7 +573,7 @@ const SchedulingPage: React.FC = () => {
           ? Number.parseInt(formData.location_id)
           : null,
         value: Number.parseFloat(formData.value),
-        date: `${formData.date}T${formData.time}`,
+        date: dateTimeForBackend, // Enviando horário do Brasil sem conversão
         status: "scheduled",
         notes: formData.notes || null,
       };
