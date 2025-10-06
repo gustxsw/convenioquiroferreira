@@ -1,18 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, X, Check, AlertCircle, User, Users } from 'lucide-react';
-import TimeInput from './TimeInput';
-import { validateTimeSlot, type SlotDuration } from '../utils/timeSlotValidation';
+"use client";
+
+import type React from "react";
+import { useState, useEffect } from "react";
+import { Calendar, X, Check, AlertCircle, User, Users } from "lucide-react";
+import TimeInput from "./TimeInput";
+import {
+  validateTimeSlot,
+  type SlotDuration,
+} from "../utils/timeSlotValidation";
+import { utcToBrazil } from "../utils/timezone";
 
 type Consultation = {
   id: number;
   date: string;
   client_name: string;
   service_name: string;
-  status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled';
+  status: "scheduled" | "confirmed" | "completed" | "cancelled";
   value: number;
   notes?: string;
   is_dependent: boolean;
-  patient_type: 'convenio' | 'private';
+  patient_type: "convenio" | "private";
   location_name?: string;
 };
 
@@ -36,19 +43,25 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const [attendanceLocations, setAttendanceLocations] = useState<AttendanceLocation[]>([]);
+  const [attendanceLocations, setAttendanceLocations] = useState<
+    AttendanceLocation[]
+  >([]);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [slotDuration, setSlotDuration] = useState<SlotDuration>(30);
 
   // Form state
   const [formData, setFormData] = useState({
-    date: '',
-    time: '',
-    value: '',
-    location_id: '',
-    notes: '',
-    status: 'scheduled' as 'scheduled' | 'confirmed' | 'completed' | 'cancelled',
+    date: "",
+    time: "",
+    value: "",
+    location_id: "",
+    notes: "",
+    status: "scheduled" as
+      | "scheduled"
+      | "confirmed"
+      | "completed"
+      | "cancelled",
   });
 
   // Get API URL
@@ -65,15 +78,14 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
   useEffect(() => {
     if (isOpen && consultation) {
       // Initialize form with consultation data
-      const editConsultationDate = new Date(consultation.date);
-      // Convert from UTC to Brazil time for editing
-      const editBrazilDate = new Date(editConsultationDate.getTime() - (3 * 60 * 60 * 1000));
+      const { date, time } = utcToBrazil(consultation.date);
+
       setFormData({
-        date: editBrazilDate.toISOString().split('T')[0],
-        time: editBrazilDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false }),
+        date,
+        time,
         value: consultation.value.toString(),
-        location_id: '', // Will be set after locations are loaded
-        notes: consultation.notes || '',
+        location_id: "", // Will be set after locations are loaded
+        notes: consultation.notes || "",
         status: consultation.status,
       });
 
@@ -83,7 +95,7 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
 
   const fetchLocations = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       const response = await fetch(`${apiUrl}/api/attendance-locations`, {
@@ -100,7 +112,7 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
             (loc: AttendanceLocation) => loc.name === consultation.location_name
           );
           if (matchingLocation) {
-            setFormData(prev => ({
+            setFormData((prev) => ({
               ...prev,
               location_id: matchingLocation.id.toString(),
             }));
@@ -108,18 +120,18 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
         }
       }
     } catch (error) {
-      console.error('Error fetching locations:', error);
+      console.error("Error fetching locations:", error);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
     // Validate time format and slot
     const timeValidation = validateTimeSlot(formData.time, slotDuration);
     if (!timeValidation.isValid) {
-      setError(timeValidation.error || 'Horário inválido');
+      setError(timeValidation.error || "Horário inválido");
       return;
     }
 
@@ -127,7 +139,7 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
 
     try {
       setIsUpdating(true);
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       // Send date and time as entered (backend will handle UTC conversion)
@@ -135,54 +147,64 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
 
       const updateData = {
         date: dateTimeString,
-        value: parseFloat(formData.value),
-        location_id: formData.location_id ? parseInt(formData.location_id) : null,
-        notes: formData.notes && formData.notes.trim() ? formData.notes.trim() : null,
+        value: Number.parseFloat(formData.value),
+        location_id: formData.location_id
+          ? Number.parseInt(formData.location_id)
+          : null,
+        notes:
+          formData.notes && formData.notes.trim()
+            ? formData.notes.trim()
+            : null,
         status: formData.status,
       };
 
-      const response = await fetch(`${apiUrl}/api/consultations/${consultation.id}`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updateData),
-      });
+      const response = await fetch(
+        `${apiUrl}/api/consultations/${consultation.id}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(updateData),
+        }
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Falha ao atualizar consulta');
+        throw new Error(errorData.message || "Falha ao atualizar consulta");
       }
 
       onSuccess();
       onClose();
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Erro ao atualizar consulta');
+      setError(
+        error instanceof Error ? error.message : "Erro ao atualizar consulta"
+      );
     } finally {
       setIsUpdating(false);
     }
   };
 
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
     }).format(value);
   };
 
   const getStatusInfo = (status: string) => {
     switch (status) {
-      case 'scheduled':
-        return { text: 'Agendado', className: 'bg-blue-100 text-blue-800' };
-      case 'confirmed':
-        return { text: 'Confirmado', className: 'bg-green-100 text-green-800' };
-      case 'completed':
-        return { text: 'Concluído', className: 'bg-gray-100 text-gray-800' };
-      case 'cancelled':
-        return { text: 'Cancelado', className: 'bg-red-100 text-red-800' };
+      case "scheduled":
+        return { text: "Agendado", className: "bg-blue-100 text-blue-800" };
+      case "confirmed":
+        return { text: "Confirmado", className: "bg-green-100 text-green-800" };
+      case "completed":
+        return { text: "Concluído", className: "bg-gray-100 text-gray-800" };
+      case "cancelled":
+        return { text: "Cancelado", className: "bg-red-100 text-red-800" };
       default:
-        return { text: 'Desconhecido', className: 'bg-gray-100 text-gray-800' };
+        return { text: "Desconhecido", className: "bg-gray-100 text-gray-800" };
     }
   };
 
@@ -212,18 +234,20 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
           <div className="flex items-center mb-2">
             {consultation.is_dependent ? (
               <Users className="h-5 w-5 text-blue-600 mr-2" />
-            ) : consultation.patient_type === 'private' ? (
+            ) : consultation.patient_type === "private" ? (
               <User className="h-5 w-5 text-purple-600 mr-2" />
             ) : (
               <User className="h-5 w-5 text-green-600 mr-2" />
             )}
-            <span className="font-medium text-gray-900">{consultation.client_name}</span>
+            <span className="font-medium text-gray-900">
+              {consultation.client_name}
+            </span>
             {consultation.is_dependent && (
               <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
                 Dependente
               </span>
             )}
-            {consultation.patient_type === 'private' && (
+            {consultation.patient_type === "private" && (
               <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs">
                 Particular
               </span>
@@ -233,8 +257,12 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
             <strong>Serviço:</strong> {consultation.service_name}
           </p>
           <p className="text-sm text-gray-600">
-            <strong>Status Atual:</strong>{' '}
-            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusInfo(consultation.status).className}`}>
+            <strong>Status Atual:</strong>{" "}
+            <span
+              className={`px-2 py-1 rounded-full text-xs font-medium ${
+                getStatusInfo(consultation.status).className
+              }`}
+            >
               {getStatusInfo(consultation.status).text}
             </span>
           </p>
@@ -259,7 +287,7 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
                   type="date"
                   value={formData.date}
                   onChange={(e) =>
-                    setFormData(prev => ({ ...prev, date: e.target.value }))
+                    setFormData((prev) => ({ ...prev, date: e.target.value }))
                   }
                   className="input"
                   required
@@ -268,7 +296,7 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
 
               <TimeInput
                 value={formData.time}
-                onChange={(time) => setFormData(prev => ({ ...prev, time }))}
+                onChange={(time) => setFormData((prev) => ({ ...prev, time }))}
                 label="Horário"
                 required
                 disabled={isUpdating}
@@ -287,7 +315,7 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
                   step="0.01"
                   value={formData.value}
                   onChange={(e) =>
-                    setFormData(prev => ({ ...prev, value: e.target.value }))
+                    setFormData((prev) => ({ ...prev, value: e.target.value }))
                   }
                   className="input"
                   required
@@ -301,7 +329,10 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
                 <select
                   value={formData.location_id}
                   onChange={(e) =>
-                    setFormData(prev => ({ ...prev, location_id: e.target.value }))
+                    setFormData((prev) => ({
+                      ...prev,
+                      location_id: e.target.value,
+                    }))
                   }
                   className="input"
                 >
@@ -323,9 +354,13 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
               <select
                 value={formData.status}
                 onChange={(e) =>
-                  setFormData(prev => ({
+                  setFormData((prev) => ({
                     ...prev,
-                    status: e.target.value as 'scheduled' | 'confirmed' | 'completed' | 'cancelled',
+                    status: e.target.value as
+                      | "scheduled"
+                      | "confirmed"
+                      | "completed"
+                      | "cancelled",
                   }))
                 }
                 className="input"
@@ -346,7 +381,7 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
               <textarea
                 value={formData.notes}
                 onChange={(e) =>
-                  setFormData(prev => ({ ...prev, notes: e.target.value }))
+                  setFormData((prev) => ({ ...prev, notes: e.target.value }))
                 }
                 className="input min-h-[80px]"
                 placeholder="Observações sobre a consulta..."
@@ -366,7 +401,7 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
             <button
               type="submit"
               className={`btn btn-primary ${
-                isUpdating ? 'opacity-70 cursor-not-allowed' : ''
+                isUpdating ? "opacity-70 cursor-not-allowed" : ""
               }`}
               disabled={isUpdating}
             >

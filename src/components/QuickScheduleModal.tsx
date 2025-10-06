@@ -12,6 +12,7 @@ import {
   Check,
   AlertCircle,
 } from "lucide-react";
+import { brazilToUTC } from "../utils/timezone";
 
 type Service = {
   id: number;
@@ -301,15 +302,14 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      // Isso garante que 18:00 BRT seja corretamente convertido para 21:00 UTC
-      const brazilDateTime = new Date(
-        `${selectedSlot.date}T${selectedSlot.time}:00-03:00`
+      const dateTimeForBackend = brazilToUTC(
+        selectedSlot.date,
+        selectedSlot.time
       );
-      const dateTimeForBackend = brazilDateTime.toISOString();
 
       console.log(
         "[v0] 🔄 Quick schedule - Brazil time:",
-        `${selectedSlot.date}T${selectedSlot.time}:00`
+        `${selectedSlot.date}T${selectedSlot.time}`
       );
       console.log("[v0] 🔄 Quick schedule - UTC time:", dateTimeForBackend);
 
