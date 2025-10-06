@@ -560,7 +560,6 @@ const SchedulingPage: React.FC = () => {
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      // O usuário seleciona horário do Brasil, enviamos como está
       const dateTimeForBackend = `${formData.date}T${formData.time}:00`;
 
       console.log("[v0] 🔄 DateTime selecionado (Brasil):", dateTimeForBackend);

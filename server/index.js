@@ -1621,11 +1621,11 @@ app.get(
   }
 );
 
-// Create new consultation
+// POST /api/consultations - Create a new consultation
 app.post(
   "/api/consultations",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "admin"]),
   checkSchedulingAccess,
   async (req, res) => {
     try {
@@ -1637,26 +1637,18 @@ app.post(
         location_id,
         value,
         date,
+        status,
         notes,
-        status = "scheduled",
       } = req.body;
-
-      console.log("🔄 Creating consultation:", req.body);
 
       // Validate required fields
       if (!service_id || !value || !date) {
         return res
           .status(400)
-          .json({ message: "Serviço, valor e data são obrigatórios" });
+          .json({ message: "Campos obrigatórios não preenchidos" });
       }
 
-      if (isNaN(Number.parseFloat(value)) || Number.parseFloat(value) <= 0) {
-        return res
-          .status(400)
-          .json({ message: "Valor deve ser um número maior que zero" });
-      }
-
-      // Validate patient type (exactly one must be provided)
+      // Validate patient selection
       const patientCount = [user_id, dependent_id, private_patient_id].filter(
         Boolean
       ).length;
@@ -1682,11 +1674,12 @@ app.post(
         return res.status(404).json({ message: "Serviço não encontrado" });
       }
 
-      // If it's a convenio patient, validate subscription status
+      // Validate subscription for convenio patients
       if (user_id || dependent_id) {
         let subscriptionValid = false;
 
         if (user_id) {
+          // Fetch user role explicitly to ensure it's a client
           const clientResult = await pool.query(
             `
           SELECT subscription_status FROM users WHERE id = $1 AND 'client' = ANY(roles)
@@ -1723,19 +1716,27 @@ app.post(
         }
       }
 
-      const brazilDateTimeStr = date;
-      console.log(
-        "[v0] 🔄 [CREATE] Date received (Brasil):",
-        brazilDateTimeStr
-      );
+      console.log("[v0] 🔄 [CREATE] Date received from frontend:", date);
 
-      const brazilDateTime = new Date(brazilDateTimeStr + "-03:00"); // Force Brazil interpretation
-      const dateTimeForStorage = brazilDateTime.toISOString(); // Convert to UTC
+      let dateTimeForStorage;
 
-      console.log(
-        "[v0] 🔄 [CREATE] DateTime for storage (UTC):",
-        dateTimeForStorage
-      );
+      // Check if date is already in ISO format with timezone (ends with Z or has +/- offset)
+      if (date.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(date)) {
+        // Date is already in UTC format, use as-is
+        dateTimeForStorage = new Date(date).toISOString();
+        console.log(
+          "[v0] 🔄 [CREATE] Date already in UTC format, using as-is:",
+          dateTimeForStorage
+        );
+      } else {
+        // Date is in Brazil local time, convert to UTC
+        const brazilDate = new Date(date + "-03:00"); // Força interpretação como Brasil (UTC-3)
+        dateTimeForStorage = brazilDate.toISOString(); // Converte para UTC
+        console.log(
+          "[v0] 🔄 [CREATE] Converted Brazil time to UTC:",
+          dateTimeForStorage
+        );
+      }
 
       // Create consultation
       const consultationResult = await pool.query(
@@ -1895,7 +1896,7 @@ app.post(
       let weeklyCreatedCount = 0; // Track weekly consultations separately
 
       // Initialize iteration date for recurring consultations
-      const iterationDate = new Date(`${start_date}T${start_time}`);
+      const iterationDate = new Date(`${start_date}T${start_time}:00`);
       console.log(
         "🔄 [RECURRING] Starting iteration from date:",
         iterationDate.toISOString()
@@ -1937,7 +1938,7 @@ app.post(
         if (shouldCreateConsultation) {
           const brazilDateTimeStr = `${
             iterationDate.toISOString().split("T")[0]
-          }T${start_time}`;
+          }T${start_time}:00`;
           console.log("[v0] 🔄 [RECURRING] Brazil time:", brazilDateTimeStr);
 
           const brazilDateTime = new Date(brazilDateTimeStr + "-03:00"); // Força interpretação como Brasil
