@@ -55,6 +55,16 @@ if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "../dist")));
 }
 
+// Health check endpoint - MUST be before other routes
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Root endpoint
+app.get("/api", (req, res) => {
+  res.json({ message: "API Quiroferreira está rodando!" });
+});
+
 // Initialize MercadoPago SDK v2
 console.log("🔄 Initializing MercadoPago SDK v2...");
 const client = new MercadoPagoConfig({
@@ -5929,15 +5939,57 @@ app.get(
   }
 );
 
-// Inicializar o banco e iniciar o servidor
+// Initializing the server and database
+console.log("🔄 Starting server initialization...");
+console.log(`📍 Environment: ${process.env.NODE_ENV || "development"}`);
+console.log(`🔌 Port: ${PORT}`);
+console.log(
+  `🗄️  Database URL configured: ${process.env.DATABASE_URL ? "Yes" : "No"}`
+);
+
 initializeDatabase()
   .then(() => {
-    app.listen(PORT, "0.0.0.0", () => {
+    console.log("✅ Database initialization completed");
+
+    const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Servidor rodando na porta ${PORT}`);
-      console.log(`✅ Database initialized successfully`);
+      console.log(`🌐 Server is listening on 0.0.0.0:${PORT}`);
+      console.log(`✅ Server is ready to accept connections`);
+      console.log(`🏥 Health check available at /health`);
+    });
+
+    server.on("error", (error) => {
+      console.error("❌ Server error:", error);
+      if (error.code === "EADDRINUSE") {
+        console.error(`❌ Port ${PORT} is already in use`);
+        process.exit(1);
+      }
+    });
+
+    process.on("SIGTERM", () => {
+      console.log("⚠️  SIGTERM received, closing server gracefully...");
+      server.close(() => {
+        console.log("✅ Server closed");
+        pool.end(() => {
+          console.log("✅ Database pool closed");
+          process.exit(0);
+        });
+      });
+    });
+
+    process.on("SIGINT", () => {
+      console.log("⚠️  SIGINT received, closing server gracefully...");
+      server.close(() => {
+        console.log("✅ Server closed");
+        pool.end(() => {
+          console.log("✅ Database pool closed");
+          process.exit(0);
+        });
+      });
     });
   })
   .catch((error) => {
     console.error("❌ Erro ao inicializar o banco de dados:", error);
+    console.error("Stack trace:", error.stack);
     process.exit(1);
   });
