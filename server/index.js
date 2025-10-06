@@ -61,7 +61,6 @@ const client = new MercadoPagoConfig({
   accessToken: process.env.MP_ACCESS_TOKEN,
   options: {
     timeout: 5000,
-    idempotencyKey: "your-idempotency-key", // Optional: for request idempotency
   },
 });
 console.log("✅ MercadoPago SDK v2 initialized");
@@ -5930,57 +5929,15 @@ app.get(
   }
 );
 
-const startServer = async () => {
-  try {
-    // Initialize database first
-    console.log("🔄 Initializing database...");
-    await initializeDatabase();
-    console.log("✅ Database initialized successfully");
-
-    // Start the server
-    const server = app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📍 Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(`🌐 CORS enabled for configured origins`);
-      console.log(`💳 MercadoPago SDK v2 ready`);
+// Inicializar o banco e iniciar o servidor
+initializeDatabase()
+  .then(() => {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`🚀 Servidor rodando na porta ${PORT}`);
+      console.log(`✅ Database initialized successfully`);
     });
-
-    // Graceful shutdown handling
-    const gracefulShutdown = (signal) => {
-      console.log(`\n⚠️  ${signal} received, closing server gracefully...`);
-      server.close(() => {
-        console.log("✅ Server closed");
-        pool.end(() => {
-          console.log("✅ Database pool closed");
-          process.exit(0);
-        });
-      });
-
-      // Force close after 10 seconds
-      setTimeout(() => {
-        console.error("❌ Forced shutdown after timeout");
-        process.exit(1);
-      }, 10000);
-    };
-
-    process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-    process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-
-    // Handle uncaught errors
-    process.on("uncaughtException", (error) => {
-      console.error("❌ Uncaught Exception:", error);
-      gracefulShutdown("UNCAUGHT_EXCEPTION");
-    });
-
-    process.on("unhandledRejection", (reason, promise) => {
-      console.error("❌ Unhandled Rejection at:", promise, "reason:", reason);
-      gracefulShutdown("UNHANDLED_REJECTION");
-    });
-  } catch (error) {
-    console.error("❌ Failed to start server:", error);
+  })
+  .catch((error) => {
+    console.error("❌ Erro ao inicializar o banco de dados:", error);
     process.exit(1);
-  }
-};
-
-// Start the server
-startServer();
+  });
