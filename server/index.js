@@ -1191,15 +1191,14 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
     // Clean phone
     const cleanPhone = phone ? phone.replace(/\D/g, "") : null;
 
-    // Insert user
     const userResult = await pool.query(
       `
       INSERT INTO users (
         name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, password, roles,
-        subscription_status, subscription_expiry, category_name,
+        subscription_status, subscription_expiry, category_name, 
         percentage, crm, professional_type, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW())
       RETURNING id, name, cpf, email, roles
     `,
       [
@@ -1724,15 +1723,14 @@ app.post(
         }
       }
 
+      const brazilDateTimeStr = date;
       console.log(
-        "[v0] 🔄 [CREATE] Date received from frontend (Brasil):",
-        date
+        "[v0] 🔄 [CREATE] Date received (Brasil):",
+        brazilDateTimeStr
       );
 
-      // Frontend envia: "2024-01-15T14:00:00" (horário do Brasil)
-      // Precisamos converter para UTC adicionando 3 horas
-      const brazilDate = new Date(date + "-03:00"); // Força interpretação como Brasil (UTC-3)
-      const dateTimeForStorage = brazilDate.toISOString(); // Converte para UTC
+      const brazilDateTime = new Date(brazilDateTimeStr + "-03:00"); // Force Brazil interpretation
+      const dateTimeForStorage = brazilDateTime.toISOString(); // Convert to UTC
 
       console.log(
         "[v0] 🔄 [CREATE] DateTime for storage (UTC):",
@@ -1765,10 +1763,7 @@ app.post(
 
       const consultation = consultationResult.rows[0];
 
-      console.log(
-        "[v0] ✅ Consultation created with date (UTC):",
-        consultation.date
-      );
+      console.log("✅ Consultation created with date:", consultation.date);
       console.log("✅ Consultation created:", consultation.id);
 
       res.status(201).json({
@@ -2230,13 +2225,22 @@ app.get(
       const consultationResult = await pool.query(
         `SELECT 
         c.*,
-        COALESCE(pp.name, d.name, u.name) as patient_name,
-        COALESCE(pp.phone, d.phone, u.phone) as patient_phone,
+        CASE 
+          WHEN c.private_patient_id IS NOT NULL THEN pp.name
+          WHEN c.dependent_id IS NOT NULL THEN cu.name
+          ELSE u.name
+        END as patient_name,
+        CASE 
+          WHEN c.private_patient_id IS NOT NULL THEN pp.phone
+          WHEN c.dependent_id IS NOT NULL THEN cu.phone
+          ELSE u.phone
+        END as patient_phone,
         s.name as service_name,
         prof.name as professional_name
        FROM consultations c
        LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
        LEFT JOIN dependents d ON c.dependent_id = d.id
+       LEFT JOIN users cu ON d.user_id = cu.id
        LEFT JOIN users u ON c.user_id = u.id
        LEFT JOIN services s ON c.service_id = s.id
        LEFT JOIN users prof ON c.professional_id = prof.id
