@@ -1197,9 +1197,9 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
       INSERT INTO users (
         name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, password, roles,
-        subscription_status, subscription_expiry, category_name, 
+        subscription_status, subscription_expiry, category_name,
         percentage, crm, professional_type, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW())
       RETURNING id, name, cpf, email, roles
     `,
       [
@@ -1900,7 +1900,7 @@ app.post(
       let weeklyCreatedCount = 0; // Track weekly consultations separately
 
       // Initialize iteration date for recurring consultations
-      const iterationDate = new Date(`${start_date}T${start_time}:00`);
+      const iterationDate = new Date(`${start_date}T${start_time}`);
       console.log(
         "🔄 [RECURRING] Starting iteration from date:",
         iterationDate.toISOString()
@@ -1942,7 +1942,7 @@ app.post(
         if (shouldCreateConsultation) {
           const brazilDateTimeStr = `${
             iterationDate.toISOString().split("T")[0]
-          }T${start_time}:00`;
+          }T${start_time}`;
           console.log("[v0] 🔄 [RECURRING] Brazil time:", brazilDateTimeStr);
 
           const brazilDateTime = new Date(brazilDateTimeStr + "-03:00"); // Força interpretação como Brasil
@@ -2230,22 +2230,13 @@ app.get(
       const consultationResult = await pool.query(
         `SELECT 
         c.*,
-        CASE 
-          WHEN c.private_patient_id IS NOT NULL THEN pp.name
-          WHEN c.dependent_id IS NOT NULL THEN cu.name
-          ELSE u.name
-        END as patient_name,
-        CASE 
-          WHEN c.private_patient_id IS NOT NULL THEN pp.phone
-          WHEN c.dependent_id IS NOT NULL THEN cu.phone
-          ELSE u.phone
-        END as patient_phone,
+        COALESCE(pp.name, d.name, u.name) as patient_name,
+        COALESCE(pp.phone, d.phone, u.phone) as patient_phone,
         s.name as service_name,
         prof.name as professional_name
        FROM consultations c
        LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
        LEFT JOIN dependents d ON c.dependent_id = d.id
-       LEFT JOIN users cu ON d.user_id = cu.id
        LEFT JOIN users u ON c.user_id = u.id
        LEFT JOIN services s ON c.service_id = s.id
        LEFT JOIN users prof ON c.professional_id = prof.id
@@ -5493,7 +5484,7 @@ app.get(
           ELSE 'convenio'
         END as patient_type,
         al.name as location_name,
-        'Sistema' as cancelled_by_name
+        cancelled_by_user.name as cancelled_by_name
       FROM consultations c
       JOIN services s ON c.service_id = s.id
       JOIN users prof ON c.professional_id = prof.id
@@ -5501,6 +5492,7 @@ app.get(
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
+      LEFT JOIN users cancelled_by_user ON c.cancelled_by = cancelled_by_user.id
       WHERE c.status = 'cancelled'
         AND c.date >= $1::timestamp AND c.date <= $2::timestamp
     `;
@@ -5959,6 +5951,48 @@ app.get(
     }
   }
 );
+
+// ===== ERROR HANDLERS =====
+
+// Catch-all route for SPA in production
+if (process.env.NODE_ENV === "production") {
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "../dist/index.html"));
+  });
+}
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error("Global error handler:", err);
+
+  // Log error to audit logs if user is available
+  if (req.user) {
+    logAuditAction(
+      req.user.id,
+      "ERROR",
+      null,
+      null,
+      null,
+      {
+        error: err.message,
+        stack: err.stack,
+        url: req.url,
+        method: req.method,
+      },
+      req
+    ).catch(console.error);
+  }
+
+  res.status(500).json({
+    message: "Erro interno do servidor",
+    ...(process.env.NODE_ENV === "development" && { error: err.message }),
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ message: "Rota não encontrada" });
+});
 
 // ===== SERVER STARTUP =====
 
