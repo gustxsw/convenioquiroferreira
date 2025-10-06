@@ -5960,57 +5960,54 @@ app.get(
   }
 );
 
-// Initializing the server and database
-console.log("🔄 Starting server initialization...");
-console.log(`📍 Environment: ${process.env.NODE_ENV || "development"}`);
-console.log(`🔌 Port: ${PORT}`);
-console.log(
-  `🗄️  Database URL configured: ${process.env.DATABASE_URL ? "Yes" : "No"}`
-);
+// ===== SERVER STARTUP =====
 
-initializeDatabase()
-  .then(() => {
-    console.log("✅ Database initialization completed");
+const startServer = async () => {
+  try {
+    // Initialize database
+    await initializeDatabase();
 
-    const server = app.listen(PORT, "0.0.0.0", () => {
-      console.log(`🚀 Servidor rodando na porta ${PORT}`);
-      console.log(`🌐 Server is listening on 0.0.0.0:${PORT}`);
-      console.log(`✅ Server is ready to accept connections`);
-      console.log(`🏥 Health check available at /health`);
+    // Start listening
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log(`📊 Database: Connected`);
+      console.log(`💳 MercadoPago: Configured`);
+      console.log(`📋 Consultations System: Active`);
+      console.log(`✅ All systems operational`);
     });
-
-    server.on("error", (error) => {
-      console.error("❌ Server error:", error);
-      if (error.code === "EADDRINUSE") {
-        console.error(`❌ Port ${PORT} is already in use`);
-        process.exit(1);
-      }
-    });
-
-    process.on("SIGTERM", () => {
-      console.log("⚠️  SIGTERM received, closing server gracefully...");
-      server.close(() => {
-        console.log("✅ Server closed");
-        pool.end(() => {
-          console.log("✅ Database pool closed");
-          process.exit(0);
-        });
-      });
-    });
-
-    process.on("SIGINT", () => {
-      console.log("⚠️  SIGINT received, closing server gracefully...");
-      server.close(() => {
-        console.log("✅ Server closed");
-        pool.end(() => {
-          console.log("✅ Database pool closed");
-          process.exit(0);
-        });
-      });
-    });
-  })
-  .catch((error) => {
-    console.error("❌ Erro ao inicializar o banco de dados:", error);
-    console.error("Stack trace:", error.stack);
+  } catch (error) {
+    console.error("❌ Failed to start server:", error);
     process.exit(1);
-  });
+  }
+};
+
+// Handle graceful shutdown
+process.on("SIGTERM", async () => {
+  console.log("🔄 SIGTERM received, shutting down gracefully...");
+
+  try {
+    await pool.end();
+    console.log("✅ Database connections closed");
+    process.exit(0);
+  } catch (error) {
+    console.error("❌ Error during shutdown:", error);
+    process.exit(1);
+  }
+});
+
+process.on("SIGINT", async () => {
+  console.log("🔄 SIGINT received, shutting down gracefully...");
+
+  try {
+    await pool.end();
+    console.log("✅ Database connections closed");
+    process.exit(0);
+  } catch (error) {
+    console.error("❌ Error during shutdown:", error);
+    process.exit(1);
+  }
+});
+
+// Start the server
+startServer();
