@@ -61,6 +61,7 @@ const client = new MercadoPagoConfig({
   accessToken: process.env.MP_ACCESS_TOKEN,
   options: {
     timeout: 5000,
+    idempotencyKey: "your-idempotency-key", // Optional: for request idempotency
   },
 });
 console.log("✅ MercadoPago SDK v2 initialized");
@@ -5936,14 +5937,3 @@ app.listen(PORT, () => {
     process.exit(1);
   });
 });
-// Inicializar o banco e iniciar o servidor
-initializeDatabase()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`🚀 Servidor rodando na porta ${PORT}`);
-    });
-  })
-  .catch((error) => {
-    console.error("❌ Erro ao inicializar o banco de dados:", error);
-    process.exit(1);
-  });
