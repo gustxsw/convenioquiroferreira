@@ -6,7 +6,7 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import { pool } from "./db.js";
+import { pool } from "./db.js"; // Removed initializeDatabase from here
 import { authenticate, authorize } from "./middleware/auth.js";
 import createUpload from "./middleware/upload.js";
 import { generateDocumentPDF } from "./utils/documentGenerator.js";
@@ -18,15 +18,36 @@ import {
   getSchedulingAccessStatus,
 } from "./middleware/schedulingAccess.js";
 
-// ES6 module compatibility
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Load environment variables
 dotenv.config();
 
+if (!process.env.DATABASE_URL) {
+  console.error("❌ FATAL: DATABASE_URL environment variable is not set");
+  process.exit(1);
+}
+
+if (!process.env.JWT_SECRET) {
+  console.warn(
+    "⚠️  WARNING: JWT_SECRET not set, using default (NOT SECURE FOR PRODUCTION)"
+  );
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+console.log("🔄 [STARTUP] Initializing server...");
+console.log(
+  `📍 [STARTUP] Environment: ${process.env.NODE_ENV || "development"}`
+);
+console.log(`🔌 [STARTUP] Port: ${PORT}`);
+console.log(
+  `🗄️  [STARTUP] Database configured: ${
+    process.env.DATABASE_URL ? "✅ Yes" : "❌ No"
+  }`
+);
 
 // CORS configuration for production
 const corsOptions = {
