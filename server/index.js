@@ -1843,26 +1843,18 @@ app.post(
 
       if (conflictCheck.rows.length > 0) {
         const conflict = conflictCheck.rows[0];
-        const conflictDate = new Date(conflict.date);
 
-        // Format date and time for Brazil timezone
-        const formattedDate = conflictDate.toLocaleDateString("pt-BR", {
-          timeZone: "America/Sao_Paulo",
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-        });
-
-        const formattedTime = conflictDate.toLocaleTimeString("pt-BR", {
-          timeZone: "America/Sao_Paulo",
-          hour: "2-digit",
-          minute: "2-digit",
-        });
+        // Format date and time for Brazil timezone using utility functions
+        const formattedDate = formatToBrazilDate(conflict.date);
+        const formattedTime = formatToBrazilTimeOnly(conflict.date);
 
         console.log("⚠️ [CONFLICT] Scheduling conflict detected:", {
           requestedTime: dateTimeForStorage,
           existingConsultation: conflict.id,
           existingClient: conflict.client_name,
+          dbDate: conflict.date,
+          formattedDate,
+          formattedTime,
         });
 
         return res.status(409).json({
@@ -2057,20 +2049,10 @@ app.post(
 
         if (conflictCheck.rows.length > 0) {
           const conflict = conflictCheck.rows[0];
-          const conflictDate = new Date(conflict.date);
 
-          const formattedDate = conflictDate.toLocaleDateString("pt-BR", {
-            timeZone: "America/Sao_Paulo",
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric",
-          });
-
-          const formattedTime = conflictDate.toLocaleTimeString("pt-BR", {
-            timeZone: "America/Sao_Paulo",
-            hour: "2-digit",
-            minute: "2-digit",
-          });
+          // Format date and time for Brazil timezone using utility functions
+          const formattedDate = formatToBrazilDate(conflict.date);
+          const formattedTime = formatToBrazilTimeOnly(conflict.date);
 
           conflicts.push({
             date: formattedDate,
@@ -2082,6 +2064,7 @@ app.post(
             date: formattedDate,
             time: formattedTime,
             client: conflict.client_name,
+            dbDate: conflict.date,
           });
         } else {
           validDates.push(dateTimeUTC);
