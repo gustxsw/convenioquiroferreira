@@ -131,12 +131,13 @@ const ScheduleConflictModal: React.FC<ScheduleConflictModalProps> = ({
                           HORA
                         </span>
                         <span className="text-sm font-medium text-amber-900">
-                          {new Date(
-                            new Date(conflict.time).getTime() -
-                              3 * 60 * 60 * 1000
-                          )
-                            .toISOString()
-                            .substring(11, 16)}
+                          {(() => {
+                            const date = new Date(
+                              convertUTCToBrasilia(conflict.time)
+                            );
+                            date.setHours(date.getHours() - 3);
+                            return date.toISOString().substring(11, 16);
+                          })()}
                         </span>
                       </div>
                     </div>
