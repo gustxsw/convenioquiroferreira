@@ -5034,11 +5034,6 @@ app.use("/api/webhooks", (req, res, next) => {
 
 // ===== MERCADOPAGO WEBHOOK =====
 
-app.post(
-  "/api/webhooks/payment-success",
-  express.raw({ type: "application/json" }),
-  async (req, res) => {}
-);
 app.use("/api/webhook*", (req, res, next) => {
   console.log("🔔 [WEBHOOK-MIDDLEWARE] Incoming webhook request");
   console.log("🔔 [WEBHOOK-MIDDLEWARE] Method:", req.method);
@@ -5052,111 +5047,234 @@ app.use("/api/webhook*", (req, res, next) => {
   next();
 });
 
-// Main webhook endpoint
 app.post("/api/webhooks/payment-success", express.json(), async (req, res) => {
   try {
     console.log("🔔 [WEBHOOK] MercadoPago webhook received");
-    console.log("🔔 [WEBHOOK] Headers:", req.headers);
+    console.log("🔔 [WEBHOOK] Query params:", req.query);
     console.log("🔔 [WEBHOOK] Body:", req.body);
+    console.log("🔔 [WEBHOOK] Headers:", req.headers);
 
-    // Handle different body types (mobile vs desktop)
-    let data;
-    if (typeof req.body === "string") {
-      try {
-        data = JSON.parse(req.body);
-      } catch (parseError) {
-        console.error("❌ [WEBHOOK] JSON parse error:", parseError);
-        return res.status(400).json({ message: "Invalid JSON format" });
-      }
-    } else if (typeof req.body === "object" && req.body !== null) {
-      data = req.body;
-    } else {
-      console.error("❌ [WEBHOOK] Invalid body type:", typeof req.body);
-      return res.status(400).json({ message: "Invalid request body" });
+    let paymentId = null;
+    let topic = null;
+
+    if (req.query.id) {
+      paymentId = req.query.id;
+      topic = req.query.topic || "payment";
+      console.log("💰 [WEBHOOK] Payment ID from query params:", paymentId);
+    } else if (req.query["data.id"]) {
+      paymentId = req.query["data.id"];
+      topic = req.query.type || "payment";
+      console.log("💰 [WEBHOOK] Payment ID from data.id:", paymentId);
+    } else if (req.body?.data?.id) {
+      paymentId = req.body.data.id;
+      topic = req.body.type || "payment";
+      console.log("💰 [WEBHOOK] Payment ID from body:", paymentId);
     }
 
-    console.log("✅ [WEBHOOK] Parsed webhook data:", data);
+    if (!paymentId) {
+      console.log("⚠️ [WEBHOOK] No payment ID found, ignoring");
+      return res.status(200).json({ received: true });
+    }
 
-    if (data.type === "payment") {
-      const paymentId = data.data.id;
-      console.log("💰 [WEBHOOK] Processing payment notification:", paymentId);
+    if (topic !== "payment") {
+      console.log(`ℹ️ [WEBHOOK] Non-payment topic: ${topic}, ignoring`);
+      return res.status(200).json({ received: true });
+    }
 
-      if (!paymentId) {
-        console.error("❌ [WEBHOOK] Payment ID not found in webhook data");
-        return res.status(400).json({ message: "Payment ID missing" });
+    console.log(`💰 [WEBHOOK] Processing payment ID: ${paymentId}`);
+
+    const paymentResponse = await fetch(
+      `https://api.mercadopago.com/v1/payments/${paymentId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`,
+        },
       }
+    );
 
-      // Get payment details from MercadoPago
-      const paymentResponse = await fetch(
-        `https://api.mercadopago.com/v1/payments/${paymentId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`,
-          },
-        }
+    if (!paymentResponse.ok) {
+      console.error(
+        `❌ [WEBHOOK] Failed to fetch payment from MP API: ${paymentResponse.status}`
+      );
+      return res.status(200).json({ received: true });
+    }
+
+    const payment = await paymentResponse.json();
+    console.log("💰 [WEBHOOK] Payment details:", {
+      id: payment.id,
+      status: payment.status,
+      status_detail: payment.status_detail,
+      external_reference: payment.external_reference,
+      metadata: payment.metadata,
+      transaction_amount: payment.transaction_amount,
+    });
+
+    const { status, external_reference, metadata } = payment;
+
+    if (!external_reference) {
+      console.error("❌ [WEBHOOK] No external_reference found");
+      return res.status(200).json({ received: true });
+    }
+
+    if (status === "approved") {
+      console.log(
+        `✅ [WEBHOOK] Payment approved for: ${external_reference}`
       );
 
-      if (!paymentResponse.ok) {
-        console.error(
-          "❌ [WEBHOOK] Failed to get payment details from MercadoPago:",
-          paymentResponse.status
-        );
-        return res
-          .status(400)
-          .json({ message: "Erro ao obter detalhes do pagamento" });
-      }
-
-      const payment = await paymentResponse.json();
-      console.log("💰 [WEBHOOK] Payment details:", {
-        id: payment.id,
-        status: payment.status,
-        external_reference: payment.external_reference,
-        transaction_amount: payment.transaction_amount,
-      });
-
-      const externalReference = payment.external_reference;
-      const status = payment.status;
-
-      if (!externalReference) {
-        console.error("❌ [WEBHOOK] External reference not found in payment");
-        return res.status(400).json({ message: "External reference missing" });
-      }
-
-      if (status === "approved") {
-        console.log(
-          "✅ [WEBHOOK] Payment approved, processing:",
-          externalReference
-        );
-
-        // Process different payment types
-        if (externalReference.startsWith("subscription_")) {
-          await processSubscriptionPayment(payment);
-        } else if (externalReference.startsWith("dependent_")) {
-          await processDependentPayment(payment);
-        } else if (externalReference.startsWith("professional_")) {
-          await processProfessionalPayment(payment);
-        } else if (externalReference.startsWith("agenda_")) {
-          await processAgendaPayment(payment);
-        } else {
-          console.warn("⚠️ [WEBHOOK] Unknown payment type:", externalReference);
-        }
+      if (external_reference.startsWith("subscription_")) {
+        const userId = parseInt(external_reference.replace("subscription_", ""));
+        await processClientPayment(userId, payment);
+      } else if (external_reference.startsWith("dependent_")) {
+        const dependentId = parseInt(external_reference.replace("dependent_", ""));
+        await processDependentPayment(dependentId, payment);
+      } else if (external_reference.startsWith("agenda_")) {
+        const professionalId = parseInt(external_reference.replace("agenda_", ""));
+        await processAgendaPayment(professionalId, payment);
       } else {
-        console.log("⚠️ [WEBHOOK] Payment not approved, status:", status);
-
-        // Update payment records for failed/pending payments
-        await updatePaymentStatus(externalReference, status, payment.id);
+        console.warn(`⚠️ [WEBHOOK] Unknown payment type: ${external_reference}`);
       }
     } else {
-      console.log("ℹ️ [WEBHOOK] Non-payment webhook received:", data.type);
+      console.log(`⚠️ [WEBHOOK] Payment not approved. Status: ${status}`);
+      await updatePaymentStatusOnly(external_reference, status, payment.id);
     }
 
-    res.status(200).json({ received: true });
+    return res.status(200).json({ received: true });
   } catch (error) {
-    console.error("❌ [WEBHOOK] Webhook error:", error.message);
-    console.error("❌ [WEBHOOK] Webhook error stack:", error.stack);
-    res.status(500).json({ message: "Erro no webhook" });
+    console.error("❌ [WEBHOOK] Error:", error.message);
+    console.error("❌ [WEBHOOK] Stack:", error.stack);
+    return res.status(200).json({ received: true });
   }
 });
+
+async function processClientPayment(userId, payment) {
+  try {
+    console.log(`✅ [CLIENT-PAYMENT] Processing for user ID: ${userId}`);
+
+    await pool.query(
+      `UPDATE client_payments
+       SET status = $1,
+           mp_payment_id = $2,
+           processed_at = NOW()
+       WHERE user_id = $3 AND status = 'pending'`,
+      ["approved", payment.id.toString(), userId]
+    );
+
+    const expirationDate = new Date();
+    expirationDate.setFullYear(expirationDate.getFullYear() + 1);
+
+    await pool.query(
+      `UPDATE users
+       SET subscription_active = true,
+           subscription_expires_at = $1
+       WHERE id = $2`,
+      [expirationDate, userId]
+    );
+
+    console.log(`✅ [CLIENT-PAYMENT] User ${userId} subscription activated until ${expirationDate}`);
+  } catch (error) {
+    console.error(`❌ [CLIENT-PAYMENT] Error:`, error.message);
+  }
+}
+
+async function processDependentPayment(dependentId, payment) {
+  try {
+    console.log(`✅ [DEPENDENT-PAYMENT] Processing for dependent ID: ${dependentId}`);
+
+    await pool.query(
+      `UPDATE dependent_payments
+       SET status = $1,
+           mp_payment_id = $2,
+           processed_at = NOW()
+       WHERE dependent_id = $3 AND status = 'pending'`,
+      ["approved", payment.id.toString(), dependentId]
+    );
+
+    const expirationDate = new Date();
+    expirationDate.setFullYear(expirationDate.getFullYear() + 1);
+
+    await pool.query(
+      `UPDATE dependents
+       SET subscription_active = true,
+           subscription_expires_at = $1
+       WHERE id = $2`,
+      [expirationDate, dependentId]
+    );
+
+    console.log(`✅ [DEPENDENT-PAYMENT] Dependent ${dependentId} subscription activated until ${expirationDate}`);
+  } catch (error) {
+    console.error(`❌ [DEPENDENT-PAYMENT] Error:`, error.message);
+  }
+}
+
+async function processAgendaPayment(professionalId, payment) {
+  try {
+    console.log(`✅ [AGENDA-PAYMENT] Processing for professional ID: ${professionalId}`);
+
+    await pool.query(
+      `UPDATE agenda_payments
+       SET status = $1,
+           mp_payment_id = $2,
+           processed_at = NOW()
+       WHERE professional_id = $3 AND status = 'pending'`,
+      ["approved", payment.id.toString(), professionalId]
+    );
+
+    const expirationDate = new Date();
+    expirationDate.setMonth(expirationDate.getMonth() + 1);
+
+    await pool.query(
+      `UPDATE scheduling_access
+       SET is_active = true,
+           expires_at = $1,
+           schedule_balance = 0
+       WHERE professional_id = $2`,
+      [expirationDate, professionalId]
+    );
+
+    console.log(`✅ [AGENDA-PAYMENT] Professional ${professionalId} scheduling access activated until ${expirationDate}`);
+  } catch (error) {
+    console.error(`❌ [AGENDA-PAYMENT] Error:`, error.message);
+  }
+}
+
+async function updatePaymentStatusOnly(externalReference, status, paymentId) {
+  try {
+    console.log(`⚠️ [UPDATE-STATUS] Updating ${externalReference} to ${status}`);
+
+    if (externalReference.startsWith("subscription_")) {
+      const userId = parseInt(externalReference.replace("subscription_", ""));
+      await pool.query(
+        `UPDATE client_payments
+         SET status = $1,
+             mp_payment_id = $2
+         WHERE user_id = $3 AND status = 'pending'`,
+        [status, paymentId.toString(), userId]
+      );
+    } else if (externalReference.startsWith("dependent_")) {
+      const dependentId = parseInt(externalReference.replace("dependent_", ""));
+      await pool.query(
+        `UPDATE dependent_payments
+         SET status = $1,
+             mp_payment_id = $2
+         WHERE dependent_id = $3 AND status = 'pending'`,
+        [status, paymentId.toString(), dependentId]
+      );
+    } else if (externalReference.startsWith("agenda_")) {
+      const professionalId = parseInt(externalReference.replace("agenda_", ""));
+      await pool.query(
+        `UPDATE agenda_payments
+         SET status = $1,
+             mp_payment_id = $2
+         WHERE professional_id = $3 AND status = 'pending'`,
+        [status, paymentId.toString(), professionalId]
+      );
+    }
+
+    console.log(`✅ [UPDATE-STATUS] Status updated successfully`);
+  } catch (error) {
+    console.error(`❌ [UPDATE-STATUS] Error:`, error.message);
+  }
+}
 
 // Redirect old webhook to new endpoint
 app.all("/api/webhook/mercadopago", (req, res, next) => {
@@ -5165,1614 +5283,19 @@ app.all("/api/webhook/mercadopago", (req, res, next) => {
   next();
 });
 
-// Webhook alternativo para compatibilidade
-app.post(
-  "/api/webhook/payment",
-  express.raw({ type: "application/json" }),
-  async (req, res) => {
-    try {
-      console.log("🔔 [ALT-WEBHOOK] Alternative webhook received");
-      console.log("Headers:", req.headers);
-      console.log("Body type:", typeof req.body);
-
-      // Handle both raw and parsed JSON
-      let data;
-      if (Buffer.isBuffer(req.body)) {
-        const bodyString = req.body.toString("utf8");
-        console.log("🔔 [ALT-WEBHOOK] Body string:", bodyString);
-        try {
-          data = JSON.parse(bodyString);
-        } catch (parseError) {
-          console.error("❌ [ALT-WEBHOOK] JSON parse error:", parseError);
-          return res.status(400).json({ message: "Invalid JSON format" });
-        }
-      } else if (typeof req.body === "string") {
-        try {
-          data = JSON.parse(req.body);
-        } catch (parseError) {
-          console.error("❌ [ALT-WEBHOOK] JSON parse error:", parseError);
-          return res.status(400).json({ message: "Invalid JSON format" });
-        }
-      } else if (typeof req.body === "object" && req.body !== null) {
-        data = req.body;
-      } else {
-        console.error("❌ [ALT-WEBHOOK] Invalid body type:", typeof req.body);
-        return res.status(400).json({ message: "Invalid request body" });
-      }
-
-      console.log("✅ [ALT-WEBHOOK] Parsed webhook data:", data);
-
-      if (data.type === "payment") {
-        const paymentId = data.data.id;
-        console.log(
-          "💰 [ALT-WEBHOOK] Processing payment notification:",
-          paymentId
-        );
-
-        if (!paymentId) {
-          console.error(
-            "❌ [ALT-WEBHOOK] Payment ID not found in webhook data"
-          );
-          return res.status(400).json({ message: "Payment ID missing" });
-        }
-        // Get payment details from MercadoPago
-        const paymentResponse = await fetch(
-          `https://api.mercadopago.com/v1/payments/${paymentId}`,
-          {
-            headers: {
-              Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`,
-            },
-          }
-        );
-
-        if (!paymentResponse.ok) {
-          console.error(
-            "❌ [ALT-WEBHOOK] Failed to get payment details:",
-            paymentResponse.status
-          );
-          return res
-            .status(400)
-            .json({ message: "Erro ao obter detalhes do pagamento" });
-        }
-
-        const payment = await paymentResponse.json();
-        console.log("💰 [ALT-WEBHOOK] Payment details:", {
-          id: payment.id,
-          status: payment.status,
-          external_reference: payment.external_reference,
-          transaction_amount: payment.transaction_amount,
-        });
-
-        const externalReference = payment.external_reference;
-        const status = payment.status;
-
-        if (!externalReference) {
-          console.error(
-            "❌ [ALT-WEBHOOK] External reference not found in payment"
-          );
-          return res
-            .status(400)
-            .json({ message: "External reference missing" });
-        }
-
-        if (status === "approved") {
-          console.log(
-            "✅ [ALT-WEBHOOK] Payment approved, processing:",
-            externalReference
-          );
-
-          // Process different payment types
-          if (externalReference.startsWith("subscription_")) {
-            await processSubscriptionPayment(payment);
-          } else if (externalReference.startsWith("dependent_")) {
-            await processDependentPayment(payment);
-          } else if (externalReference.startsWith("professional_")) {
-            await processProfessionalPayment(payment);
-          } else if (externalReference.startsWith("agenda_")) {
-            await processAgendaPayment(payment);
-          } else {
-            console.warn(
-              "⚠️ [ALT-WEBHOOK] Unknown payment type:",
-              externalReference
-            );
-          }
-        } else {
-          console.log("⚠️ [ALT-WEBHOOK] Payment not approved, status:", status);
-
-          await updatePaymentStatus(externalReference, status, payment.id);
-        }
-      } else {
-        console.log(
-          "ℹ️ [ALT-WEBHOOK] Non-payment webhook received:",
-          data.type
-        );
-      }
-
-      res.status(200).json({ received: true });
-    } catch (error) {
-      console.error("❌ [ALT-WEBHOOK] Webhook error:", error.message);
-      console.error("❌ [ALT-WEBHOOK] Webhook error stack:", error.stack);
-      res.status(500).json({ message: "Erro no webhook" });
-    }
-  }
-);
-
-// Helper function to update payment status
-const updatePaymentStatus = async (externalReference, status, paymentId) => {
-  try {
-    const paymentTypePrefix = externalReference.split("_")[0];
-
-    if (externalReference.startsWith("subscription_")) {
-      await pool.query(
-        `UPDATE client_payments SET status = $1, mp_payment_id = $2 WHERE payment_reference LIKE $3`,
-        [
-          status,
-          paymentId,
-          `${paymentTypePrefix}_${externalReference.split("_")[1]}_%`,
-        ]
-      );
-    } else if (externalReference.startsWith("dependent_")) {
-      await pool.query(
-        `UPDATE dependent_payments SET status = $1, mp_payment_id = $2 WHERE payment_reference LIKE $3`,
-        [
-          status,
-          paymentId,
-          `${paymentTypePrefix}_${externalReference.split("_")[1]}_%`,
-        ]
-      );
-    } else if (externalReference.startsWith("professional_")) {
-      await pool.query(
-        `UPDATE professional_payments SET status = $1, mp_payment_id = $2 WHERE payment_reference LIKE $3`,
-        [
-          status,
-          paymentId,
-          `${paymentTypePrefix}_${externalReference.split("_")[1]}_%`,
-        ]
-      );
-    } else if (externalReference.startsWith("agenda_")) {
-      await pool.query(
-        `UPDATE agenda_payments SET status = $1, mp_payment_id = $2 WHERE payment_reference LIKE $3`,
-        [
-          status,
-          paymentId,
-          `${paymentTypePrefix}_${externalReference.split("_")[1]}_%`,
-        ]
-      );
-    }
-  } catch (error) {
-    console.error(
-      `❌ Error updating payment status for ${externalReference}:`,
-      error
-    );
-  }
-};
-
-// Process subscription payment
-const processSubscriptionPayment = async (payment) => {
-  try {
-    const externalReference = payment.external_reference;
-    const userId = externalReference.split("_")[1];
-
-    console.log(
-      "🔄 [SUBSCRIPTION-PAYMENT] Processing subscription payment for user:",
-      userId
-    );
-    console.log("🔄 [SUBSCRIPTION-PAYMENT] Payment ID:", payment.id);
-    console.log(
-      "🔄 [SUBSCRIPTION-PAYMENT] External reference:",
-      externalReference
-    );
-
-    // Validate user exists and has client role
-    const userResult = await pool.query(
-      "SELECT id, name, email FROM users WHERE id = $1 AND 'client' = ANY(roles)",
-      [userId]
-    );
-
-    if (userResult.rows.length === 0) {
-      console.error(
-        "❌ [SUBSCRIPTION-PAYMENT] User not found or not a client:",
-        userId
-      );
-      return;
-    }
-
-    const user = userResult.rows[0];
-    console.log("✅ [SUBSCRIPTION-PAYMENT] User validated:", user.name);
-
-    const expiryDate = addYears(new Date(), 1);
-    console.log(
-      "🔄 [SUBSCRIPTION-PAYMENT] Setting expiry date to (UTC):",
-      expiryDate
-    );
-
-    // Update user subscription status
-    const updateResult = await pool.query(
-      `
-      UPDATE users 
-      SET 
-        subscription_status = 'active',
-        subscription_expiry = $2,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1
-      RETURNING id, name, subscription_status, subscription_expiry
-    `,
-      [userId, expiryDate]
-    );
-
-    if (updateResult.rows.length === 0) {
-      console.error(
-        "❌ [SUBSCRIPTION-PAYMENT] Failed to update user subscription"
-      );
-      return;
-    }
-
-    console.log(
-      "✅ [SUBSCRIPTION-PAYMENT] User subscription updated:",
-      updateResult.rows[0]
-    );
-
-    // Update payment record
-    const paymentUpdateResult = await pool.query(
-      `
-      UPDATE client_payments 
-      SET 
-        status = 'approved',
-        mp_payment_id = $1,
-        processed_at = CURRENT_TIMESTAMP
-      WHERE payment_reference LIKE $2
-      RETURNING id, payment_reference
-    `,
-      [payment.id, `subscription_${userId}_%`]
-    );
-
-    console.log(
-      "✅ [SUBSCRIPTION-PAYMENT] Payment record updated:",
-      paymentUpdateResult.rows
-    );
-
-    // Create notification
-    const notificationResult = await pool.query(
-      `
-      INSERT INTO notifications (user_id, title, message, type)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id
-    `,
-      [
-        userId,
-        "Assinatura Ativada",
-        `Sua assinatura foi ativada com sucesso! Válida até ${expiryDate.toLocaleDateString(
-          "pt-BR"
-        )}. Agora você pode utilizar todos os serviços do convênio.`,
-        "success",
-      ]
-    );
-
-    console.log(
-      "✅ [SUBSCRIPTION-PAYMENT] Notification created:",
-      notificationResult.rows[0]
-    );
-    console.log(
-      "✅ [SUBSCRIPTION-PAYMENT] Subscription activated for user:",
-      userId
-    );
-  } catch (error) {
-    console.error(
-      "❌ [SUBSCRIPTION-PAYMENT] Error processing subscription payment:",
-      error
-    );
-    console.error("❌ [SUBSCRIPTION-PAYMENT] Error details:", error.message);
-    console.error("❌ [SUBSCRIPTION-PAYMENT] Error stack:", error.stack);
-  }
-};
-
-// Process dependent payment
-const processDependentPayment = async (payment) => {
-  try {
-    const externalReference = payment.external_reference;
-    const dependentId = externalReference.split("_")[1];
-
-    console.log(
-      "🔄 [DEPENDENT-WEBHOOK] Processing dependent payment for dependent:",
-      dependentId
-    );
-    console.log("🔄 [DEPENDENT-WEBHOOK] Payment details:", {
-      id: payment.id,
-      status: payment.status,
-      amount: payment.transaction_amount,
-      external_reference: externalReference,
-    });
-
-    // Validate dependent exists
-    const dependentValidationResult = await pool.query(
-      "SELECT id, name, user_id FROM dependents WHERE id = $1",
-      [dependentId]
-    );
-
-    if (dependentValidationResult.rows.length === 0) {
-      console.error("❌ [DEPENDENT-PAYMENT] Dependent not found:", dependentId);
-      return;
-    }
-
-    const dependent = dependentValidationResult.rows[0];
-    console.log("✅ [DEPENDENT-PAYMENT] Dependent validated:", dependent.name);
-
-    const expiryDate = addYears(new Date(), 1);
-    console.log(
-      "🔄 [DEPENDENT-PAYMENT] Setting expiry date to (UTC):",
-      expiryDate
-    );
-
-    // Update dependent subscription status
-    const updateResult = await pool.query(
-      `
-      UPDATE dependents 
-      SET 
-        subscription_status = 'active',
-        subscription_expiry = $2,
-        activated_at = CURRENT_TIMESTAMP,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1
-      RETURNING id, name, subscription_status, subscription_expiry, activated_at
-    `,
-      [dependentId, expiryDate]
-    );
-
-    if (updateResult.rows.length === 0) {
-      console.error(
-        "❌ [DEPENDENT-PAYMENT] Failed to update dependent subscription"
-      );
-      return;
-    }
-
-    console.log(
-      "✅ [DEPENDENT-PAYMENT] Dependent subscription updated:",
-      updateResult.rows[0]
-    );
-
-    // Update payment record
-    const paymentUpdateResult = await pool.query(
-      `
-      UPDATE dependent_payments 
-      SET 
-        status = 'approved',
-        mp_payment_id = $1,
-        processed_at = CURRENT_TIMESTAMP
-      WHERE payment_reference LIKE $2
-      RETURNING id, payment_reference
-    `,
-      [payment.id, `dependent_${dependentId}_%`]
-    );
-
-    console.log(
-      "✅ [DEPENDENT-PAYMENT] Payment record updated:",
-      paymentUpdateResult.rows
-    );
-
-    // Get dependent and client info for notification
-    const dependentInfo = await pool.query(
-      `
-      SELECT d.name as dependent_name, d.user_id, u.name as client_name
-      FROM dependents d
-      JOIN users u ON d.user_id = u.id
-      WHERE d.id = $1
-    `,
-      [dependentId]
-    );
-
-    if (dependentInfo.rows.length > 0) {
-      const info = dependentInfo.rows[0];
-      console.log(
-        "✅ [DEPENDENT-PAYMENT] Client info for notification:",
-        info.client_name
-      );
-
-      // Create notification for client
-      const notificationResult = await pool.query(
-        `
-        INSERT INTO notifications (user_id, title, message, type)
-        VALUES ($1, $2, $3, $4)
-        RETURNING id
-      `,
-        [
-          info.user_id,
-          "Dependente Ativado",
-          `O dependente ${
-            info.dependent_name
-          } foi ativado com sucesso! Válido até ${expiryDate.toLocaleDateString(
-            "pt-BR"
-          )}.`,
-          "success",
-        ]
-      );
-
-      console.log(
-        "✅ [DEPENDENT-PAYMENT] Notification created:",
-        notificationResult.rows[0]
-      );
-    } else {
-      console.warn(
-        "⚠️ [DEPENDENT-PAYMENT] Could not find client info for notification"
-      );
-    }
-
-    console.log("✅ [DEPENDENT-PAYMENT] Dependent activated:", dependentId);
-  } catch (error) {
-    console.error(
-      "❌ [DEPENDENT-PAYMENT] Error processing dependent payment:",
-      error
-    );
-    console.error("❌ [DEPENDENT-PAYMENT] Error details:", error.message);
-    console.error("❌ [DEPENDENT-PAYMENT] Error stack:", error.stack);
-  }
-};
-
-// Process professional payment
-const processProfessionalPayment = async (payment) => {
-  try {
-    const externalReference = payment.external_reference;
-    const professionalId = externalReference.split("_")[1];
-
-    console.log(
-      "🔄 Processing professional payment for professional:",
-      professionalId
-    );
-
-    // Update payment record
-    const paymentUpdateResult = await pool.query(
-      `
-      UPDATE professional_payments 
-      SET 
-        status = 'approved',
-        mp_payment_id = $1,
-        processed_at = CURRENT_TIMESTAMP
-      WHERE payment_reference LIKE $2
-       RETURNING id
-    `,
-      [payment.id, `professional_${professionalId}_%`]
-    );
-
-    console.log(
-      "✅ [DEPENDENT-WEBHOOK] Payment record updated:",
-      paymentUpdateResult.rows.length
-    );
-
-    // Create notification
-    await pool.query(
-      `
-      INSERT INTO notifications (user_id, title, message, type)
-      VALUES ($1, $2, $3, $4)
-    `,
-      [
-        professionalId,
-        "Pagamento Processado",
-        `Seu pagamento de repasse ao convênio foi processado com sucesso.`,
-        "success",
-      ]
-    );
-
-    console.log("✅ Professional payment processed:", professionalId);
-  } catch (error) {
-    console.error("❌ Error processing professional payment:", error);
-  }
-};
-
-// Process agenda payment
-const processAgendaPayment = async (payment) => {
-  try {
-    const externalReference = payment.external_reference;
-    const parts = externalReference.split("_");
-    const professionalId = parts[1];
-    // Agenda payment is always for 1 MONTH (30 days)
-    const durationDays = 30; // Always 1 month
-
-    console.log(
-      "🔄 [AGENDA-WEBHOOK] Processing agenda payment for professional:",
-      professionalId,
-      "duration:",
-      durationDays
-    );
-    console.log("🔄 [AGENDA-WEBHOOK] Payment details:", {
-      id: payment.id,
-      status: payment.status,
-      amount: payment.transaction_amount,
-      external_reference: externalReference,
-    });
-
-    // Validate professional exists and has professional role
-    const professionalCheck = await pool.query(
-      `SELECT id, name FROM users WHERE id = $1 AND 'professional' = ANY(roles)`,
-      [professionalId]
-    );
-
-    if (professionalCheck.rows.length === 0) {
-      console.error(
-        "❌ [AGENDA-WEBHOOK] Professional not found:",
-        professionalId
-      );
-      return;
-    }
-
-    const professional = professionalCheck.rows[0];
-    console.log(
-      "✅ [AGENDA-WEBHOOK] Professional validated:",
-      professional.name
-    );
-
-    // Deactivate any existing access
-    await pool.query(
-      `
-      UPDATE scheduling_access SET is_active = false WHERE professional_id = $1
-    `,
-      [professionalId]
-    );
-
-    console.log(
-      "✅ [AGENDA-WEBHOOK] Existing access deactivated for professional:",
-      professionalId
-    );
-
-    // Grant new access
-    const expiresAt = addDays(new Date(), durationDays);
-
-    const accessResult = await pool.query(
-      `
-      INSERT INTO scheduling_access (professional_id, granted_by, expires_at, reason, is_active, starts_at)
-      VALUES ($1, $2, $3, $4, true, CURRENT_TIMESTAMP)
-      RETURNING *
-    `,
-      [
-        professionalId,
-        professionalId,
-        expiresAt.toISOString(),
-        "Pagamento via MercadoPago",
-      ] // Assuming professional pays for their own access, granted_by = professionalId
-    );
-
-    console.log(
-      "✅ [AGENDA-WEBHOOK] New scheduling access created:",
-      accessResult.rows[0]
-    );
-
-    // Update payment record
-    const paymentUpdateResult = await pool.query(
-      `
-      UPDATE agenda_payments 
-      SET 
-        status = 'approved',
-        mp_payment_id = $1,
-        processed_at = CURRENT_TIMESTAMP
-      WHERE payment_reference LIKE $2
-      RETURNING *
-    `,
-      [payment.id, `agenda_${professionalId}_${durationDays}_%`]
-    );
-
-    console.log(
-      "✅ [AGENDA-WEBHOOK] Payment record updated:",
-      paymentUpdateResult.rows
-    );
-
-    // Create notification
-    const notificationResult = await pool.query(
-      `
-      INSERT INTO notifications (user_id, title, message, type)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *
-    `,
-      [
-        professionalId,
-        "Acesso à Agenda Ativado",
-        `Seu acesso à agenda foi ativado por ${durationDays} dias! Válido até ${expiresAt.toLocaleDateString(
-          "pt-BR"
-        )}.`,
-        "success",
-      ]
-    );
-
-    console.log(
-      "✅ [AGENDA-WEBHOOK] Notification created:",
-      notificationResult.rows[0]
-    );
-
-    // Verify access was granted correctly
-    const verifyResult = await pool.query(
-      `SELECT * FROM scheduling_access WHERE professional_id = $1 AND is_active = true ORDER BY created_at DESC LIMIT 1`,
-      [professionalId]
-    );
-
-    if (verifyResult.rows.length > 0) {
-      console.log(
-        "✅ [AGENDA-WEBHOOK] VERIFICATION: Access successfully granted and verified:",
-        verifyResult.rows[0]
-      );
-      console.log(
-        "🎉 [AGENDA-WEBHOOK] Agenda access successfully activated for professional:",
-        professionalId,
-        "valid until:",
-        expiresAt.toLocaleDateString("pt-BR")
-      );
-    } else {
-      console.error(
-        "❌ [AGENDA-WEBHOOK] VERIFICATION: Access was not granted properly!"
-      );
-    }
-  } catch (error) {
-    console.error(
-      "❌ [AGENDA-WEBHOOK] Error processing agenda payment:",
-      error
-    );
-    console.error("❌ [AGENDA-WEBHOOK] Error details:", {
-      message: error.message,
-      stack: error.stack,
-      payment_id: payment?.id,
-      external_reference: payment?.external_reference,
-    });
-  }
-};
-
-// Test endpoint to manually process payments
-app.post(
-  "/api/test-payment-processing",
-  authenticate,
-  authorize(["admin"]),
-  async (req, res) => {
-    try {
-      const { external_reference, payment_id } = req.body;
-
-      console.log("🔧 [MANUAL] Manual payment processing requested:", {
-        external_reference,
-        payment_id,
-      });
-
-      if (!external_reference) {
-        return res
-          .status(400)
-          .json({ message: "external_reference é obrigatório" });
-      }
-
-      // Create a mock payment object for processing
-      const mockPayment = {
-        id: payment_id || `test_${Date.now()}`,
-        status: "approved",
-        external_reference: external_reference,
-        transaction_amount: 0.5, // Default value, will be overwritten if needed by specific processing functions
-      };
-
-      console.log("🔧 [MANUAL] Processing with mock payment:", mockPayment);
-
-      // Process based on payment type
-      if (external_reference.startsWith("agenda_")) {
-        await processAgendaPayment(mockPayment);
-        res.json({
-          message: "Pagamento da agenda processado manualmente com sucesso",
-        });
-      } else if (external_reference.startsWith("subscription_")) {
-        await processSubscriptionPayment(mockPayment);
-        res.json({
-          message: "Pagamento da assinatura processado manualmente com sucesso",
-        });
-      } else if (externalReference.startsWith("dependent_")) {
-        await processDependentPayment(mockPayment);
-        res.json({
-          message: "Pagamento do dependente processado manualmente com sucesso",
-        });
-      } else if (externalReference.startsWith("professional_")) {
-        await processProfessionalPayment(mockPayment);
-        res.json({
-          message:
-            "Pagamento do profissional processado manualmente com sucesso",
-        });
-      } else {
-        res.status(400).json({ message: "Tipo de pagamento não reconhecido" });
-      }
-    } catch (error) {
-      console.error("❌ [MANUAL] Error in manual processing:", error);
-      res
-        .status(500)
-        .json({ message: "Erro ao processar pagamento manualmente" });
-    }
-  }
-);
-
-// ===== REPORTS ROUTES =====
-
-// Get cancelled consultations report
-app.get(
-  "/api/reports/cancelled-consultations",
-  authenticate,
-  authorize(["professional", "admin"]),
-  async (req, res) => {
-    try {
-      const { start_date, end_date } = req.query;
-
-      if (!start_date || !end_date) {
-        return res
-          .status(400)
-          .json({ message: "Data inicial e final são obrigatórias" });
-      }
-
-      console.log(
-        "🔄 [CANCELLED] Fetching cancelled consultations for period:",
-        start_date,
-        "to",
-        end_date
-      );
-
-      // Simple date range: start at 03:00 and end at 02:59 next day
-      const cancelledStartDateTime = `${start_date} 03:00:00`;
-      const cancelledEndDateTime = `${end_date} 02:59:59`;
-      let query = `
-      SELECT 
-        c.id,
-        c.date,
-        c.value,
-        c.cancellation_reason,
-        c.updated_at as cancelled_at,
-        s.name as service_name,
-        prof.name as professional_name,
-        CASE 
-          WHEN c.user_id IS NOT NULL THEN u.name
-          WHEN c.dependent_id IS NOT NULL THEN d.name
-          WHEN c.private_patient_id IS NOT NULL THEN pp.name
-          ELSE 'Paciente não identificado'
-        END as patient_name,
-        CASE 
-          WHEN c.dependent_id IS NOT NULL THEN true
-          ELSE false
-        END as is_dependent,
-        CASE 
-          WHEN c.private_patient_id IS NOT NULL THEN 'private'
-          ELSE 'convenio'
-        END as patient_type,
-        al.name as location_name,
-        'Sistema' as cancelled_by_name
-      FROM consultations c
-      JOIN services s ON c.service_id = s.id
-      JOIN users prof ON c.professional_id = prof.id
-      LEFT JOIN users u ON c.user_id = u.id
-      LEFT JOIN dependents d ON c.dependent_id = d.id
-      LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
-      LEFT JOIN attendance_locations al ON c.location_id = al.id
-      WHERE c.status = 'cancelled'
-        AND c.date >= $1::timestamp AND c.date <= $2::timestamp
-    `;
-
-      const params = [cancelledStartDateTime, cancelledEndDateTime];
-
-      // If professional, only show their cancelled consultations
-      if (req.user.currentRole === "professional") {
-        query += " AND c.professional_id = $3";
-        params.push(req.user.id);
-      }
-
-      query += " ORDER BY c.updated_at DESC";
-
-      const result = await pool.query(query, params);
-
-      console.log(
-        "✅ [CANCELLED] Cancelled consultations fetched:",
-        result.rows.length
-      );
-      res.json(result.rows);
-    } catch (error) {
-      console.error("❌ Error fetching cancelled consultations:", error);
-      res
-        .status(500)
-        .json({ message: "Erro ao carregar consultas canceladas" });
-    }
-  }
-);
-
-app.get(
-  "/api/reports/revenue",
-  authenticate,
-  authorize(["admin"]),
-  async (req, res) => {
-    try {
-      const { start_date, end_date } = req.query;
-
-      if (!start_date || !end_date) {
-        return res
-          .status(400)
-          .json({ message: "Data inicial e final são obrigatórias" });
-      }
-
-      console.log(
-        "🔄 [REVENUE-REPORT] Generating revenue report for period:",
-        start_date,
-        "to",
-        end_date
-      );
-
-      const revenueStartDateTime = `${start_date} 00:00:00`;
-      const revenueEndDateTime = `${end_date} 23:59:59`;
-      const totalRevenueResult = await pool.query(
-        `
-      SELECT COALESCE(SUM(c.value), 0) as total_revenue
-      FROM consultations c
-      WHERE c.date >= $1::timestamp AND c.date <= $2::timestamp
-        AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
-        AND c.status != 'cancelled'
-    `,
-        [revenueStartDateTime, revenueEndDateTime]
-      );
-
-      const totalRevenue =
-        Number.parseFloat(totalRevenueResult.rows[0].total_revenue) || 0;
-
-      // Get revenue by professional (only convenio consultations)
-      const revenueByProfessionalResult = await pool.query(
-        `
-      SELECT 
-        u.name as professional_name,
-        u.percentage as professional_percentage,
-        COALESCE(SUM(c.value), 0) as revenue,
-        COUNT(c.id) as consultation_count,
-        COALESCE(SUM(c.value * (100 - u.percentage) / 100), 0) as clinic_revenue,
-        COALESCE(SUM(c.value * u.percentage / 100), 0) as professional_payment
-      FROM users u
-      LEFT JOIN consultations c ON u.id = c.professional_id 
-        AND c.date >= $1::timestamp AND c.date <= $2::timestamp
-        AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
-        AND c.status != 'cancelled'
-      WHERE 'professional' = ANY(u.roles)
-      GROUP BY u.id, u.name, u.percentage
-      HAVING COUNT(c.id) > 0
-      ORDER BY revenue DESC
-    `,
-        [revenueStartDateTime, revenueEndDateTime]
-      );
-
-      // Get revenue by service (only convenio consultations)
-      const revenueByServiceResult = await pool.query(
-        `
-      SELECT 
-        s.name as service_name,
-        COALESCE(SUM(c.value), 0) as revenue,
-        COUNT(c.id) as consultation_count
-      FROM services s
-      LEFT JOIN consultations c ON s.id = c.service_id 
-        AND c.date >= $1::timestamp AND c.date <= $2::timestamp
-        AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
-        AND c.status != 'cancelled'
-      GROUP BY s.id, s.name
-      HAVING COUNT(c.id) > 0
-      ORDER BY revenue DESC
-    `,
-        [revenueStartDateTime, revenueEndDateTime]
-      );
-
-      const report = {
-        total_revenue: totalRevenue,
-        revenue_by_professional: revenueByProfessionalResult.rows,
-        revenue_by_service: revenueByServiceResult.rows,
-      };
-
-      console.log("✅ [REVENUE-REPORT] Revenue report generated");
-
-      res.json(report);
-    } catch (error) {
-      console.error("❌ Error generating revenue report:", error);
-      res.status(500).json({ message: "Erro ao gerar relatório de receita" });
-    }
-  }
-);
-
-app.get(
-  "/api/reports/professional-revenue",
-  authenticate,
-  authorize(["professional"]),
-  async (req, res) => {
-    try {
-      const { start_date, end_date } = req.query;
-
-      if (!start_date || !end_date) {
-        return res
-          .status(400)
-          .json({ message: "Data inicial e final são obrigatórias" });
-      }
-
-      console.log(
-        "🔄 [PROF-REVENUE] Generating professional revenue report for:",
-        req.user.id,
-        "period:",
-        start_date,
-        "to",
-        end_date
-      );
-
-      // Get professional percentage
-      const professionalResult = await pool.query(
-        "SELECT percentage FROM users WHERE id = $1",
-        [req.user.id]
-      );
-
-      const professionalPercentage =
-        professionalResult.rows[0]?.percentage || 50;
-
-      console.log(
-        "📊 [PROF-REVENUE] Professional percentage:",
-        professionalPercentage
-      );
-      console.log(
-        "📊 [PROF-REVENUE] Convênio percentage (100 - professional):",
-        100 - professionalPercentage
-      );
-
-      const profRevenueStartDateTime = `${start_date} 00:00:00`;
-      const profRevenueEndDateTime = `${end_date} 23:59:59`;
-      const consultationsResult = await pool.query(
-        `
-      SELECT 
-        c.date, c.value,
-        c.value as total_value,
-        s.name as service_name,
-        CASE 
-          WHEN c.user_id IS NOT NULL THEN u.name
-          WHEN c.dependent_id IS NOT NULL THEN d.name
-          WHEN c.private_patient_id IS NOT NULL THEN pp.name
-        END as client_name,
-        CASE 
-          WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN 'convenio'
-          ELSE 'particular'
-        END as patient_type,
-        CASE 
-          WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN c.value * ($3 / 100.0)
-          ELSE 0
-        END as amount_to_pay
-      FROM consultations c
-      JOIN services s ON c.service_id = s.id
-      LEFT JOIN users u ON c.user_id = u.id
-      LEFT JOIN dependents d ON c.dependent_id = d.id
-      LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
-      WHERE c.professional_id = $1 
-        AND c.date >= $2::timestamp 
-        AND c.date <= $4::timestamp 
-        AND c.status != 'cancelled'
-      ORDER BY c.date DESC`,
-        [
-          req.user.id,
-          profRevenueStartDateTime,
-          100 - professionalPercentage,
-          profRevenueEndDateTime,
-        ]
-      );
-
-      console.log("📋 [PROF-REVENUE] Consultations breakdown:");
-      consultationsResult.rows.forEach((consultation, index) => {
-        console.log(
-          `  ${index + 1}. ${consultation.patient_type} - ${
-            consultation.client_name
-          }`
-        );
-        console.log(`     Valor: R$ ${consultation.value}`);
-        console.log(`     Amount to pay: R$ ${consultation.amount_to_pay}`);
-      });
-
-      // Calculate totals
-      const totalRevenue = consultationsResult.rows.reduce(
-        (sum, c) => sum + Number.parseFloat(c.value),
-        0
-      );
-      const totalAmountToPay = consultationsResult.rows.reduce(
-        (sum, c) => sum + Number.parseFloat(c.amount_to_pay),
-        0
-      );
-      const consultationCount = consultationsResult.rows.length;
-
-      console.log("💰 [PROF-REVENUE] Totals:");
-      console.log("   Total revenue:", totalRevenue);
-      console.log("   Total amount to pay:", totalAmountToPay);
-      console.log("   Consultation count:", consultationCount);
-
-      const report = {
-        summary: {
-          professional_percentage: professionalPercentage,
-          total_revenue: totalRevenue,
-          consultation_count: consultationCount,
-          amount_to_pay: totalAmountToPay,
-        },
-        consultations: consultationsResult.rows,
-      };
-
-      console.log("✅ [PROF-REVENUE] Professional revenue report generated");
-
-      res.json(report);
-    } catch (error) {
-      console.error("❌ Error generating professional revenue report:", error);
-      res.status(500).json({
-        message: "Erro ao gerar relatório de receita do profissional",
-      });
-    }
-  }
-);
-
-app.get(
-  "/api/reports/detailed-professional",
-  authenticate,
-  authorize(["professional"]),
-  async (req, res) => {
-    try {
-      const { start_date, end_date } = req.query;
-
-      if (!start_date || !end_date) {
-        return res
-          .status(400)
-          .json({ message: "Data inicial e final são obrigatórias" });
-      }
-
-      console.log(
-        "🔄 [PROF-DETAILED] Generating detailed professional report for:",
-        req.user.id,
-        "period:",
-        start_date,
-        "to",
-        end_date
-      );
-
-      // Get professional percentage
-      const professionalResult = await pool.query(
-        "SELECT percentage FROM users WHERE id = $1",
-        [req.user.id]
-      );
-
-      const professionalPercentage =
-        professionalResult.rows[0]?.percentage || 50;
-
-      console.log(
-        "📊 [PROF-DETAILED] Professional percentage:",
-        professionalPercentage
-      );
-
-      const detailedStartDateTime = `${start_date} 00:00:00`;
-      const detailedEndDateTime = `${end_date} 23:59:59`;
-
-      // Get convenio consultations
-      const convenioResult = await pool.query(
-        `
-        SELECT 
-          COUNT(*) as count,
-          COALESCE(SUM(c.value), 0) as revenue
-        FROM consultations c
-        WHERE c.professional_id = $1 
-          AND c.date >= $2::timestamp 
-          AND c.date <= $3::timestamp 
-          AND c.status != 'cancelled'
-          AND (c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL)
-      `,
-        [req.user.id, detailedStartDateTime, detailedEndDateTime]
-      );
-
-      // Get private consultations
-      const privateResult = await pool.query(
-        `
-        SELECT 
-          COUNT(*) as count,
-          COALESCE(SUM(c.value), 0) as revenue
-        FROM consultations c
-        WHERE c.professional_id = $1 
-          AND c.date >= $2::timestamp 
-          AND c.date <= $3::timestamp 
-          AND c.status != 'cancelled'
-          AND c.private_patient_id IS NOT NULL
-      `,
-        [req.user.id, detailedStartDateTime, detailedEndDateTime]
-      );
-
-      const convenioConsultations =
-        Number.parseInt(convenioResult.rows[0].count) || 0;
-      const convenioRevenue =
-        Number.parseFloat(convenioResult.rows[0].revenue) || 0;
-      const privateConsultations =
-        Number.parseInt(privateResult.rows[0].count) || 0;
-      const privateRevenue =
-        Number.parseFloat(privateResult.rows[0].revenue) || 0;
-
-      const totalConsultations = convenioConsultations + privateConsultations;
-      const totalRevenue = convenioRevenue + privateRevenue;
-
-      // Calculate amount to pay to convenio (convenio percentage of convenio revenue)
-      const convenioPercentage = 100 - professionalPercentage;
-      const amountToPay = (convenioRevenue * convenioPercentage) / 100;
-
-      const report = {
-        summary: {
-          total_consultations: totalConsultations,
-          convenio_consultations: convenioConsultations,
-          private_consultations: privateConsultations,
-          total_revenue: totalRevenue,
-          convenio_revenue: convenioRevenue,
-          private_revenue: privateRevenue,
-          professional_percentage: professionalPercentage,
-          amount_to_pay: amountToPay,
-        },
-      };
-
-      console.log("✅ [PROF-DETAILED] Detailed report generated:", report);
-
-      res.json(report);
-    } catch (error) {
-      console.error("❌ Error generating detailed professional report:", error);
-      res.status(500).json({
-        message: "Erro ao gerar relatório detalhado do profissional",
-      });
-    }
-  }
-);
-
-app.get(
-  "/api/reports/clients-by-city",
-  authenticate,
-  authorize(["admin"]),
-  async (req, res) => {
-    try {
-      const clientsByCityResult = await pool.query(`
-      SELECT 
-        city,
-        state,
-        COUNT(*) as client_count,
-        COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
-        COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
-        COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
-      FROM users 
-      WHERE 'client' = ANY(roles) AND city IS NOT NULL AND city != ''
-      GROUP BY city, state
-      ORDER BY client_count DESC, city
-    `);
-
-      res.json(clientsByCityResult.rows);
-    } catch (error) {
-      console.error("❌ Error generating clients by city report:", error);
-      res
-        .status(500)
-        .json({ message: "Erro ao gerar relatório de clientes por cidade" });
-    }
-  }
-);
-
-app.get(
-  "/api/reports/professionals-by-city",
-  authenticate,
-  authorize(["admin"]),
-  async (req, res) => {
-    try {
-      const professionalsByCityResult = await pool.query(`
-      SELECT 
-        city,
-        state,
-        COUNT(*) as total_professionals,
-        json_agg(
-          json_build_object(
-            'category_name', COALESCE(category_name, 'Sem categoria'),
-            'count', 1
-          )
-        ) as categories
-      FROM users 
-      WHERE 'professional' = ANY(roles) AND city IS NOT NULL AND city != ''
-      GROUP BY city, state
-      ORDER BY total_professionals DESC, city
-    `);
-
-      // Process categories to group by category name
-      const processedData = professionalsByCityResult.rows.map((row) => {
-        const categoryMap = new Map();
-
-        row.categories.forEach((cat) => {
-          const categoryName = cat.category_name;
-          if (categoryMap.has(categoryName)) {
-            categoryMap.set(
-              categoryName,
-              categoryMap.get(categoryName) + cat.count
-            );
-          } else {
-            categoryMap.set(categoryName, cat.count);
-          }
-        });
-
-        const categories = Array.from(categoryMap.entries()).map(
-          ([category_name, count]) => ({
-            category_name,
-            count,
-          })
-        );
-
-        return {
-          ...row,
-          categories,
-        };
-      });
-
-      res.json(processedData);
-    } catch (error) {
-      console.error("❌ Error generating professionals by city report:", error);
-      res.status(500).json({
-        message: "Erro ao gerar relatório de profissionais por cidade",
-      });
-    }
-  }
-);
-
-// ===== IMAGE UPLOAD ROUTE =====
-
-app.post("/api/upload-image", authenticate, async (req, res) => {
-  try {
-    console.log("🔄 Image upload request received");
-
-    // Create upload middleware instance
-    const upload = createUpload();
-
-    // Use multer middleware
-    upload.single("image")(req, res, async (err) => {
-      if (err) {
-        console.error("❌ Upload error:", err);
-        return res
-          .status(400)
-          .json({ message: err.message || "Erro no upload da imagem" });
-      }
-
-      if (!req.file) {
-        return res.status(400).json({ message: "Nenhuma imagem foi enviada" });
-      }
-
-      console.log("✅ Image uploaded successfully:", req.file.path);
-
-      // Update user photo URL
-      await pool.query(
-        `
-        UPDATE users SET photo_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2
-      `,
-        [req.file.path, req.user.id]
-      );
-
-      res.json({
-        message: "Imagem enviada com sucesso",
-        imageUrl: req.file.path,
-      });
-    });
-  } catch (error) {
-    console.error("❌ Error in image upload route:", error);
-    res.status(500).json({ message: "Erro interno do servidor" });
-  }
+app.all("/api/webhook/payment", (req, res, next) => {
+  console.log("🔄 [REDIRECT] Redirecting alternative webhook to main endpoint");
+  req.url = "/api/webhooks/payment-success";
+  next();
 });
 
-// ===== ADMIN ROUTES =====
-
-app.get(
-  "/api/admin/dependents",
-  authenticate,
-  authorize(["admin"]),
-  async (req, res) => {
-    try {
-      const dependentsResult = await pool.query(`
-      SELECT 
-        d.*, u.name as client_name, u.subscription_status as client_subscription_status
-      FROM dependents d
-      JOIN users u ON d.user_id = u.id
-      ORDER BY d.created_at DESC
-    `);
-
-      res.json(dependentsResult.rows);
-    } catch (error) {
-      console.error("❌ Error fetching all dependents:", error);
-      res.status(500).json({ message: "Erro ao carregar dependentes" });
-    }
-  }
-);
-
-// Add activate client route
-app.post(
-  "/api/users/:id/activate",
-  authenticate,
-  authorize(["admin"]),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-
-      console.log("🔄 Activating client:", id);
-
-      // Get user data
-      const userResult = await pool.query(
-        "SELECT * FROM users WHERE id = $1 AND 'client' = ANY(roles)",
-        [id]
-      );
-
-      if (userResult.rows.length === 0) {
-        return res.status(404).json({ message: "Cliente não encontrado" });
-      }
-
-      const expiryDate = addYears(new Date(), 1);
-
-      // Update subscription status and expiry
-      const updatedUserResult = await pool.query(
-        `UPDATE users 
-       SET subscription_status = 'active', 
-           subscription_expiry = $1,
-           updated_at = NOW()
-       WHERE id = $2
-       RETURNING 
-         id, name, cpf, email, phone, 
-         birth_date::text as birth_date,
-         address, address_number, address_complement, neighborhood, city, state,
-         roles, subscription_status, 
-         subscription_expiry::text as subscription_expiry,
-         photo_url, category_name, percentage, crm, 
-         created_at::text as created_at, updated_at::text as updated_at`,
-        [expiryDate, id]
-      );
-
-      console.log("✅ Client activated successfully:", id);
-
-      res.json({
-        message: "Cliente ativado com sucesso",
-        user: updatedUserResult.rows[0],
-      });
-    } catch (error) {
-      console.error("❌ Error activating client:", error);
-      res.status(500).json({ message: "Erro ao ativar cliente" });
-    }
-  }
-);
-
-// ===== NOTIFICATIONS ROUTES =====
-
-app.get("/api/notifications", authenticate, async (req, res) => {
-  try {
-    const notificationsResult = await pool.query(
-      `
-      SELECT * FROM notifications 
-      WHERE user_id = $1 
-      ORDER BY created_at DESC 
-      LIMIT 50
-    `,
-      [req.user.id]
-    );
-
-    res.json(notificationsResult.rows);
-  } catch (error) {
-    console.error("❌ Error fetching notifications:", error);
-    res.status(500).json({ message: "Erro ao carregar notificações" });
-  }
-});
-
-app.put("/api/notifications/:id/read", authenticate, async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    await pool.query(
-      `
-      UPDATE notifications 
-      SET is_read = true 
-      WHERE id = $1 AND user_id = $2
-    `,
-      [id, req.user.id]
-    );
-
-    res.json({ message: "Notificação marcada como lida" });
-  } catch (error) {
-    console.error("❌ Error marking notification as read:", error);
-    res.status(500).json({ message: "Erro ao marcar notificação como lida" });
-  }
-});
-
-app.put("/api/notifications/mark-all-read", authenticate, async (req, res) => {
-  try {
-    await pool.query(
-      `
-      UPDATE notifications 
-      SET is_read = true 
-      WHERE user_id = $1 AND is_read = false
-    `,
-      [req.user.id]
-    );
-
-    res.json({ message: "Todas as notificações foram marcadas como lidas" });
-  } catch (error) {
-    console.error("❌ Error marking all notifications as read:", error);
-    res
-      .status(500)
-      .json({ message: "Erro ao marcar todas as notificações como lidas" });
-  }
-});
-
-// ===== SYSTEM SETTINGS ROUTES =====
-
-app.get(
-  "/api/system-settings",
-  authenticate,
-  authorize(["admin"]),
-  async (req, res) => {
-    try {
-      const settingsResult = await pool.query(`
-      SELECT * FROM system_settings ORDER BY key
-    `);
-
-      res.json(settingsResult.rows);
-    } catch (error) {
-      console.error("❌ Error fetching system settings:", error);
-      res
-        .status(500)
-        .json({ message: "Erro ao carregar configurações do sistema" });
-    }
-  }
-);
-
-app.put(
-  "/api/system-settings/:key",
-  authenticate,
-  authorize(["admin"]),
-  async (req, res) => {
-    try {
-      const { key } = req.params;
-      const { value, description } = req.body;
-
-      if (!value) {
-        return res.status(400).json({ message: "Valor é obrigatório" });
-      }
-
-      const settingResult = await pool.query(
-        `
-      INSERT INTO system_settings (key, value, description, updated_by, updated_at)
-      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-      ON CONFLICT (key) 
-      DO UPDATE SET 
-        value = EXCLUDED.value,
-        description = EXCLUDED.description,
-        updated_by = EXCLUDED.updated_by,
-        updated_at = EXCLUDED.updated_at
-      RETURNING *
-    `,
-        [key, value, description || null, req.user.id]
-      );
-
-      const setting = settingResult.rows[0];
-
-      console.log("✅ System setting updated:", key);
-
-      res.json({
-        message: "Configuração atualizada com sucesso",
-        setting,
-      });
-    } catch (error) {
-      console.error("❌ Error updating system setting:", error);
-      res
-        .status(500)
-        .json({ message: "Erro ao atualizar configuração do sistema" });
-    }
-  }
-);
-
-// ===== AUDIT LOGSROUTES =====
-
-app.get(
-  "/api/audit-logs",
-  authenticate,
-  authorize(["admin"]),
-  async (req, res) => {
-    try {
-      const { page = 1, limit = 50, user_id, action, table_name } = req.query;
-      const offset = (page - 1) * limit;
-
-      let query = `
-      SELECT 
-        al.*, u.name as user_name
-      FROM audit_logs al
-      LEFT JOIN users u ON al.user_id = u.id
-      WHERE 1=1
-    `;
-      const params = [];
-      let paramCount = 0;
-
-      if (user_id) {
-        paramCount++;
-        query += ` AND al.user_id = $${paramCount}`;
-        params.push(user_id);
-      }
-
-      if (action) {
-        paramCount++;
-        query += ` AND al.action = $${paramCount}`;
-        params.push(action);
-      }
-
-      if (table_name) {
-        paramCount++;
-        query += ` AND al.table_name = $${paramCount}`;
-        params.push(table_name);
-      }
-
-      query += ` LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
-      params.push(limit, offset);
-
-      const logsResult = await pool.query(query, params);
-
-      // Get total count for pagination
-      let countQuery = `SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
-      const countParams = [];
-      let countParamCount = 0;
-
-      if (user_id) {
-        countParamCount++;
-        countQuery += ` AND al.user_id = $${countParamCount}`;
-        countParams.push(user_id);
-      }
-
-      if (action) {
-        countParamCount++;
-        countQuery += ` AND al.action = $${countParamCount}`;
-        countParams.push(action);
-      }
-
-      if (table_name) {
-        countParamCount++;
-        countQuery += ` AND al.table_name = $${countParamCount}`;
-        countParams.push(table_name);
-      }
-
-      const countResult = await pool.query(countQuery, countParams);
-      const totalCount = Number.parseInt(countResult.rows[0].count);
-
-      res.json({
-        logs: logsResult.rows,
-        pagination: {
-          page: Number.parseInt(page),
-          limit: Number.parseInt(limit),
-          total: totalCount,
-          totalPages: Math.ceil(totalCount / limit),
-        },
-      });
-    } catch (error) {
-      console.error("❌ Error fetching audit logs:", error);
-      res.status(500).json({ message: "Erro ao carregar logs de auditoria" });
-    }
-  }
-);
-
-// ===== HEALTH CHECK =====
-
-// ===== MAINTENANCE ROUTE (NO AUTH REQUIRED) =====
-
-app.get("/api/maintenance-status", (req, res) => {
-  res.json({
-    status: "maintenance",
-    message: "Sistema em manutenção programada",
-    estimated_return: "Em breve",
-    contact: {
-      phone: "(64) 98124-9199",
-      email: "contato@cartaoquiroferreira.com.br",
-    },
-    timestamp: new Date().toISOString(),
-  });
-});
-
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: "OK",
-    timestamp: new Date().toISOString(),
-    version: "2.0.0",
-    database: "Connected",
-    mercadopago: "Configured",
-  });
-});
-
-// ===== ERROR HANDLERS =====
-
-// Catch-all route for SPA in production
-if (process.env.NODE_ENV === "production") {
-  app.get("*", (req, res) => {
-    res.sendFile(path.join(__dirname, "../dist/index.html"));
-  });
-}
-
-// Global error handler
 app.use((err, req, res, next) => {
-  console.error("Global error handler:", err);
+  console.error("❌ [ERROR-HANDLER] Unhandled error:", err);
 
-  // Log error to audit logs if user is available
-  if (req.user) {
-    logAuditAction(
-      req.user.id,
-      "ERROR",
+  if (process.env.NODE_ENV === "development") {
+    logAudit(
+      null,
+      "error_occurred",
       null,
       null,
       null,
