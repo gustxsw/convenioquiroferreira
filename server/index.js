@@ -1748,7 +1748,9 @@ app.get(
         total_revenue: totalRevenue,
         revenue_by_professional: professionalRevenueResult.rows.map((row) => ({
           professional_name: row.professional_name,
-          professional_percentage: parseFloat(row.professional_percentage || 50),
+          professional_percentage: parseFloat(
+            row.professional_percentage || 50
+          ),
           revenue: parseFloat(row.revenue || 0),
           consultation_count: parseInt(row.consultation_count || 0),
           professional_payment: parseFloat(row.professional_payment || 0),
@@ -1835,9 +1837,9 @@ app.get(
 
       // Process the data to group categories
       const processedData = result.rows.map((row) => {
-        const categoryCounts: { [key: string]: number } = {};
+        const categoryCounts = {};
 
-        row.categories.forEach((cat: any) => {
+        (row.categories || []).forEach((cat) => {
           const categoryName = cat.category_name;
           categoryCounts[categoryName] =
             (categoryCounts[categoryName] || 0) + 1;
