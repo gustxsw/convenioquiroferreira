@@ -1635,6 +1635,119 @@ app.get(
   }
 );
 
+// ===== PROFESSIONAL REVENUE REPORT (FOR HOMEPAGE) =====
+app.get(
+  "/api/reports/professional-revenue",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const professionalId = req.user.id;
+      const { start_date, end_date } = req.query;
+
+      console.log("📊 Generating revenue report for:", professionalId);
+      console.log("📅 Date range:", start_date, end_date);
+
+      if (!start_date || !end_date) {
+        return res
+          .status(400)
+          .json({ message: "Datas inicial e final são obrigatórias" });
+      }
+
+      // Get consultations with details
+      const consultationsResult = await pool.query(
+        `
+        SELECT
+          c.id,
+          c.date,
+          c.value,
+          c.status,
+          c.user_id,
+          c.dependent_id,
+          c.private_patient_id,
+          s.name as service_name,
+          CASE
+            WHEN c.user_id IS NOT NULL THEN u.name
+            WHEN c.dependent_id IS NOT NULL THEN d.name
+            WHEN c.private_patient_id IS NOT NULL THEN pp.name
+            ELSE 'Desconhecido'
+          END as client_name
+        FROM consultations c
+        LEFT JOIN services s ON c.service_id = s.id
+        LEFT JOIN users u ON c.user_id = u.id
+        LEFT JOIN dependents d ON c.dependent_id = d.id
+        LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
+        WHERE c.professional_id = $1
+          AND c.date BETWEEN $2::timestamptz AND $3::timestamptz
+          AND c.status != 'cancelled'
+        ORDER BY c.date DESC
+      `,
+        [professionalId, `${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
+      );
+
+      // Calculate summary
+      const profData = await pool.query(
+        `SELECT percentage FROM users WHERE id = $1`,
+        [professionalId]
+      );
+
+      const percentage = profData.rows[0]?.percentage || 50;
+
+      let totalRevenue = 0;
+      let convenioRevenue = 0;
+      let privateRevenue = 0;
+      let convenioCount = 0;
+      let privateCount = 0;
+
+      const consultationsWithAmounts = consultationsResult.rows.map((c) => {
+        const value = parseFloat(c.value);
+        const isConvenio = c.user_id || c.dependent_id;
+
+        totalRevenue += value;
+
+        if (isConvenio) {
+          convenioRevenue += value;
+          convenioCount++;
+        } else {
+          privateRevenue += value;
+          privateCount++;
+        }
+
+        const amountToPay = isConvenio
+          ? value * (percentage / 100)
+          : value;
+
+        return {
+          ...c,
+          amount_to_pay: amountToPay
+        };
+      });
+
+      const professionalShare =
+        convenioRevenue * (percentage / 100) + privateRevenue;
+      const totalAmountToPay = totalRevenue - professionalShare;
+
+      res.json({
+        consultations: consultationsWithAmounts,
+        summary: {
+          total_consultations: consultationsResult.rows.length,
+          convenio_consultations: convenioCount,
+          private_consultations: privateCount,
+          total_revenue: totalRevenue,
+          convenio_revenue: convenioRevenue,
+          private_revenue: privateRevenue,
+          professional_percentage: percentage,
+          professional_share: professionalShare,
+          amount_to_pay: totalAmountToPay,
+        },
+      });
+    } catch (error) {
+      console.error("❌ Error generating revenue report:", error);
+      res.status(500).json({ message: "Erro ao gerar relatório de receitas" });
+    }
+  }
+);
+
 // ===== PROFESSIONAL REPORT DETAILED =====
 app.get(
   "/api/reports/professional-detailed",
@@ -1656,7 +1769,7 @@ app.get(
 
       const result = await pool.query(
         `
-        SELECT 
+        SELECT
           COUNT(*) AS total_consultations,
           SUM(CASE WHEN (user_id IS NOT NULL OR dependent_id IS NOT NULL) THEN 1 ELSE 0 END) AS convenio_consultations,
           SUM(CASE WHEN private_patient_id IS NOT NULL THEN 1 ELSE 0 END) AS private_consultations,

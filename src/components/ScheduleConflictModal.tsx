@@ -16,6 +16,47 @@ type ScheduleConflictModalProps = {
   isSingleConflict?: boolean;
 };
 
+// Gambiarra para converter horário UTC para Brasília
+const convertUTCToBrasilia = (timeStr: string): string => {
+  // Se já está no formato HH:MM, tenta fazer parsing
+  if (timeStr && timeStr.match(/^\d{2}:\d{2}/)) {
+    return timeStr; // Já está formatado
+  }
+
+  // Se veio uma data ISO completa, converte
+  try {
+    const date = new Date(timeStr);
+    return date.toLocaleTimeString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return timeStr;
+  }
+};
+
+const convertDateToBrasilia = (dateStr: string): string => {
+  // Se já está no formato DD/MM/YYYY, retorna
+  if (dateStr && dateStr.match(/^\d{2}\/\d{2}\/\d{4}/)) {
+    return dateStr; // Já está formatado
+  }
+
+  // Se veio uma data ISO, converte
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  } catch {
+    return dateStr;
+  }
+};
+
 const ScheduleConflictModal: React.FC<ScheduleConflictModalProps> = ({
   isOpen,
   onClose,
@@ -83,7 +124,7 @@ const ScheduleConflictModal: React.FC<ScheduleConflictModalProps> = ({
                           DATA
                         </span>
                         <span className="text-sm font-medium text-amber-900">
-                          {conflict.date}
+                          {convertDateToBrasilia(conflict.date)}
                         </span>
                       </div>
 
@@ -92,7 +133,7 @@ const ScheduleConflictModal: React.FC<ScheduleConflictModalProps> = ({
                           HORA
                         </span>
                         <span className="text-sm font-medium text-amber-900">
-                          {conflict.time}
+                          {convertUTCToBrasilia(conflict.time)}
                         </span>
                       </div>
                     </div>
