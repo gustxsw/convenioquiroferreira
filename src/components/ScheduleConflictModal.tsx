@@ -1,5 +1,3 @@
-"use client";
-
 import type React from "react";
 import { AlertTriangle, X, Phone } from "lucide-react";
 
@@ -133,7 +131,12 @@ const ScheduleConflictModal: React.FC<ScheduleConflictModalProps> = ({
                           HORA
                         </span>
                         <span className="text-sm font-medium text-amber-900">
-                          {convertUTCToBrasilia(conflict.time)}
+                          {new Date(
+                            new Date(conflict.time).getTime() -
+                              3 * 60 * 60 * 1000
+                          )
+                            .toISOString()
+                            .substring(11, 16)}
                         </span>
                       </div>
                     </div>
