@@ -78,9 +78,7 @@ if (missingVars.length > 0) {
     "❌ Missing required environment variables:",
     missingVars.join(", ")
   );
-  console.error(
-    "💡 Please check your .env file or environment configuration"
-  );
+  console.error("💡 Please check your .env file or environment configuration");
   process.exit(1);
 }
 console.log("✅ All required environment variables present");
@@ -1713,13 +1711,11 @@ app.get(
           privateCount++;
         }
 
-        const amountToPay = isConvenio
-          ? value * (percentage / 100)
-          : value;
+        const amountToPay = isConvenio ? value * (percentage / 100) : value;
 
         return {
           ...c,
-          amount_to_pay: amountToPay
+          amount_to_pay: amountToPay,
         };
       });
 
@@ -2477,7 +2473,16 @@ app.get(
         time: formattedTime,
       });
 
-      const message = `Olá ${consultation.patient_name}, gostaria de confirmar o seu agendamento com o profissional ${req.user.name} no dia ${formattedDate} às ${formattedTime}`;
+      const message = `Olá ${
+        consultation.patient_name
+      }, gostaria de confirmar o seu agendamento com o profissional ${
+        req.user.name
+      } no dia ${formattedDate} às ${new Date(
+        "1970-01-01T" + formattedTime + ":00Z"
+      ).setHours(
+        new Date("1970-01-01T" + formattedTime + ":00Z").getHours() - 3
+      )}`;
+
       const encodedMessage = encodeURIComponent(message);
 
       // Generate WhatsApp URL
@@ -5250,24 +5255,30 @@ app.post("/api/webhooks/payment-success", express.json(), async (req, res) => {
     }
 
     if (status === "approved") {
-      console.log(
-        `✅ [WEBHOOK] Payment approved for: ${external_reference}`
-      );
+      console.log(`✅ [WEBHOOK] Payment approved for: ${external_reference}`);
 
       if (external_reference.startsWith("subscription_")) {
-        const userId = parseInt(external_reference.replace("subscription_", ""));
+        const userId = parseInt(
+          external_reference.replace("subscription_", "")
+        );
         await processClientPayment(userId, payment);
       } else if (external_reference.startsWith("dependent_")) {
-        const dependentId = parseInt(external_reference.replace("dependent_", ""));
+        const dependentId = parseInt(
+          external_reference.replace("dependent_", "")
+        );
         await processDependentPayment(dependentId, payment);
       } else if (external_reference.startsWith("agenda_")) {
-        const professionalId = parseInt(external_reference.replace("agenda_", ""));
+        const professionalId = parseInt(
+          external_reference.replace("agenda_", "")
+        );
         await processAgendaPayment(professionalId, payment);
       } else if (external_reference.startsWith("professional_")) {
         const professionalId = parseInt(external_reference.split("_")[1]);
         await processProfessionalPayment(professionalId, payment);
       } else {
-        console.warn(`⚠️ [WEBHOOK] Unknown payment type: ${external_reference}`);
+        console.warn(
+          `⚠️ [WEBHOOK] Unknown payment type: ${external_reference}`
+        );
       }
     } else {
       console.log(`⚠️ [WEBHOOK] Payment not approved. Status: ${status}`);
@@ -5306,7 +5317,9 @@ async function processClientPayment(userId, payment) {
       [expirationDate, userId]
     );
 
-    console.log(`✅ [CLIENT-PAYMENT] User ${userId} subscription activated until ${expirationDate}`);
+    console.log(
+      `✅ [CLIENT-PAYMENT] User ${userId} subscription activated until ${expirationDate}`
+    );
   } catch (error) {
     console.error(`❌ [CLIENT-PAYMENT] Error:`, error.message);
   }
@@ -5314,7 +5327,9 @@ async function processClientPayment(userId, payment) {
 
 async function processDependentPayment(dependentId, payment) {
   try {
-    console.log(`✅ [DEPENDENT-PAYMENT] Processing for dependent ID: ${dependentId}`);
+    console.log(
+      `✅ [DEPENDENT-PAYMENT] Processing for dependent ID: ${dependentId}`
+    );
 
     await pool.query(
       `UPDATE dependent_payments
@@ -5336,7 +5351,9 @@ async function processDependentPayment(dependentId, payment) {
       [expirationDate, dependentId]
     );
 
-    console.log(`✅ [DEPENDENT-PAYMENT] Dependent ${dependentId} subscription activated until ${expirationDate}`);
+    console.log(
+      `✅ [DEPENDENT-PAYMENT] Dependent ${dependentId} subscription activated until ${expirationDate}`
+    );
   } catch (error) {
     console.error(`❌ [DEPENDENT-PAYMENT] Error:`, error.message);
   }
@@ -5344,7 +5361,9 @@ async function processDependentPayment(dependentId, payment) {
 
 async function processAgendaPayment(professionalId, payment) {
   try {
-    console.log(`✅ [AGENDA-PAYMENT] Processing for professional ID: ${professionalId}`);
+    console.log(
+      `✅ [AGENDA-PAYMENT] Processing for professional ID: ${professionalId}`
+    );
 
     await pool.query(
       `UPDATE agenda_payments
@@ -5367,7 +5386,9 @@ async function processAgendaPayment(professionalId, payment) {
       [expirationDate, professionalId]
     );
 
-    console.log(`✅ [AGENDA-PAYMENT] Professional ${professionalId} scheduling access activated until ${expirationDate}`);
+    console.log(
+      `✅ [AGENDA-PAYMENT] Professional ${professionalId} scheduling access activated until ${expirationDate}`
+    );
   } catch (error) {
     console.error(`❌ [AGENDA-PAYMENT] Error:`, error.message);
   }
@@ -5375,9 +5396,13 @@ async function processAgendaPayment(professionalId, payment) {
 
 async function processProfessionalPayment(professionalId, payment) {
   try {
-    console.log(`✅ [PROFESSIONAL-PAYMENT] Processing repasse for professional ID: ${professionalId}`);
+    console.log(
+      `✅ [PROFESSIONAL-PAYMENT] Processing repasse for professional ID: ${professionalId}`
+    );
     console.log(`💰 [PROFESSIONAL-PAYMENT] Payment ID: ${payment.id}`);
-    console.log(`💰 [PROFESSIONAL-PAYMENT] Amount: ${payment.transaction_amount}`);
+    console.log(
+      `💰 [PROFESSIONAL-PAYMENT] Amount: ${payment.transaction_amount}`
+    );
 
     const settledConsultationsResult = await pool.query(
       `SELECT id, value, date, created_at
@@ -5392,13 +5417,18 @@ async function processProfessionalPayment(professionalId, payment) {
 
     const consultations = settledConsultationsResult.rows;
     const consultationsCount = consultations.length;
-    const periodStart = consultations.length > 0 ? consultations[0].created_at : new Date();
+    const periodStart =
+      consultations.length > 0 ? consultations[0].created_at : new Date();
     const periodEnd = new Date();
 
-    console.log(`📊 [PROFESSIONAL-PAYMENT] Found ${consultationsCount} unsettled consultations`);
+    console.log(
+      `📊 [PROFESSIONAL-PAYMENT] Found ${consultationsCount} unsettled consultations`
+    );
 
     if (consultationsCount === 0) {
-      console.log(`⚠️ [PROFESSIONAL-PAYMENT] No unsettled consultations found for professional ${professionalId}`);
+      console.log(
+        `⚠️ [PROFESSIONAL-PAYMENT] No unsettled consultations found for professional ${professionalId}`
+      );
     }
 
     await pool.query(
@@ -5432,7 +5462,9 @@ async function processProfessionalPayment(professionalId, payment) {
       [professionalId]
     );
 
-    console.log(`✅ [PROFESSIONAL-PAYMENT] Marked ${consultationsCount} consultations as settled`);
+    console.log(
+      `✅ [PROFESSIONAL-PAYMENT] Marked ${consultationsCount} consultations as settled`
+    );
 
     await pool.query(
       `INSERT INTO professional_statements (
@@ -5452,25 +5484,35 @@ async function processProfessionalPayment(professionalId, payment) {
         periodStart,
         periodEnd,
         payment.transaction_amount,
-        consultationsCount
+        consultationsCount,
       ]
     );
 
-    console.log(`📋 [PROFESSIONAL-PAYMENT] Created statement record for professional ${professionalId}`);
+    console.log(
+      `📋 [PROFESSIONAL-PAYMENT] Created statement record for professional ${professionalId}`
+    );
 
     await pool.query(
       `INSERT INTO notifications (user_id, title, message, type, created_at)
        VALUES ($1, $2, $3, $4, NOW())`,
       [
         professionalId,
-        'Repasse Confirmado',
-        `Seu pagamento de repasse de R$ ${payment.transaction_amount.toFixed(2)} foi confirmado. Total de ${consultationsCount} consulta(s) quitada(s).`,
-        'payment'
+        "Repasse Confirmado",
+        `Seu pagamento de repasse de R$ ${payment.transaction_amount.toFixed(
+          2
+        )} foi confirmado. Total de ${consultationsCount} consulta(s) quitada(s).`,
+        "payment",
       ]
     );
 
-    console.log(`✅ [PROFESSIONAL-PAYMENT] Professional ${professionalId} repasse processed successfully`);
-    console.log(`📊 [PROFESSIONAL-PAYMENT] Summary: ${consultationsCount} consultations, R$ ${payment.transaction_amount.toFixed(2)}`);
+    console.log(
+      `✅ [PROFESSIONAL-PAYMENT] Professional ${professionalId} repasse processed successfully`
+    );
+    console.log(
+      `📊 [PROFESSIONAL-PAYMENT] Summary: ${consultationsCount} consultations, R$ ${payment.transaction_amount.toFixed(
+        2
+      )}`
+    );
   } catch (error) {
     console.error(`❌ [PROFESSIONAL-PAYMENT] Error:`, error.message);
     console.error(`❌ [PROFESSIONAL-PAYMENT] Stack:`, error.stack);
@@ -5479,7 +5521,9 @@ async function processProfessionalPayment(professionalId, payment) {
 
 async function updatePaymentStatusOnly(externalReference, status, paymentId) {
   try {
-    console.log(`⚠️ [UPDATE-STATUS] Updating ${externalReference} to ${status}`);
+    console.log(
+      `⚠️ [UPDATE-STATUS] Updating ${externalReference} to ${status}`
+    );
 
     if (externalReference.startsWith("subscription_")) {
       const userId = parseInt(externalReference.replace("subscription_", ""));
