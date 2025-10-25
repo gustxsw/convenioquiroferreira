@@ -563,7 +563,7 @@ const ProfessionalHomePage: React.FC = () => {
                 <Users className="h-5 w-5 text-blue-600" />
               </div>
               <p className="text-2xl font-bold text-gray-900">
-                {revenueReport.summary.consultation_count || 0}
+                {revenueReport.summary.total_consultations || 0}
               </p>
               <p className="text-sm text-gray-500 mt-1">
                 Atendimentos realizados
