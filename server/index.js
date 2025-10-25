@@ -69,6 +69,22 @@ if (process.env.NODE_ENV === "production") {
   process.env.TZ = "America/Sao_Paulo";
 }
 
+console.log("🔍 Checking required environment variables...");
+const requiredEnvVars = ["JWT_SECRET", "MP_ACCESS_TOKEN", "DATABASE_URL"];
+const missingVars = requiredEnvVars.filter((varName) => !process.env[varName]);
+
+if (missingVars.length > 0) {
+  console.error(
+    "❌ Missing required environment variables:",
+    missingVars.join(", ")
+  );
+  console.error(
+    "💡 Please check your .env file or environment configuration"
+  );
+  process.exit(1);
+}
+console.log("✅ All required environment variables present");
+
 // Initialize MercadoPago SDK v2
 console.log("🔄 Initializing MercadoPago SDK v2...");
 const client = new MercadoPagoConfig({
@@ -1201,9 +1217,9 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
       INSERT INTO users (
         name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, password, roles,
-        subscription_status, subscription_expiry, category_name, 
-        percentage, crm, professional_type, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW())
+        subscription_status, subscription_expiry, category_name,
+        percentage, crm, professional_type
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       RETURNING id, name, cpf, email, roles
     `,
       [
@@ -5452,7 +5468,14 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler
+// Serve React app for all non-API routes in production
+if (process.env.NODE_ENV === "production") {
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "../dist/index.html"));
+  });
+}
+
+// 404 handler for API routes
 app.use((req, res) => {
   res.status(404).json({ message: "Rota não encontrada" });
 });
@@ -5461,11 +5484,14 @@ app.use((req, res) => {
 
 const startServer = async () => {
   try {
-    // Initialize database
-    await initializeDatabase();
+    console.log("🔄 Starting server initialization...");
 
-    // Start listening
-    app.listen(PORT, () => {
+    console.log("📊 Initializing database...");
+    await initializeDatabase();
+    console.log("✅ Database initialized successfully");
+
+    console.log(`🌐 Starting HTTP server on port ${PORT}...`);
+    const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
       console.log(`📊 Database: Connected`);
@@ -5473,8 +5499,17 @@ const startServer = async () => {
       console.log(`📋 Consultations System: Active`);
       console.log(`✅ All systems operational`);
     });
+
+    server.on("error", (error) => {
+      console.error("❌ Server error:", error);
+      if (error.code === "EADDRINUSE") {
+        console.error(`❌ Port ${PORT} is already in use`);
+      }
+      process.exit(1);
+    });
   } catch (error) {
     console.error("❌ Failed to start server:", error);
+    console.error("❌ Error stack:", error.stack);
     process.exit(1);
   }
 };
