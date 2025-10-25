@@ -5530,8 +5530,11 @@ app.post("/api/webhooks/payment-success", express.json(), async (req, res) => {
 
 async function processClientPayment(userId, payment) {
   try {
-    console.log(`✅ [CLIENT-PAYMENT] Processing for user ID: ${userId}`);
+    console.log(`🔄 [PAGAMENTO] Processando pagamento de Cliente #${userId}`);
+    console.log(`💰 [PAGAMENTO] Payment ID: ${payment.id}`);
+    console.log(`💰 [PAGAMENTO] Valor: R$ ${payment.transaction_amount}`);
 
+    // 1. Atualizar status do pagamento
     await pool.query(
       `UPDATE client_payments
        SET status = $1,
@@ -5540,32 +5543,36 @@ async function processClientPayment(userId, payment) {
        WHERE user_id = $3 AND status = 'pending'`,
       ["approved", payment.id.toString(), userId]
     );
+    console.log(`✅ [PAGAMENTO] Pagamento marcado como aprovado no banco`);
 
+    // 2. Ativar assinatura por 1 ano
     const expirationDate = new Date();
     expirationDate.setFullYear(expirationDate.getFullYear() + 1);
 
     await pool.query(
       `UPDATE users
-       SET subscription_active = true,
+       SET subscription_status = 'active',
+           subscription_active = true,
            subscription_expires_at = $1
        WHERE id = $2`,
       [expirationDate, userId]
     );
 
-    console.log(
-      `✅ [CLIENT-PAYMENT] User ${userId} subscription activated until ${expirationDate}`
-    );
+    console.log(`✅ [PAGAMENTO] Cliente atualizado e ações aplicadas com sucesso`);
+    console.log(`📅 [PAGAMENTO] Assinatura válida até: ${expirationDate.toLocaleDateString('pt-BR')}`);
   } catch (error) {
-    console.error(`❌ [CLIENT-PAYMENT] Error:`, error.message);
+    console.error(`❌ [PAGAMENTO] Erro ao processar pagamento de cliente:`, error.message);
+    throw error;
   }
 }
 
 async function processDependentPayment(dependentId, payment) {
   try {
-    console.log(
-      `✅ [DEPENDENT-PAYMENT] Processing for dependent ID: ${dependentId}`
-    );
+    console.log(`🔄 [PAGAMENTO] Processando pagamento de Dependente #${dependentId}`);
+    console.log(`💰 [PAGAMENTO] Payment ID: ${payment.id}`);
+    console.log(`💰 [PAGAMENTO] Valor: R$ ${payment.transaction_amount}`);
 
+    // 1. Atualizar status do pagamento
     await pool.query(
       `UPDATE dependent_payments
        SET status = $1,
@@ -5574,32 +5581,36 @@ async function processDependentPayment(dependentId, payment) {
        WHERE dependent_id = $3 AND status = 'pending'`,
       ["approved", payment.id.toString(), dependentId]
     );
+    console.log(`✅ [PAGAMENTO] Pagamento marcado como aprovado no banco`);
 
+    // 2. Ativar assinatura por 1 ano
     const expirationDate = new Date();
     expirationDate.setFullYear(expirationDate.getFullYear() + 1);
 
     await pool.query(
       `UPDATE dependents
-       SET subscription_active = true,
+       SET subscription_status = 'active',
+           subscription_active = true,
            subscription_expires_at = $1
        WHERE id = $2`,
       [expirationDate, dependentId]
     );
 
-    console.log(
-      `✅ [DEPENDENT-PAYMENT] Dependent ${dependentId} subscription activated until ${expirationDate}`
-    );
+    console.log(`✅ [PAGAMENTO] Dependente atualizado e ações aplicadas com sucesso`);
+    console.log(`📅 [PAGAMENTO] Assinatura válida até: ${expirationDate.toLocaleDateString('pt-BR')}`);
   } catch (error) {
-    console.error(`❌ [DEPENDENT-PAYMENT] Error:`, error.message);
+    console.error(`❌ [PAGAMENTO] Erro ao processar pagamento de dependente:`, error.message);
+    throw error;
   }
 }
 
 async function processAgendaPayment(professionalId, payment) {
   try {
-    console.log(
-      `✅ [AGENDA-PAYMENT] Processing for professional ID: ${professionalId}`
-    );
+    console.log(`🔄 [PAGAMENTO] Processando pagamento de Agenda Profissional #${professionalId}`);
+    console.log(`💰 [PAGAMENTO] Payment ID: ${payment.id}`);
+    console.log(`💰 [PAGAMENTO] Valor: R$ ${payment.transaction_amount}`);
 
+    // 1. Atualizar status do pagamento
     await pool.query(
       `UPDATE agenda_payments
        SET status = $1,
@@ -5608,43 +5619,61 @@ async function processAgendaPayment(professionalId, payment) {
        WHERE professional_id = $3 AND status = 'pending'`,
       ["approved", payment.id.toString(), professionalId]
     );
+    console.log(`✅ [PAGAMENTO] Pagamento marcado como aprovado no banco`);
 
+    // 2. Calcular data de expiração (30 dias a partir de agora)
     const expirationDate = new Date();
-    expirationDate.setMonth(expirationDate.getMonth() + 1);
+    expirationDate.setDate(expirationDate.getDate() + 30);
 
-    await pool.query(
-      `UPDATE scheduling_access
-       SET is_active = true,
-           expires_at = $1,
-           schedule_balance = 0
-       WHERE professional_id = $2`,
-      [expirationDate, professionalId]
+    // 3. Verificar se já existe registro de acesso
+    const existingAccessResult = await pool.query(
+      `SELECT id, expires_at FROM scheduling_access WHERE professional_id = $1`,
+      [professionalId]
     );
 
-    console.log(
-      `✅ [AGENDA-PAYMENT] Professional ${professionalId} scheduling access activated until ${expirationDate}`
-    );
+    if (existingAccessResult.rows.length > 0) {
+      // Atualizar registro existente, sempre renovando para 30 dias a partir de agora
+      await pool.query(
+        `UPDATE scheduling_access
+         SET is_active = true,
+             expires_at = $1,
+             schedule_balance = 0,
+             updated_at = NOW()
+         WHERE professional_id = $2`,
+        [expirationDate, professionalId]
+      );
+      console.log(`✅ [PAGAMENTO] Acesso à agenda atualizado (renovado por 30 dias)`);
+    } else {
+      // Criar novo registro
+      await pool.query(
+        `INSERT INTO scheduling_access (professional_id, is_active, expires_at, schedule_balance, created_at)
+         VALUES ($1, true, $2, 0, NOW())`,
+        [professionalId, expirationDate]
+      );
+      console.log(`✅ [PAGAMENTO] Novo acesso à agenda criado (válido por 30 dias)`);
+    }
+
+    console.log(`✅ [PAGAMENTO] Agenda profissional atualizado e ações aplicadas com sucesso`);
+    console.log(`📅 [PAGAMENTO] Acesso válido até: ${expirationDate.toLocaleDateString('pt-BR')}`);
   } catch (error) {
-    console.error(`❌ [AGENDA-PAYMENT] Error:`, error.message);
+    console.error(`❌ [PAGAMENTO] Erro ao processar pagamento de agenda:`, error.message);
+    throw error;
   }
 }
 
 async function processProfessionalPayment(professionalId, payment) {
   try {
-    console.log(
-      `✅ [PROFESSIONAL-PAYMENT] Processing repasse for professional ID: ${professionalId}`
-    );
-    console.log(`💰 [PROFESSIONAL-PAYMENT] Payment ID: ${payment.id}`);
-    console.log(
-      `💰 [PROFESSIONAL-PAYMENT] Amount: ${payment.transaction_amount}`
-    );
+    console.log(`🔄 [PAGAMENTO] Processando pagamento de Repasse Profissional #${professionalId}`);
+    console.log(`💰 [PAGAMENTO] Payment ID: ${payment.id}`);
+    console.log(`💰 [PAGAMENTO] Valor: R$ ${payment.transaction_amount}`);
 
+    // 1. Buscar consultas pendentes (não quitadas) do convênio
     const settledConsultationsResult = await pool.query(
       `SELECT id, value, date, created_at
        FROM consultations
        WHERE professional_id = $1
          AND settled_at IS NULL
-         AND status = 'completed'
+         AND status != 'cancelled'
          AND (user_id IS NOT NULL OR dependent_id IS NOT NULL)
        ORDER BY date ASC`,
       [professionalId]
@@ -5656,16 +5685,13 @@ async function processProfessionalPayment(professionalId, payment) {
       consultations.length > 0 ? consultations[0].created_at : new Date();
     const periodEnd = new Date();
 
-    console.log(
-      `📊 [PROFESSIONAL-PAYMENT] Found ${consultationsCount} unsettled consultations`
-    );
+    console.log(`📊 [PAGAMENTO] Encontradas ${consultationsCount} consultas pendentes de quitação`);
 
     if (consultationsCount === 0) {
-      console.log(
-        `⚠️ [PROFESSIONAL-PAYMENT] No unsettled consultations found for professional ${professionalId}`
-      );
+      console.log(`⚠️ [PAGAMENTO] Nenhuma consulta pendente encontrada para o profissional ${professionalId}`);
     }
 
+    // 2. Atualizar status do pagamento
     await pool.query(
       `UPDATE professional_payments
        SET status = $1,
@@ -5676,7 +5702,9 @@ async function processProfessionalPayment(professionalId, payment) {
        LIMIT 1`,
       ["approved", payment.id.toString(), professionalId]
     );
+    console.log(`✅ [PAGAMENTO] Pagamento marcado como aprovado no banco`);
 
+    // 3. Obter ID do registro de pagamento
     const paymentIdResult = await pool.query(
       `SELECT id FROM professional_payments
        WHERE professional_id = $1
@@ -5687,20 +5715,19 @@ async function processProfessionalPayment(professionalId, payment) {
 
     const paymentRecordId = paymentIdResult.rows[0]?.id;
 
+    // 4. Marcar todas as consultas pendentes como quitadas
     await pool.query(
       `UPDATE consultations
        SET settled_at = NOW()
        WHERE professional_id = $1
          AND settled_at IS NULL
-         AND status = 'completed'
+         AND status != 'cancelled'
          AND (user_id IS NOT NULL OR dependent_id IS NOT NULL)`,
       [professionalId]
     );
+    console.log(`✅ [PAGAMENTO] ${consultationsCount} consultas marcadas como quitadas`);
 
-    console.log(
-      `✅ [PROFESSIONAL-PAYMENT] Marked ${consultationsCount} consultations as settled`
-    );
-
+    // 5. Criar registro de extrato
     await pool.query(
       `INSERT INTO professional_statements (
         professional_id,
@@ -5722,11 +5749,12 @@ async function processProfessionalPayment(professionalId, payment) {
         consultationsCount,
       ]
     );
+    console.log(`✅ [PAGAMENTO] Extrato criado para o período`);
 
-    console.log(
-      `📋 [PROFESSIONAL-PAYMENT] Created statement record for professional ${professionalId}`
-    );
+    console.log(`✅ [PAGAMENTO] Repasse profissional atualizado e ações aplicadas com sucesso`);
+    console.log(`📊 [PAGAMENTO] Novo ciclo de contagem iniciado (${consultationsCount} consultas quitadas)`);
 
+    // 6. Criar notificação para o profissional
     await pool.query(
       `INSERT INTO notifications (user_id, title, message, type, created_at)
        VALUES ($1, $2, $3, $4, NOW())`,
@@ -5739,18 +5767,11 @@ async function processProfessionalPayment(professionalId, payment) {
         "payment",
       ]
     );
-
-    console.log(
-      `✅ [PROFESSIONAL-PAYMENT] Professional ${professionalId} repasse processed successfully`
-    );
-    console.log(
-      `📊 [PROFESSIONAL-PAYMENT] Summary: ${consultationsCount} consultations, R$ ${payment.transaction_amount.toFixed(
-        2
-      )}`
-    );
+    console.log(`✅ [PAGAMENTO] Notificação criada para o profissional`);
   } catch (error) {
-    console.error(`❌ [PROFESSIONAL-PAYMENT] Error:`, error.message);
-    console.error(`❌ [PROFESSIONAL-PAYMENT] Stack:`, error.stack);
+    console.error(`❌ [PAGAMENTO] Erro ao processar repasse profissional:`, error.message);
+    console.error(`❌ [PAGAMENTO] Stack:`, error.stack);
+    throw error;
   }
 }
 
