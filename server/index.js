@@ -5558,17 +5558,28 @@ async function processClientPayment(userId, payment) {
       [expirationDate, userId]
     );
 
-    console.log(`✅ [PAGAMENTO] Cliente atualizado e ações aplicadas com sucesso`);
-    console.log(`📅 [PAGAMENTO] Assinatura válida até: ${expirationDate.toLocaleDateString('pt-BR')}`);
+    console.log(
+      `✅ [PAGAMENTO] Cliente atualizado e ações aplicadas com sucesso`
+    );
+    console.log(
+      `📅 [PAGAMENTO] Assinatura válida até: ${expirationDate.toLocaleDateString(
+        "pt-BR"
+      )}`
+    );
   } catch (error) {
-    console.error(`❌ [PAGAMENTO] Erro ao processar pagamento de cliente:`, error.message);
+    console.error(
+      `❌ [PAGAMENTO] Erro ao processar pagamento de cliente:`,
+      error.message
+    );
     throw error;
   }
 }
 
 async function processDependentPayment(dependentId, payment) {
   try {
-    console.log(`🔄 [PAGAMENTO] Processando pagamento de Dependente #${dependentId}`);
+    console.log(
+      `🔄 [PAGAMENTO] Processando pagamento de Dependente #${dependentId}`
+    );
     console.log(`💰 [PAGAMENTO] Payment ID: ${payment.id}`);
     console.log(`💰 [PAGAMENTO] Valor: R$ ${payment.transaction_amount}`);
 
@@ -5596,17 +5607,28 @@ async function processDependentPayment(dependentId, payment) {
       [expirationDate, dependentId]
     );
 
-    console.log(`✅ [PAGAMENTO] Dependente atualizado e ações aplicadas com sucesso`);
-    console.log(`📅 [PAGAMENTO] Assinatura válida até: ${expirationDate.toLocaleDateString('pt-BR')}`);
+    console.log(
+      `✅ [PAGAMENTO] Dependente atualizado e ações aplicadas com sucesso`
+    );
+    console.log(
+      `📅 [PAGAMENTO] Assinatura válida até: ${expirationDate.toLocaleDateString(
+        "pt-BR"
+      )}`
+    );
   } catch (error) {
-    console.error(`❌ [PAGAMENTO] Erro ao processar pagamento de dependente:`, error.message);
+    console.error(
+      `❌ [PAGAMENTO] Erro ao processar pagamento de dependente:`,
+      error.message
+    );
     throw error;
   }
 }
 
 async function processAgendaPayment(professionalId, payment) {
   try {
-    console.log(`🔄 [PAGAMENTO] Processando pagamento de Agenda Profissional #${professionalId}`);
+    console.log(
+      `🔄 [PAGAMENTO] Processando pagamento de Agenda Profissional #${professionalId}`
+    );
     console.log(`💰 [PAGAMENTO] Payment ID: ${payment.id}`);
     console.log(`💰 [PAGAMENTO] Valor: R$ ${payment.transaction_amount}`);
 
@@ -5642,7 +5664,9 @@ async function processAgendaPayment(professionalId, payment) {
          WHERE professional_id = $2`,
         [expirationDate, professionalId]
       );
-      console.log(`✅ [PAGAMENTO] Acesso à agenda atualizado (renovado por 30 dias)`);
+      console.log(
+        `✅ [PAGAMENTO] Acesso à agenda atualizado (renovado por 30 dias)`
+      );
     } else {
       // Criar novo registro
       await pool.query(
@@ -5650,20 +5674,33 @@ async function processAgendaPayment(professionalId, payment) {
          VALUES ($1, true, $2, 0, NOW())`,
         [professionalId, expirationDate]
       );
-      console.log(`✅ [PAGAMENTO] Novo acesso à agenda criado (válido por 30 dias)`);
+      console.log(
+        `✅ [PAGAMENTO] Novo acesso à agenda criado (válido por 30 dias)`
+      );
     }
 
-    console.log(`✅ [PAGAMENTO] Agenda profissional atualizado e ações aplicadas com sucesso`);
-    console.log(`📅 [PAGAMENTO] Acesso válido até: ${expirationDate.toLocaleDateString('pt-BR')}`);
+    console.log(
+      `✅ [PAGAMENTO] Agenda profissional atualizado e ações aplicadas com sucesso`
+    );
+    console.log(
+      `📅 [PAGAMENTO] Acesso válido até: ${expirationDate.toLocaleDateString(
+        "pt-BR"
+      )}`
+    );
   } catch (error) {
-    console.error(`❌ [PAGAMENTO] Erro ao processar pagamento de agenda:`, error.message);
+    console.error(
+      `❌ [PAGAMENTO] Erro ao processar pagamento de agenda:`,
+      error.message
+    );
     throw error;
   }
 }
 
 async function processProfessionalPayment(professionalId, payment) {
   try {
-    console.log(`🔄 [PAGAMENTO] Processando pagamento de Repasse Profissional #${professionalId}`);
+    console.log(
+      `🔄 [PAGAMENTO] Processando pagamento de Repasse Profissional #${professionalId}`
+    );
     console.log(`💰 [PAGAMENTO] Payment ID: ${payment.id}`);
     console.log(`💰 [PAGAMENTO] Valor: R$ ${payment.transaction_amount}`);
 
@@ -5685,23 +5722,31 @@ async function processProfessionalPayment(professionalId, payment) {
       consultations.length > 0 ? consultations[0].created_at : new Date();
     const periodEnd = new Date();
 
-    console.log(`📊 [PAGAMENTO] Encontradas ${consultationsCount} consultas pendentes de quitação`);
+    console.log(
+      `📊 [PAGAMENTO] Encontradas ${consultationsCount} consultas pendentes de quitação`
+    );
 
     if (consultationsCount === 0) {
-      console.log(`⚠️ [PAGAMENTO] Nenhuma consulta pendente encontrada para o profissional ${professionalId}`);
+      console.log(
+        `⚠️ [PAGAMENTO] Nenhuma consulta pendente encontrada para o profissional ${professionalId}`
+      );
     }
 
     // 2. Atualizar status do pagamento
     await pool.query(
       `UPDATE professional_payments
-       SET status = $1,
-           mp_payment_id = $2,
-           processed_at = NOW()
-       WHERE professional_id = $3 AND status = 'pending'
-       ORDER BY created_at DESC
-       LIMIT 1`,
+   SET status = $1,
+       mp_payment_id = $2,
+       processed_at = NOW()
+   WHERE id = (
+     SELECT id FROM professional_payments
+     WHERE professional_id = $3 AND status = 'pending'
+     ORDER BY created_at DESC
+     LIMIT 1
+   )`,
       ["approved", payment.id.toString(), professionalId]
     );
+
     console.log(`✅ [PAGAMENTO] Pagamento marcado como aprovado no banco`);
 
     // 3. Obter ID do registro de pagamento
@@ -5725,7 +5770,9 @@ async function processProfessionalPayment(professionalId, payment) {
          AND (user_id IS NOT NULL OR dependent_id IS NOT NULL)`,
       [professionalId]
     );
-    console.log(`✅ [PAGAMENTO] ${consultationsCount} consultas marcadas como quitadas`);
+    console.log(
+      `✅ [PAGAMENTO] ${consultationsCount} consultas marcadas como quitadas`
+    );
 
     // 5. Criar registro de extrato
     await pool.query(
@@ -5751,8 +5798,12 @@ async function processProfessionalPayment(professionalId, payment) {
     );
     console.log(`✅ [PAGAMENTO] Extrato criado para o período`);
 
-    console.log(`✅ [PAGAMENTO] Repasse profissional atualizado e ações aplicadas com sucesso`);
-    console.log(`📊 [PAGAMENTO] Novo ciclo de contagem iniciado (${consultationsCount} consultas quitadas)`);
+    console.log(
+      `✅ [PAGAMENTO] Repasse profissional atualizado e ações aplicadas com sucesso`
+    );
+    console.log(
+      `📊 [PAGAMENTO] Novo ciclo de contagem iniciado (${consultationsCount} consultas quitadas)`
+    );
 
     // 6. Criar notificação para o profissional
     await pool.query(
@@ -5769,7 +5820,10 @@ async function processProfessionalPayment(professionalId, payment) {
     );
     console.log(`✅ [PAGAMENTO] Notificação criada para o profissional`);
   } catch (error) {
-    console.error(`❌ [PAGAMENTO] Erro ao processar repasse profissional:`, error.message);
+    console.error(
+      `❌ [PAGAMENTO] Erro ao processar repasse profissional:`,
+      error.message
+    );
     console.error(`❌ [PAGAMENTO] Stack:`, error.stack);
     throw error;
   }
