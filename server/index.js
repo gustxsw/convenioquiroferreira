@@ -271,10 +271,17 @@ const initializeDatabase = async () => {
         END IF;
         
         IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns 
+          SELECT 1 FROM information_schema.columns
           WHERE table_name = 'users' AND column_name = 'professional_type'
         ) THEN
           ALTER TABLE users ADD COLUMN professional_type VARCHAR(20) DEFAULT 'convenio';
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'consultations' AND column_name = 'settled_at'
+        ) THEN
+          ALTER TABLE consultations ADD COLUMN settled_at TIMESTAMP;
         END IF;
       END $$;
     `);
@@ -487,6 +494,20 @@ const initializeDatabase = async () => {
         mp_preference_id VARCHAR(255),
         mp_payment_id VARCHAR(255),
         processed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS professional_statements (
+        id SERIAL PRIMARY KEY,
+        professional_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        payment_id INTEGER REFERENCES professional_payments(id),
+        mp_payment_id VARCHAR(255),
+        period_start TIMESTAMP NOT NULL,
+        period_end TIMESTAMP NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        consultations_count INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -5130,6 +5151,9 @@ app.post("/api/webhooks/payment-success", express.json(), async (req, res) => {
       } else if (external_reference.startsWith("agenda_")) {
         const professionalId = parseInt(external_reference.replace("agenda_", ""));
         await processAgendaPayment(professionalId, payment);
+      } else if (external_reference.startsWith("professional_")) {
+        const professionalId = parseInt(external_reference.split("_")[1]);
+        await processProfessionalPayment(professionalId, payment);
       } else {
         console.warn(`⚠️ [WEBHOOK] Unknown payment type: ${external_reference}`);
       }
@@ -5237,6 +5261,110 @@ async function processAgendaPayment(professionalId, payment) {
   }
 }
 
+async function processProfessionalPayment(professionalId, payment) {
+  try {
+    console.log(`✅ [PROFESSIONAL-PAYMENT] Processing repasse for professional ID: ${professionalId}`);
+    console.log(`💰 [PROFESSIONAL-PAYMENT] Payment ID: ${payment.id}`);
+    console.log(`💰 [PROFESSIONAL-PAYMENT] Amount: ${payment.transaction_amount}`);
+
+    const settledConsultationsResult = await pool.query(
+      `SELECT id, value, date, created_at
+       FROM consultations
+       WHERE professional_id = $1
+         AND settled_at IS NULL
+         AND status = 'completed'
+         AND (user_id IS NOT NULL OR dependent_id IS NOT NULL)
+       ORDER BY date ASC`,
+      [professionalId]
+    );
+
+    const consultations = settledConsultationsResult.rows;
+    const consultationsCount = consultations.length;
+    const periodStart = consultations.length > 0 ? consultations[0].created_at : new Date();
+    const periodEnd = new Date();
+
+    console.log(`📊 [PROFESSIONAL-PAYMENT] Found ${consultationsCount} unsettled consultations`);
+
+    if (consultationsCount === 0) {
+      console.log(`⚠️ [PROFESSIONAL-PAYMENT] No unsettled consultations found for professional ${professionalId}`);
+    }
+
+    await pool.query(
+      `UPDATE professional_payments
+       SET status = $1,
+           mp_payment_id = $2,
+           processed_at = NOW()
+       WHERE professional_id = $3 AND status = 'pending'
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      ["approved", payment.id.toString(), professionalId]
+    );
+
+    const paymentIdResult = await pool.query(
+      `SELECT id FROM professional_payments
+       WHERE professional_id = $1
+         AND mp_payment_id = $2
+       LIMIT 1`,
+      [professionalId, payment.id.toString()]
+    );
+
+    const paymentRecordId = paymentIdResult.rows[0]?.id;
+
+    await pool.query(
+      `UPDATE consultations
+       SET settled_at = NOW()
+       WHERE professional_id = $1
+         AND settled_at IS NULL
+         AND status = 'completed'
+         AND (user_id IS NOT NULL OR dependent_id IS NOT NULL)`,
+      [professionalId]
+    );
+
+    console.log(`✅ [PROFESSIONAL-PAYMENT] Marked ${consultationsCount} consultations as settled`);
+
+    await pool.query(
+      `INSERT INTO professional_statements (
+        professional_id,
+        payment_id,
+        mp_payment_id,
+        period_start,
+        period_end,
+        amount,
+        consultations_count,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+      [
+        professionalId,
+        paymentRecordId,
+        payment.id.toString(),
+        periodStart,
+        periodEnd,
+        payment.transaction_amount,
+        consultationsCount
+      ]
+    );
+
+    console.log(`📋 [PROFESSIONAL-PAYMENT] Created statement record for professional ${professionalId}`);
+
+    await pool.query(
+      `INSERT INTO notifications (user_id, title, message, type, created_at)
+       VALUES ($1, $2, $3, $4, NOW())`,
+      [
+        professionalId,
+        'Repasse Confirmado',
+        `Seu pagamento de repasse de R$ ${payment.transaction_amount.toFixed(2)} foi confirmado. Total de ${consultationsCount} consulta(s) quitada(s).`,
+        'payment'
+      ]
+    );
+
+    console.log(`✅ [PROFESSIONAL-PAYMENT] Professional ${professionalId} repasse processed successfully`);
+    console.log(`📊 [PROFESSIONAL-PAYMENT] Summary: ${consultationsCount} consultations, R$ ${payment.transaction_amount.toFixed(2)}`);
+  } catch (error) {
+    console.error(`❌ [PROFESSIONAL-PAYMENT] Error:`, error.message);
+    console.error(`❌ [PROFESSIONAL-PAYMENT] Stack:`, error.stack);
+  }
+}
+
 async function updatePaymentStatusOnly(externalReference, status, paymentId) {
   try {
     console.log(`⚠️ [UPDATE-STATUS] Updating ${externalReference} to ${status}`);
@@ -5263,6 +5391,15 @@ async function updatePaymentStatusOnly(externalReference, status, paymentId) {
       const professionalId = parseInt(externalReference.replace("agenda_", ""));
       await pool.query(
         `UPDATE agenda_payments
+         SET status = $1,
+             mp_payment_id = $2
+         WHERE professional_id = $3 AND status = 'pending'`,
+        [status, paymentId.toString(), professionalId]
+      );
+    } else if (externalReference.startsWith("professional_")) {
+      const professionalId = parseInt(externalReference.split("_")[1]);
+      await pool.query(
+        `UPDATE professional_payments
          SET status = $1,
              mp_payment_id = $2
          WHERE professional_id = $3 AND status = 'pending'`,
