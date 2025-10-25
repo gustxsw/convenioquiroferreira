@@ -1633,6 +1633,238 @@ app.get(
   }
 );
 
+// ===== ADMIN ROUTES =====
+
+// Get all dependents (admin only)
+app.get(
+  "/api/admin/dependents",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      console.log("🔄 Fetching all dependents for admin");
+
+      const result = await pool.query(
+        `
+        SELECT
+          d.*,
+          u.name as client_name
+        FROM dependents d
+        LEFT JOIN users u ON d.user_id = u.id
+        ORDER BY d.created_at DESC
+      `
+      );
+
+      console.log("✅ Dependents fetched:", result.rows.length);
+      res.json(result.rows);
+    } catch (error) {
+      console.error("❌ Error fetching dependents:", error);
+      res.status(500).json({ message: "Erro ao buscar dependentes" });
+    }
+  }
+);
+
+// Get revenue report (admin only)
+app.get(
+  "/api/reports/revenue",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const { start_date, end_date } = req.query;
+
+      console.log("📊 Generating admin revenue report");
+      console.log("📅 Date range:", start_date, end_date);
+
+      if (!start_date || !end_date) {
+        return res
+          .status(400)
+          .json({ message: "Datas inicial e final são obrigatórias" });
+      }
+
+      // Get revenue by professional
+      const professionalRevenueResult = await pool.query(
+        `
+        SELECT
+          u.id as professional_id,
+          u.name as professional_name,
+          u.percentage as professional_percentage,
+          COUNT(c.id) as consultation_count,
+          COALESCE(SUM(c.value), 0) as revenue,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL
+                THEN c.value * (u.percentage / 100)
+                ELSE c.value
+              END
+            ), 0
+          ) as professional_payment,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL
+                THEN c.value * (1 - u.percentage / 100)
+                ELSE 0
+              END
+            ), 0
+          ) as clinic_revenue
+        FROM users u
+        LEFT JOIN consultations c ON c.professional_id = u.id
+          AND c.date BETWEEN $1::timestamptz AND $2::timestamptz
+          AND c.status != 'cancelled'
+        WHERE 'professional' = ANY(u.roles)
+        GROUP BY u.id, u.name, u.percentage
+        ORDER BY revenue DESC
+      `,
+        [`${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
+      );
+
+      // Get revenue by service
+      const serviceRevenueResult = await pool.query(
+        `
+        SELECT
+          s.name as service_name,
+          COUNT(c.id) as consultation_count,
+          COALESCE(SUM(c.value), 0) as revenue
+        FROM services s
+        LEFT JOIN consultations c ON c.service_id = s.id
+          AND c.date BETWEEN $1::timestamptz AND $2::timestamptz
+          AND c.status != 'cancelled'
+        GROUP BY s.id, s.name
+        HAVING COUNT(c.id) > 0
+        ORDER BY revenue DESC
+      `,
+        [`${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
+      );
+
+      // Calculate total revenue
+      const totalRevenue = professionalRevenueResult.rows.reduce(
+        (sum, row) => sum + parseFloat(row.revenue || 0),
+        0
+      );
+
+      res.json({
+        total_revenue: totalRevenue,
+        revenue_by_professional: professionalRevenueResult.rows.map((row) => ({
+          professional_name: row.professional_name,
+          professional_percentage: parseFloat(row.professional_percentage || 50),
+          revenue: parseFloat(row.revenue || 0),
+          consultation_count: parseInt(row.consultation_count || 0),
+          professional_payment: parseFloat(row.professional_payment || 0),
+          clinic_revenue: parseFloat(row.clinic_revenue || 0),
+        })),
+        revenue_by_service: serviceRevenueResult.rows.map((row) => ({
+          service_name: row.service_name,
+          revenue: parseFloat(row.revenue || 0),
+          consultation_count: parseInt(row.consultation_count || 0),
+        })),
+      });
+
+      console.log("✅ Admin revenue report generated");
+    } catch (error) {
+      console.error("❌ Error generating admin revenue report:", error);
+      res.status(500).json({ message: "Erro ao gerar relatório de receitas" });
+    }
+  }
+);
+
+// Get clients by city report (admin only)
+app.get(
+  "/api/reports/clients-by-city",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      console.log("📊 Generating clients by city report");
+
+      const result = await pool.query(
+        `
+        SELECT
+          COALESCE(city, 'Não informado') as city,
+          COALESCE(state, '') as state,
+          COUNT(*) as client_count,
+          COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
+          COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
+          COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
+        FROM users
+        WHERE 'client' = ANY(roles)
+        GROUP BY city, state
+        ORDER BY client_count DESC
+      `
+      );
+
+      console.log("✅ Clients by city report generated");
+      res.json(result.rows);
+    } catch (error) {
+      console.error("❌ Error generating clients by city report:", error);
+      res
+        .status(500)
+        .json({ message: "Erro ao gerar relatório de clientes por cidade" });
+    }
+  }
+);
+
+// Get professionals by city report (admin only)
+app.get(
+  "/api/reports/professionals-by-city",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      console.log("📊 Generating professionals by city report");
+
+      const result = await pool.query(
+        `
+        SELECT
+          COALESCE(u.city, 'Não informado') as city,
+          COALESCE(u.state, '') as state,
+          COUNT(*) as total_professionals,
+          json_agg(
+            json_build_object(
+              'category_name', COALESCE(u.category_name, 'Sem categoria'),
+              'count', 1
+            )
+          ) as categories
+        FROM users u
+        WHERE 'professional' = ANY(u.roles)
+        GROUP BY u.city, u.state
+        ORDER BY total_professionals DESC
+      `
+      );
+
+      // Process the data to group categories
+      const processedData = result.rows.map((row) => {
+        const categoryCounts: { [key: string]: number } = {};
+
+        row.categories.forEach((cat: any) => {
+          const categoryName = cat.category_name;
+          categoryCounts[categoryName] =
+            (categoryCounts[categoryName] || 0) + 1;
+        });
+
+        return {
+          city: row.city,
+          state: row.state,
+          total_professionals: parseInt(row.total_professionals),
+          categories: Object.entries(categoryCounts).map(([name, count]) => ({
+            category_name: name,
+            count: count,
+          })),
+        };
+      });
+
+      console.log("✅ Professionals by city report generated");
+      res.json(processedData);
+    } catch (error) {
+      console.error("❌ Error generating professionals by city report:", error);
+      res.status(500).json({
+        message: "Erro ao gerar relatório de profissionais por cidade",
+      });
+    }
+  }
+);
+
 // ===== PROFESSIONAL REVENUE REPORT (FOR HOMEPAGE) =====
 app.get(
   "/api/reports/professional-revenue",
