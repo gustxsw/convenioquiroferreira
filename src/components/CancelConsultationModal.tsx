@@ -1,5 +1,14 @@
-import React, { useState } from 'react';
-import { X, AlertTriangle, Check, MessageSquare, Calendar, User, Users, MapPin } from 'lucide-react';
+import React, { useState } from "react";
+import {
+  X,
+  AlertTriangle,
+  Check,
+  MessageSquare,
+  Calendar,
+  User,
+  Users,
+  MapPin,
+} from "lucide-react";
 
 type CancelConsultationModalProps = {
   isOpen: boolean;
@@ -13,7 +22,7 @@ type CancelConsultationModalProps = {
     professional_name?: string;
     location_name?: string;
     is_dependent?: boolean;
-    patient_type?: 'convenio' | 'private';
+    patient_type?: "convenio" | "private";
   } | null;
   isLoading?: boolean;
 };
@@ -23,44 +32,47 @@ const CancelConsultationModal: React.FC<CancelConsultationModalProps> = ({
   onClose,
   onConfirm,
   consultationData,
-  isLoading = false
+  isLoading = false,
 }) => {
-  const [cancellationReason, setCancellationReason] = useState('');
+  const [cancellationReason, setCancellationReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleConfirm = async () => {
     try {
       setIsSubmitting(true);
-      
+
       // Call the cancel API endpoint
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
-      
-      const response = await fetch(`${apiUrl}/api/consultations/${consultationData.id}/cancel`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          cancellation_reason: cancellationReason.trim() || null
-        })
-      });
-      
+
+      const response = await fetch(
+        `${apiUrl}/api/consultations/${consultationData.id}/cancel`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            cancellation_reason: cancellationReason.trim() || null,
+          }),
+        }
+      );
+
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Erro ao cancelar consulta');
+        throw new Error(errorData.message || "Erro ao cancelar consulta");
       }
-      
+
       await onConfirm(cancellationReason.trim() || undefined);
-      setCancellationReason('');
+      setCancellationReason("");
     } catch (error) {
-      console.error('Error in handleConfirm:', error);
+      console.error("Error in handleConfirm:", error);
     } finally {
       setIsSubmitting(false);
     }
   };
-  
+
   // Get API URL
   const getApiUrl = () => {
     if (
@@ -74,40 +86,43 @@ const CancelConsultationModal: React.FC<CancelConsultationModalProps> = ({
 
   const handleClose = () => {
     if (isSubmitting) return; // Prevent closing while submitting
-    setCancellationReason('');
+    setCancellationReason("");
     onClose();
   };
 
   const formatDate = (dateString: string) => {
     // Convert from UTC (database) to Brazil local time for display
     const cancelModalUtcDate = new Date(dateString);
-    const cancelModalLocalDate = new Date(cancelModalUtcDate.getTime() - (3 * 60 * 60 * 1000));
-    return cancelModalLocalDate.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+    const cancelModalLocalDate = new Date(
+      cancelModalUtcDate.getTime() - 3 * 60 * 60 * 1000
+    );
+    return cancelModalLocalDate.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
   const getPatientTypeDisplay = () => {
-    if (!consultationData) return { icon: <User className="h-4 w-4" />, label: 'Paciente' };
-    
-    if (consultationData.patient_type === 'private') {
+    if (!consultationData)
+      return { icon: <User className="h-4 w-4" />, label: "Paciente" };
+
+    if (consultationData.patient_type === "private") {
       return {
         icon: <User className="h-4 w-4 text-purple-600" />,
-        label: 'Particular'
+        label: "Particular",
       };
     } else if (consultationData.is_dependent) {
       return {
         icon: <Users className="h-4 w-4 text-blue-600" />,
-        label: 'Dependente'
+        label: "Dependente",
       };
     } else {
       return {
         icon: <User className="h-4 w-4 text-green-600" />,
-        label: 'Titular'
+        label: "Titular",
       };
     }
   };
@@ -153,15 +168,24 @@ const CancelConsultationModal: React.FC<CancelConsultationModalProps> = ({
                   </span>
                 </span>
               </div>
-              <p><strong>Serviço:</strong> {consultationData.service_name}</p>
-              <p><strong>Data/Hora:</strong> {formatDate(consultationData.date)}</p>
+              <p>
+                <strong>Serviço:</strong> {consultationData.service_name}
+              </p>
+              <p>
+                <strong>Data/Hora:</strong> {formatDate(consultationData.date)}
+              </p>
               {consultationData.professional_name && (
-                <p><strong>Profissional:</strong> {consultationData.professional_name}</p>
+                <p>
+                  <strong>Profissional:</strong>{" "}
+                  {consultationData.professional_name}
+                </p>
               )}
               {consultationData.location_name && (
                 <div className="flex items-center">
                   <MapPin className="h-4 w-4 text-gray-400 mr-1" />
-                  <span><strong>Local:</strong> {consultationData.location_name}</span>
+                  <span>
+                    <strong>Local:</strong> {consultationData.location_name}
+                  </span>
                 </div>
               )}
             </div>
@@ -174,8 +198,9 @@ const CancelConsultationModal: React.FC<CancelConsultationModalProps> = ({
               <div>
                 <h4 className="font-medium text-yellow-800 mb-1">Atenção</h4>
                 <p className="text-sm text-yellow-700">
-                  Esta ação irá cancelar a consulta permanentemente. O horário será liberado 
-                  imediatamente para novos agendamentos, mas a consulta será mantida no histórico como cancelada.
+                  Esta ação irá cancelar a consulta permanentemente. O horário
+                  será liberado imediatamente para novos agendamentos, mas a
+                  consulta será mantida no histórico como cancelada.
                 </p>
               </div>
             </div>
@@ -213,7 +238,7 @@ const CancelConsultationModal: React.FC<CancelConsultationModalProps> = ({
             <button
               onClick={handleConfirm}
               className={`btn bg-red-600 text-white hover:bg-red-700 flex items-center ${
-                isProcessing ? 'opacity-70 cursor-not-allowed' : ''
+                isProcessing ? "opacity-70 cursor-not-allowed" : ""
               }`}
               disabled={isProcessing}
             >
@@ -237,8 +262,12 @@ const CancelConsultationModal: React.FC<CancelConsultationModalProps> = ({
           <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center rounded-xl">
             <div className="text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto mb-3"></div>
-              <p className="text-gray-700 font-medium">Cancelando consulta...</p>
-              <p className="text-sm text-gray-500 mt-1">Liberando horário na agenda</p>
+              <p className="text-gray-700 font-medium">
+                Cancelando consulta...
+              </p>
+              <p className="text-sm text-gray-500 mt-1">
+                Liberando horário na agenda
+              </p>
             </div>
           </div>
         )}

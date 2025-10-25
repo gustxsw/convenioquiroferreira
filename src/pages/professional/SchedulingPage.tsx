@@ -1,5 +1,3 @@
-"use client";
-
 import type React from "react";
 import { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
@@ -560,10 +558,6 @@ const SchedulingPage: React.FC = () => {
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const dateTimeForBackend = `${formData.date}T${formData.time}:00`;
-
-      console.log("[v0] 🔄 DateTime selecionado (Brasil):", dateTimeForBackend);
-
       // Create single consultation only (recurring moved to separate modal)
       const consultationData: any = {
         professional_id: user?.id,
@@ -572,7 +566,7 @@ const SchedulingPage: React.FC = () => {
           ? Number.parseInt(formData.location_id)
           : null,
         value: Number.parseFloat(formData.value),
-        date: dateTimeForBackend, // Enviando horário do Brasil sem conversão
+        date: `${formData.date}T${formData.time}`,
         status: "scheduled",
         notes: formData.notes || null,
       };
@@ -1010,14 +1004,6 @@ const SchedulingPage: React.FC = () => {
           </div>
 
           <div className="flex flex-col sm:flex-row gap-2">
-            <button
-              onClick={() => setShowNewModal(true)}
-              className="btn btn-primary flex items-center justify-center text-sm sm:text-base"
-            >
-              <Plus className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-              Nova Consulta
-            </button>
-
             <button
               onClick={() => setShowRecurringModal(true)}
               className="btn btn-outline flex items-center justify-center text-sm sm:text-base"

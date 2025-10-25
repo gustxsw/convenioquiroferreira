@@ -1,5 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { FileText, X, Eye, Download, ExternalLink, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import {
+  FileText,
+  X,
+  Eye,
+  Download,
+  ExternalLink,
+  AlertCircle,
+} from "lucide-react";
 
 type DocumentViewModalProps = {
   isOpen: boolean;
@@ -14,11 +21,11 @@ const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
   onClose,
   documentUrl,
   documentTitle,
-  documentType
+  documentType,
 }) => {
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [documentContent, setDocumentContent] = useState('');
+  const [error, setError] = useState("");
+  const [documentContent, setDocumentContent] = useState("");
 
   useEffect(() => {
     if (isOpen && documentUrl) {
@@ -29,44 +36,47 @@ const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
   const loadDocument = async () => {
     try {
       setIsLoading(true);
-      setError('');
+      setError("");
 
-      console.log('🔄 Loading document from URL:', documentUrl);
+      console.log("🔄 Loading document from URL:", documentUrl);
 
       // Check if it's a PDF or HTML document
-      const isPDF = documentUrl.toLowerCase().includes('.pdf') || documentType === 'pdf';
-      
+      const isPDF =
+        documentUrl.toLowerCase().includes(".pdf") || documentType === "pdf";
+
       if (isPDF) {
         // For PDF documents, we'll show an embedded viewer
-        setDocumentContent('PDF_VIEWER');
+        setDocumentContent("PDF_VIEWER");
       } else {
         // For HTML documents, fetch the content
         const response = await fetch(documentUrl);
-        
+
         if (!response.ok) {
-          throw new Error('Não foi possível carregar o documento');
+          throw new Error("Não foi possível carregar o documento");
         }
 
         const content = await response.text();
         setDocumentContent(content);
       }
     } catch (error) {
-      console.error('❌ Error loading document:', error);
-      setError(error instanceof Error ? error.message : 'Erro ao carregar documento');
+      console.error("❌ Error loading document:", error);
+      setError(
+        error instanceof Error ? error.message : "Erro ao carregar documento"
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
   const openInNewTab = () => {
-    window.open(documentUrl, '_blank', 'noopener,noreferrer');
+    window.open(documentUrl, "_blank", "noopener,noreferrer");
   };
 
   const downloadDocument = () => {
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = documentUrl;
     link.download = documentTitle;
-    link.target = '_blank';
+    link.target = "_blank";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -74,7 +84,7 @@ const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
 
   if (!isOpen) return null;
 
-  const isPDF = documentContent === 'PDF_VIEWER';
+  const isPDF = documentContent === "PDF_VIEWER";
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -84,13 +94,13 @@ const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
           <div className="flex items-center">
             <FileText className="h-6 w-6 text-red-600 mr-3" />
             <div>
-              <h2 className="text-xl font-bold text-gray-900">{documentTitle}</h2>
-              <p className="text-sm text-gray-600">
-                Visualização do documento
-              </p>
+              <h2 className="text-xl font-bold text-gray-900">
+                {documentTitle}
+              </h2>
+              <p className="text-sm text-gray-600">Visualização do documento</p>
             </div>
           </div>
-          
+
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -143,7 +153,8 @@ const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
                       Documento PDF
                     </h3>
                     <p className="text-gray-600 mb-6">
-                      Para visualizar este documento PDF, clique em um dos botões abaixo:
+                      Para visualizar este documento PDF, clique em um dos
+                      botões abaixo:
                     </p>
                     <div className="flex justify-center space-x-3">
                       <button
@@ -168,16 +179,16 @@ const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
           ) : (
             <div className="flex-1 overflow-y-auto p-6">
               <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-                <div 
+                <div
                   className="p-8"
                   dangerouslySetInnerHTML={{ __html: documentContent }}
                   style={{
-                    fontFamily: 'Times New Roman, serif',
-                    lineHeight: '1.6',
-                    color: '#333',
-                    maxWidth: '210mm',
-                    margin: '0 auto',
-                    backgroundColor: 'white'
+                    fontFamily: "Times New Roman, serif",
+                    lineHeight: "1.6",
+                    color: "#333",
+                    maxWidth: "210mm",
+                    margin: "0 auto",
+                    backgroundColor: "white",
                   }}
                 />
               </div>
@@ -193,24 +204,6 @@ const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
               <span className="text-sm text-gray-600">
                 Visualização do documento
               </span>
-            </div>
-
-            <div className="flex space-x-3">
-              <button
-                onClick={openInNewTab}
-                className="btn btn-secondary flex items-center"
-              >
-                <ExternalLink className="h-4 w-4 mr-2" />
-                Abrir em Nova Aba
-              </button>
-
-              <button
-                onClick={downloadDocument}
-                className="btn btn-primary flex items-center"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Download
-              </button>
             </div>
           </div>
         )}

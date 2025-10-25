@@ -1,5 +1,3 @@
-"use client";
-
 import type React from "react";
 import { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
@@ -402,8 +400,8 @@ const RegisterConsultationPage: React.FC = () => {
       return;
     }
 
-    // Send date and time as entered (backend will handle UTC conversion)
-    const dateTimeString = `${date}T${time}`;
+    const localDateTime = new Date(`${date}T${time}`);
+    const utcDateTime = localDateTime.toISOString();
 
     try {
       setIsLoading(true);
@@ -417,7 +415,7 @@ const RegisterConsultationPage: React.FC = () => {
         service_id: serviceId,
         location_id: locationId ? Number.parseInt(locationId) : null,
         value: Number(value),
-        date: dateTimeString,
+        date: utcDateTime, // Send UTC ISO string instead of local datetime
         status: "scheduled",
         notes: null,
       };

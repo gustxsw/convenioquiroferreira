@@ -35,8 +35,8 @@ const RegisterPage: React.FC = () => {
   // Get API URL - PRODUCTION READY
   const getApiUrl = () => {
     if (
-      window.location.hostname === "www.cartaoquiroferreira.com.br" ||
-      window.location.hostname === "cartaoquiroferreira.com.br"
+      window.location.hostname === "cartaoquiroferreira.com.br" ||
+      window.location.hostname === "www.cartaoquiroferreira.com.br"
     ) {
       return "https://www.cartaoquiroferreira.com.br";
     }

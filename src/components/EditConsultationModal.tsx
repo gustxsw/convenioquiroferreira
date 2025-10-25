@@ -1,5 +1,3 @@
-"use client";
-
 import type React from "react";
 import { useState, useEffect } from "react";
 import { Calendar, X, Check, AlertCircle, User, Users } from "lucide-react";
@@ -8,7 +6,11 @@ import {
   validateTimeSlot,
   type SlotDuration,
 } from "../utils/timeSlotValidation";
-import { utcToBrazil } from "../utils/timezone";
+import {
+  utcToLocalDateInput,
+  utcToLocalTimeInput,
+  toUTCString,
+} from "../utils/dateHelpers";
 
 type Consultation = {
   id: number;
@@ -77,12 +79,9 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
 
   useEffect(() => {
     if (isOpen && consultation) {
-      // Initialize form with consultation data
-      const { date, time } = utcToBrazil(consultation.date);
-
       setFormData({
-        date,
-        time,
+        date: utcToLocalDateInput(consultation.date),
+        time: utcToLocalTimeInput(consultation.date),
         value: consultation.value.toString(),
         location_id: "", // Will be set after locations are loaded
         notes: consultation.notes || "",
@@ -142,11 +141,10 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      // Send date and time as entered (backend will handle UTC conversion)
-      const dateTimeString = `${formData.date}T${formData.time}`;
+      const dateTimeUTC = toUTCString(formData.date, formData.time);
 
       const updateData = {
-        date: dateTimeString,
+        date: dateTimeUTC,
         value: Number.parseFloat(formData.value),
         location_id: formData.location_id
           ? Number.parseInt(formData.location_id)

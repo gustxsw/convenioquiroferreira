@@ -6,7 +6,7 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import { pool } from "./db.js"; // Removed initializeDatabase from here
+import { pool } from "./db.js";
 import { authenticate, authorize } from "./middleware/auth.js";
 import createUpload from "./middleware/upload.js";
 import { generateDocumentPDF } from "./utils/documentGenerator.js";
@@ -18,36 +18,24 @@ import {
   getSchedulingAccessStatus,
 } from "./middleware/schedulingAccess.js";
 
+import {
+  toUTCString,
+  formatToBrazilTime,
+  formatToBrazilDate,
+  formatToBrazilTimeOnly,
+  addYears,
+  addDays,
+} from "./utils/dateHelpers.js";
+
+// ES6 module compatibility
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Load environment variables
 dotenv.config();
 
-if (!process.env.DATABASE_URL) {
-  console.error("❌ FATAL: DATABASE_URL environment variable is not set");
-  process.exit(1);
-}
-
-if (!process.env.JWT_SECRET) {
-  console.warn(
-    "⚠️  WARNING: JWT_SECRET not set, using default (NOT SECURE FOR PRODUCTION)"
-  );
-}
-
 const app = express();
 const PORT = process.env.PORT || 3001;
-
-console.log("🔄 [STARTUP] Initializing server...");
-console.log(
-  `📍 [STARTUP] Environment: ${process.env.NODE_ENV || "development"}`
-);
-console.log(`🔌 [STARTUP] Port: ${PORT}`);
-console.log(
-  `🗄️  [STARTUP] Database configured: ${
-    process.env.DATABASE_URL ? "✅ Yes" : "❌ No"
-  }`
-);
 
 // CORS configuration for production
 const corsOptions = {
@@ -56,6 +44,7 @@ const corsOptions = {
     "http://localhost:3000",
     "https://cartaoquiroferreira.com.br",
     "https://www.cartaoquiroferreira.com.br",
+    "https://testes-quiro-ferreira.onrender.com",
   ],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -76,15 +65,9 @@ if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "../dist")));
 }
 
-// Health check endpoint - MUST be before other routes
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
-});
-
-// Root endpoint
-app.get("/api", (req, res) => {
-  res.json({ message: "API Quiroferreira está rodando!" });
-});
+if (process.env.NODE_ENV === "production") {
+  process.env.TZ = "America/Sao_Paulo";
+}
 
 // Initialize MercadoPago SDK v2
 console.log("🔄 Initializing MercadoPago SDK v2...");
@@ -603,19 +586,19 @@ const initializeDatabase = async () => {
     // Insert default system settings
     await pool.query(`
       INSERT INTO system_settings (key, value, description) 
-      SELECT 'subscription_price', '250.00', 'Preço da assinatura mensal'
+      SELECT 'subscription_price', '2.0', 'Preço da assinatura mensal'
       WHERE NOT EXISTS (SELECT 1 FROM system_settings WHERE key = 'subscription_price')
     `);
 
     await pool.query(`
       INSERT INTO system_settings (key, value, description) 
-      SELECT 'dependent_price', '50.00', 'Preço da ativação de dependente'
+      SELECT 'dependent_price', '1.0', 'Preço da ativação de dependente'
       WHERE NOT EXISTS (SELECT 1 FROM system_settings WHERE key = 'dependent_price')
     `);
 
     await pool.query(`
       INSERT INTO system_settings (key, value, description) 
-      SELECT 'agenda_access_price', '24.99', 'Preço do acesso à agenda'
+      SELECT 'agenda_access_price', '0.50', 'Preço do acesso à agenda'
       WHERE NOT EXISTS (SELECT 1 FROM system_settings WHERE key = 'agenda_access_price')
     `);
 
@@ -715,7 +698,7 @@ const getProductionUrls = () => {
     // Webhook alternativo para mobile
     webhookAlt:
       process.env.NODE_ENV === "production"
-        ? "https://www.cartaoquiroferreira.com.br/api/webhook/payment"
+        ? "https://www.cartaoquiroferreira.com.br/api/webhooks/payment"
         : "http://localhost:3001/api/webhook/payment",
   };
 };
@@ -1191,6 +1174,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
     // Clean phone
     const cleanPhone = phone ? phone.replace(/\D/g, "") : null;
 
+    // Insert user
     const userResult = await pool.query(
       `
       INSERT INTO users (
@@ -1198,7 +1182,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
         address_complement, neighborhood, city, state, password, roles,
         subscription_status, subscription_expiry, category_name, 
         percentage, crm, professional_type, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW())
       RETURNING id, name, cpf, email, roles
     `,
       [
@@ -1557,26 +1541,18 @@ app.get(
       const params = [professionalId];
 
       if (date) {
-        // Convert the date filter to handle UTC storage properly
-        // Frontend sends YYYY-MM-DD, we need to check the Brazil date portion
         console.log("🔍 [AGENDA-QUERY] Filtering by date:", date);
 
-        // 🔥 FIXED: Proper Brazil timezone handling
-        // Brazil is UTC-3, so to get all consultations for a Brazil date:
-        // Start: YYYY-MM-DD 03:00:00 UTC (which is 00:00 Brazil time)
-        // End: YYYY-MM-DD+1 02:59:59 UTC (which is 23:59 Brazil time)
-        const nextDate = new Date(date);
-        nextDate.setDate(nextDate.getDate() + 1);
+        const startDateTime = `${date}T00:00:00Z`;
+        const endDateTime = `${date}T23:59:59Z`;
 
-        const startDateTime = `${date} 03:00:00`;
-        const endDateTime = `${nextDate.toISOString().split("T")[0]} 02:59:59`;
-
-        console.log("🔍 [AGENDA-QUERY] Date range:", {
+        console.log("🔍 [AGENDA-QUERY] Date range (UTC):", {
           startDateTime,
           endDateTime,
         });
 
-        query += " AND c.date >= $2::timestamp AND c.date <= $3::timestamp";
+        // Use timestamptz for correct timezone handling
+        query += " AND c.date >= $2::timestamptz AND c.date <= $3::timestamptz";
         params.push(startDateTime, endDateTime);
       }
 
@@ -1592,25 +1568,26 @@ app.get(
         result.rows.length
       );
 
-      // Debug each consultation found
       result.rows.forEach((consultation, index) => {
-        const utcDate = new Date(consultation.date);
-        const brazilDate = new Date(utcDate.getTime() - 3 * 60 * 60 * 1000);
         console.log(`🔍 [AGENDA-QUERY] Consultation ${index + 1}:`, {
           id: consultation.id,
           client_name: consultation.client_name,
           date_utc: consultation.date,
-          date_brazil: brazilDate.toISOString(),
-          date_brazil_formatted: brazilDate.toLocaleDateString("pt-BR"),
-          time_brazil: brazilDate.toLocaleTimeString("pt-BR", {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          }),
+          // Display formatting done on frontend
         });
       });
 
-      res.json(result.rows);
+      // ✅ Ajusta o fuso horário para America/Sao_Paulo
+      const consultationsWithBrazilTZ = result.rows.map((row) => ({
+        ...row,
+        date: row.date
+          ? new Date(row.date).toLocaleString("sv-SE", {
+              timeZone: "America/Sao_Paulo",
+            })
+          : null,
+      }));
+
+      res.json(consultationsWithBrazilTZ);
     } catch (error) {
       console.error(
         "❌ [AGENDA-QUERY] Error fetching consultations for agenda:",
@@ -1621,11 +1598,83 @@ app.get(
   }
 );
 
-// POST /api/consultations - Create a new consultation
+// ===== PROFESSIONAL REPORT DETAILED =====
+app.get(
+  "/api/reports/professional-detailed",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const professionalId = req.user.id;
+      const { start_date, end_date } = req.query;
+
+      console.log("📊 Generating detailed report for:", professionalId);
+      console.log("📅 Date range:", start_date, end_date);
+
+      if (!start_date || !end_date) {
+        return res
+          .status(400)
+          .json({ message: "Datas inicial e final são obrigatórias" });
+      }
+
+      const result = await pool.query(
+        `
+        SELECT 
+          COUNT(*) AS total_consultations,
+          SUM(CASE WHEN (user_id IS NOT NULL OR dependent_id IS NOT NULL) THEN 1 ELSE 0 END) AS convenio_consultations,
+          SUM(CASE WHEN private_patient_id IS NOT NULL THEN 1 ELSE 0 END) AS private_consultations,
+          COALESCE(SUM(value), 0) AS total_revenue,
+          COALESCE(SUM(CASE WHEN (user_id IS NOT NULL OR dependent_id IS NOT NULL) THEN value ELSE 0 END), 0) AS convenio_revenue,
+          COALESCE(SUM(CASE WHEN private_patient_id IS NOT NULL THEN value ELSE 0 END), 0) AS private_revenue
+        FROM consultations
+        WHERE professional_id = $1
+          AND date BETWEEN $2::timestamptz AND $3::timestamptz
+          AND status != 'cancelled'
+      `,
+        [professionalId, `${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
+      );
+
+      const summary = result.rows[0];
+
+      // Busca porcentagem e repasse
+      const profData = await pool.query(
+        `SELECT percentage FROM users WHERE id = $1`,
+        [professionalId]
+      );
+
+      const percentage = profData.rows[0]?.percentage || 50;
+      const convenioRevenue = parseFloat(summary.convenio_revenue || 0);
+      const privateRevenue = parseFloat(summary.private_revenue || 0);
+      const totalRevenue = parseFloat(summary.total_revenue || 0);
+
+      const professionalShare =
+        convenioRevenue * (percentage / 100) + privateRevenue;
+      const amountToPay = totalRevenue - professionalShare;
+
+      res.json({
+        summary: {
+          total_consultations: parseInt(summary.total_consultations || 0),
+          convenio_consultations: parseInt(summary.convenio_consultations || 0),
+          private_consultations: parseInt(summary.private_consultations || 0),
+          total_revenue: totalRevenue,
+          convenio_revenue: convenioRevenue,
+          private_revenue: privateRevenue,
+          professional_percentage: percentage,
+          amount_to_pay: amountToPay,
+        },
+      });
+    } catch (error) {
+      console.error("❌ Error generating detailed report:", error);
+      res.status(500).json({ message: "Erro ao gerar relatório detalhado" });
+    }
+  }
+);
+
+// Create new consultation
 app.post(
   "/api/consultations",
   authenticate,
-  authorize(["professional", "admin"]),
+  authorize(["professional"]),
   checkSchedulingAccess,
   async (req, res) => {
     try {
@@ -1637,18 +1686,26 @@ app.post(
         location_id,
         value,
         date,
-        status,
         notes,
+        status = "scheduled",
       } = req.body;
+
+      console.log("🔄 Creating consultation:", req.body);
 
       // Validate required fields
       if (!service_id || !value || !date) {
         return res
           .status(400)
-          .json({ message: "Campos obrigatórios não preenchidos" });
+          .json({ message: "Serviço, valor e data são obrigatórios" });
       }
 
-      // Validate patient selection
+      if (isNaN(Number.parseFloat(value)) || Number.parseFloat(value) <= 0) {
+        return res
+          .status(400)
+          .json({ message: "Valor deve ser um número maior que zero" });
+      }
+
+      // Validate patient type (exactly one must be provided)
       const patientCount = [user_id, dependent_id, private_patient_id].filter(
         Boolean
       ).length;
@@ -1674,12 +1731,11 @@ app.post(
         return res.status(404).json({ message: "Serviço não encontrado" });
       }
 
-      // Validate subscription for convenio patients
+      // If it's a convenio patient, validate subscription status
       if (user_id || dependent_id) {
         let subscriptionValid = false;
 
         if (user_id) {
-          // Fetch user role explicitly to ensure it's a client
           const clientResult = await pool.query(
             `
           SELECT subscription_status FROM users WHERE id = $1 AND 'client' = ANY(roles)
@@ -1716,26 +1772,72 @@ app.post(
         }
       }
 
-      console.log("[v0] 🔄 [CREATE] Date received from frontend:", date);
+      console.log("🔄 Date received from frontend:", date);
+      console.log("🔄 Date type:", typeof date);
 
-      let dateTimeForStorage;
+      const dateTimeForStorage = toUTCString(date);
 
-      // Check if date is already in ISO format with timezone (ends with Z or has +/- offset)
-      if (date.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(date)) {
-        // Date is already in UTC format, use as-is
-        dateTimeForStorage = new Date(date).toISOString();
-        console.log(
-          "[v0] 🔄 [CREATE] Date already in UTC format, using as-is:",
-          dateTimeForStorage
-        );
-      } else {
-        // Date is in Brazil local time, convert to UTC
-        const brazilDate = new Date(date + "-03:00"); // Força interpretação como Brasil (UTC-3)
-        dateTimeForStorage = brazilDate.toISOString(); // Converte para UTC
-        console.log(
-          "[v0] 🔄 [CREATE] Converted Brazil time to UTC:",
-          dateTimeForStorage
-        );
+      console.log(
+        "🔄 [CREATE] DateTime for storage (UTC):",
+        dateTimeForStorage
+      );
+
+      const conflictCheck = await pool.query(
+        `
+      SELECT 
+        c.id,
+        c.date,
+        CASE 
+          WHEN c.user_id IS NOT NULL THEN u.name
+          WHEN c.dependent_id IS NOT NULL THEN d.name
+          WHEN c.private_patient_id IS NOT NULL THEN pp.name
+          ELSE 'Paciente não identificado'
+        END as client_name
+      FROM consultations c
+      LEFT JOIN users u ON c.user_id = u.id
+      LEFT JOIN dependents d ON c.dependent_id = d.id
+      LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
+      WHERE c.professional_id = $1 
+        AND c.date = $2::timestamptz
+        AND c.status != 'cancelled'
+    `,
+        [req.user.id, dateTimeForStorage]
+      );
+
+      if (conflictCheck.rows.length > 0) {
+        const conflict = conflictCheck.rows[0];
+        const conflictDate = new Date(conflict.date);
+
+        // Format date and time for Brazil timezone
+        const formattedDate = conflictDate.toLocaleDateString("pt-BR", {
+          timeZone: "America/Sao_Paulo",
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        });
+
+        const formattedTime = conflictDate.toLocaleTimeString("pt-BR", {
+          timeZone: "America/Sao_Paulo",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+
+        console.log("⚠️ [CONFLICT] Scheduling conflict detected:", {
+          requestedTime: dateTimeForStorage,
+          existingConsultation: conflict.id,
+          existingClient: conflict.client_name,
+        });
+
+        return res.status(409).json({
+          message: `O horário ${formattedTime} do dia ${formattedDate} já está agendado para ${conflict.client_name}.`,
+          conflict: true,
+          conflictDetails: {
+            date: formattedDate,
+            time: formattedTime,
+            clientName: conflict.client_name,
+            consultationId: conflict.id,
+          },
+        });
       }
 
       // Create consultation
@@ -1766,6 +1868,7 @@ app.post(
 
       console.log("✅ Consultation created with date:", consultation.date);
       console.log("✅ Consultation created:", consultation.id);
+      console.log("✅ Saved date:", consultation.date);
 
       res.status(201).json({
         message: "Consulta criada com sucesso",
@@ -1782,7 +1885,7 @@ app.post(
 app.post(
   "/api/consultations/recurring",
   authenticate,
-  authorize(["professional", "admin"]),
+  authorize(["professional"]),
   checkSchedulingAccess,
   async (req, res) => {
     try {
@@ -1796,233 +1899,208 @@ app.post(
         start_date,
         start_time,
         recurrence_type,
-        end_date,
-        occurrences,
+        recurrence_interval = 1,
         weekly_count,
-        selected_weekdays,
+        selected_weekdays = [],
+        occurrences = 10,
         notes,
       } = req.body;
 
       console.log("🔄 [RECURRING] Creating recurring consultations:", req.body);
 
       // Validate required fields
-      if (
-        !service_id ||
-        !value ||
-        !start_date ||
-        !start_time ||
-        !recurrence_type ||
-        !occurrences
-      ) {
-        return res
-          .status(400)
-          .json({ message: "Campos obrigatórios não preenchidos" });
-      }
-
-      // Validate patient selection
-      if (!user_id && !dependent_id && !private_patient_id) {
-        return res
-          .status(400)
-          .json({ message: "É necessário selecionar um paciente" });
-      }
-
-      // Validate recurrence type specific fields
-      if (recurrence_type === "daily") {
-        console.log(
-          "🔍 [RECURRING] Validating daily recurrence - selected_weekdays:",
-          selected_weekdays
-        );
-        console.log(
-          "🔍 [RECURRING] Type of selected_weekdays:",
-          typeof selected_weekdays
-        );
-        console.log(
-          "🔍 [RECURRING] Is array:",
-          Array.isArray(selected_weekdays)
-        );
-
-        if (!selected_weekdays) {
-          return res.status(400).json({
-            message:
-              "Para recorrência diária, é necessário informar os dias da semana",
-          });
-        }
-
-        // Handle both array and single values
-        let weekdaysArray = selected_weekdays;
-        if (!Array.isArray(selected_weekdays)) {
-          // If it's a single value, convert to array
-          weekdaysArray = [selected_weekdays];
-        }
-
-        // Filter out invalid values and ensure we have valid weekdays (0-6)
-        const validWeekdays = weekdaysArray.filter((day) => {
-          const dayNum = Number.parseInt(day);
-          return !isNaN(dayNum) && dayNum >= 0 && dayNum <= 6;
+      if (!service_id || !value || !start_date || !start_time) {
+        return res.status(400).json({
+          message: "Serviço, valor, data de início e horário são obrigatórios",
         });
-
-        if (validWeekdays.length === 0) {
-          return res.status(400).json({
-            message:
-              "Para recorrência diária, é necessário selecionar pelo menos um dia da semana válido (0-6)",
-          });
-        }
-
-        console.log("✅ [RECURRING] Valid weekdays found:", validWeekdays);
-
-        // Update selected_weekdays with validated array
-        req.body.selected_weekdays = validWeekdays;
-      } else if (recurrence_type === "weekly") {
-        if (!weekly_count || weekly_count < 1) {
-          return res.status(400).json({
-            message:
-              "Para recorrência semanal, é necessário especificar o número de semanas",
-          });
-        }
       }
 
-      console.log("🔄 [RECURRING] Validated data:", {
-        recurrence_type,
-        selected_weekdays,
-        weekly_count,
-        start_date,
-        start_time,
-      });
+      // Validate patient type
+      const patientCount = [user_id, dependent_id, private_patient_id].filter(
+        Boolean
+      ).length;
+      if (patientCount !== 1) {
+        return res.status(400).json({
+          message: "Exatamente um tipo de paciente deve ser especificado",
+        });
+      }
 
-      // Generate recurring consultations
-      const createdConsultations = [];
-      const endDateObj = end_date ? new Date(end_date) : null;
-      let count = 0;
-      let weeklyCreatedCount = 0; // Track weekly consultations separately
+      // Validate recurrence type
+      if (!["daily", "weekly", "monthly"].includes(recurrence_type)) {
+        return res.status(400).json({
+          message: "Tipo de recorrência inválido",
+        });
+      }
 
-      // Initialize iteration date for recurring consultations
-      const iterationDate = new Date(`${start_date}T${start_time}:00`);
-      console.log(
-        "🔄 [RECURRING] Starting iteration from date:",
-        iterationDate.toISOString()
-      );
-
-      while (
-        count < occurrences &&
-        (!endDateObj || iterationDate <= endDateObj)
+      // For daily recurrence, validate weekdays
+      if (
+        recurrence_type === "daily" &&
+        (!selected_weekdays || selected_weekdays.length === 0)
       ) {
-        let shouldCreateConsultation = false;
-        const dayOfWeek = iterationDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        return res.status(400).json({
+          message:
+            "Para recorrência diária, selecione pelo menos um dia da semana",
+        });
+      }
 
-        if (recurrence_type === "daily") {
-          // For daily recurrence, check if current day is in selected weekdays
+      // Generate consultation dates based on recurrence pattern
+      const consultationDates = [];
+      const startDateTime = new Date(`${start_date}T${start_time}`);
 
-          // Use the validated selected_weekdays from request body
-          shouldCreateConsultation =
-            req.body.selected_weekdays.includes(dayOfWeek);
+      console.log("🔄 [RECURRING] Start date/time:", startDateTime);
+      console.log("🔄 [RECURRING] Recurrence type:", recurrence_type);
 
-          console.log(
-            "🔄 [RECURRING-DAILY] Day of week:",
-            dayOfWeek,
-            "Selected weekdays:",
-            req.body.selected_weekdays,
-            "Should create:",
-            shouldCreateConsultation
-          );
-        } else if (recurrence_type === "weekly") {
-          // For weekly recurrence, create consultation and check weekly limit
-          shouldCreateConsultation = true;
-          console.log(
-            "🔄 [RECURRING-WEEKLY] Week count:",
-            weeklyCreatedCount + 1,
-            "of",
-            weekly_count
-          );
-        }
+      if (recurrence_type === "daily") {
+        // Daily recurrence with specific weekdays
+        const currentDate = new Date(startDateTime);
+        let count = 0;
 
-        if (shouldCreateConsultation) {
-          const brazilDateTimeStr = `${
-            iterationDate.toISOString().split("T")[0]
-          }T${start_time}:00`;
-          console.log("[v0] 🔄 [RECURRING] Brazil time:", brazilDateTimeStr);
+        while (count < occurrences) {
+          const dayOfWeek = currentDate.getDay();
 
-          const brazilDateTime = new Date(brazilDateTimeStr + "-03:00"); // Força interpretação como Brasil
-          const dateTimeForStorage = brazilDateTime.toISOString(); // Converte para UTC
-
-          console.log(
-            "[v0] 🔄 [RECURRING] UTC time for storage:",
-            dateTimeForStorage
-          );
-
-          try {
-            const result = await pool.query(
-              `
-            INSERT INTO consultations (
-              professional_id, user_id, dependent_id, private_patient_id, 
-              service_id, location_id, value, date, status, notes, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-            RETURNING *
-          `,
-              [
-                req.user.id,
-                user_id || null,
-                dependent_id || null,
-                private_patient_id ? Number.parseInt(private_patient_id) : null,
-                Number.parseInt(service_id),
-                location_id ? Number.parseInt(location_id) : null,
-                Number.parseFloat(value),
-                dateTimeForStorage,
-                "scheduled",
-                notes?.trim() || null,
-              ]
-            );
-
-            createdConsultations.push(result.rows[0]);
+          if (selected_weekdays.includes(dayOfWeek)) {
+            consultationDates.push(new Date(currentDate));
             count++;
-
-            if (recurrence_type === "weekly") {
-              weeklyCreatedCount++;
-            }
-
-            console.log(
-              "[v0] ✅ [RECURRING] Created consultation for Brazil time:",
-              brazilDateTimeStr,
-              "stored as UTC:",
-              dateTimeForStorage
-            );
-          } catch (error) {
-            console.error(
-              "❌ [RECURRING] Error creating consultation for date:",
-              iterationDate.toISOString().split("T")[0],
-              error
-            );
-            // Continue with next date instead of failing completely
           }
+
+          currentDate.setDate(currentDate.getDate() + 1);
+
+          // Safety limit
+          if (consultationDates.length > 365) break;
         }
+      } else if (recurrence_type === "weekly") {
+        // Weekly recurrence for N weeks
+        const weeksToCreate = weekly_count || 4;
 
-        // Move to next date based on recurrence type
-        if (recurrence_type === "daily") {
-          iterationDate.setDate(iterationDate.getDate() + 1);
-        } else if (recurrence_type === "weekly") {
-          iterationDate.setDate(iterationDate.getDate() + 7);
-
-          // For weekly, stop after weekly_count weeks
-          if (weeklyCreatedCount >= weekly_count) {
-            console.log("✅ [RECURRING] Reached weekly limit:", weekly_count);
-            break;
-          }
+        for (let i = 0; i < weeksToCreate; i++) {
+          const consultationDate = new Date(startDateTime);
+          consultationDate.setDate(consultationDate.getDate() + i * 7);
+          consultationDates.push(consultationDate);
         }
-
-        // Safety check to prevent infinite loops
-        if (count >= 1000) {
-          console.warn(
-            "⚠️ [RECURRING] Breaking loop at 1000 iterations to prevent infinite loop"
+      } else if (recurrence_type === "monthly") {
+        // Monthly recurrence
+        for (let i = 0; i < occurrences; i++) {
+          const consultationDate = new Date(startDateTime);
+          consultationDate.setMonth(
+            consultationDate.getMonth() + i * recurrence_interval
           );
-          break;
+          consultationDates.push(consultationDate);
         }
       }
 
+      console.log("🔄 [RECURRING] Generated dates:", consultationDates.length);
+
+      const conflicts = [];
+      const validDates = [];
+
+      for (const consultationDate of consultationDates) {
+        const dateTimeUTC = consultationDate.toISOString();
+
+        const conflictCheck = await pool.query(
+          `
+          SELECT 
+            c.id,
+            c.date,
+            CASE 
+              WHEN c.user_id IS NOT NULL THEN u.name
+              WHEN c.dependent_id IS NOT NULL THEN d.name
+              WHEN c.private_patient_id IS NOT NULL THEN pp.name
+              ELSE 'Paciente não identificado'
+            END as client_name
+          FROM consultations c
+          LEFT JOIN users u ON c.user_id = u.id
+          LEFT JOIN dependents d ON c.dependent_id = d.id
+          LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
+          WHERE c.professional_id = $1 
+            AND c.date = $2::timestamptz
+            AND c.status != 'cancelled'
+        `,
+          [req.user.id, dateTimeUTC]
+        );
+
+        if (conflictCheck.rows.length > 0) {
+          const conflict = conflictCheck.rows[0];
+          const conflictDate = new Date(conflict.date);
+
+          const formattedDate = conflictDate.toLocaleDateString("pt-BR", {
+            timeZone: "America/Sao_Paulo",
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+          });
+
+          const formattedTime = conflictDate.toLocaleTimeString("pt-BR", {
+            timeZone: "America/Sao_Paulo",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+
+          conflicts.push({
+            date: formattedDate,
+            time: formattedTime,
+            clientName: conflict.client_name,
+          });
+
+          console.log("⚠️ [RECURRING-CONFLICT] Conflict detected:", {
+            date: formattedDate,
+            time: formattedTime,
+            client: conflict.client_name,
+          });
+        } else {
+          validDates.push(dateTimeUTC);
+        }
+      }
+
+      // If there are conflicts, return them to the frontend
+      if (conflicts.length > 0) {
+        console.log(
+          `⚠️ [RECURRING-CONFLICT] Found ${conflicts.length} conflict(s)`
+        );
+
+        return res.status(409).json({
+          message: `${conflicts.length} horário(s) já está(ão) ocupado(s). Por favor, entre em contato com os clientes para reagendar.`,
+          conflict: true,
+          conflicts: conflicts,
+          validDatesCount: validDates.length,
+        });
+      }
+
+      // Create all consultations
+      const createdConsultations = [];
+
+      for (const dateTimeUTC of validDates) {
+        const consultationResult = await pool.query(
+          `
+          INSERT INTO consultations (
+            user_id, dependent_id, private_patient_id, professional_id,
+            service_id, location_id, value, date, status, notes
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          RETURNING *
+        `,
+          [
+            user_id || null,
+            dependent_id || null,
+            private_patient_id || null,
+            req.user.id,
+            service_id,
+            location_id || null,
+            Number.parseFloat(value),
+            dateTimeUTC,
+            "scheduled",
+            notes?.trim() || null,
+          ]
+        );
+
+        createdConsultations.push(consultationResult.rows[0]);
+      }
+
       console.log(
-        "✅ [RECURRING] Recurring consultations created:",
-        createdConsultations.length
+        `✅ [RECURRING] Created ${createdConsultations.length} consultation(s)`
       );
-      res.json({
-        message: `${createdConsultations.length} consultas recorrentes criadas com sucesso`,
+
+      res.status(201).json({
+        message: `${createdConsultations.length} consulta(s) criada(s) com sucesso`,
         created_count: createdConsultations.length,
         consultations: createdConsultations,
       });
@@ -2031,10 +2109,7 @@ app.post(
         "❌ [RECURRING] Error creating recurring consultations:",
         error
       );
-      res.status(500).json({
-        message: "Erro interno do servidor ao criar consultas recorrentes",
-        error: error.message,
-      });
+      res.status(500).json({ message: "Erro ao criar consultas recorrentes" });
     }
   }
 );
@@ -2143,23 +2218,14 @@ app.put(
       }
 
       if (date !== undefined) {
-        // 🔥 FIXED: Convert from Brazil time to UTC for storage
-        const brazilDateTimeStr = date;
-        console.log(
-          "[v0] 🔄 [UPDATE] Date received (Brasil):",
-          brazilDateTimeStr
-        );
-
-        const brazilDateTime = new Date(brazilDateTimeStr + "-03:00"); // Force Brazil interpretation
-        const dateTimeForStorage = brazilDateTime.toISOString(); // Convert to UTC
-
-        console.log(
-          "[v0] 🔄 [UPDATE] DateTime for storage (UTC):",
-          dateTimeForStorage
-        );
-
+        const dateTimeForStorage = toUTCString(date);
         updateFields.push(`date = $${paramCount++}`);
         updateValues.push(dateTimeForStorage);
+
+        console.log(
+          "🔄 [UPDATE] DateTime for storage (UTC):",
+          dateTimeForStorage
+        );
       }
 
       if (status !== undefined) {
@@ -2270,22 +2336,14 @@ app.get(
       // Format date and time - Convert from UTC (database) to Brazil local time for WhatsApp
       console.log("🔄 Consultation date from DB:", consultation.date);
 
-      // 🔥 FIXED: Convert from UTC (database) to Brazil local time for display
-      const utcDate = new Date(consultation.date);
-      const brazilLocalDate = new Date(utcDate.getTime() - 3 * 60 * 60 * 1000);
+      const formattedDate = formatToBrazilDate(consultation.date);
+      const formattedTime = formatToBrazilTimeOnly(consultation.date);
 
-      console.log("🔄 [WHATSAPP] UTC from DB:", utcDate.toISOString());
-      console.log(
-        "🔄 [WHATSAPP] Brazil local time:",
-        brazilLocalDate.toLocaleString("pt-BR")
-      );
-
-      const formattedDate = brazilLocalDate.toLocaleDateString("pt-BR");
-      const formattedTime = brazilLocalDate.toLocaleTimeString("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
+      console.log("🔄 [WHATSAPP] Formatted for Brazil:", {
+        date: formattedDate,
+        time: formattedTime,
       });
+
       const message = `Olá ${consultation.patient_name}, gostaria de confirmar o seu agendamento com o profissional ${req.user.name} no dia ${formattedDate} às ${formattedTime}`;
       const encodedMessage = encodeURIComponent(message);
 
@@ -4181,7 +4239,7 @@ app.post(
         private_patient_id,
         patient_name,
         patient_cpf,
-        professional_id: professionalId,
+        professionalId,
       });
 
       // Validate required fields
@@ -4578,7 +4636,7 @@ app.post(
             title: "Assinatura Cartão Quiro Ferreira",
             description: "Ativação da assinatura mensal do cartão de convênio",
             quantity: 1,
-            unit_price: 250.0,
+            unit_price: 2.0,
             currency_id: "BRL",
           },
         ],
@@ -4606,7 +4664,24 @@ app.post(
         body: preferenceData,
       });
 
-      console.log("✅ Subscription preference created:", subscriptionResult.id);
+      console.log(
+        "📦 MercadoPago response (subscription):",
+        subscriptionResult
+      );
+
+      const preferenceId =
+        subscriptionResult?.body?.id ?? subscriptionResult?.id ?? null;
+
+      const initPoint =
+        subscriptionResult?.body?.init_point ??
+        subscriptionResult?.body?.sandbox_init_point ??
+        subscriptionResult?.init_point ??
+        null;
+
+      console.log("✅ Subscription preference created:", {
+        preferenceId,
+        initPoint,
+      });
 
       // Save payment record
       await pool.query(
@@ -4616,16 +4691,16 @@ app.post(
     `,
         [
           user_id,
-          250.0,
+          2.0,
           "pending",
-          subscriptionResult.id,
+          preferenceId,
           `subscription_${user_id}_${Date.now()}`,
         ]
       );
 
       res.json({
-        preference_id: subscriptionResult.id,
-        init_point: subscriptionResult.init_point,
+        preference_id: preferenceId,
+        init_point: initPoint,
       });
     } catch (error) {
       console.error("❌ Error creating subscription:", error);
@@ -4679,7 +4754,7 @@ app.post(
             title: `Ativação de Dependente - ${dependent.name}`,
             description: "Ativação de dependente no cartão de convênio",
             quantity: 1,
-            unit_price: 50.0,
+            unit_price: 1.0,
             currency_id: "BRL",
           },
         ],
@@ -4709,9 +4784,23 @@ app.post(
       });
 
       console.log(
-        "✅ Dependent preference created:",
-        dependentPaymentResult.id
+        "📦 MercadoPago response (dependent):",
+        dependentPaymentResult
       );
+
+      const preferenceId =
+        dependentPaymentResult?.body?.id ?? dependentPaymentResult?.id ?? null;
+
+      const initPoint =
+        dependentPaymentResult?.body?.init_point ??
+        dependentPaymentResult?.body?.sandbox_init_point ??
+        dependentPaymentResult?.init_point ??
+        null;
+
+      console.log("✅ Dependent preference created:", {
+        preferenceId,
+        initPoint,
+      });
 
       // Save payment record
       await pool.query(
@@ -4721,16 +4810,16 @@ app.post(
     `,
         [
           dependent_id,
-          50.0,
+          1.0,
           "pending",
-          dependentPaymentResult.id,
+          preferenceId,
           `dependent_${dependent_id}_${Date.now()}`,
         ]
       );
 
       res.json({
-        preference_id: dependentPaymentResult.id,
-        init_point: dependentPaymentResult.init_point,
+        preference_id: preferenceId,
+        init_point: initPoint,
       });
     } catch (error) {
       console.error("❌ Error creating dependent payment:", error);
@@ -4790,7 +4879,24 @@ app.post(
         body: preferenceData,
       });
 
-      console.log("✅ Professional preference created:", professionalResult.id);
+      console.log(
+        "📦 MercadoPago response (professional):",
+        professionalResult
+      );
+
+      const preferenceId =
+        professionalResult?.body?.id ?? professionalResult?.id ?? null;
+
+      const initPoint =
+        professionalResult?.body?.init_point ??
+        professionalResult?.body?.sandbox_init_point ??
+        professionalResult?.init_point ??
+        null;
+
+      console.log("✅ Professional preference created:", {
+        preferenceId,
+        initPoint,
+      });
 
       // Save payment record
       await pool.query(
@@ -4802,14 +4908,14 @@ app.post(
           req.user.id,
           Number.parseFloat(amount),
           "pending",
-          professionalResult.id,
+          preferenceId,
           `professional_${req.user.id}_${Date.now()}`,
         ]
       );
 
       res.json({
-        preference_id: professionalResult.id,
-        init_point: professionalResult.init_point,
+        preference_id: preferenceId,
+        init_point: initPoint,
       });
     } catch (error) {
       console.error("❌ Error creating professional payment:", error);
@@ -4826,7 +4932,7 @@ app.post(
   authorize(["professional"]),
   async (req, res) => {
     try {
-      // 🔥 FIXED: Agenda payment is always for 1 MONTH (30 days)
+      // Agenda payment is always for 1 MONTH (30 days)
       const duration_days = 30; // Always 1 month
 
       console.log("🔄 Creating agenda payment for 1 MONTH (30 days)");
@@ -4841,7 +4947,7 @@ app.post(
             description:
               "Assinatura mensal do sistema de agendamentos (30 dias)",
             quantity: 1,
-            unit_price: 24.99,
+            unit_price: 0.5,
             currency_id: "BRL",
           },
         ],
@@ -4869,7 +4975,17 @@ app.post(
 
       const agendaResult = await preference.create({ body: preferenceData });
 
-      console.log("✅ Agenda preference created:", agendaResult.id);
+      console.log("📦 MercadoPago response (agenda):", agendaResult);
+
+      const preferenceId = agendaResult?.body?.id ?? agendaResult?.id ?? null;
+
+      const initPoint =
+        agendaResult?.body?.init_point ??
+        agendaResult?.body?.sandbox_init_point ??
+        agendaResult?.init_point ??
+        null;
+
+      console.log("✅ Agenda preference created:", { preferenceId, initPoint });
 
       // Save payment record
       await pool.query(
@@ -4880,16 +4996,16 @@ app.post(
         [
           req.user.id,
           duration_days,
-          24.99,
+          0.5,
           "pending",
-          agendaResult.id,
+          preferenceId,
           `agenda_${req.user.id}_${duration_days}_${Date.now()}`,
         ]
       );
 
       res.json({
-        preference_id: agendaResult.id,
-        init_point: agendaResult.init_point,
+        preference_id: preferenceId,
+        init_point: initPoint,
       });
     } catch (error) {
       console.error("❌ Error creating agenda payment:", error);
@@ -5224,219 +5340,540 @@ const updatePaymentStatus = async (externalReference, status, paymentId) => {
       );
     }
   } catch (error) {
-    console.error("❌ Error updating payment status:", error);
+    console.error(
+      `❌ Error updating payment status for ${externalReference}:`,
+      error
+    );
   }
 };
 
-// Helper function to process subscription payment
+// Process subscription payment
 const processSubscriptionPayment = async (payment) => {
-  console.log("✅ [WEBHOOK] Processing subscription payment:", payment.id);
-  const externalReference = payment.external_reference;
-  const userId = Number.parseInt(externalReference.split("_")[1]);
-  const paymentDate = new Date(payment.date_created);
-  const subscriptionPrice = 250.0; // Should ideally be fetched from settings
+  try {
+    const externalReference = payment.external_reference;
+    const userId = externalReference.split("_")[1];
 
-  if (payment.transaction_amount !== subscriptionPrice) {
-    console.warn(
-      `⚠️ [WEBHOOK] Subscription payment amount mismatch: Expected ${subscriptionPrice}, got ${payment.transaction_amount}`
+    console.log(
+      "🔄 [SUBSCRIPTION-PAYMENT] Processing subscription payment for user:",
+      userId
     );
-    // Optionally, handle this mismatch (e.g., log, alert, or re-verify)
-  }
-
-  // Update client_payments table
-  await pool.query(
-    `UPDATE client_payments 
-     SET status = $1, mp_payment_id = $2, processed_at = CURRENT_TIMESTAMP
-     WHERE payment_reference LIKE $3`,
-    ["approved", payment.id, `${externalReference.split("_")[0]}_${userId}_%`]
-  );
-
-  // Update user subscription status
-  const subscriptionExpiry = new Date(
-    paymentDate.setMonth(paymentDate.getMonth() + 1)
-  );
-  await pool.query(
-    `UPDATE users 
-     SET subscription_status = 'active', subscription_expiry = $1, updated_at = NOW()
-     WHERE id = $2`,
-    [subscriptionExpiry, userId]
-  );
-
-  // Create notification for user
-  await pool.query(
-    `INSERT INTO notifications (user_id, title, message, type)
-     VALUES ($1, $2, $3, $4)`,
-    [
-      userId,
-      "Assinatura Ativada",
-      "Sua assinatura do Cartão Quiro Ferreira foi ativada com sucesso!",
-      "success",
-    ]
-  );
-
-  console.log(`✅ Subscription payment processed for user ${userId}.`);
-};
-
-// Helper function to process dependent payment
-const processDependentPayment = async (payment) => {
-  console.log("✅ [WEBHOOK] Processing dependent payment:", payment.id);
-  const externalReference = payment.external_reference;
-  const dependentId = Number.parseInt(externalReference.split("_")[1]);
-  const paymentDate = new Date(payment.date_created);
-  const dependentPrice = 50.0; // Should ideally be fetched from settings
-
-  if (payment.transaction_amount !== dependentPrice) {
-    console.warn(
-      `⚠️ [WEBHOOK] Dependent payment amount mismatch: Expected ${dependentPrice}, got ${payment.transaction_amount}`
+    console.log("🔄 [SUBSCRIPTION-PAYMENT] Payment ID:", payment.id);
+    console.log(
+      "🔄 [SUBSCRIPTION-PAYMENT] External reference:",
+      externalReference
     );
-  }
 
-  // Update dependent_payments table
-  await pool.query(
-    `UPDATE dependent_payments 
-     SET status = $1, mp_payment_id = $2, processed_at = CURRENT_TIMESTAMP
-     WHERE payment_reference LIKE $3`,
-    [
-      "approved",
-      payment.id,
-      `${externalReference.split("_")[0]}_${dependentId}_%`,
-    ]
-  );
+    // Validate user exists and has client role
+    const userResult = await pool.query(
+      "SELECT id, name, email FROM users WHERE id = $1 AND 'client' = ANY(roles)",
+      [userId]
+    );
 
-  // Update dependent subscription status
-  const subscriptionExpiry = new Date(
-    paymentDate.setMonth(paymentDate.getMonth() + 1)
-  );
-  await pool.query(
-    `UPDATE dependents 
-     SET subscription_status = 'active', subscription_expiry = $1, activated_at = CURRENT_TIMESTAMP, updated_at = NOW()
-     WHERE id = $2`,
-    [subscriptionExpiry, dependentId]
-  );
+    if (userResult.rows.length === 0) {
+      console.error(
+        "❌ [SUBSCRIPTION-PAYMENT] User not found or not a client:",
+        userId
+      );
+      return;
+    }
 
-  // Fetch client_id to send notification to the main user
-  const dependentInfo = await pool.query(
-    "SELECT user_id FROM dependents WHERE id = $1",
-    [dependentId]
-  );
-  if (dependentInfo.rows.length > 0) {
-    const userId = dependentInfo.rows[0].user_id;
-    await pool.query(
-      `INSERT INTO notifications (user_id, title, message, type)
-       VALUES ($1, $2, $3, $4)`,
+    const user = userResult.rows[0];
+    console.log("✅ [SUBSCRIPTION-PAYMENT] User validated:", user.name);
+
+    const expiryDate = addYears(new Date(), 1);
+    console.log(
+      "🔄 [SUBSCRIPTION-PAYMENT] Setting expiry date to (UTC):",
+      expiryDate
+    );
+
+    // Update user subscription status
+    const updateResult = await pool.query(
+      `
+      UPDATE users 
+      SET 
+        subscription_status = 'active',
+        subscription_expiry = $2,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING id, name, subscription_status, subscription_expiry
+    `,
+      [userId, expiryDate]
+    );
+
+    if (updateResult.rows.length === 0) {
+      console.error(
+        "❌ [SUBSCRIPTION-PAYMENT] Failed to update user subscription"
+      );
+      return;
+    }
+
+    console.log(
+      "✅ [SUBSCRIPTION-PAYMENT] User subscription updated:",
+      updateResult.rows[0]
+    );
+
+    // Update payment record
+    const paymentUpdateResult = await pool.query(
+      `
+      UPDATE client_payments 
+      SET 
+        status = 'approved',
+        mp_payment_id = $1,
+        processed_at = CURRENT_TIMESTAMP
+      WHERE payment_reference LIKE $2
+      RETURNING id, payment_reference
+    `,
+      [payment.id, `subscription_${userId}_%`]
+    );
+
+    console.log(
+      "✅ [SUBSCRIPTION-PAYMENT] Payment record updated:",
+      paymentUpdateResult.rows
+    );
+
+    // Create notification
+    const notificationResult = await pool.query(
+      `
+      INSERT INTO notifications (user_id, title, message, type)
+      VALUES ($1, $2, $3, $4)
+      RETURNING id
+    `,
       [
         userId,
-        "Dependente Ativado",
-        "Um dependente foi ativado com sucesso.",
+        "Assinatura Ativada",
+        `Sua assinatura foi ativada com sucesso! Válida até ${expiryDate.toLocaleDateString(
+          "pt-BR"
+        )}. Agora você pode utilizar todos os serviços do convênio.`,
         "success",
       ]
     );
+
+    console.log(
+      "✅ [SUBSCRIPTION-PAYMENT] Notification created:",
+      notificationResult.rows[0]
+    );
+    console.log(
+      "✅ [SUBSCRIPTION-PAYMENT] Subscription activated for user:",
+      userId
+    );
+  } catch (error) {
+    console.error(
+      "❌ [SUBSCRIPTION-PAYMENT] Error processing subscription payment:",
+      error
+    );
+    console.error("❌ [SUBSCRIPTION-PAYMENT] Error details:", error.message);
+    console.error("❌ [SUBSCRIPTION-PAYMENT] Error stack:", error.stack);
   }
-
-  console.log(`✅ Dependent payment processed for dependent ${dependentId}.`);
 };
 
-// Helper function to process professional payment
+// Process dependent payment
+const processDependentPayment = async (payment) => {
+  try {
+    const externalReference = payment.external_reference;
+    const dependentId = externalReference.split("_")[1];
+
+    console.log(
+      "🔄 [DEPENDENT-WEBHOOK] Processing dependent payment for dependent:",
+      dependentId
+    );
+    console.log("🔄 [DEPENDENT-WEBHOOK] Payment details:", {
+      id: payment.id,
+      status: payment.status,
+      amount: payment.transaction_amount,
+      external_reference: externalReference,
+    });
+
+    // Validate dependent exists
+    const dependentValidationResult = await pool.query(
+      "SELECT id, name, user_id FROM dependents WHERE id = $1",
+      [dependentId]
+    );
+
+    if (dependentValidationResult.rows.length === 0) {
+      console.error("❌ [DEPENDENT-PAYMENT] Dependent not found:", dependentId);
+      return;
+    }
+
+    const dependent = dependentValidationResult.rows[0];
+    console.log("✅ [DEPENDENT-PAYMENT] Dependent validated:", dependent.name);
+
+    const expiryDate = addYears(new Date(), 1);
+    console.log(
+      "🔄 [DEPENDENT-PAYMENT] Setting expiry date to (UTC):",
+      expiryDate
+    );
+
+    // Update dependent subscription status
+    const updateResult = await pool.query(
+      `
+      UPDATE dependents 
+      SET 
+        subscription_status = 'active',
+        subscription_expiry = $2,
+        activated_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING id, name, subscription_status, subscription_expiry, activated_at
+    `,
+      [dependentId, expiryDate]
+    );
+
+    if (updateResult.rows.length === 0) {
+      console.error(
+        "❌ [DEPENDENT-PAYMENT] Failed to update dependent subscription"
+      );
+      return;
+    }
+
+    console.log(
+      "✅ [DEPENDENT-PAYMENT] Dependent subscription updated:",
+      updateResult.rows[0]
+    );
+
+    // Update payment record
+    const paymentUpdateResult = await pool.query(
+      `
+      UPDATE dependent_payments 
+      SET 
+        status = 'approved',
+        mp_payment_id = $1,
+        processed_at = CURRENT_TIMESTAMP
+      WHERE payment_reference LIKE $2
+      RETURNING id, payment_reference
+    `,
+      [payment.id, `dependent_${dependentId}_%`]
+    );
+
+    console.log(
+      "✅ [DEPENDENT-PAYMENT] Payment record updated:",
+      paymentUpdateResult.rows
+    );
+
+    // Get dependent and client info for notification
+    const dependentInfo = await pool.query(
+      `
+      SELECT d.name as dependent_name, d.user_id, u.name as client_name
+      FROM dependents d
+      JOIN users u ON d.user_id = u.id
+      WHERE d.id = $1
+    `,
+      [dependentId]
+    );
+
+    if (dependentInfo.rows.length > 0) {
+      const info = dependentInfo.rows[0];
+      console.log(
+        "✅ [DEPENDENT-PAYMENT] Client info for notification:",
+        info.client_name
+      );
+
+      // Create notification for client
+      const notificationResult = await pool.query(
+        `
+        INSERT INTO notifications (user_id, title, message, type)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id
+      `,
+        [
+          info.user_id,
+          "Dependente Ativado",
+          `O dependente ${
+            info.dependent_name
+          } foi ativado com sucesso! Válido até ${expiryDate.toLocaleDateString(
+            "pt-BR"
+          )}.`,
+          "success",
+        ]
+      );
+
+      console.log(
+        "✅ [DEPENDENT-PAYMENT] Notification created:",
+        notificationResult.rows[0]
+      );
+    } else {
+      console.warn(
+        "⚠️ [DEPENDENT-PAYMENT] Could not find client info for notification"
+      );
+    }
+
+    console.log("✅ [DEPENDENT-PAYMENT] Dependent activated:", dependentId);
+  } catch (error) {
+    console.error(
+      "❌ [DEPENDENT-PAYMENT] Error processing dependent payment:",
+      error
+    );
+    console.error("❌ [DEPENDENT-PAYMENT] Error details:", error.message);
+    console.error("❌ [DEPENDENT-PAYMENT] Error stack:", error.stack);
+  }
+};
+
+// Process professional payment
 const processProfessionalPayment = async (payment) => {
-  console.log("✅ [WEBHOOK] Processing professional payment:", payment.id);
-  const externalReference = payment.external_reference;
-  const professionalId = Number.parseInt(externalReference.split("_")[1]);
+  try {
+    const externalReference = payment.external_reference;
+    const professionalId = externalReference.split("_")[1];
 
-  // Update professional_payments table
-  await pool.query(
-    `UPDATE professional_payments 
-     SET status = $1, mp_payment_id = $2, processed_at = CURRENT_TIMESTAMP
-     WHERE payment_reference LIKE $3`,
-    [
-      "approved",
-      payment.id,
-      `${externalReference.split("_")[0]}_${professionalId}_%`,
-    ]
-  );
+    console.log(
+      "🔄 Processing professional payment for professional:",
+      professionalId
+    );
 
-  // Create notification for professional
-  await pool.query(
-    `INSERT INTO notifications (user_id, title, message, type)
-     VALUES ($1, $2, $3, $4)`,
-    [
-      professionalId,
-      "Pagamento Recebido",
-      `Seu pagamento de ${payment.transaction_amount} foi recebido com sucesso.`,
-      "info",
-    ]
-  );
+    // Update payment record
+    const paymentUpdateResult = await pool.query(
+      `
+      UPDATE professional_payments 
+      SET 
+        status = 'approved',
+        mp_payment_id = $1,
+        processed_at = CURRENT_TIMESTAMP
+      WHERE payment_reference LIKE $2
+       RETURNING id
+    `,
+      [payment.id, `professional_${professionalId}_%`]
+    );
 
-  console.log(
-    `✅ Professional payment processed for professional ${professionalId}.`
-  );
+    console.log(
+      "✅ [DEPENDENT-WEBHOOK] Payment record updated:",
+      paymentUpdateResult.rows.length
+    );
+
+    // Create notification
+    await pool.query(
+      `
+      INSERT INTO notifications (user_id, title, message, type)
+      VALUES ($1, $2, $3, $4)
+    `,
+      [
+        professionalId,
+        "Pagamento Processado",
+        `Seu pagamento de repasse ao convênio foi processado com sucesso.`,
+        "success",
+      ]
+    );
+
+    console.log("✅ Professional payment processed:", professionalId);
+  } catch (error) {
+    console.error("❌ Error processing professional payment:", error);
+  }
 };
 
-// Helper function to process agenda payment
+// Process agenda payment
 const processAgendaPayment = async (payment) => {
-  console.log("✅ [WEBHOOK] Processing agenda payment:", payment.id);
-  const externalReference = payment.external_reference;
-  const professionalId = Number.parseInt(externalReference.split("_")[1]);
-  const durationDays = Number.parseInt(externalReference.split("_")[2]);
-  const paymentDate = new Date(payment.date_created);
+  try {
+    const externalReference = payment.external_reference;
+    const parts = externalReference.split("_");
+    const professionalId = parts[1];
+    // Agenda payment is always for 1 MONTH (30 days)
+    const durationDays = 30; // Always 1 month
 
-  // Update agenda_payments table
-  await pool.query(
-    `UPDATE agenda_payments 
-     SET status = $1, mp_payment_id = $2, processed_at = CURRENT_TIMESTAMP
-     WHERE payment_reference LIKE $3`,
-    [
-      "approved",
-      payment.id,
-      `${externalReference.split("_")[0]}_${professionalId}_${durationDays}_%`,
-    ]
-  );
-
-  // Update professional's scheduling access
-  const expiresAt = new Date(
-    paymentDate.setDate(paymentDate.getDate() + durationDays)
-  );
-  console.log(
-    "✅ [WEBHOOK] Granting scheduling access until:",
-    expiresAt.toISOString()
-  );
-
-  // Deactivate any existing access first
-  await pool.query(
-    `UPDATE scheduling_access SET is_active = false WHERE professional_id = $1`,
-    [professionalId]
-  );
-
-  // Grant new access
-  await pool.query(
-    `INSERT INTO scheduling_access (professional_id, granted_by, expires_at, reason, is_active)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [
+    console.log(
+      "🔄 [AGENDA-WEBHOOK] Processing agenda payment for professional:",
       professionalId,
-      professionalId,
-      expiresAt,
-      "Pagamento de acesso à agenda",
-      true,
-    ] // granted_by is the professional themselves for self-payment
-  );
+      "duration:",
+      durationDays
+    );
+    console.log("🔄 [AGENDA-WEBHOOK] Payment details:", {
+      id: payment.id,
+      status: payment.status,
+      amount: payment.transaction_amount,
+      external_reference: externalReference,
+    });
 
-  // Create notification for professional
-  await pool.query(
-    `INSERT INTO notifications (user_id, title, message, type)
-     VALUES ($1, $2, $3, $4)`,
-    [
-      professionalId,
-      "Acesso à Agenda Liberado",
-      `Seu acesso à agenda foi liberado até ${expiresAt.toLocaleDateString(
-        "pt-BR"
-      )}.`,
-      "success",
-    ]
-  );
+    // Validate professional exists and has professional role
+    const professionalCheck = await pool.query(
+      `SELECT id, name FROM users WHERE id = $1 AND 'professional' = ANY(roles)`,
+      [professionalId]
+    );
 
-  console.log(
-    `✅ Agenda payment processed for professional ${professionalId}. Access granted until ${expiresAt}.`
-  );
+    if (professionalCheck.rows.length === 0) {
+      console.error(
+        "❌ [AGENDA-WEBHOOK] Professional not found:",
+        professionalId
+      );
+      return;
+    }
+
+    const professional = professionalCheck.rows[0];
+    console.log(
+      "✅ [AGENDA-WEBHOOK] Professional validated:",
+      professional.name
+    );
+
+    // Deactivate any existing access
+    await pool.query(
+      `
+      UPDATE scheduling_access SET is_active = false WHERE professional_id = $1
+    `,
+      [professionalId]
+    );
+
+    console.log(
+      "✅ [AGENDA-WEBHOOK] Existing access deactivated for professional:",
+      professionalId
+    );
+
+    // Grant new access
+    const expiresAt = addDays(new Date(), durationDays);
+
+    const accessResult = await pool.query(
+      `
+      INSERT INTO scheduling_access (professional_id, granted_by, expires_at, reason, is_active, starts_at)
+      VALUES ($1, $2, $3, $4, true, CURRENT_TIMESTAMP)
+      RETURNING *
+    `,
+      [
+        professionalId,
+        professionalId,
+        expiresAt.toISOString(),
+        "Pagamento via MercadoPago",
+      ] // Assuming professional pays for their own access, granted_by = professionalId
+    );
+
+    console.log(
+      "✅ [AGENDA-WEBHOOK] New scheduling access created:",
+      accessResult.rows[0]
+    );
+
+    // Update payment record
+    const paymentUpdateResult = await pool.query(
+      `
+      UPDATE agenda_payments 
+      SET 
+        status = 'approved',
+        mp_payment_id = $1,
+        processed_at = CURRENT_TIMESTAMP
+      WHERE payment_reference LIKE $2
+      RETURNING *
+    `,
+      [payment.id, `agenda_${professionalId}_${durationDays}_%`]
+    );
+
+    console.log(
+      "✅ [AGENDA-WEBHOOK] Payment record updated:",
+      paymentUpdateResult.rows
+    );
+
+    // Create notification
+    const notificationResult = await pool.query(
+      `
+      INSERT INTO notifications (user_id, title, message, type)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `,
+      [
+        professionalId,
+        "Acesso à Agenda Ativado",
+        `Seu acesso à agenda foi ativado por ${durationDays} dias! Válido até ${expiresAt.toLocaleDateString(
+          "pt-BR"
+        )}.`,
+        "success",
+      ]
+    );
+
+    console.log(
+      "✅ [AGENDA-WEBHOOK] Notification created:",
+      notificationResult.rows[0]
+    );
+
+    // Verify access was granted correctly
+    const verifyResult = await pool.query(
+      `SELECT * FROM scheduling_access WHERE professional_id = $1 AND is_active = true ORDER BY created_at DESC LIMIT 1`,
+      [professionalId]
+    );
+
+    if (verifyResult.rows.length > 0) {
+      console.log(
+        "✅ [AGENDA-WEBHOOK] VERIFICATION: Access successfully granted and verified:",
+        verifyResult.rows[0]
+      );
+      console.log(
+        "🎉 [AGENDA-WEBHOOK] Agenda access successfully activated for professional:",
+        professionalId,
+        "valid until:",
+        expiresAt.toLocaleDateString("pt-BR")
+      );
+    } else {
+      console.error(
+        "❌ [AGENDA-WEBHOOK] VERIFICATION: Access was not granted properly!"
+      );
+    }
+  } catch (error) {
+    console.error(
+      "❌ [AGENDA-WEBHOOK] Error processing agenda payment:",
+      error
+    );
+    console.error("❌ [AGENDA-WEBHOOK] Error details:", {
+      message: error.message,
+      stack: error.stack,
+      payment_id: payment?.id,
+      external_reference: payment?.external_reference,
+    });
+  }
 };
+
+// Test endpoint to manually process payments
+app.post(
+  "/api/test-payment-processing",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const { external_reference, payment_id } = req.body;
+
+      console.log("🔧 [MANUAL] Manual payment processing requested:", {
+        external_reference,
+        payment_id,
+      });
+
+      if (!external_reference) {
+        return res
+          .status(400)
+          .json({ message: "external_reference é obrigatório" });
+      }
+
+      // Create a mock payment object for processing
+      const mockPayment = {
+        id: payment_id || `test_${Date.now()}`,
+        status: "approved",
+        external_reference: external_reference,
+        transaction_amount: 0.5, // Default value, will be overwritten if needed by specific processing functions
+      };
+
+      console.log("🔧 [MANUAL] Processing with mock payment:", mockPayment);
+
+      // Process based on payment type
+      if (external_reference.startsWith("agenda_")) {
+        await processAgendaPayment(mockPayment);
+        res.json({
+          message: "Pagamento da agenda processado manualmente com sucesso",
+        });
+      } else if (external_reference.startsWith("subscription_")) {
+        await processSubscriptionPayment(mockPayment);
+        res.json({
+          message: "Pagamento da assinatura processado manualmente com sucesso",
+        });
+      } else if (externalReference.startsWith("dependent_")) {
+        await processDependentPayment(mockPayment);
+        res.json({
+          message: "Pagamento do dependente processado manualmente com sucesso",
+        });
+      } else if (externalReference.startsWith("professional_")) {
+        await processProfessionalPayment(mockPayment);
+        res.json({
+          message:
+            "Pagamento do profissional processado manualmente com sucesso",
+        });
+      } else {
+        res.status(400).json({ message: "Tipo de pagamento não reconhecido" });
+      }
+    } catch (error) {
+      console.error("❌ [MANUAL] Error in manual processing:", error);
+      res
+        .status(500)
+        .json({ message: "Erro ao processar pagamento manualmente" });
+    }
+  }
+);
 
 // ===== REPORTS ROUTES =====
 
@@ -5489,7 +5926,7 @@ app.get(
           ELSE 'convenio'
         END as patient_type,
         al.name as location_name,
-        cancelled_by_user.name as cancelled_by_name
+        'Sistema' as cancelled_by_name
       FROM consultations c
       JOIN services s ON c.service_id = s.id
       JOIN users prof ON c.professional_id = prof.id
@@ -5497,7 +5934,6 @@ app.get(
       LEFT JOIN dependents d ON c.dependent_id = d.id
       LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
       LEFT JOIN attendance_locations al ON c.location_id = al.id
-      LEFT JOIN users cancelled_by_user ON c.cancelled_by = cancelled_by_user.id
       WHERE c.status = 'cancelled'
         AND c.date >= $1::timestamp AND c.date <= $2::timestamp
     `;
@@ -5753,7 +6189,7 @@ app.get(
 );
 
 app.get(
-  "/api/reports/professional-detailed",
+  "/api/reports/detailed-professional",
   authenticate,
   authorize(["professional"]),
   async (req, res) => {
@@ -5859,7 +6295,7 @@ app.get(
     } catch (error) {
       console.error("❌ Error generating detailed professional report:", error);
       res.status(500).json({
-        message: "Erro ao carregar relatório detalhado do profissional",
+        message: "Erro ao gerar relatório detalhado do profissional",
       });
     }
   }
@@ -5956,6 +6392,368 @@ app.get(
     }
   }
 );
+
+// ===== IMAGE UPLOAD ROUTE =====
+
+app.post("/api/upload-image", authenticate, async (req, res) => {
+  try {
+    console.log("🔄 Image upload request received");
+
+    // Create upload middleware instance
+    const upload = createUpload();
+
+    // Use multer middleware
+    upload.single("image")(req, res, async (err) => {
+      if (err) {
+        console.error("❌ Upload error:", err);
+        return res
+          .status(400)
+          .json({ message: err.message || "Erro no upload da imagem" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: "Nenhuma imagem foi enviada" });
+      }
+
+      console.log("✅ Image uploaded successfully:", req.file.path);
+
+      // Update user photo URL
+      await pool.query(
+        `
+        UPDATE users SET photo_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2
+      `,
+        [req.file.path, req.user.id]
+      );
+
+      res.json({
+        message: "Imagem enviada com sucesso",
+        imageUrl: req.file.path,
+      });
+    });
+  } catch (error) {
+    console.error("❌ Error in image upload route:", error);
+    res.status(500).json({ message: "Erro interno do servidor" });
+  }
+});
+
+// ===== ADMIN ROUTES =====
+
+app.get(
+  "/api/admin/dependents",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const dependentsResult = await pool.query(`
+      SELECT 
+        d.*, u.name as client_name, u.subscription_status as client_subscription_status
+      FROM dependents d
+      JOIN users u ON d.user_id = u.id
+      ORDER BY d.created_at DESC
+    `);
+
+      res.json(dependentsResult.rows);
+    } catch (error) {
+      console.error("❌ Error fetching all dependents:", error);
+      res.status(500).json({ message: "Erro ao carregar dependentes" });
+    }
+  }
+);
+
+// Add activate client route
+app.post(
+  "/api/users/:id/activate",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      console.log("🔄 Activating client:", id);
+
+      // Get user data
+      const userResult = await pool.query(
+        "SELECT * FROM users WHERE id = $1 AND 'client' = ANY(roles)",
+        [id]
+      );
+
+      if (userResult.rows.length === 0) {
+        return res.status(404).json({ message: "Cliente não encontrado" });
+      }
+
+      const expiryDate = addYears(new Date(), 1);
+
+      // Update subscription status and expiry
+      const updatedUserResult = await pool.query(
+        `UPDATE users 
+       SET subscription_status = 'active', 
+           subscription_expiry = $1,
+           updated_at = NOW()
+       WHERE id = $2
+       RETURNING 
+         id, name, cpf, email, phone, 
+         birth_date::text as birth_date,
+         address, address_number, address_complement, neighborhood, city, state,
+         roles, subscription_status, 
+         subscription_expiry::text as subscription_expiry,
+         photo_url, category_name, percentage, crm, 
+         created_at::text as created_at, updated_at::text as updated_at`,
+        [expiryDate, id]
+      );
+
+      console.log("✅ Client activated successfully:", id);
+
+      res.json({
+        message: "Cliente ativado com sucesso",
+        user: updatedUserResult.rows[0],
+      });
+    } catch (error) {
+      console.error("❌ Error activating client:", error);
+      res.status(500).json({ message: "Erro ao ativar cliente" });
+    }
+  }
+);
+
+// ===== NOTIFICATIONS ROUTES =====
+
+app.get("/api/notifications", authenticate, async (req, res) => {
+  try {
+    const notificationsResult = await pool.query(
+      `
+      SELECT * FROM notifications 
+      WHERE user_id = $1 
+      ORDER BY created_at DESC 
+      LIMIT 50
+    `,
+      [req.user.id]
+    );
+
+    res.json(notificationsResult.rows);
+  } catch (error) {
+    console.error("❌ Error fetching notifications:", error);
+    res.status(500).json({ message: "Erro ao carregar notificações" });
+  }
+});
+
+app.put("/api/notifications/:id/read", authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await pool.query(
+      `
+      UPDATE notifications 
+      SET is_read = true 
+      WHERE id = $1 AND user_id = $2
+    `,
+      [id, req.user.id]
+    );
+
+    res.json({ message: "Notificação marcada como lida" });
+  } catch (error) {
+    console.error("❌ Error marking notification as read:", error);
+    res.status(500).json({ message: "Erro ao marcar notificação como lida" });
+  }
+});
+
+app.put("/api/notifications/mark-all-read", authenticate, async (req, res) => {
+  try {
+    await pool.query(
+      `
+      UPDATE notifications 
+      SET is_read = true 
+      WHERE user_id = $1 AND is_read = false
+    `,
+      [req.user.id]
+    );
+
+    res.json({ message: "Todas as notificações foram marcadas como lidas" });
+  } catch (error) {
+    console.error("❌ Error marking all notifications as read:", error);
+    res
+      .status(500)
+      .json({ message: "Erro ao marcar todas as notificações como lidas" });
+  }
+});
+
+// ===== SYSTEM SETTINGS ROUTES =====
+
+app.get(
+  "/api/system-settings",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const settingsResult = await pool.query(`
+      SELECT * FROM system_settings ORDER BY key
+    `);
+
+      res.json(settingsResult.rows);
+    } catch (error) {
+      console.error("❌ Error fetching system settings:", error);
+      res
+        .status(500)
+        .json({ message: "Erro ao carregar configurações do sistema" });
+    }
+  }
+);
+
+app.put(
+  "/api/system-settings/:key",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const { key } = req.params;
+      const { value, description } = req.body;
+
+      if (!value) {
+        return res.status(400).json({ message: "Valor é obrigatório" });
+      }
+
+      const settingResult = await pool.query(
+        `
+      INSERT INTO system_settings (key, value, description, updated_by, updated_at)
+      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+      ON CONFLICT (key) 
+      DO UPDATE SET 
+        value = EXCLUDED.value,
+        description = EXCLUDED.description,
+        updated_by = EXCLUDED.updated_by,
+        updated_at = EXCLUDED.updated_at
+      RETURNING *
+    `,
+        [key, value, description || null, req.user.id]
+      );
+
+      const setting = settingResult.rows[0];
+
+      console.log("✅ System setting updated:", key);
+
+      res.json({
+        message: "Configuração atualizada com sucesso",
+        setting,
+      });
+    } catch (error) {
+      console.error("❌ Error updating system setting:", error);
+      res
+        .status(500)
+        .json({ message: "Erro ao atualizar configuração do sistema" });
+    }
+  }
+);
+
+// ===== AUDIT LOGSROUTES =====
+
+app.get(
+  "/api/audit-logs",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const { page = 1, limit = 50, user_id, action, table_name } = req.query;
+      const offset = (page - 1) * limit;
+
+      let query = `
+      SELECT 
+        al.*, u.name as user_name
+      FROM audit_logs al
+      LEFT JOIN users u ON al.user_id = u.id
+      WHERE 1=1
+    `;
+      const params = [];
+      let paramCount = 0;
+
+      if (user_id) {
+        paramCount++;
+        query += ` AND al.user_id = $${paramCount}`;
+        params.push(user_id);
+      }
+
+      if (action) {
+        paramCount++;
+        query += ` AND al.action = $${paramCount}`;
+        params.push(action);
+      }
+
+      if (table_name) {
+        paramCount++;
+        query += ` AND al.table_name = $${paramCount}`;
+        params.push(table_name);
+      }
+
+      query += ` LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+      params.push(limit, offset);
+
+      const logsResult = await pool.query(query, params);
+
+      // Get total count for pagination
+      let countQuery = `SELECT COUNT(*) FROM audit_logs al WHERE 1=1`;
+      const countParams = [];
+      let countParamCount = 0;
+
+      if (user_id) {
+        countParamCount++;
+        countQuery += ` AND al.user_id = $${countParamCount}`;
+        countParams.push(user_id);
+      }
+
+      if (action) {
+        countParamCount++;
+        countQuery += ` AND al.action = $${countParamCount}`;
+        countParams.push(action);
+      }
+
+      if (table_name) {
+        countParamCount++;
+        countQuery += ` AND al.table_name = $${countParamCount}`;
+        countParams.push(table_name);
+      }
+
+      const countResult = await pool.query(countQuery, countParams);
+      const totalCount = Number.parseInt(countResult.rows[0].count);
+
+      res.json({
+        logs: logsResult.rows,
+        pagination: {
+          page: Number.parseInt(page),
+          limit: Number.parseInt(limit),
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / limit),
+        },
+      });
+    } catch (error) {
+      console.error("❌ Error fetching audit logs:", error);
+      res.status(500).json({ message: "Erro ao carregar logs de auditoria" });
+    }
+  }
+);
+
+// ===== HEALTH CHECK =====
+
+// ===== MAINTENANCE ROUTE (NO AUTH REQUIRED) =====
+
+app.get("/api/maintenance-status", (req, res) => {
+  res.json({
+    status: "maintenance",
+    message: "Sistema em manutenção programada",
+    estimated_return: "Em breve",
+    contact: {
+      phone: "(64) 98124-9199",
+      email: "contato@cartaoquiroferreira.com.br",
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "OK",
+    timestamp: new Date().toISOString(),
+    version: "2.0.0",
+    database: "Connected",
+    mercadopago: "Configured",
+  });
+});
 
 // ===== ERROR HANDLERS =====
 

@@ -1,5 +1,3 @@
-"use client";
-
 import type React from "react";
 import { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
@@ -19,6 +17,7 @@ import {
   Search,
 } from "lucide-react";
 import PaymentSection from "./PaymentSection";
+import { formatToBrazilDateTime } from "../../utils/dateHelpers";
 
 // Consultations Table Component with Search
 type ConsultationsTableProps = {
@@ -273,6 +272,12 @@ const ProfessionalHomePage: React.FC = () => {
       const revenueData = await revenueResponse.json();
       console.log("✅ Revenue data received:", revenueData);
 
+      // 🔎 Log temporário para ver formato das datas
+      const sample = revenueData?.consultations
+        ?.slice?.(0, 3)
+        ?.map((c: any) => c?.date);
+      console.log("⏱️ RAW dates sample:", sample);
+
       setRevenueReport(revenueData);
     } catch (error) {
       console.error("❌ Error fetching data:", error);
@@ -354,37 +359,21 @@ const ProfessionalHomePage: React.FC = () => {
     }
   }, [user?.id]);
 
+  // ⚠️ Gambiarra provisória — ajusta -3h no frontend apenas para exibição
   const formatDate = (dateString: string) => {
-    try {
-      console.log("[v0] Date string from backend:", dateString);
+    if (!dateString) return "";
 
-      const date = new Date(
-        dateString.includes("Z") ? dateString : dateString + "Z"
-      );
+    // Converte a string em data
+    const d = new Date(dateString);
 
-      console.log("[v0] Parsed date object:", date);
-      console.log(
-        "[v0] Formatted date:",
-        date.toLocaleDateString("pt-BR", {
-          day: "2-digit",
-          month: "long",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      );
+    // Subtrai 3 horas
+    d.setHours(d.getHours() - 3);
 
-      return date.toLocaleDateString("pt-BR", {
-        day: "2-digit",
-        month: "long",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch (error) {
-      console.error("Error formatting date:", error);
-      return dateString;
-    }
+    // Formata normalmente
+    return d.toLocaleString("pt-BR", {
+      dateStyle: "short",
+      timeStyle: "short",
+    });
   };
 
   const formatCurrency = (value: number | string) => {

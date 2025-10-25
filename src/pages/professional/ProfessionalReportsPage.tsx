@@ -1,5 +1,3 @@
-"use client";
-
 import type React from "react";
 import { useState, useEffect } from "react";
 import { BarChart2, Calendar, TrendingUp, Users, FileText } from "lucide-react";
