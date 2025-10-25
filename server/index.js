@@ -621,13 +621,13 @@ const initializeDatabase = async () => {
     // Insert default system settings
     await pool.query(`
       INSERT INTO system_settings (key, value, description) 
-      SELECT 'subscription_price', '2.0', 'Preço da assinatura mensal'
+      SELECT 'subscription_price', '0.1', 'Preço da assinatura mensal'
       WHERE NOT EXISTS (SELECT 1 FROM system_settings WHERE key = 'subscription_price')
     `);
 
     await pool.query(`
       INSERT INTO system_settings (key, value, description) 
-      SELECT 'dependent_price', '1.0', 'Preço da ativação de dependente'
+      SELECT 'dependent_price', '0.2', 'Preço da ativação de dependente'
       WHERE NOT EXISTS (SELECT 1 FROM system_settings WHERE key = 'dependent_price')
     `);
 
@@ -5009,7 +5009,7 @@ app.post(
             title: "Assinatura Cartão Quiro Ferreira",
             description: "Ativação da assinatura mensal do cartão de convênio",
             quantity: 1,
-            unit_price: 2.0,
+            unit_price: 0.1,
             currency_id: "BRL",
           },
         ],
@@ -5064,7 +5064,7 @@ app.post(
     `,
         [
           user_id,
-          2.0,
+          0.1,
           "pending",
           preferenceId,
           `subscription_${user_id}_${Date.now()}`,
@@ -5127,7 +5127,7 @@ app.post(
             title: `Ativação de Dependente - ${dependent.name}`,
             description: "Ativação de dependente no cartão de convênio",
             quantity: 1,
-            unit_price: 1.0,
+            unit_price: 0.2,
             currency_id: "BRL",
           },
         ],
@@ -5183,7 +5183,7 @@ app.post(
     `,
         [
           dependent_id,
-          1.0,
+          0.2,
           "pending",
           preferenceId,
           `dependent_${dependent_id}_${Date.now()}`,
