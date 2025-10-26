@@ -5553,7 +5553,7 @@ async function processClientPayment(userId, payment) {
       `UPDATE users
        SET subscription_status = 'active',
            subscription_active = true,
-           subscription_expires_at = $1
+           subscription_expiry = $1
        WHERE id = $2`,
       [expirationDate, userId]
     );
@@ -5602,7 +5602,7 @@ async function processDependentPayment(dependentId, payment) {
       `UPDATE dependents
        SET subscription_status = 'active',
            subscription_active = true,
-           subscription_expires_at = $1
+           subscription_expiry = $1
        WHERE id = $2`,
       [expirationDate, dependentId]
     );

@@ -16,7 +16,7 @@ type Dependent = {
   birth_date: string;
   created_at: string;
   subscription_status: string;
-  subscription_expires_at: string | null;
+  subscription_expiry: string | null;
   billing_amount: number;
   payment_reference: string | null;
   activated_at: string | null;
@@ -454,11 +454,11 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
                       >
                         {statusInfo.text}
                       </span>
-                      {dependent.subscription_expires_at &&
+                      {dependent.subscription_expiry &&
                         dependent.subscription_status === "active" && (
                           <div className="text-xs text-gray-500 mt-1">
                             Expira em:{" "}
-                            {formatDate(dependent.subscription_expires_at)}
+                            {formatDate(dependent.subscription_expiry)}
                           </div>
                         )}
                     </td>
