@@ -79,6 +79,7 @@ const ManageUsersPage: React.FC = () => {
     category_name: "",
     professional_percentage: 50,
     crm: "",
+    professional_type: "convenio",
   });
 
   // Password visibility
@@ -206,6 +207,7 @@ const ManageUsersPage: React.FC = () => {
       category_name: "",
       percentage: 50,
       crm: "",
+      professional_type: "convenio",
     });
     setSelectedUser(null);
     setIsModalOpen(true);
