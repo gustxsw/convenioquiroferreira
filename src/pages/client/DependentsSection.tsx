@@ -715,3 +715,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
 };
 
 export default DependentsSection;
+
+{
+  /*apenas comentando para teste de commit*/
+}
