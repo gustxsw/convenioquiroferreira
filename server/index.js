@@ -1945,11 +1945,17 @@ app.get(
           privateCount++;
         }
 
-        const amountToPay = isConvenio ? value * (percentage / 100) : value;
+        // Cálculo correto:
+        // - Convênio: o profissional deve pagar ao convênio = valor total - sua parte
+        //   Se ele recebe 50%, deve pagar 50% ao convênio
+        // - Particular: o profissional não paga nada (recebe tudo)
+        const professionalReceives = isConvenio ? value * (percentage / 100) : value;
+        const amountToPay = isConvenio ? value - professionalReceives : 0;
 
         return {
           ...c,
           amount_to_pay: amountToPay,
+          total_value: value,
         };
       });
 
