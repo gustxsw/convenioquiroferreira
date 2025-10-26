@@ -621,19 +621,19 @@ const initializeDatabase = async () => {
     // Insert default system settings
     await pool.query(`
       INSERT INTO system_settings (key, value, description) 
-      SELECT 'subscription_price', '0.1', 'Preço da assinatura mensal'
+      SELECT 'subscription_price', '500.0', 'Preço da assinatura mensal'
       WHERE NOT EXISTS (SELECT 1 FROM system_settings WHERE key = 'subscription_price')
     `);
 
     await pool.query(`
       INSERT INTO system_settings (key, value, description) 
-      SELECT 'dependent_price', '0.2', 'Preço da ativação de dependente'
+      SELECT 'dependent_price', '100.0', 'Preço da ativação de dependente'
       WHERE NOT EXISTS (SELECT 1 FROM system_settings WHERE key = 'dependent_price')
     `);
 
     await pool.query(`
       INSERT INTO system_settings (key, value, description) 
-      SELECT 'agenda_access_price', '0.50', 'Preço do acesso à agenda'
+      SELECT 'agenda_access_price', '24.99', 'Preço do acesso à agenda'
       WHERE NOT EXISTS (SELECT 1 FROM system_settings WHERE key = 'agenda_access_price')
     `);
 
@@ -5009,7 +5009,7 @@ app.post(
             title: "Assinatura Cartão Quiro Ferreira",
             description: "Ativação da assinatura mensal do cartão de convênio",
             quantity: 1,
-            unit_price: 0.1,
+            unit_price: 500.0,
             currency_id: "BRL",
           },
         ],
@@ -5064,7 +5064,7 @@ app.post(
     `,
         [
           user_id,
-          0.1,
+          500.0,
           "pending",
           preferenceId,
           `subscription_${user_id}_${Date.now()}`,
@@ -5127,7 +5127,7 @@ app.post(
             title: `Ativação de Dependente - ${dependent.name}`,
             description: "Ativação de dependente no cartão de convênio",
             quantity: 1,
-            unit_price: 0.2,
+            unit_price: 100.0,
             currency_id: "BRL",
           },
         ],
@@ -5183,7 +5183,7 @@ app.post(
     `,
         [
           dependent_id,
-          0.2,
+          100.0,
           "pending",
           preferenceId,
           `dependent_${dependent_id}_${Date.now()}`,
@@ -5320,7 +5320,7 @@ app.post(
             description:
               "Assinatura mensal do sistema de agendamentos (30 dias)",
             quantity: 1,
-            unit_price: 0.5,
+            unit_price: 24.99,
             currency_id: "BRL",
           },
         ],
@@ -5369,7 +5369,7 @@ app.post(
         [
           req.user.id,
           duration_days,
-          0.5,
+          24.99,
           "pending",
           preferenceId,
           `agenda_${req.user.id}_${duration_days}_${Date.now()}`,

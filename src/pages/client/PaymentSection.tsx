@@ -207,7 +207,7 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
     verifiedStatus
   );
 
-  const totalAmount = 250;
+  const totalAmount = 500;
 
   return (
     <div className="card mb-6">
@@ -220,14 +220,14 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
         <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
           <h3 className="font-medium mb-2">Detalhes da Assinatura (Titular)</h3>
           <div className="space-y-2">
-            <p>Assinatura do titular: R$ 250,00</p>
+            <p>Assinatura do titular: R$ 500,00</p>
             <div className="border-t border-gray-200 pt-2 mt-2">
               <p className="font-medium">Total: R$ {totalAmount},00</p>
             </div>
             <div className="bg-blue-50 p-3 rounded-lg mt-3 border border-blue-200">
               <p className="text-sm text-blue-800">
                 <strong>Nota:</strong> Dependentes têm cobrança separada de R$
-                50,00 cada. Eles podem ser ativados individualmente após o
+                100,00 cada. Eles podem ser ativados individualmente após o
                 cadastro.
               </p>
             </div>

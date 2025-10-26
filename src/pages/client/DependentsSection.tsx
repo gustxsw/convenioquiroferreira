@@ -16,7 +16,7 @@ type Dependent = {
   birth_date: string;
   created_at: string;
   subscription_status: string;
-  subscription_expiry: string | null;
+  subscription_expires_at: string | null;
   billing_amount: number;
   payment_reference: string | null;
   activated_at: string | null;
@@ -420,7 +420,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
             Você ainda não possui dependentes cadastrados.
           </p>
           <p className="text-sm text-gray-500">
-            Cada dependente terá cobrança individual de {formatCurrency(50)}{" "}
+            Cada dependente terá cobrança individual de {formatCurrency(100)}{" "}
             para ativação.
           </p>
         </div>
@@ -454,15 +454,15 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
                       >
                         {statusInfo.text}
                       </span>
-                      {dependent.subscription_expiry &&
+                      {dependent.subscription_expires_at &&
                         dependent.subscription_status === "active" && (
                           <div className="text-xs text-gray-500 mt-1">
                             Expira em:{" "}
-                            {formatDate(dependent.subscription_expiry)}
+                            {formatDate(dependent.subscription_expires_at)}
                           </div>
                         )}
                     </td>
-                    <td>{formatCurrency(dependent.billing_amount || 50)}</td>
+                    <td>{formatCurrency(dependent.billing_amount || 100)}</td>
                     <td>{formatDate(dependent.birth_date)}</td>
                     <td>{formatDate(dependent.created_at)}</td>
                     <td>
@@ -649,7 +649,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
                   <ul className="text-sm text-yellow-800 space-y-1">
                     <li>
                       • Cada dependente tem cobrança individual de{" "}
-                      {formatCurrency(50)}
+                      {formatCurrency(100)}
                     </li>
                     <li>
                       • O dependente só ficará ativo após confirmação do

@@ -1,5 +1,3 @@
-"use client";
-
 import type React from "react";
 import { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
@@ -190,9 +188,9 @@ const ClientHomePage: React.FC = () => {
           const userData = await userResponse.json();
           console.log("🔍 User subscription data from API:", userData);
           console.log("🔍 Subscription status:", userData.subscription_status);
-          console.log("🔍 Subscription expiry:", userData.subscription_expiry);
+          console.log("🔍 Subscription expiry:", userData.subscription_expires_at);
           setSubscriptionStatus(userData.subscription_status || "pending");
-          setSubscriptionExpiry(userData.subscription_expiry);
+          setSubscriptionExpiry(userData.subscription_expires_at);
         } else {
           console.error("❌ User data not available:", userResponse.status);
           setSubscriptionStatus("pending");
