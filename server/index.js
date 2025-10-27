@@ -1949,7 +1949,9 @@ app.get(
         // - Convênio: o profissional deve pagar ao convênio = valor total - sua parte
         //   Se ele recebe 50%, deve pagar 50% ao convênio
         // - Particular: o profissional não paga nada (recebe tudo)
-        const professionalReceives = isConvenio ? value * (percentage / 100) : value;
+        const professionalReceives = isConvenio
+          ? value * (percentage / 100)
+          : value;
         const amountToPay = isConvenio ? value - professionalReceives : 0;
 
         return {
@@ -5013,7 +5015,7 @@ app.post(
         items: [
           {
             title: "Assinatura Cartão Quiro Ferreira",
-            description: "Ativação da assinatura mensal do cartão de convênio",
+            description: "Ativação da assinatura anual do cartão de convênio",
             quantity: 1,
             unit_price: 500.0,
             currency_id: "BRL",
