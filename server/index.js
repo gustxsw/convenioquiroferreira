@@ -1965,6 +1965,21 @@ app.get(
         convenioRevenue * (percentage / 100) + privateRevenue;
       const totalAmountToPay = totalRevenue - professionalShare;
 
+      // Get approved payments in the period
+      const approvedPaymentsResult = await pool.query(
+        `
+        SELECT COALESCE(SUM(amount), 0) as total_paid
+        FROM professional_payments
+        WHERE professional_id = $1
+          AND status = 'approved'
+          AND created_at BETWEEN $2::timestamptz AND $3::timestamptz
+      `,
+        [professionalId, `${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
+      );
+
+      const totalPaid = parseFloat(approvedPaymentsResult.rows[0]?.total_paid || 0);
+      const amountToPayAfterPayments = Math.max(0, totalAmountToPay - totalPaid);
+
       res.json({
         consultations: consultationsWithAmounts,
         summary: {
@@ -1976,7 +1991,8 @@ app.get(
           private_revenue: privateRevenue,
           professional_percentage: percentage,
           professional_share: professionalShare,
-          amount_to_pay: totalAmountToPay,
+          amount_to_pay: amountToPayAfterPayments,
+          total_paid: totalPaid,
         },
       });
     } catch (error) {
@@ -2039,6 +2055,21 @@ app.get(
         convenioRevenue * (percentage / 100) + privateRevenue;
       const amountToPay = totalRevenue - professionalShare;
 
+      // Get approved payments in the period
+      const approvedPaymentsResult = await pool.query(
+        `
+        SELECT COALESCE(SUM(amount), 0) as total_paid
+        FROM professional_payments
+        WHERE professional_id = $1
+          AND status = 'approved'
+          AND created_at BETWEEN $2::timestamptz AND $3::timestamptz
+      `,
+        [professionalId, `${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
+      );
+
+      const totalPaid = parseFloat(approvedPaymentsResult.rows[0]?.total_paid || 0);
+      const amountToPayAfterPayments = Math.max(0, amountToPay - totalPaid);
+
       res.json({
         summary: {
           total_consultations: parseInt(summary.total_consultations || 0),
@@ -2048,7 +2079,8 @@ app.get(
           convenio_revenue: convenioRevenue,
           private_revenue: privateRevenue,
           professional_percentage: percentage,
-          amount_to_pay: amountToPay,
+          amount_to_pay: amountToPayAfterPayments,
+          total_paid: totalPaid,
         },
       });
     } catch (error) {
