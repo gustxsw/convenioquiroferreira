@@ -13,6 +13,7 @@ import {
 
 type RevenueReport = {
   total_revenue: number;
+  total_consultations_value: number;
   revenue_by_professional: {
     professional_name: string;
     professional_percentage: number;
@@ -419,11 +420,11 @@ const ReportsPage: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                  <div className="p-4 bg-red-50 rounded-lg">
+                  <div className="p-4 bg-gray-50 rounded-lg">
                     <div className="text-center">
-                      <p className="text-gray-600 mb-1">Faturamento Total</p>
-                      <p className="text-3xl font-bold text-red-600">
-                        {formatCurrency(Number(report.total_revenue) || 0)}
+                      <p className="text-gray-600 mb-1">Valor Total das Consultas</p>
+                      <p className="text-3xl font-bold text-gray-700">
+                        {formatCurrency(Number(report.total_consultations_value) || 0)}
                       </p>
                     </div>
                   </div>
@@ -432,9 +433,7 @@ const ReportsPage: React.FC = () => {
                     <div className="text-center">
                       <p className="text-gray-600 mb-1">Receita do Convênio</p>
                       <p className="text-3xl font-bold text-green-600">
-                        {formatCurrency(
-                          Number(calculateTotalClinicRevenue()) || 0
-                        )}
+                        {formatCurrency(Number(report.total_revenue) || 0)}
                       </p>
                     </div>
                   </div>

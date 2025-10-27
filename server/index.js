@@ -1738,14 +1738,21 @@ app.get(
         [`${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
       );
 
-      // Calculate total revenue
-      const totalRevenue = professionalRevenueResult.rows.reduce(
+      // Calculate total clinic revenue (only what the clinic receives)
+      const totalClinicRevenue = professionalRevenueResult.rows.reduce(
+        (sum, row) => sum + parseFloat(row.clinic_revenue || 0),
+        0
+      );
+
+      // Calculate total revenue from all consultations (for reference)
+      const totalConsultationsValue = professionalRevenueResult.rows.reduce(
         (sum, row) => sum + parseFloat(row.revenue || 0),
         0
       );
 
       res.json({
-        total_revenue: totalRevenue,
+        total_revenue: totalClinicRevenue,
+        total_consultations_value: totalConsultationsValue,
         revenue_by_professional: professionalRevenueResult.rows.map((row) => ({
           professional_name: row.professional_name,
           professional_percentage: parseFloat(
