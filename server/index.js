@@ -2058,12 +2058,11 @@ app.get(
   }
 );
 
-// Create new consultation
+// Create new consultation (RegisterConsultationPage - no scheduling access required)
 app.post(
   "/api/consultations",
   authenticate,
   authorize(["professional"]),
-  checkSchedulingAccess,
   async (req, res) => {
     try {
       const {
