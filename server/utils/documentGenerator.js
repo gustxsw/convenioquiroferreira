@@ -162,8 +162,8 @@ const getBaseHTML = (title, content) => {
         }
         
         .signature-image {
-            max-width: 200px;
-            max-height: 60px;
+            max-width: 400px;
+            max-height: 150px;
             margin: 20px auto 10px;
             display: block;
         }
@@ -380,8 +380,8 @@ const generateConsentFormHTML = (data) => {
             </div>
             
             <div class="signature-box">
-                ${sanitizedData.signatureUrl ? 
-                  `<img src="${sanitizedData.signatureUrl}" alt="Assinatura" style="max-width: 150px; max-height: 50px; margin: 20px auto 10px; display: block;" />` : 
+                ${sanitizedData.signatureUrl ?
+                  `<img src="${sanitizedData.signatureUrl}" alt="Assinatura" style="max-width: 400px; max-height: 150px; margin: 20px auto 10px; display: block;" />` :
                   '<div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>'
                 }
                 <div>
@@ -567,8 +567,8 @@ const generateLGPDHTML = (data) => {
             </div>
             
             <div class="signature-box">
-                ${sanitizedData.signatureUrl ? 
-                  `<img src="${sanitizedData.signatureUrl}" alt="Assinatura" style="max-width: 150px; max-height: 50px; margin: 20px auto 10px; display: block;" />` : 
+                ${sanitizedData.signatureUrl ?
+                  `<img src="${sanitizedData.signatureUrl}" alt="Assinatura" style="max-width: 400px; max-height: 150px; margin: 20px auto 10px; display: block;" />` :
                   '<div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>'
                 }
                 <div>

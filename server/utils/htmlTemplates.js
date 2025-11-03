@@ -165,7 +165,14 @@ const getBaseHTML = (title, content) => {
             width: 300px;
             margin: 40px auto 10px;
         }
-        
+
+        .signature-image {
+            max-width: 400px;
+            max-height: 150px;
+            margin: 20px auto 10px;
+            display: block;
+        }
+
         .document-footer {
             margin-top: 40px;
             text-align: center;
