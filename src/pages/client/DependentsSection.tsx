@@ -547,7 +547,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
               <div className="text-lg font-bold text-blue-600">
                 {formatCurrency(
                   dependents.filter((d) => d.subscription_status === "pending")
-                    .length * 50
+                    .length * 100
                 )}
               </div>
               <div className="text-blue-700">Total Pendente</div>
