@@ -462,7 +462,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
                           </div>
                         )}
                     </td>
-                    <td>{formatCurrency(dependent.billing_amount || 100)}</td>
+                    <td>{formatCurrency(100)}</td>
                     <td>{formatDate(dependent.birth_date)}</td>
                     <td>{formatDate(dependent.created_at)}</td>
                     <td>
