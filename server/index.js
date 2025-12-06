@@ -20,11 +20,8 @@ import {
 
 import {
   toUTCString,
-  formatToBrazilTime,
   formatToBrazilDate,
   formatToBrazilTimeOnly,
-  addYears,
-  addDays,
 } from "./utils/dateHelpers.js";
 
 // ES6 module compatibility
@@ -230,6 +227,7 @@ const initializeDatabase = async () => {
         cancellation_reason TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        settled_at TIMESTAMP,
         CONSTRAINT consultations_patient_type_check CHECK (
           (user_id IS NOT NULL AND dependent_id IS NULL AND private_patient_id IS NULL) OR
           (user_id IS NULL AND dependent_id IS NOT NULL AND private_patient_id IS NULL) OR
@@ -446,7 +444,9 @@ const initializeDatabase = async () => {
         expires_at TIMESTAMP NOT NULL,
         reason TEXT,
         is_active BOOLEAN DEFAULT true,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        schedule_balance INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
@@ -667,7 +667,7 @@ const validateEmail = (email) => {
   return emailRegex.test(email);
 };
 
-const logAuditAction = async (
+const logAudit = async (
   userId,
   action,
   tableName,
@@ -1740,13 +1740,13 @@ app.get(
 
       // Calculate total clinic revenue (only what the clinic receives)
       const totalClinicRevenue = professionalRevenueResult.rows.reduce(
-        (sum, row) => sum + parseFloat(row.clinic_revenue || 0),
+        (sum, row) => sum + Number.parseFloat(row.clinic_revenue || 0),
         0
       );
 
       // Calculate total revenue from all consultations (for reference)
       const totalConsultationsValue = professionalRevenueResult.rows.reduce(
-        (sum, row) => sum + parseFloat(row.revenue || 0),
+        (sum, row) => sum + Number.parseFloat(row.revenue || 0),
         0
       );
 
@@ -1755,18 +1755,20 @@ app.get(
         total_consultations_value: totalConsultationsValue,
         revenue_by_professional: professionalRevenueResult.rows.map((row) => ({
           professional_name: row.professional_name,
-          professional_percentage: parseFloat(
+          professional_percentage: Number.parseFloat(
             row.professional_percentage || 50
           ),
-          revenue: parseFloat(row.revenue || 0),
-          consultation_count: parseInt(row.consultation_count || 0),
-          professional_payment: parseFloat(row.professional_payment || 0),
-          clinic_revenue: parseFloat(row.clinic_revenue || 0),
+          revenue: Number.parseFloat(row.revenue || 0),
+          consultation_count: Number.parseInt(row.consultation_count || 0),
+          professional_payment: Number.parseFloat(
+            row.professional_payment || 0
+          ),
+          clinic_revenue: Number.parseFloat(row.clinic_revenue || 0),
         })),
         revenue_by_service: serviceRevenueResult.rows.map((row) => ({
           service_name: row.service_name,
-          revenue: parseFloat(row.revenue || 0),
-          consultation_count: parseInt(row.consultation_count || 0),
+          revenue: Number.parseFloat(row.revenue || 0),
+          consultation_count: Number.parseInt(row.consultation_count || 0),
         })),
       });
 
@@ -1845,7 +1847,6 @@ app.get(
       // Process the data to group categories
       const processedData = result.rows.map((row) => {
         const categoryCounts = {};
-
         (row.categories || []).forEach((cat) => {
           const categoryName = cat.category_name;
           categoryCounts[categoryName] =
@@ -1855,7 +1856,7 @@ app.get(
         return {
           city: row.city,
           state: row.state,
-          total_professionals: parseInt(row.total_professionals),
+          total_professionals: Number.parseInt(row.total_professionals),
           categories: Object.entries(categoryCounts).map(([name, count]) => ({
             category_name: name,
             count: count,
@@ -1931,7 +1932,6 @@ app.get(
       );
 
       const percentage = profData.rows[0]?.percentage || 50;
-
       let totalRevenue = 0;
       let convenioRevenue = 0;
       let privateRevenue = 0;
@@ -1939,7 +1939,7 @@ app.get(
       let privateCount = 0;
 
       const consultationsWithAmounts = consultationsResult.rows.map((c) => {
-        const value = parseFloat(c.value);
+        const value = Number.parseFloat(c.value);
         const isConvenio = c.user_id || c.dependent_id;
 
         totalRevenue += value;
@@ -1984,8 +1984,13 @@ app.get(
         [professionalId, `${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
       );
 
-      const totalPaid = parseFloat(approvedPaymentsResult.rows[0]?.total_paid || 0);
-      const amountToPayAfterPayments = Math.max(0, totalAmountToPay - totalPaid);
+      const totalPaid = Number.parseFloat(
+        approvedPaymentsResult.rows[0]?.total_paid || 0
+      );
+      const amountToPayAfterPayments = Math.max(
+        0,
+        totalAmountToPay - totalPaid
+      );
 
       res.json({
         consultations: consultationsWithAmounts,
@@ -2054,9 +2059,9 @@ app.get(
       );
 
       const percentage = profData.rows[0]?.percentage || 50;
-      const convenioRevenue = parseFloat(summary.convenio_revenue || 0);
-      const privateRevenue = parseFloat(summary.private_revenue || 0);
-      const totalRevenue = parseFloat(summary.total_revenue || 0);
+      const convenioRevenue = Number.parseFloat(summary.convenio_revenue || 0);
+      const privateRevenue = Number.parseFloat(summary.private_revenue || 0);
+      const totalRevenue = Number.parseFloat(summary.total_revenue || 0);
 
       const professionalShare =
         convenioRevenue * (percentage / 100) + privateRevenue;
@@ -2074,14 +2079,22 @@ app.get(
         [professionalId, `${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
       );
 
-      const totalPaid = parseFloat(approvedPaymentsResult.rows[0]?.total_paid || 0);
+      const totalPaid = Number.parseFloat(
+        approvedPaymentsResult.rows[0]?.total_paid || 0
+      );
       const amountToPayAfterPayments = Math.max(0, amountToPay - totalPaid);
 
       res.json({
         summary: {
-          total_consultations: parseInt(summary.total_consultations || 0),
-          convenio_consultations: parseInt(summary.convenio_consultations || 0),
-          private_consultations: parseInt(summary.private_consultations || 0),
+          total_consultations: Number.parseInt(
+            summary.total_consultations || 0
+          ),
+          convenio_consultations: Number.parseInt(
+            summary.convenio_consultations || 0
+          ),
+          private_consultations: Number.parseInt(
+            summary.private_consultations || 0
+          ),
           total_revenue: totalRevenue,
           convenio_revenue: convenioRevenue,
           private_revenue: privateRevenue,
@@ -2102,6 +2115,7 @@ app.post(
   "/api/consultations",
   authenticate,
   authorize(["professional"]),
+  checkSchedulingAccess,
   async (req, res) => {
     try {
       const {
@@ -3670,6 +3684,7 @@ app.post(
         originalname: req.file.originalname,
         mimetype: req.file.mimetype,
         size: req.file.size,
+        path: req.file.path, // Cloudinary URL is in req.file.path
       });
 
       // Update user with signature URL (Cloudinary URL is in req.file.path)
@@ -3777,6 +3792,50 @@ app.delete(
       res
         .status(500)
         .json({ message: "Erro interno do servidor ao remover assinatura" });
+    }
+  }
+);
+
+app.post(
+  "/api/upload-image",
+  authenticate,
+  createUpload().single("image"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "Nenhuma imagem foi enviada" });
+      }
+
+      const userId = req.user.id;
+
+      console.log("🔄 [UPLOAD] Uploading photo for user:", userId);
+      console.log("📁 [UPLOAD] File info:", {
+        filename: req.file.filename,
+        size: req.file.size,
+        path: req.file.path, // Cloudinary URL is in req.file.path
+      });
+
+      // Save photo URL to database
+      const result = await pool.query(
+        "UPDATE users SET photo_url = $1, updated_at = NOW() WHERE id = $2 RETURNING id, photo_url",
+        [req.file.path, userId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Usuário não encontrado" });
+      }
+
+      const photoUrl = result.rows[0].photo_url;
+
+      console.log("✅ [UPLOAD] Photo uploaded successfully:", photoUrl);
+
+      res.json({
+        message: "Foto de perfil atualizada com sucesso",
+        photo_url: photoUrl,
+      });
+    } catch (error) {
+      console.error("❌ [UPLOAD] Error uploading photo:", error);
+      res.status(500).json({ message: "Erro ao fazer upload da foto" });
     }
   }
 );
@@ -5539,22 +5598,24 @@ app.post("/api/webhooks/payment-success", express.json(), async (req, res) => {
       console.log(`✅ [WEBHOOK] Payment approved for: ${external_reference}`);
 
       if (external_reference.startsWith("subscription_")) {
-        const userId = parseInt(
+        const userId = Number.parseInt(
           external_reference.replace("subscription_", "")
         );
         await processClientPayment(userId, payment);
       } else if (external_reference.startsWith("dependent_")) {
-        const dependentId = parseInt(
+        const dependentId = Number.parseInt(
           external_reference.replace("dependent_", "")
         );
         await processDependentPayment(dependentId, payment);
       } else if (external_reference.startsWith("agenda_")) {
-        const professionalId = parseInt(
-          external_reference.replace("agenda_", "")
+        const professionalId = Number.parseInt(
+          external_reference.split("_")[1]
         );
         await processAgendaPayment(professionalId, payment);
       } else if (external_reference.startsWith("professional_")) {
-        const professionalId = parseInt(external_reference.split("_")[1]);
+        const professionalId = Number.parseInt(
+          external_reference.split("_")[1]
+        );
         await processProfessionalPayment(professionalId, payment);
       } else {
         console.warn(
@@ -5882,7 +5943,9 @@ async function updatePaymentStatusOnly(externalReference, status, paymentId) {
     );
 
     if (externalReference.startsWith("subscription_")) {
-      const userId = parseInt(externalReference.replace("subscription_", ""));
+      const userId = Number.parseInt(
+        externalReference.replace("subscription_", "")
+      );
       await pool.query(
         `UPDATE client_payments
          SET status = $1,
@@ -5891,7 +5954,9 @@ async function updatePaymentStatusOnly(externalReference, status, paymentId) {
         [status, paymentId.toString(), userId]
       );
     } else if (externalReference.startsWith("dependent_")) {
-      const dependentId = parseInt(externalReference.replace("dependent_", ""));
+      const dependentId = Number.parseInt(
+        externalReference.replace("dependent_", "")
+      );
       await pool.query(
         `UPDATE dependent_payments
          SET status = $1,
@@ -5900,7 +5965,9 @@ async function updatePaymentStatusOnly(externalReference, status, paymentId) {
         [status, paymentId.toString(), dependentId]
       );
     } else if (externalReference.startsWith("agenda_")) {
-      const professionalId = parseInt(externalReference.replace("agenda_", ""));
+      const professionalId = Number.parseInt(
+        externalReference.replace("agenda_", "")
+      );
       await pool.query(
         `UPDATE agenda_payments
          SET status = $1,
@@ -5909,7 +5976,7 @@ async function updatePaymentStatusOnly(externalReference, status, paymentId) {
         [status, paymentId.toString(), professionalId]
       );
     } else if (externalReference.startsWith("professional_")) {
-      const professionalId = parseInt(externalReference.split("_")[1]);
+      const professionalId = Number.parseInt(externalReference.split("_")[1]);
       await pool.query(
         `UPDATE professional_payments
          SET status = $1,
