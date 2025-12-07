@@ -5,6 +5,7 @@ import {
   AlertCircle,
   CheckCircle,
   ExternalLink,
+  Tag,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -30,6 +31,10 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
   const [error, setError] = useState("");
   const [verifiedStatus, setVerifiedStatus] = useState<string>("");
   const [isVerifying, setIsVerifying] = useState(true);
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
+  const [couponError, setCouponError] = useState("");
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
 
   // Get API URL - PRODUCTION READY
   const getApiUrl = () => {
@@ -129,8 +134,46 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
     }
   }, [verifiedStatus, isVerifying]);
 
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) {
+      setCouponError("Digite um código de cupom");
+      return;
+    }
+
+    try {
+      setIsValidatingCoupon(true);
+      setCouponError("");
+
+      const token = localStorage.getItem("token");
+      const apiUrl = getApiUrl();
+
+      const response = await fetch(`${apiUrl}/api/validate-coupon/${couponCode.trim()}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await response.json();
+
+      if (data.valid && data.coupon) {
+        setAppliedCoupon(data.coupon);
+        setCouponError("");
+      } else {
+        setCouponError(data.message || "Cupom inválido");
+        setAppliedCoupon(null);
+      }
+    } catch (error) {
+      console.error("Error validating coupon:", error);
+      setCouponError("Cupom inválido");
+      setAppliedCoupon(null);
+    } finally {
+      setIsValidatingCoupon(false);
+    }
+  };
+
   const handlePayment = async () => {
-    // 🔥 VERIFICAÇÃO TRIPLA: Verificar novamente antes de processar pagamento
     if (verifiedStatus === "active") {
       console.error("🚫 BLOQUEADO: Tentativa de pagamento para cliente ativo!");
       setError(
@@ -157,6 +200,7 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
         },
         body: JSON.stringify({
           user_id: userId,
+          coupon_code: appliedCoupon ? appliedCoupon.code : undefined,
         }),
       });
 
@@ -168,7 +212,6 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
       const data = await response.json();
       console.log("Payment preference created:", data);
 
-      // Redirect to MercadoPago
       window.location.href = data.init_point;
     } catch (error) {
       console.error("Payment error:", error);
@@ -207,7 +250,9 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
     verifiedStatus
   );
 
-  const totalAmount = 500;
+  const baseAmount = 500;
+  const discount = appliedCoupon ? appliedCoupon.discount_value : 0;
+  const totalAmount = baseAmount - discount;
 
   return (
     <div className="card mb-6">
@@ -218,12 +263,79 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
 
       <div className="space-y-4">
         <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+          <h3 className="font-medium mb-3">Cupom de Desconto</h3>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <input
+                type="text"
+                value={couponCode}
+                onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                placeholder="Digite o código do cupom"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                disabled={appliedCoupon !== null || isValidatingCoupon}
+              />
+            </div>
+            <button
+              onClick={handleApplyCoupon}
+              disabled={appliedCoupon !== null || isValidatingCoupon || !couponCode.trim()}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                appliedCoupon !== null
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  : "bg-red-600 text-white hover:bg-red-700"
+              }`}
+            >
+              {isValidatingCoupon ? "Validando..." : appliedCoupon ? "Aplicado" : "Aplicar"}
+            </button>
+          </div>
+
+          {couponError && (
+            <div className="mt-2 text-sm text-red-600 flex items-center">
+              <AlertCircle className="h-4 w-4 mr-1" />
+              {couponError}
+            </div>
+          )}
+
+          {appliedCoupon && (
+            <div className="mt-2 bg-green-50 text-green-700 p-2 rounded-lg flex items-center text-sm border border-green-200">
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Cupom aplicado com sucesso!
+            </div>
+          )}
+        </div>
+
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
           <h3 className="font-medium mb-2">Detalhes da Assinatura (Titular)</h3>
           <div className="space-y-2">
-            <p>Assinatura do titular: R$ 500,00</p>
-            <div className="border-t border-gray-200 pt-2 mt-2">
-              <p className="font-medium">Total: R$ {totalAmount},00</p>
+            <div className="flex justify-between">
+              <p>Assinatura do titular:</p>
+              <p className={appliedCoupon ? "line-through text-gray-500" : ""}>
+                R$ {baseAmount.toFixed(2)}
+              </p>
             </div>
+
+            {appliedCoupon && (
+              <>
+                <div className="flex justify-between text-green-600">
+                  <p>Desconto (Cupom {appliedCoupon.code}):</p>
+                  <p>- R$ {discount.toFixed(2)}</p>
+                </div>
+                <div className="border-t border-gray-200 pt-2 mt-2">
+                  <div className="flex justify-between">
+                    <p className="font-medium text-lg">Total com desconto:</p>
+                    <p className="font-medium text-lg text-green-600">
+                      R$ {totalAmount.toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {!appliedCoupon && (
+              <div className="border-t border-gray-200 pt-2 mt-2">
+                <p className="font-medium">Total: R$ {totalAmount.toFixed(2)}</p>
+              </div>
+            )}
+
             <div className="bg-blue-50 p-3 rounded-lg mt-3 border border-blue-200">
               <p className="text-sm text-blue-800">
                 <strong>Nota:</strong> Dependentes têm cobrança separada de R$

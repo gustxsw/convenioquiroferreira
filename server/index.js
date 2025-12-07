@@ -632,9 +632,39 @@ const initializeDatabase = async () => {
     `);
 
     await pool.query(`
-      INSERT INTO system_settings (key, value, description) 
+      INSERT INTO system_settings (key, value, description)
       SELECT 'agenda_access_price', '24.99', 'Preço do acesso à agenda'
       WHERE NOT EXISTS (SELECT 1 FROM system_settings WHERE key = 'agenda_access_price')
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS coupons (
+        id SERIAL PRIMARY KEY,
+        code VARCHAR(50) UNIQUE NOT NULL,
+        discount_type VARCHAR(20) DEFAULT 'fixed',
+        discount_value DECIMAL(10,2) NOT NULL,
+        is_active BOOLEAN DEFAULT true,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_by INTEGER REFERENCES users(id)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS coupon_usage (
+        id SERIAL PRIMARY KEY,
+        coupon_id INTEGER REFERENCES coupons(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        payment_reference VARCHAR(255),
+        discount_applied DECIMAL(10,2) NOT NULL,
+        used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pool.query(`
+      INSERT INTO coupons (code, discount_type, discount_value, is_active, description)
+      SELECT 'MAISSAUDE', 'fixed', 60.00, true, 'Cupom de desconto fixo de R$ 60,00 para assinatura do titular'
+      WHERE NOT EXISTS (SELECT 1 FROM coupons WHERE code = 'MAISSAUDE')
     `);
 
     console.log("✅ Database tables initialized successfully");
@@ -5067,13 +5097,60 @@ app.post(
 
 // ===== PAYMENT ROUTES (MERCADOPAGO SDK V2) =====
 
+app.get(
+  "/api/validate-coupon/:code",
+  authenticate,
+  authorize(["client"]),
+  async (req, res) => {
+    try {
+      const { code } = req.params;
+
+      const couponResult = await pool.query(
+        `SELECT id, code, discount_type, discount_value, is_active
+         FROM coupons
+         WHERE UPPER(code) = UPPER($1)`,
+        [code]
+      );
+
+      if (couponResult.rows.length === 0) {
+        return res.status(404).json({
+          valid: false,
+          message: "Cupom inválido",
+        });
+      }
+
+      const coupon = couponResult.rows[0];
+
+      if (!coupon.is_active) {
+        return res.status(400).json({
+          valid: false,
+          message: "Cupom inválido",
+        });
+      }
+
+      res.json({
+        valid: true,
+        coupon: {
+          id: coupon.id,
+          code: coupon.code,
+          discount_type: coupon.discount_type,
+          discount_value: parseFloat(coupon.discount_value),
+        },
+      });
+    } catch (error) {
+      console.error("❌ Error validating coupon:", error);
+      res.status(500).json({ message: "Erro ao validar cupom" });
+    }
+  }
+);
+
 app.post(
   "/api/create-subscription",
   authenticate,
   authorize(["client"]),
   async (req, res) => {
     try {
-      const { user_id } = req.body;
+      const { user_id, coupon_code } = req.body;
 
       // Validate user can only create subscription for themselves
       if (req.user.id !== user_id) {
@@ -5103,7 +5180,33 @@ app.post(
           .json({ message: "Usuário já possui assinatura ativa" });
       }
 
+      let finalPrice = 500.0;
+      let couponId = null;
+      let discountApplied = 0;
+
+      if (coupon_code) {
+        const couponResult = await pool.query(
+          `SELECT id, code, discount_type, discount_value, is_active
+           FROM coupons
+           WHERE UPPER(code) = UPPER($1) AND is_active = true`,
+          [coupon_code]
+        );
+
+        if (couponResult.rows.length > 0) {
+          const coupon = couponResult.rows[0];
+          couponId = coupon.id;
+
+          if (coupon.discount_type === 'fixed') {
+            discountApplied = parseFloat(coupon.discount_value);
+            finalPrice = Math.max(0, finalPrice - discountApplied);
+          }
+
+          console.log(`✅ Coupon ${coupon_code} applied: R$ ${discountApplied} discount`);
+        }
+      }
+
       console.log("🔄 Creating subscription payment for user:", user_id);
+      console.log("💰 Final price:", finalPrice);
 
       const preference = new Preference(client);
       const urls = getProductionUrls();
@@ -5112,9 +5215,11 @@ app.post(
         items: [
           {
             title: "Assinatura Cartão Quiro Ferreira",
-            description: "Ativação da assinatura anual do cartão de convênio",
+            description: coupon_code
+              ? `Ativação da assinatura anual do cartão de convênio (Cupom ${coupon_code} aplicado)`
+              : "Ativação da assinatura anual do cartão de convênio",
             quantity: 1,
-            unit_price: 500.0,
+            unit_price: finalPrice,
             currency_id: "BRL",
           },
         ],
@@ -5161,6 +5266,8 @@ app.post(
         initPoint,
       });
 
+      const paymentReference = `subscription_${user_id}_${Date.now()}`;
+
       // Save payment record
       await pool.query(
         `
@@ -5169,12 +5276,21 @@ app.post(
     `,
         [
           user_id,
-          500.0,
+          finalPrice,
           "pending",
           preferenceId,
-          `subscription_${user_id}_${Date.now()}`,
+          paymentReference,
         ]
       );
+
+      if (couponId && discountApplied > 0) {
+        await pool.query(
+          `INSERT INTO coupon_usage (coupon_id, user_id, payment_reference, discount_applied)
+           VALUES ($1, $2, $3, $4)`,
+          [couponId, user_id, paymentReference, discountApplied]
+        );
+        console.log(`✅ Coupon usage recorded for user ${user_id}`);
+      }
 
       res.json({
         preference_id: preferenceId,
