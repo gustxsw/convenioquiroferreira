@@ -667,6 +667,25 @@ const initializeDatabase = async () => {
       WHERE NOT EXISTS (SELECT 1 FROM coupons WHERE code = 'MAISSAUDE')
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS refresh_tokens (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        token_hash VARCHAR(255) NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        revoked BOOLEAN DEFAULT false
+      )
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id)
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens(token_hash)
+    `);
+
     console.log("✅ Database tables initialized successfully");
   } catch (error) {
     console.error("❌ Error initializing database:", error);
@@ -684,6 +703,42 @@ const generateToken = (user) => {
     },
     process.env.JWT_SECRET || "your-secret-key",
     { expiresIn: "24h" }
+  );
+};
+
+const generateAccessToken = (user) => {
+  return jwt.sign(
+    {
+      id: user.id,
+      currentRole: user.currentRole,
+      roles: user.roles,
+    },
+    process.env.JWT_SECRET || "your-secret-key",
+    { expiresIn: "15m" }
+  );
+};
+
+const generateRefreshToken = () => {
+  return jwt.sign(
+    { type: "refresh" },
+    process.env.JWT_SECRET || "your-secret-key",
+    { expiresIn: "7d" }
+  );
+};
+
+const hashRefreshToken = async (token) => {
+  return await bcrypt.hash(token, 10);
+};
+
+const saveRefreshToken = async (userId, token) => {
+  const tokenHash = await hashRefreshToken(token);
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7);
+
+  await pool.query(
+    `INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+     VALUES ($1, $2, $3)`,
+    [userId, tokenHash, expiresAt]
   );
 };
 
@@ -969,7 +1024,7 @@ app.post("/api/auth/select-role", async (req, res) => {
         .json({ message: "Role não autorizada para este usuário" });
     }
 
-    // Generate token with selected role
+    // Generate tokens with selected role
     const userData = {
       id: user.id,
       name: user.name,
@@ -979,21 +1034,24 @@ app.post("/api/auth/select-role", async (req, res) => {
       subscription_expiry: user.subscription_expiry,
     };
 
-    const token = generateToken(userData);
+    const accessToken = generateAccessToken(userData);
+    const refreshToken = generateRefreshToken();
 
-    // Set cookie
-    res.cookie("token", token, {
+    await saveRefreshToken(user.id, refreshToken);
+
+    res.cookie("token", accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      maxAge: 15 * 60 * 1000,
     });
 
     console.log("✅ Role selected successfully:", role);
 
     res.json({
       message: "Role selecionada com sucesso",
-      token,
+      accessToken,
+      refreshToken,
       user: userData,
     });
   } catch (error) {
@@ -1051,10 +1109,118 @@ app.post(
   }
 );
 
-app.post("/api/auth/logout", (req, res) => {
+app.post("/api/auth/refresh", async (req, res) => {
   try {
-    // Clear cookie
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(401).json({ message: "Refresh token não fornecido" });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, process.env.JWT_SECRET || "your-secret-key");
+    } catch (error) {
+      console.log("❌ Invalid or expired refresh token");
+      return res.status(401).json({ message: "Refresh token inválido ou expirado" });
+    }
+
+    const storedTokens = await pool.query(
+      `SELECT rt.id, rt.user_id, rt.token_hash, rt.expires_at, rt.revoked,
+              u.name, u.roles, u.subscription_status, u.subscription_expiry
+       FROM refresh_tokens rt
+       JOIN users u ON rt.user_id = u.id
+       WHERE rt.revoked = false AND rt.expires_at > NOW()
+       ORDER BY rt.created_at DESC`
+    );
+
+    let matchedToken = null;
+    for (const row of storedTokens.rows) {
+      const isMatch = await bcrypt.compare(refreshToken, row.token_hash);
+      if (isMatch) {
+        matchedToken = row;
+        break;
+      }
+    }
+
+    if (!matchedToken) {
+      console.log("❌ Refresh token not found in database");
+      return res.status(401).json({ message: "Refresh token inválido" });
+    }
+
+    const userResult = await pool.query(
+      `SELECT id, name, roles, subscription_status, subscription_expiry
+       FROM users WHERE id = $1`,
+      [matchedToken.user_id]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ message: "Usuário não encontrado" });
+    }
+
+    const user = userResult.rows[0];
+
+    const currentRoleResult = await pool.query(
+      `SELECT current_role FROM user_sessions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [user.id]
+    );
+
+    const currentRole = currentRoleResult.rows.length > 0
+      ? currentRoleResult.rows[0].current_role
+      : user.roles[0];
+
+    const userData = {
+      id: user.id,
+      name: user.name,
+      roles: user.roles,
+      currentRole: currentRole,
+      subscription_status: user.subscription_status,
+      subscription_expiry: user.subscription_expiry,
+    };
+
+    const newAccessToken = generateAccessToken(userData);
+    const newRefreshToken = generateRefreshToken();
+
+    await pool.query(
+      `UPDATE refresh_tokens SET revoked = true WHERE id = $1`,
+      [matchedToken.id]
+    );
+
+    await saveRefreshToken(user.id, newRefreshToken);
+
+    res.cookie("token", newAccessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 15 * 60 * 1000,
+    });
+
+    console.log("✅ Tokens refreshed successfully for user:", user.id);
+
+    res.json({
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+      user: userData,
+    });
+  } catch (error) {
+    console.error("❌ Token refresh error:", error);
+    res.status(500).json({ message: "Erro ao renovar token" });
+  }
+});
+
+app.post("/api/auth/logout", async (req, res) => {
+  try {
+    const userId = req.body.userId;
+
     res.clearCookie("token");
+
+    if (userId) {
+      await pool.query(
+        `UPDATE refresh_tokens SET revoked = true WHERE user_id = $1 AND revoked = false`,
+        [userId]
+      );
+      console.log("✅ Refresh tokens revoked for user:", userId);
+    }
 
     console.log("✅ User logged out successfully");
 

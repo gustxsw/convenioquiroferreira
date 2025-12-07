@@ -45,9 +45,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     const checkAuthStatus = async () => {
       try {
         const token = localStorage.getItem("token");
+        const refreshToken = localStorage.getItem("refreshToken");
         const userData = localStorage.getItem("user");
 
-        if (token && userData) {
+        if (token && refreshToken && userData) {
           const parsedUser = JSON.parse(userData);
           console.log("🔄 Restored user from localStorage:", parsedUser);
           setUser(parsedUser);
@@ -55,6 +56,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       } catch (error) {
         console.error("❌ Auth check error:", error);
         localStorage.removeItem("token");
+        localStorage.removeItem("refreshToken");
         localStorage.removeItem("user");
       } finally {
         setIsLoading(false);
@@ -139,7 +141,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       const data = await response.json();
       console.log("✅ Role selected:", data);
 
-      localStorage.setItem("token", data.token);
+      localStorage.setItem("token", data.accessToken);
+      localStorage.setItem("refreshToken", data.refreshToken);
       localStorage.setItem("user", JSON.stringify(data.user));
 
       setUser(data.user);
@@ -190,7 +193,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       const data = await response.json();
       console.log("✅ Role switched:", data);
 
-      localStorage.setItem("token", data.token);
+      localStorage.setItem("token", data.accessToken || data.token);
+      if (data.refreshToken) {
+        localStorage.setItem("refreshToken", data.refreshToken);
+      }
       localStorage.setItem("user", JSON.stringify(data.user));
 
       setUser(data.user);
@@ -216,18 +222,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsLoading(true);
 
       const apiUrl = getApiUrl();
+      const userId = user?.id;
 
       await fetch(`${apiUrl}/api/auth/logout`, {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userId }),
         credentials: "include",
       });
 
       localStorage.removeItem("token");
+      localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
-      localStorage.removeItem("tempUser"); // LIMPAR DADOS TEMPORÁRIOS
+      localStorage.removeItem("tempUser");
 
       setUser(null);
-      navigate("/"); // 🔥 SEMPRE VAI PARA A RAIZ (LOGIN)
+      navigate("/");
     } catch (error) {
       console.error("❌ Logout error:", error);
     } finally {
