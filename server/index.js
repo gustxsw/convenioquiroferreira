@@ -686,6 +686,31 @@ const initializeDatabase = async () => {
       CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens(token_hash)
     `);
 
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'coupons' AND column_name = 'coupon_type'
+        ) THEN
+          ALTER TABLE coupons ADD COLUMN coupon_type VARCHAR(20) DEFAULT 'titular';
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'coupons' AND column_name = 'unlimited_use'
+        ) THEN
+          ALTER TABLE coupons ADD COLUMN unlimited_use BOOLEAN DEFAULT false;
+        END IF;
+      END $$;
+    `);
+
+    await pool.query(`
+      INSERT INTO coupons (code, discount_type, discount_value, is_active, description, coupon_type, unlimited_use)
+      SELECT 'REIS50', 'fixed', 50.00, true, 'Cupom de desconto de R$ 50,00 para ativação de dependentes (uso ilimitado)', 'dependente', true
+      WHERE NOT EXISTS (SELECT 1 FROM coupons WHERE code = 'REIS50')
+    `);
+
     console.log("✅ Database tables initialized successfully");
   } catch (error) {
     console.error("❌ Error initializing database:", error);
@@ -5270,9 +5295,10 @@ app.get(
   async (req, res) => {
     try {
       const { code } = req.params;
+      const { type } = req.query;
 
       const couponResult = await pool.query(
-        `SELECT id, code, discount_type, discount_value, is_active
+        `SELECT id, code, discount_type, discount_value, is_active, coupon_type, unlimited_use
          FROM coupons
          WHERE UPPER(code) = UPPER($1)`,
         [code]
@@ -5294,6 +5320,13 @@ app.get(
         });
       }
 
+      if (type && coupon.coupon_type !== type) {
+        return res.status(400).json({
+          valid: false,
+          message: `Este cupom é válido apenas para ${coupon.coupon_type === 'titular' ? 'assinatura do titular' : 'ativação de dependentes'}`,
+        });
+      }
+
       res.json({
         valid: true,
         coupon: {
@@ -5301,6 +5334,8 @@ app.get(
           code: coupon.code,
           discount_type: coupon.discount_type,
           discount_value: parseFloat(coupon.discount_value),
+          coupon_type: coupon.coupon_type,
+          unlimited_use: coupon.unlimited_use,
         },
       });
     } catch (error) {
@@ -5478,8 +5513,8 @@ app.post(
   async (req, res) => {
     try {
       const { id: dependent_id } = req.params;
+      const { coupon_code } = req.body;
 
-      // Get dependent info
       const dependentResult = await pool.query(
         `
       SELECT d.*, u.name as client_name, u.email as client_email, u.cpf as client_cpf
@@ -5496,14 +5531,39 @@ app.post(
 
       const dependent = dependentResult.rows[0];
 
-      // Check if dependent already has active subscription
       if (dependent.subscription_status === "active") {
         return res
           .status(400)
           .json({ message: "Dependente já possui assinatura ativa" });
       }
 
+      let finalPrice = 100.0;
+      let couponId = null;
+      let discountApplied = 0;
+
+      if (coupon_code) {
+        const couponResult = await pool.query(
+          `SELECT id, code, discount_type, discount_value, is_active, coupon_type, unlimited_use
+           FROM coupons
+           WHERE UPPER(code) = UPPER($1) AND is_active = true AND coupon_type = 'dependente'`,
+          [coupon_code]
+        );
+
+        if (couponResult.rows.length > 0) {
+          const coupon = couponResult.rows[0];
+          couponId = coupon.id;
+
+          if (coupon.discount_type === 'fixed') {
+            discountApplied = parseFloat(coupon.discount_value);
+            finalPrice = Math.max(0, finalPrice - discountApplied);
+          }
+
+          console.log(`✅ Coupon ${coupon_code} applied to dependent: R$ ${discountApplied} discount`);
+        }
+      }
+
       console.log("🔄 Creating dependent payment for dependent:", dependent_id);
+      console.log("💰 Final price:", finalPrice);
 
       const preference = new Preference(client);
       const urls = getProductionUrls();
@@ -5512,9 +5572,11 @@ app.post(
         items: [
           {
             title: `Ativação de Dependente - ${dependent.name}`,
-            description: "Ativação de dependente no cartão de convênio",
+            description: coupon_code
+              ? `Ativação de dependente no cartão de convênio (Cupom ${coupon_code} aplicado)`
+              : "Ativação de dependente no cartão de convênio",
             quantity: 1,
-            unit_price: 100.0,
+            unit_price: finalPrice,
             currency_id: "BRL",
           },
         ],
@@ -5562,7 +5624,8 @@ app.post(
         initPoint,
       });
 
-      // Save payment record
+      const paymentReference = `dependent_${dependent_id}_${Date.now()}`;
+
       await pool.query(
         `
       INSERT INTO dependent_payments (dependent_id, amount, status, mp_preference_id, payment_reference)
@@ -5570,12 +5633,21 @@ app.post(
     `,
         [
           dependent_id,
-          100.0,
+          finalPrice,
           "pending",
           preferenceId,
-          `dependent_${dependent_id}_${Date.now()}`,
+          paymentReference,
         ]
       );
+
+      if (couponId && discountApplied > 0) {
+        await pool.query(
+          `INSERT INTO coupon_usage (coupon_id, user_id, payment_reference, discount_applied)
+           VALUES ($1, $2, $3, $4)`,
+          [couponId, req.user.id, paymentReference, discountApplied]
+        );
+        console.log(`✅ Coupon usage recorded for dependent ${dependent_id}`);
+      }
 
       res.json({
         preference_id: preferenceId,

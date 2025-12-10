@@ -7,6 +7,9 @@ import {
   Check,
   X,
   CreditCard,
+  Tag,
+  AlertCircle,
+  CheckCircle,
 } from "lucide-react";
 
 type Dependent = {
@@ -56,6 +59,12 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
     null
   );
   const [paymentError, setPaymentError] = useState("");
+
+  // Coupon state per dependent
+  const [couponCodes, setCouponCodes] = useState<{ [key: number]: string }>({});
+  const [appliedCoupons, setAppliedCoupons] = useState<{ [key: number]: any }>({});
+  const [couponErrors, setCouponErrors] = useState<{ [key: number]: string }>({});
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState<number | null>(null);
 
   // Get API URL with fallback
   const getApiUrl = () => {
@@ -225,6 +234,50 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
     }
   };
 
+  const handleApplyCoupon = async (dependentId: number) => {
+    const couponCode = couponCodes[dependentId];
+
+    if (!couponCode?.trim()) {
+      setCouponErrors({ ...couponErrors, [dependentId]: "Digite um código de cupom" });
+      return;
+    }
+
+    try {
+      setIsValidatingCoupon(dependentId);
+      setCouponErrors({ ...couponErrors, [dependentId]: "" });
+
+      const token = localStorage.getItem("token");
+      const apiUrl = getApiUrl();
+
+      const response = await fetch(
+        `${apiUrl}/api/validate-coupon/${couponCode.trim()}?type=dependente`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.valid && data.coupon) {
+        setAppliedCoupons({ ...appliedCoupons, [dependentId]: data.coupon });
+        setCouponErrors({ ...couponErrors, [dependentId]: "" });
+      } else {
+        setCouponErrors({ ...couponErrors, [dependentId]: data.message || "Cupom inválido" });
+        setAppliedCoupons({ ...appliedCoupons, [dependentId]: null });
+      }
+    } catch (error) {
+      console.error("Error validating coupon:", error);
+      setCouponErrors({ ...couponErrors, [dependentId]: "Cupom inválido" });
+      setAppliedCoupons({ ...appliedCoupons, [dependentId]: null });
+    } finally {
+      setIsValidatingCoupon(null);
+    }
+  };
+
   const createDependentPayment = async (dependentId: number) => {
     try {
       setIsCreatingPayment(dependentId);
@@ -232,6 +285,8 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
 
       const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
+
+      const appliedCoupon = appliedCoupons[dependentId];
 
       const response = await fetch(
         `${apiUrl}/api/dependents/${dependentId}/create-payment`,
@@ -241,6 +296,9 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
+          body: JSON.stringify({
+            coupon_code: appliedCoupon ? appliedCoupon.code : undefined,
+          }),
         }
       );
 
@@ -251,7 +309,6 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
 
       const data = await response.json();
 
-      // Redirect to MercadoPago
       window.open(data.init_point, "_blank");
     } catch (error) {
       console.error("Error creating dependent payment:", error);
@@ -442,66 +499,158 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
               {dependents.map((dependent) => {
                 const statusInfo = getStatusDisplay(dependent);
                 return (
-                  <tr key={dependent.id}>
-                    <td className="flex items-center">
-                      <User className="h-5 w-5 mr-2 text-gray-500" />
-                      {dependent.name}
-                    </td>
-                    <td>{formattedCpf(dependent.cpf)}</td>
-                    <td>
-                      <span
-                        className={`px-2 py-1 text-xs font-medium rounded-full ${statusInfo.className}`}
-                      >
-                        {statusInfo.text}
-                      </span>
-                      {dependent.subscription_expiry &&
-                        dependent.subscription_status === "active" && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            Expira em:{" "}
-                            {formatDate(dependent.subscription_expiry)}
-                          </div>
-                        )}
-                    </td>
-                    <td>{formatCurrency(100)}</td>
-                    <td>{formatDate(dependent.birth_date)}</td>
-                    <td>{formatDate(dependent.created_at)}</td>
-                    <td>
-                      <div className="flex space-x-2">
-                        {statusInfo.showPayButton && (
+                  <React.Fragment key={dependent.id}>
+                    <tr>
+                      <td className="flex items-center">
+                        <User className="h-5 w-5 mr-2 text-gray-500" />
+                        {dependent.name}
+                      </td>
+                      <td>{formattedCpf(dependent.cpf)}</td>
+                      <td>
+                        <span
+                          className={`px-2 py-1 text-xs font-medium rounded-full ${statusInfo.className}`}
+                        >
+                          {statusInfo.text}
+                        </span>
+                        {dependent.subscription_expiry &&
+                          dependent.subscription_status === "active" && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              Expira em:{" "}
+                              {formatDate(dependent.subscription_expiry)}
+                            </div>
+                          )}
+                      </td>
+                      <td>{formatCurrency(100)}</td>
+                      <td>{formatDate(dependent.birth_date)}</td>
+                      <td>{formatDate(dependent.created_at)}</td>
+                      <td>
+                        <div className="flex space-x-2">
+                          {statusInfo.showPayButton && (
+                            <button
+                              onClick={() => createDependentPayment(dependent.id)}
+                              className={`p-1 text-green-600 hover:text-green-800 ${
+                                isCreatingPayment === dependent.id
+                                  ? "opacity-50 cursor-not-allowed"
+                                  : ""
+                              }`}
+                              title="Realizar Pagamento"
+                              disabled={isCreatingPayment === dependent.id}
+                            >
+                              {isCreatingPayment === dependent.id ? (
+                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-600"></div>
+                              ) : (
+                                <CreditCard className="h-5 w-5" />
+                              )}
+                            </button>
+                          )}
                           <button
-                            onClick={() => createDependentPayment(dependent.id)}
-                            className={`p-1 text-green-600 hover:text-green-800 ${
-                              isCreatingPayment === dependent.id
-                                ? "opacity-50 cursor-not-allowed"
-                                : ""
-                            }`}
-                            title="Realizar Pagamento"
-                            disabled={isCreatingPayment === dependent.id}
+                            onClick={() => openEditModal(dependent)}
+                            className="p-1 text-blue-600 hover:text-blue-800"
+                            title="Editar"
                           >
-                            {isCreatingPayment === dependent.id ? (
-                              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-600"></div>
-                            ) : (
-                              <CreditCard className="h-5 w-5" />
-                            )}
+                            <Edit className="h-5 w-5" />
                           </button>
-                        )}
-                        <button
-                          onClick={() => openEditModal(dependent)}
-                          className="p-1 text-blue-600 hover:text-blue-800"
-                          title="Editar"
-                        >
-                          <Edit className="h-5 w-5" />
-                        </button>
-                        <button
-                          onClick={() => confirmDelete(dependent)}
-                          className="p-1 text-red-600 hover:text-red-800"
-                          title="Excluir"
-                        >
-                          <Trash2 className="h-5 w-5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                          <button
+                            onClick={() => confirmDelete(dependent)}
+                            className="p-1 text-red-600 hover:text-red-800"
+                            title="Excluir"
+                          >
+                            <Trash2 className="h-5 w-5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {statusInfo.showPayButton && (
+                      <tr>
+                        <td colSpan={7} className="bg-gray-50 p-4 border-t">
+                          <div className="max-w-2xl">
+                            <div className="mb-3">
+                              <h4 className="font-medium mb-2 flex items-center">
+                                <Tag className="h-4 w-4 mr-2 text-red-600" />
+                                Cupom de Desconto
+                              </h4>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={couponCodes[dependent.id] || ""}
+                                  onChange={(e) =>
+                                    setCouponCodes({
+                                      ...couponCodes,
+                                      [dependent.id]: e.target.value.toUpperCase(),
+                                    })
+                                  }
+                                  placeholder="Digite o código do cupom (ex: REIS50)"
+                                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+                                  disabled={appliedCoupons[dependent.id] !== undefined}
+                                />
+                                <button
+                                  onClick={() => handleApplyCoupon(dependent.id)}
+                                  disabled={
+                                    appliedCoupons[dependent.id] !== undefined ||
+                                    isValidatingCoupon === dependent.id ||
+                                    !couponCodes[dependent.id]?.trim()
+                                  }
+                                  className={`px-4 py-2 rounded-lg font-medium transition-colors text-sm ${
+                                    appliedCoupons[dependent.id]
+                                      ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                                      : "bg-red-600 text-white hover:bg-red-700"
+                                  }`}
+                                >
+                                  {isValidatingCoupon === dependent.id
+                                    ? "Validando..."
+                                    : appliedCoupons[dependent.id]
+                                    ? "Aplicado"
+                                    : "Aplicar"}
+                                </button>
+                              </div>
+                              {couponErrors[dependent.id] && (
+                                <div className="mt-2 text-sm text-red-600 flex items-center">
+                                  <AlertCircle className="h-4 w-4 mr-1" />
+                                  {couponErrors[dependent.id]}
+                                </div>
+                              )}
+                              {appliedCoupons[dependent.id] && (
+                                <div className="mt-2 bg-green-50 text-green-700 p-2 rounded-lg flex items-center text-sm border border-green-200">
+                                  <CheckCircle className="h-4 w-4 mr-2" />
+                                  Cupom {appliedCoupons[dependent.id].code} aplicado! Desconto de R${" "}
+                                  {appliedCoupons[dependent.id].discount_value.toFixed(2)}
+                                </div>
+                              )}
+                            </div>
+                            <div className="bg-white p-3 rounded-lg border border-gray-200">
+                              <div className="flex justify-between items-center mb-2">
+                                <span className="text-sm text-gray-600">Valor original:</span>
+                                <span
+                                  className={`text-sm ${
+                                    appliedCoupons[dependent.id] ? "line-through text-gray-400" : "font-medium"
+                                  }`}
+                                >
+                                  R$ 100,00
+                                </span>
+                              </div>
+                              {appliedCoupons[dependent.id] && (
+                                <>
+                                  <div className="flex justify-between items-center mb-2 text-green-600">
+                                    <span className="text-sm">Desconto:</span>
+                                    <span className="text-sm font-medium">
+                                      - R$ {appliedCoupons[dependent.id].discount_value.toFixed(2)}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center pt-2 border-t">
+                                    <span className="font-medium text-green-600">Total:</span>
+                                    <span className="font-bold text-lg text-green-600">
+                                      R${" "}
+                                      {(100 - appliedCoupons[dependent.id].discount_value).toFixed(2)}
+                                    </span>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
