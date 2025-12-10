@@ -3,9 +3,9 @@
 ## Funcionalidades Implementadas
 
 1. **Cupom "MAISSAUDE" - Para Assinatura do Titular**
-   - Desconto de R$ 60,00 no valor da assinatura do titular
+   - Desconto de R$ 440,00 no valor da assinatura do titular
    - Valor original: R$ 500,00
-   - Valor com cupom: R$ 440,00
+   - Valor com cupom: R$ 60,00
    - Uso único por cliente
 
 2. **Cupom "REIS50" - Para Dependentes**
@@ -86,7 +86,7 @@ ORDER BY c.code;
 - `id`: ID único do cupom
 - `code`: Código do cupom (ex: "MAISSAUDE", "REIS50")
 - `discount_type`: Tipo de desconto ("fixed" ou "percentage")
-- `discount_value`: Valor do desconto (60.00, 50.00)
+- `discount_value`: Valor do desconto (440.00, 50.00)
 - `is_active`: Se o cupom está ativo (true/false)
 - `coupon_type`: Tipo do cupom ("titular" ou "dependente")
 - `unlimited_use`: Se pode ser usado ilimitadamente (true/false)
@@ -122,8 +122,8 @@ Para implementar um painel administrativo completo de gerenciamento de cupons, v
 
 ### MAISSAUDE
 - **Tipo**: Assinatura do Titular
-- **Desconto**: R$ 60,00
-- **Valor final**: R$ 440,00 (de R$ 500,00)
+- **Desconto**: R$ 440,00
+- **Valor final**: R$ 60,00 (de R$ 500,00)
 - **Uso**: Único por cliente
 - **Status atual**: Ativo
 

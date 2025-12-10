@@ -663,7 +663,7 @@ const initializeDatabase = async () => {
 
     await pool.query(`
       INSERT INTO coupons (code, discount_type, discount_value, is_active, description)
-      SELECT 'MAISSAUDE', 'fixed', 60.00, true, 'Cupom de desconto fixo de R$ 60,00 para assinatura do titular'
+      SELECT 'MAISSAUDE', 'fixed', 440.00, true, 'Cupom de desconto de R$ 440,00 para assinatura do titular (R$500 → R$60)'
       WHERE NOT EXISTS (SELECT 1 FROM coupons WHERE code = 'MAISSAUDE')
     `);
 
