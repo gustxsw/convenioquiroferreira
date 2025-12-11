@@ -47,7 +47,10 @@ export const refreshAccessToken = async (): Promise<string | null> => {
       localStorage.removeItem("token");
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
-      window.location.href = "/login";
+      localStorage.removeItem("tempUser");
+      localStorage.removeItem("role");
+      localStorage.removeItem("userType");
+      window.location.href = "/";
       return null;
     }
 
@@ -63,7 +66,10 @@ export const refreshAccessToken = async (): Promise<string | null> => {
     localStorage.removeItem("token");
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");
-    window.location.href = "/login";
+    localStorage.removeItem("tempUser");
+    localStorage.removeItem("role");
+    localStorage.removeItem("userType");
+    window.location.href = "/";
     return null;
   }
 };

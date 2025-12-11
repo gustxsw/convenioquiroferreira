@@ -44,20 +44,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     const checkAuthStatus = async () => {
       try {
+        console.log("🔄 Initializing authentication check...");
+
         const token = localStorage.getItem("token");
         const refreshToken = localStorage.getItem("refreshToken");
-        const userData = localStorage.getItem("user");
 
-        if (token && refreshToken && userData) {
-          const parsedUser = JSON.parse(userData);
-          console.log("🔄 Restored user from localStorage:", parsedUser);
-          setUser(parsedUser);
+        if (!token || !refreshToken) {
+          console.log("❌ No tokens found - cleaning localStorage");
+          localStorage.removeItem("user");
+          localStorage.removeItem("tempUser");
+          localStorage.removeItem("role");
+          localStorage.removeItem("userType");
+          setIsLoading(false);
+          return;
         }
+
+        console.log("🔄 Validating session with backend...");
+        const apiUrl = getApiUrl();
+
+        const response = await fetch(`${apiUrl}/api/auth/me`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          console.log("❌ Session validation failed - cleaning localStorage");
+          localStorage.removeItem("token");
+          localStorage.removeItem("refreshToken");
+          localStorage.removeItem("user");
+          localStorage.removeItem("tempUser");
+          localStorage.removeItem("role");
+          localStorage.removeItem("userType");
+          setUser(null);
+          setIsLoading(false);
+          return;
+        }
+
+        const data = await response.json();
+        console.log("✅ Session validated successfully:", data.user);
+
+        localStorage.setItem("user", JSON.stringify(data.user));
+        localStorage.removeItem("tempUser");
+        localStorage.removeItem("role");
+        localStorage.removeItem("userType");
+
+        setUser(data.user);
       } catch (error) {
         console.error("❌ Auth check error:", error);
         localStorage.removeItem("token");
         localStorage.removeItem("refreshToken");
         localStorage.removeItem("user");
+        localStorage.removeItem("tempUser");
+        localStorage.removeItem("role");
+        localStorage.removeItem("userType");
+        setUser(null);
       } finally {
         setIsLoading(false);
       }
@@ -141,27 +185,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       const data = await response.json();
       console.log("✅ Role selected:", data);
 
+      localStorage.removeItem("tempUser");
+      localStorage.removeItem("role");
+      localStorage.removeItem("userType");
+
       localStorage.setItem("token", data.accessToken);
       localStorage.setItem("refreshToken", data.refreshToken);
       localStorage.setItem("user", JSON.stringify(data.user));
 
       setUser(data.user);
 
-      // Navigate based on role - IMEDIATO
-      console.log("🚀 Navigating to role:", role);
+      const selectedRole = data.user.currentRole;
+      console.log("🚀 Navigating to role:", selectedRole);
 
-      if (role === "client") {
-        console.log("🚀 Redirecting to /client");
+      if (selectedRole === "client") {
         navigate("/client", { replace: true });
-      } else if (role === "professional") {
-        console.log("🚀 Redirecting to /professional");
+      } else if (selectedRole === "professional") {
         navigate("/professional", { replace: true });
-      } else if (role === "admin") {
-        console.log("🚀 Redirecting to /admin");
+      } else if (selectedRole === "admin") {
         navigate("/admin", { replace: true });
       }
     } catch (error) {
       console.error("❌ Role selection error:", error);
+      localStorage.removeItem("tempUser");
       throw error;
     } finally {
       setIsLoading(false);
@@ -201,13 +247,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       setUser(data.user);
 
-      // Navigate based on role
-      if (role === "client") {
-        navigate("/client");
-      } else if (role === "professional") {
-        navigate("/professional");
-      } else if (role === "admin") {
-        navigate("/admin");
+      const switchedRole = data.user.currentRole;
+      console.log("🚀 Navigating to switched role:", switchedRole);
+
+      if (switchedRole === "client") {
+        navigate("/client", { replace: true });
+      } else if (switchedRole === "professional") {
+        navigate("/professional", { replace: true });
+      } else if (switchedRole === "admin") {
+        navigate("/admin", { replace: true });
       }
     } catch (error) {
       console.error("❌ Role switch error:", error);
@@ -237,11 +285,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
       localStorage.removeItem("tempUser");
+      localStorage.removeItem("role");
+      localStorage.removeItem("userType");
 
       setUser(null);
       navigate("/");
     } catch (error) {
       console.error("❌ Logout error:", error);
+      localStorage.removeItem("token");
+      localStorage.removeItem("refreshToken");
+      localStorage.removeItem("user");
+      localStorage.removeItem("tempUser");
+      localStorage.removeItem("role");
+      localStorage.removeItem("userType");
+      setUser(null);
+      navigate("/");
     } finally {
       setIsLoading(false);
     }

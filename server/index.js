@@ -1014,6 +1014,43 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+app.get("/api/auth/me", authenticate, async (req, res) => {
+  try {
+    console.log("🔄 Session validation for user:", req.user.id);
+
+    const userResult = await pool.query(
+      `SELECT id, name, cpf, email, roles, subscription_status, subscription_expiry
+       FROM users
+       WHERE id = $1`,
+      [req.user.id]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ message: "Usuário não encontrado" });
+    }
+
+    const user = userResult.rows[0];
+
+    const userData = {
+      id: user.id,
+      name: user.name,
+      cpf: user.cpf,
+      email: user.email,
+      roles: user.roles || [],
+      currentRole: req.user.currentRole || user.roles[0],
+      subscriptionStatus: user.subscription_status,
+      subscriptionExpiry: user.subscription_expiry
+    };
+
+    console.log("✅ Session validated for user:", user.id, "with role:", userData.currentRole);
+
+    res.json({ user: userData });
+  } catch (error) {
+    console.error("❌ Session validation error:", error);
+    res.status(500).json({ message: "Erro ao validar sessão" });
+  }
+});
+
 app.post("/api/auth/select-role", async (req, res) => {
   try {
     const { userId, role } = req.body;

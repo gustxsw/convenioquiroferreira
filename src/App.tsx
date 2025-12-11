@@ -37,7 +37,9 @@ const ProtectedRoute = ({
 }) => {
   const { user, isAuthenticated } = useAuth();
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !user) {
+    console.log("❌ Unauthorized access - redirecting to login");
+    localStorage.clear();
     return <Navigate to="/" replace />;
   }
 
@@ -46,7 +48,10 @@ const ProtectedRoute = ({
     user &&
     !allowedRoles.includes(user.currentRole || "")
   ) {
-    // Redirect to appropriate home page based on current role
+    console.log(
+      `❌ Access denied - user role: ${user.currentRole}, allowed roles: ${allowedRoles.join(", ")}`
+    );
+
     if (user.currentRole === "client") {
       return <Navigate to="/client" replace />;
     } else if (user.currentRole === "professional") {
@@ -54,6 +59,8 @@ const ProtectedRoute = ({
     } else if (user.currentRole === "admin") {
       return <Navigate to="/admin" replace />;
     }
+
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
