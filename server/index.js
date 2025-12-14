@@ -82,12 +82,31 @@ console.log("✅ All required environment variables present");
 
 // Initialize MercadoPago SDK v2
 console.log("🔄 Initializing MercadoPago SDK v2...");
+
+const isSandboxMode = process.env.MP_SANDBOX_MODE === 'true';
+const mpAccessToken = process.env.MP_ACCESS_TOKEN;
+
+if (isSandboxMode) {
+  console.log("⚠️  SANDBOX MODE ENABLED - Using test credentials");
+  if (mpAccessToken && mpAccessToken.startsWith('TEST-')) {
+    console.log("✅ TEST Access Token detected");
+  } else {
+    console.warn("⚠️  WARNING: SANDBOX_MODE is true but token doesn't start with 'TEST-'");
+  }
+} else {
+  console.log("🔴 PRODUCTION MODE - Using live credentials");
+  if (mpAccessToken && mpAccessToken.startsWith('TEST-')) {
+    console.error("❌ ERROR: Using TEST credentials in production mode!");
+  }
+}
+
 const client = new MercadoPagoConfig({
-  accessToken: process.env.MP_ACCESS_TOKEN,
+  accessToken: mpAccessToken,
   options: {
     timeout: 5000,
   },
 });
+
 console.log("✅ MercadoPago SDK v2 initialized");
 
 // Database initialization and table creation
