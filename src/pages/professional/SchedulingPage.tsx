@@ -20,6 +20,7 @@ import {
   Repeat,
   Gift,
   MapPin,
+  Search,
 } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -134,6 +135,14 @@ const SchedulingPage: React.FC = () => {
     null
   );
   const [isSearching, setIsSearching] = useState(false);
+
+  // Private patient search state
+  const [privatePatientSearch, setPrivatePatientSearch] = useState("");
+  const [filteredPrivatePatients, setFilteredPrivatePatients] = useState<
+    PrivatePatient[]
+  >([]);
+  const [showPrivatePatientDropdown, setShowPrivatePatientDropdown] =
+    useState(false);
 
   // Get API URL
   const getApiUrl = () => {
@@ -269,6 +278,29 @@ const SchedulingPage: React.FC = () => {
     checkSchedulingAccess();
     fetchData();
   }, [selectedDate]);
+
+  useEffect(() => {
+    if (privatePatientSearch.trim() === "") {
+      setFilteredPrivatePatients(privatePatients);
+    } else {
+      const searchLower = privatePatientSearch.toLowerCase();
+      const filtered = privatePatients.filter(
+        (patient) =>
+          patient.name.toLowerCase().includes(searchLower) ||
+          (patient.cpf && patient.cpf.includes(searchLower.replace(/\D/g, "")))
+      );
+      setFilteredPrivatePatients(filtered);
+    }
+  }, [privatePatientSearch, privatePatients]);
+
+  const handlePrivatePatientSelect = (patient: PrivatePatient) => {
+    setFormData((prev) => ({
+      ...prev,
+      private_patient_id: patient.id.toString(),
+    }));
+    setPrivatePatientSearch(patient.name);
+    setShowPrivatePatientDropdown(false);
+  };
 
   const checkSchedulingAccess = async () => {
     try {
@@ -1533,7 +1565,7 @@ const SchedulingPage: React.FC = () => {
                       Tipo de Paciente *
                     </label>
                     <select
-                      onChange={(e) =>
+                      onChange={(e) => {
                         setFormData((prev) => ({
                           ...prev,
                           patient_type: e.target.value as
@@ -1541,8 +1573,10 @@ const SchedulingPage: React.FC = () => {
                             | "private",
                           client_cpf: "",
                           private_patient_id: "",
-                        }))
-                      }
+                        }));
+                        setPrivatePatientSearch("");
+                        setShowPrivatePatientDropdown(false);
+                      }}
                       className="input text-sm sm:text-base"
                       required
                     >
@@ -1553,31 +1587,96 @@ const SchedulingPage: React.FC = () => {
 
                   {/* Private Patient Selection */}
                   {formData.patient_type === "private" && (
-                    <div>
+                    <div className="relative">
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Paciente Particular *
                       </label>
-                      <select
-                        value={formData.private_patient_id}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            private_patient_id: e.target.value,
-                          }))
-                        }
-                        className="input text-sm sm:text-base"
-                        required
-                      >
-                        <option value="">Selecione um paciente</option>
-                        {privatePatients.map((patient) => (
-                          <option key={patient.id} value={patient.id}>
-                            {patient.name} -{" "}
-                            {patient.cpf
-                              ? formatCpf(patient.cpf)
-                              : "CPF não informado"}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                          <input
+                            type="text"
+                            value={privatePatientSearch}
+                            onChange={(e) => {
+                              setPrivatePatientSearch(e.target.value);
+                              setShowPrivatePatientDropdown(true);
+                            }}
+                            onFocus={() => setShowPrivatePatientDropdown(true)}
+                            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm sm:text-base"
+                            placeholder="Digite o nome ou CPF do paciente..."
+                            required={!formData.private_patient_id}
+                          />
+                        </div>
+
+                        {showPrivatePatientDropdown &&
+                          filteredPrivatePatients.length > 0 && (
+                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                              {filteredPrivatePatients.map((patient) => (
+                                <button
+                                  key={patient.id}
+                                  type="button"
+                                  onClick={() =>
+                                    handlePrivatePatientSelect(patient)
+                                  }
+                                  className={`w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors border-b border-gray-100 last:border-b-0 ${
+                                    formData.private_patient_id ===
+                                    patient.id.toString()
+                                      ? "bg-blue-50"
+                                      : ""
+                                  }`}
+                                >
+                                  <div className="font-medium text-gray-900 text-sm sm:text-base">
+                                    {patient.name}
+                                  </div>
+                                  <div className="text-xs sm:text-sm text-gray-500">
+                                    {patient.cpf
+                                      ? formatCpf(patient.cpf)
+                                      : "CPF não informado"}
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                        {showPrivatePatientDropdown &&
+                          privatePatientSearch.trim() !== "" &&
+                          filteredPrivatePatients.length === 0 && (
+                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-4">
+                              <p className="text-xs sm:text-sm text-gray-500 text-center">
+                                Nenhum paciente encontrado
+                              </p>
+                            </div>
+                          )}
+                      </div>
+
+                      {formData.private_patient_id && (
+                        <div className="mt-2 p-3 bg-green-50 rounded-lg border border-green-200 flex items-center justify-between">
+                          <div className="flex items-center">
+                            <User className="h-4 w-4 text-green-600 mr-2" />
+                            <span className="text-xs sm:text-sm font-medium text-green-800">
+                              {
+                                privatePatients.find(
+                                  (p) =>
+                                    p.id.toString() === formData.private_patient_id
+                                )?.name
+                              }
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormData((prev) => ({
+                                ...prev,
+                                private_patient_id: "",
+                              }));
+                              setPrivatePatientSearch("");
+                            }}
+                            className="text-green-600 hover:text-green-800"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 
