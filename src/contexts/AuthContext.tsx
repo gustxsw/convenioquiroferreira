@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { refreshAccessToken } from "../utils/apiHelpers";
 
 type User = {
   id: number;
@@ -29,6 +30,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Get API URL
   const getApiUrl = () => {
@@ -109,6 +111,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
     checkAuthStatus();
   }, []);
+
+  useEffect(() => {
+    const startTokenRefreshInterval = () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+
+      if (user && localStorage.getItem("token")) {
+        console.log("🔄 Starting automatic token refresh interval (every 10 minutes)");
+
+        refreshIntervalRef.current = setInterval(async () => {
+          const token = localStorage.getItem("token");
+          const refreshToken = localStorage.getItem("refreshToken");
+
+          if (token && refreshToken) {
+            console.log("🔄 Automatically refreshing access token...");
+            try {
+              const newToken = await refreshAccessToken();
+              if (newToken) {
+                console.log("✅ Token refreshed successfully");
+              } else {
+                console.log("❌ Failed to refresh token - user will be logged out");
+                setUser(null);
+                navigate("/");
+              }
+            } catch (error) {
+              console.error("❌ Error during automatic token refresh:", error);
+            }
+          }
+        }, 10 * 60 * 1000);
+      }
+    };
+
+    startTokenRefreshInterval();
+
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+    };
+  }, [user, navigate]);
 
   const login = async (
     cpf: string,
@@ -268,6 +311,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const logout = async () => {
     try {
       setIsLoading(true);
+
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+        refreshIntervalRef.current = null;
+      }
 
       const apiUrl = getApiUrl();
       const userId = user?.id;
