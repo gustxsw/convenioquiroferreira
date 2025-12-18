@@ -639,8 +639,8 @@ const initializeDatabase = async () => {
 
     // Insert default system settings
     await pool.query(`
-      INSERT INTO system_settings (key, value, description) 
-      SELECT 'subscription_price', '500.0', 'Preço da assinatura mensal'
+      INSERT INTO system_settings (key, value, description)
+      SELECT 'subscription_price', '600.0', 'Preço da assinatura mensal'
       WHERE NOT EXISTS (SELECT 1 FROM system_settings WHERE key = 'subscription_price')
     `);
 
@@ -682,8 +682,8 @@ const initializeDatabase = async () => {
 
     await pool.query(`
       INSERT INTO coupons (code, discount_type, discount_value, is_active, description)
-      SELECT 'MAISSAUDE', 'fixed', 440.00, true, 'Cupom de desconto de R$ 440,00 para assinatura do titular (R$500 → R$60)'
-      WHERE NOT EXISTS (SELECT 1 FROM coupons WHERE code = 'MAISSAUDE')
+      SELECT 'QUIRO70', 'fixed', 530.00, true, 'Cupom de desconto de R$ 530,00 para assinatura do titular (R$600 → R$70)'
+      WHERE NOT EXISTS (SELECT 1 FROM coupons WHERE code = 'QUIRO70')
     `);
 
     await pool.query(`
@@ -726,8 +726,8 @@ const initializeDatabase = async () => {
 
     await pool.query(`
       INSERT INTO coupons (code, discount_type, discount_value, is_active, description, coupon_type, unlimited_use)
-      SELECT 'REIS50', 'fixed', 50.00, true, 'Cupom de desconto de R$ 50,00 para ativação de dependentes (uso ilimitado)', 'dependente', true
-      WHERE NOT EXISTS (SELECT 1 FROM coupons WHERE code = 'REIS50')
+      SELECT 'REIS60', 'fixed', 40.00, true, 'Cupom de desconto de R$ 40,00 para ativação de dependentes (R$100 → R$60, uso ilimitado)', 'dependente', true
+      WHERE NOT EXISTS (SELECT 1 FROM coupons WHERE code = 'REIS60')
     `);
 
     console.log("✅ Database tables initialized successfully");
@@ -5437,7 +5437,7 @@ app.post(
           .json({ message: "Usuário já possui assinatura ativa" });
       }
 
-      let finalPrice = 500.0;
+      let finalPrice = 600.0;
       let couponId = null;
       let discountApplied = 0;
 
