@@ -36,6 +36,9 @@ Data: 17/12/2025
    - Linha 729: Cupom REIS50 substituído por REIS60
    - Linha 5440: Preço base do pagamento atualizado de 500.0 para 600.0
 
+2. **src/pages/client/PaymentSection.tsx**
+   - Linha 253: Valor base da assinatura no frontend atualizado de 500 para 600
+
 ### Banco de Dados
 Executada migração automática que:
 - Atualizou o valor em `system_settings` de 500 para 600
