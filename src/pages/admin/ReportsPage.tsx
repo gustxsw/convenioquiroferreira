@@ -10,6 +10,7 @@ import {
   Users,
   Building,
 } from "lucide-react";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type RevenueReport = {
   total_revenue: number;
@@ -63,18 +64,6 @@ const ReportsPage: React.FC = () => {
     ProfessionalCityReport[]
   >([]);
 
-  // Get API URL with fallback
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-
-    return "http://localhost:3001";
-  };
-
   // Get default date range (current month)
   function getDefaultStartDate() {
     const date = new Date();
@@ -92,7 +81,6 @@ const ReportsPage: React.FC = () => {
       setIsLoading(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       console.log(
@@ -105,12 +93,11 @@ const ReportsPage: React.FC = () => {
         `${apiUrl}/api/reports/revenue?start_date=${startDate}&end_date=${endDate}`
       );
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/reports/revenue?start_date=${startDate}&end_date=${endDate}`,
         {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         }
@@ -152,7 +139,6 @@ const ReportsPage: React.FC = () => {
       setIsLoading(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       console.log(
@@ -161,12 +147,11 @@ const ReportsPage: React.FC = () => {
       );
 
       // Fetch clients by city
-      const clientsResponse = await fetch(
+      const clientsResponse = await fetchWithAuth(
         `${apiUrl}/api/reports/clients-by-city`,
         {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         }
@@ -190,12 +175,11 @@ const ReportsPage: React.FC = () => {
       }
 
       // Fetch professionals by city
-      const professionalsResponse = await fetch(
+      const professionalsResponse = await fetchWithAuth(
         `${apiUrl}/api/reports/professionals-by-city`,
         {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         }

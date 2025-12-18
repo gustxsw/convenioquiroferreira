@@ -9,6 +9,7 @@ import {
   Users,
   MapPin,
 } from "lucide-react";
+import { fetchWithAuth, getApiUrl } from "../utils/apiHelpers";
 
 type CancelConsultationModalProps = {
   isOpen: boolean;
@@ -42,15 +43,13 @@ const CancelConsultationModal: React.FC<CancelConsultationModalProps> = ({
       setIsSubmitting(true);
 
       // Call the cancel API endpoint
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/consultations/${consultationData.id}/cancel`,
         {
           method: "PUT",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -71,17 +70,6 @@ const CancelConsultationModal: React.FC<CancelConsultationModalProps> = ({
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
   };
 
   const handleClose = () => {

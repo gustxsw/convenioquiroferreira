@@ -120,23 +120,17 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
 
   const fetchData = async () => {
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const servicesResponse = await fetch(`${apiUrl}/api/services`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const servicesResponse = await fetchWithAuth(`${apiUrl}/api/services`);
 
       if (servicesResponse.ok) {
         const servicesData = await servicesResponse.json();
         setServices(servicesData);
       }
 
-      const locationsResponse = await fetch(
-        `${apiUrl}/api/attendance-locations`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      const locationsResponse = await fetchWithAuth(
+        `${apiUrl}/api/attendance-locations`
       );
 
       if (locationsResponse.ok) {
@@ -154,9 +148,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
         }
       }
 
-      const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const patientsResponse = await fetchWithAuth(`${apiUrl}/api/private-patients`);
 
       if (patientsResponse.ok) {
         const patientsData = await patientsResponse.json();
@@ -195,15 +187,11 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
       setIsSearching(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
       const cleanCpf = searchCpf.replace(/\D/g, "");
 
-      const dependentResponse = await fetch(
-        `${apiUrl}/api/dependents/search?cpf=${cleanCpf}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      const dependentResponse = await fetchWithAuth(
+        `${apiUrl}/api/dependents/search?cpf=${cleanCpf}`
       );
 
       if (dependentResponse.ok) {
@@ -221,11 +209,8 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
         return;
       }
 
-      const clientResponse = await fetch(
-        `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      const clientResponse = await fetchWithAuth(
+        `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`
       );
 
       if (!clientResponse.ok) {
@@ -248,11 +233,8 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
       setFoundDependent(null);
       setSelectedDependentId(null);
 
-      const dependentsResponse = await fetch(
-        `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      const dependentsResponse = await fetchWithAuth(
+        `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`
       );
 
       if (dependentsResponse.ok) {
@@ -301,7 +283,6 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
 
     try {
       setIsCreating(true);
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       const dateTimeUTC = toUTCString(selectedSlot.date, selectedSlot.time);
@@ -333,10 +314,9 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
       }
 
       console.log("🔄 Quick schedule consultation data:", consultationData);
-      const response = await fetch(`${apiUrl}/api/consultations`, {
+      const response = await fetchWithAuth(`${apiUrl}/api/consultations`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(consultationData),

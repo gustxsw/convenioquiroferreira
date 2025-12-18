@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import DependentsSection from "./DependentsSection";
 import PaymentSection from "./PaymentSection";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type Consultation = {
   id: number;
@@ -53,18 +54,6 @@ const ClientHomePage: React.FC = () => {
     message: string;
   }>({ type: null, paymentType: null, message: "" });
   const [searchTerm, setSearchTerm] = useState("");
-
-  // Get API URL with fallback
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-
-    return "http://localhost:3001";
-  };
 
   // Handle payment feedback from URL parameters
   useEffect(() => {
@@ -125,18 +114,16 @@ const ClientHomePage: React.FC = () => {
       try {
         setIsLoading(true);
 
-        const token = localStorage.getItem("token");
         const apiUrl = getApiUrl();
 
         console.log("Fetching client data from:", apiUrl);
 
         // Fetch consultations
-        const consultationsResponse = await fetch(
+        const consultationsResponse = await fetchWithAuth(
           `${apiUrl}/api/consultations/client/${user?.id}`,
           {
             method: "GET",
             headers: {
-              Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
           }
@@ -155,12 +142,11 @@ const ClientHomePage: React.FC = () => {
         }
 
         // Fetch dependents
-        const dependentsResponse = await fetch(
+        const dependentsResponse = await fetchWithAuth(
           `${apiUrl}/api/dependents?client_id=${user?.id}`,
           {
             method: "GET",
             headers: {
-              Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
           }
@@ -176,10 +162,9 @@ const ClientHomePage: React.FC = () => {
         }
 
         // Fetch subscription status
-        const userResponse = await fetch(`${apiUrl}/api/users/${user?.id}`, {
+        const userResponse = await fetchWithAuth(`${apiUrl}/api/users/${user?.id}`, {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         });

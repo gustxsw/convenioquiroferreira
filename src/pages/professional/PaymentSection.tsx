@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 import {
   CreditCard,
   AlertCircle,
@@ -20,18 +21,6 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({ amount }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-
-  // Get API URL - PRODUCTION READY
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-
-    return "http://localhost:3001";
-  };
 
   useEffect(() => {
     // Load MercadoPago SDK v2
@@ -71,7 +60,6 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({ amount }) => {
       setError("");
       setSuccess("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       // Ensure amount is a valid number
@@ -82,12 +70,11 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({ amount }) => {
 
       console.log("Creating professional payment for amount:", numericAmount);
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/professional/create-payment`,
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({

@@ -1,6 +1,7 @@
 import type React from "react";
 import { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 import { Link } from "react-router-dom";
 import {
   CalendarClock,
@@ -194,18 +195,6 @@ const ProfessionalHomePage: React.FC = () => {
   const [uploadError, setUploadError] = useState("");
   const [uploadSuccess, setUploadSuccess] = useState("");
 
-  // Get API URL with fallback
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-
-    return "http://localhost:3001";
-  };
-
   const getDefaultDateRange = () => {
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -221,7 +210,6 @@ const ProfessionalHomePage: React.FC = () => {
       setIsLoading(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
       const dateRange = getDefaultDateRange();
 
@@ -230,10 +218,9 @@ const ProfessionalHomePage: React.FC = () => {
       console.log("🔄 User ID:", user?.id);
 
       // Fetch user data to get photo_url
-      const userResponse = await fetch(`${apiUrl}/api/users/${user?.id}`, {
+      const userResponse = await fetchWithAuth(`${apiUrl}/api/users/${user?.id}`, {
         method: "GET",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
       });
@@ -247,12 +234,11 @@ const ProfessionalHomePage: React.FC = () => {
       }
 
       // 🔥 LIBERADO: Sempre buscar dados de receita
-      const revenueResponse = await fetch(
+      const revenueResponse = await fetchWithAuth(
         `${apiUrl}/api/reports/professional-revenue?start_date=${dateRange.start}&end_date=${dateRange.end}`,
         {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         }
@@ -314,17 +300,13 @@ const ProfessionalHomePage: React.FC = () => {
       setUploadError("");
       setUploadSuccess("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       const formData = new FormData();
       formData.append("image", file);
 
-      const response = await fetch(`${apiUrl}/api/upload-image`, {
+      const response = await fetchWithAuth(`${apiUrl}/api/upload-image`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
         body: formData,
       });
 

@@ -16,6 +16,7 @@ import {
   Printer,
   AlertCircle,
 } from "lucide-react";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type SavedDocument = {
   id: number;
@@ -99,17 +100,6 @@ const DocumentsPage: React.FC = () => {
     signatureUrl: null as string | null,
   });
 
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
-  };
-
   useEffect(() => {
     fetchData();
   }, []);
@@ -146,13 +136,10 @@ const DocumentsPage: React.FC = () => {
   const fetchData = async () => {
     try {
       setIsLoading(true);
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       // Fetch professional data
-      const userResponse = await fetch(`${apiUrl}/api/users/${user?.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const userResponse = await fetchWithAuth(`${apiUrl}/api/users/${user?.id}`);
 
       if (userResponse.ok) {
         const userData = await userResponse.json();
@@ -165,11 +152,8 @@ const DocumentsPage: React.FC = () => {
 
         // Fetch signature separately
         try {
-          const signatureResponse = await fetch(
-            `${apiUrl}/api/professionals/${user?.id}/signature`,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-            }
+          const signatureResponse = await fetchWithAuth(
+            `${apiUrl}/api/professionals/${user?.id}/signature`
           );
           if (signatureResponse.ok) {
             const signatureData = await signatureResponse.json();
@@ -189,9 +173,7 @@ const DocumentsPage: React.FC = () => {
         `${apiUrl}/api/documents/medical`
       );
 
-      const documentsResponse = await fetch(`${apiUrl}/api/documents/medical`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const documentsResponse = await fetchWithAuth(`${apiUrl}/api/documents/medical`);
 
       console.log(
         "📡 [DOCUMENTS] Medical documents response status:",
@@ -217,9 +199,7 @@ const DocumentsPage: React.FC = () => {
       }
 
       // Fetch patients
-      const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const patientsResponse = await fetchWithAuth(`${apiUrl}/api/private-patients`);
 
       if (patientsResponse.ok) {
         const patientsData = await patientsResponse.json();
@@ -291,16 +271,12 @@ const DocumentsPage: React.FC = () => {
       setIsSearching(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
       const cleanCpf = formData.client_cpf.replace(/\D/g, "");
 
       // First, try to find a dependent
-      const dependentResponse = await fetch(
-        `${apiUrl}/api/dependents/search?cpf=${cleanCpf}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      const dependentResponse = await fetchWithAuth(
+        `${apiUrl}/api/dependents/search?cpf=${cleanCpf}`
       );
 
       if (dependentResponse.ok) {
@@ -322,11 +298,8 @@ const DocumentsPage: React.FC = () => {
       }
 
       // If not found as dependent, try as client
-      const clientResponse = await fetch(
-        `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      const clientResponse = await fetchWithAuth(
+        `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`
       );
 
       if (!clientResponse.ok) {
@@ -349,11 +322,8 @@ const DocumentsPage: React.FC = () => {
       setSelectedDependentId(null);
 
       // Fetch dependents
-      const dependentsResponse = await fetch(
-        `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      const dependentsResponse = await fetchWithAuth(
+        `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`
       );
 
       if (dependentsResponse.ok) {
@@ -379,7 +349,6 @@ const DocumentsPage: React.FC = () => {
     setSuccess("");
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       let patientData;
@@ -440,10 +409,9 @@ const DocumentsPage: React.FC = () => {
       };
 
       // Generate document using the documents route
-      const response = await fetch(`${apiUrl}/api/documents/medical`, {
+      const response = await fetchWithAuth(`${apiUrl}/api/documents/medical`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -496,7 +464,6 @@ const DocumentsPage: React.FC = () => {
     if (!documentToDelete) return;
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       console.log(
@@ -504,11 +471,10 @@ const DocumentsPage: React.FC = () => {
         documentToDelete.id
       );
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/documents/medical/${documentToDelete.id}`,
         {
           method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
         }
       );
 

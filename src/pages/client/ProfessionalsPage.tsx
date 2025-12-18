@@ -12,6 +12,7 @@ import {
   Filter,
   Search,
 } from "lucide-react";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type Professional = {
   id: number;
@@ -46,25 +47,12 @@ const ProfessionalsPage: React.FC = () => {
     name: string;
   } | null>(null);
 
-  // Get API URL with fallback
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-
-    return "http://localhost:3001";
-  };
-
   useEffect(() => {
     const fetchProfessionals = async () => {
       try {
         setIsLoading(true);
         setError("");
 
-        const token = localStorage.getItem("token");
         const apiUrl = getApiUrl();
 
         console.log(
@@ -72,10 +60,9 @@ const ProfessionalsPage: React.FC = () => {
           `${apiUrl}/api/professionals`
         );
 
-        const response = await fetch(`${apiUrl}/api/professionals`, {
+        const response = await fetchWithAuth(`${apiUrl}/api/professionals`, {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         });

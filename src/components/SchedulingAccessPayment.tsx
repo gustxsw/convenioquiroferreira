@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Star,
 } from "lucide-react";
+import { fetchWithAuth, getApiUrl } from "../utils/apiHelpers";
 
 declare global {
   interface Window {
@@ -29,34 +30,21 @@ const SchedulingAccessPayment: React.FC<SchedulingAccessPaymentProps> = ({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
-  };
-
   const handlePayment = async () => {
     try {
       setIsLoading(true);
       setError("");
       setSuccess("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       console.log("🔄 Creating agenda payment...");
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/professional/create-agenda-payment`,
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({

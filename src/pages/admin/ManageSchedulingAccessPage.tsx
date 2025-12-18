@@ -11,6 +11,7 @@ import {
   X,
   Check,
 } from "lucide-react";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type Professional = {
   id: number;
@@ -51,16 +52,6 @@ const ManageSchedulingAccessPage: React.FC = () => {
   const [professionalToRevoke, setProfessionalToRevoke] =
     useState<Professional | null>(null);
 
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
-  };
 
   useEffect(() => {
     fetchData();
@@ -99,7 +90,6 @@ const ManageSchedulingAccessPage: React.FC = () => {
     try {
       setIsLoading(true);
       setError("");
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       console.log(
@@ -108,12 +98,11 @@ const ManageSchedulingAccessPage: React.FC = () => {
       );
 
       // Fetch professionals with their scheduling access status
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/admin/professionals-scheduling-access`,
         {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         }
@@ -190,7 +179,6 @@ const ManageSchedulingAccessPage: React.FC = () => {
 
     try {
       setIsLoading(true);
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       console.log("🔄 Granting/extending access:", {
@@ -199,12 +187,11 @@ const ManageSchedulingAccessPage: React.FC = () => {
         reason: reason,
       });
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/admin/grant-scheduling-access`,
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -261,7 +248,6 @@ const ManageSchedulingAccessPage: React.FC = () => {
 
     try {
       setIsLoading(true);
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       console.log(
@@ -269,12 +255,11 @@ const ManageSchedulingAccessPage: React.FC = () => {
         professionalToRevoke.id
       );
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/admin/revoke-scheduling-access`,
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({

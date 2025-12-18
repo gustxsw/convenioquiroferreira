@@ -8,6 +8,7 @@ import {
   FileImage,
   Trash2,
 } from "lucide-react";
+import { fetchWithAuth, getApiUrl } from "../utils/apiHelpers";
 
 type UploadSignatureModalProps = {
   isOpen: boolean;
@@ -28,17 +29,6 @@ const UploadSignatureModal: React.FC<UploadSignatureModalProps> = ({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
-  };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -92,7 +82,6 @@ const UploadSignatureModal: React.FC<UploadSignatureModalProps> = ({
       setError("");
       setSuccess("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       // Get current user ID from localStorage
@@ -108,13 +97,10 @@ const UploadSignatureModal: React.FC<UploadSignatureModalProps> = ({
       const formData = new FormData();
       formData.append("signature", selectedFile);
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/professionals/${userId}/signature`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
           body: formData,
         }
       );
@@ -160,20 +146,16 @@ const UploadSignatureModal: React.FC<UploadSignatureModalProps> = ({
       setError("");
       setSuccess("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
       const userData = JSON.parse(localStorage.getItem("user") || "{}");
       const userId = userData.id;
 
       console.log("🔄 Removing current signature for professional:", userId);
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/professionals/${userId}/signature`,
         {
           method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
         }
       );
 

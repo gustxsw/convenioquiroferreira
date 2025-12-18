@@ -8,6 +8,7 @@ import {
   CalendarClock,
   DollarSign,
 } from "lucide-react";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type ConsultationCount = {
   total: number;
@@ -59,17 +60,6 @@ const AdminHomePage: React.FC = () => {
     null
   );
 
-  // Get API URL with fallback
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-
-    return "http://localhost:3001";
-  };
 
   // Get current month date range
   const getCurrentMonthRange = () => {
@@ -87,19 +77,15 @@ const AdminHomePage: React.FC = () => {
       try {
         setIsLoading(true);
 
-        const token = localStorage.getItem("token");
         const apiUrl = getApiUrl();
 
         console.log("Fetching admin data from:", apiUrl);
 
         // Fetch all consultations
-        const consultationsResponse = await fetch(
+        const consultationsResponse = await fetchWithAuth(
           `${apiUrl}/api/consultations`,
           {
             method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
           }
         );
 
@@ -110,10 +96,9 @@ const AdminHomePage: React.FC = () => {
         const consultationsData = await consultationsResponse.json();
 
         // Fetch all users
-        const usersResponse = await fetch(`${apiUrl}/api/users`, {
+        const usersResponse = await fetchWithAuth(`${apiUrl}/api/users`, {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         });
@@ -131,13 +116,10 @@ const AdminHomePage: React.FC = () => {
 
         // Fetch monthly revenue report
         const dateRange = getCurrentMonthRange();
-        const revenueResponse = await fetch(
+        const revenueResponse = await fetchWithAuth(
           `${apiUrl}/api/reports/revenue?start_date=${dateRange.start}&end_date=${dateRange.end}`,
           {
             method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
           }
         );
 
@@ -195,11 +177,8 @@ const AdminHomePage: React.FC = () => {
 
         // Fetch dependents data for additional stats
         try {
-          const dependentsResponse = await fetch(
-            `${apiUrl}/api/admin/dependents`,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-            }
+          const dependentsResponse = await fetchWithAuth(
+            `${apiUrl}/api/admin/dependents`
           );
 
           if (dependentsResponse.ok) {

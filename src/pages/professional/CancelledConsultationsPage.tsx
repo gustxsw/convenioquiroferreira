@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { 
-  XCircle, 
-  Calendar, 
-  User, 
-  Users, 
-  Search, 
-  Filter, 
+import { fetchWithAuth, getApiUrl } from '../../utils/apiHelpers';
+import {
+  XCircle,
+  Calendar,
+  User,
+  Users,
+  Search,
+  Filter,
   AlertCircle,
   MessageSquare,
   Clock,
@@ -39,16 +40,6 @@ const CancelledConsultationsPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
-  };
 
   // Get default date range (current month)
   function getDefaultStartDate() {
@@ -87,17 +78,15 @@ const CancelledConsultationsPage: React.FC = () => {
       setIsLoading(true);
       setError('');
 
-      const token = localStorage.getItem('token');
       const apiUrl = getApiUrl();
 
       console.log('🔄 [CANCELLED] Fetching cancelled consultations');
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/reports/cancelled-consultations?start_date=${startDate}&end_date=${endDate}`,
         {
           method: 'GET',
           headers: {
-            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           }
         }

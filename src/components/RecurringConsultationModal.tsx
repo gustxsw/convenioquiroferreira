@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { Repeat, X, AlertCircle, User, Search } from "lucide-react";
 import TimeInput from "./TimeInput";
 import { getCurrentDateString } from "../utils/dateHelpers";
-import { getApiUrl } from "../utils/apiHelpers"; // Declare getApiUrl
+import { fetchWithAuth, getApiUrl } from "../utils/apiHelpers";
 import ScheduleConflictModal from "./ScheduleConflictModal";
 
 type Service = {
@@ -128,13 +128,10 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
   const fetchData = async () => {
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       console.log("🔄 [RECURRING-MODAL] Fetching services...");
-      const servicesResponse = await fetch(`${apiUrl}/api/services`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const servicesResponse = await fetchWithAuth(`${apiUrl}/api/services`);
 
       if (servicesResponse.ok) {
         const servicesData = await servicesResponse.json();
@@ -146,9 +143,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
       }
 
       console.log("🔄 [RECURRING-MODAL] Fetching private patients...");
-      const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const patientsResponse = await fetchWithAuth(`${apiUrl}/api/private-patients`);
 
       if (patientsResponse.ok) {
         const patientsData = await patientsResponse.json();
@@ -160,11 +155,8 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
       }
 
       console.log("🔄 [RECURRING-MODAL] Fetching attendance locations...");
-      const locationsResponse = await fetch(
-        `${apiUrl}/api/attendance-locations`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      const locationsResponse = await fetchWithAuth(
+        `${apiUrl}/api/attendance-locations`
       );
 
       if (locationsResponse.ok) {
@@ -221,17 +213,13 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
       setIsSearching(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
       const cleanCpf = clientCpf.replace(/\D/g, "");
 
       console.log("🔄 [RECURRING-MODAL] Searching client by CPF:", cleanCpf);
 
-      const clientResponse = await fetch(
-        `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      const clientResponse = await fetchWithAuth(
+        `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`
       );
 
       if (clientResponse.ok) {
@@ -244,11 +232,8 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
         setClientSearchResult(clientData);
 
-        const dependentsResponse = await fetch(
-          `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
+        const dependentsResponse = await fetchWithAuth(
+          `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`
         );
 
         if (dependentsResponse.ok) {
@@ -256,11 +241,8 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
           setDependents(dependentsData);
         }
       } else {
-        const dependentResponse = await fetch(
-          `${apiUrl}/api/dependents/search?cpf=${cleanCpf}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
+        const dependentResponse = await fetchWithAuth(
+          `${apiUrl}/api/dependents/search?cpf=${cleanCpf}`
         );
 
         if (dependentResponse.ok) {
@@ -351,7 +333,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
     try {
       setIsCreating(true);
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       const consultationData: any = {
@@ -381,10 +362,9 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
       console.log("🔄 [RECURRING-MODAL] Sending data:", consultationData);
 
-      const response = await fetch(`${apiUrl}/api/consultations/recurring`, {
+      const response = await fetchWithAuth(`${apiUrl}/api/consultations/recurring`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(consultationData),

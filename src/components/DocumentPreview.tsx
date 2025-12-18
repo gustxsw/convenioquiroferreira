@@ -4,6 +4,7 @@ import type React from "react";
 import { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import SimplePDFGenerator from "./SimplePDFGenerator";
+import { fetchWithAuth, getApiUrl } from "../utils/apiHelpers";
 import {
   Stethoscope,
   Plus,
@@ -100,17 +101,6 @@ const MedicalRecordsPage: React.FC = () => {
     crm: "",
   });
 
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
-  };
-
   useEffect(() => {
     fetchData();
   }, []);
@@ -147,13 +137,10 @@ const MedicalRecordsPage: React.FC = () => {
   const fetchData = async () => {
     try {
       setIsLoading(true);
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       // Fetch professional data
-      const userResponse = await fetch(`${apiUrl}/api/users/${user?.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const userResponse = await fetchWithAuth(`${apiUrl}/api/users/${user?.id}`);
 
       if (userResponse.ok) {
         const userData = await userResponse.json();
@@ -165,9 +152,7 @@ const MedicalRecordsPage: React.FC = () => {
       }
 
       // Fetch medical records
-      const recordsResponse = await fetch(`${apiUrl}/api/medical-records`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const recordsResponse = await fetchWithAuth(`${apiUrl}/api/medical-records`);
 
       if (recordsResponse.ok) {
         const recordsData = await recordsResponse.json();
@@ -175,9 +160,7 @@ const MedicalRecordsPage: React.FC = () => {
       }
 
       // Fetch patients
-      const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const patientsResponse = await fetchWithAuth(`${apiUrl}/api/private-patients`);
 
       if (patientsResponse.ok) {
         const patientsData = await patientsResponse.json();
@@ -284,7 +267,6 @@ const MedicalRecordsPage: React.FC = () => {
     setSuccess("");
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       const url =
@@ -294,10 +276,9 @@ const MedicalRecordsPage: React.FC = () => {
 
       const method = modalMode === "create" ? "POST" : "PUT";
 
-      const response = await fetch(url, {
+      const response = await fetchWithAuth(url, {
         method,
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(formData),
@@ -339,14 +320,12 @@ const MedicalRecordsPage: React.FC = () => {
     if (!recordToDelete) return;
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/medical-records/${recordToDelete.id}`,
         {
           method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
         }
       );
 

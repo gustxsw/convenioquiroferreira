@@ -25,6 +25,7 @@ import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import EditConsultationModal from "../../components/EditConsultationModal";
 import RecurringConsultationModal from "../../components/RecurringConsultationModal";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type Consultation = {
   id: number;
@@ -116,17 +117,6 @@ const SchedulingPageWithExtras: React.FC = () => {
   );
   const [isSearching, setIsSearching] = useState(false);
 
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
-  };
-
   useEffect(() => {
     fetchData();
   }, [selectedDate]);
@@ -136,18 +126,16 @@ const SchedulingPageWithExtras: React.FC = () => {
       setIsLoading(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
       const dateStr = format(selectedDate, "yyyy-MM-dd");
 
       console.log("🔄 Fetching consultations for date:", dateStr);
 
       // Fetch consultations for the selected date
-      const consultationsResponse = await fetch(
+      const consultationsResponse = await fetchWithAuth(
         `${apiUrl}/api/consultations/agenda?date=${dateStr}`,
         {
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         }
@@ -166,9 +154,8 @@ const SchedulingPageWithExtras: React.FC = () => {
       }
 
       // Fetch services
-      const servicesResponse = await fetch(`${apiUrl}/api/services`, {
+      const servicesResponse = await fetchWithAuth(`${apiUrl}/api/services`, {
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
       });
@@ -179,9 +166,8 @@ const SchedulingPageWithExtras: React.FC = () => {
       }
 
       // Fetch private patients
-      const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
+      const patientsResponse = await fetchWithAuth(`${apiUrl}/api/private-patients`, {
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
       });
@@ -192,11 +178,10 @@ const SchedulingPageWithExtras: React.FC = () => {
       }
 
       // Fetch attendance locations
-      const locationsResponse = await fetch(
+      const locationsResponse = await fetchWithAuth(
         `${apiUrl}/api/attendance-locations`,
         {
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         }
@@ -232,16 +217,12 @@ const SchedulingPageWithExtras: React.FC = () => {
       setIsSearching(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
       const cleanCpf = formData.client_cpf.replace(/\D/g, "");
 
       // Search for client
-      const clientResponse = await fetch(
-        `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      const clientResponse = await fetchWithAuth(
+        `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`
       );
 
       if (clientResponse.ok) {
@@ -255,11 +236,8 @@ const SchedulingPageWithExtras: React.FC = () => {
         setClientSearchResult(clientData);
 
         // Fetch dependents
-        const dependentsResponse = await fetch(
-          `${apiUrl}/api/dependents/${clientData.id}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
+        const dependentsResponse = await fetchWithAuth(
+          `${apiUrl}/api/dependents/${clientData.id}`
         );
 
         if (dependentsResponse.ok) {
@@ -272,11 +250,8 @@ const SchedulingPageWithExtras: React.FC = () => {
         }
       } else {
         // Try searching as dependent
-        const dependentResponse = await fetch(
-          `${apiUrl}/api/dependents/lookup?cpf=${cleanCpf}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
+        const dependentResponse = await fetchWithAuth(
+          `${apiUrl}/api/dependents/lookup?cpf=${cleanCpf}`
         );
 
         if (dependentResponse.ok) {
@@ -311,7 +286,6 @@ const SchedulingPageWithExtras: React.FC = () => {
 
     try {
       setIsCreating(true);
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       if (formData.is_recurring) {
@@ -343,10 +317,9 @@ const SchedulingPageWithExtras: React.FC = () => {
           }
         }
 
-        const response = await fetch(`${apiUrl}/api/consultations/recurring`, {
+        const response = await fetchWithAuth(`${apiUrl}/api/consultations/recurring`, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify(recurringData),
@@ -389,10 +362,9 @@ const SchedulingPageWithExtras: React.FC = () => {
           }
         }
 
-        const response = await fetch(`${apiUrl}/api/consultations`, {
+        const response = await fetchWithAuth(`${apiUrl}/api/consultations`, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify(consultationData),
@@ -459,15 +431,13 @@ const SchedulingPageWithExtras: React.FC = () => {
       setIsUpdatingStatus(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/consultations/${selectedConsultation.id}/status`,
         {
           method: "PUT",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ status: newStatus }),
@@ -511,14 +481,10 @@ const SchedulingPageWithExtras: React.FC = () => {
 
   const openWhatsApp = async (consultation: Consultation) => {
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const response = await fetch(
-        `${apiUrl}/api/consultations/${consultation.id}/whatsapp`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/consultations/${consultation.id}/whatsapp`
       );
 
       if (!response.ok) {

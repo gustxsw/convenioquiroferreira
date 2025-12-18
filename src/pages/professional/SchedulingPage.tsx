@@ -30,6 +30,7 @@ import SlotCustomizationModal from "../../components/SlotCustomizationModal";
 import RecurringConsultationModal from "../../components/RecurringConsultationModal";
 import SchedulingAccessPayment from "../../components/SchedulingAccessPayment";
 import QuickScheduleModal from "../../components/QuickScheduleModal";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type Consultation = {
   id: number;
@@ -144,16 +145,6 @@ const SchedulingPage: React.FC = () => {
   const [showPrivatePatientDropdown, setShowPrivatePatientDropdown] =
     useState(false);
 
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
-  };
 
   // 🔥 FUNÇÃO ÚNICA PARA CONVERSÃO DE TIMEZONE
   const formatTime = (utcDateString: string): string => {
@@ -205,14 +196,10 @@ const SchedulingPage: React.FC = () => {
         );
 
         try {
-          const token = localStorage.getItem("token");
           const apiUrl = getApiUrl();
 
-          const response = await fetch(
-            `${apiUrl}/api/professional/scheduling-access`,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-            }
+          const response = await fetchWithAuth(
+            `${apiUrl}/api/professional/scheduling-access`
           );
 
           if (response.ok) {
@@ -306,16 +293,14 @@ const SchedulingPage: React.FC = () => {
     try {
       setIsCheckingAccess(true);
       setAccessError("");
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       console.log("🔍 Checking scheduling access...");
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/professional/scheduling-access`,
         {
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         }
@@ -390,7 +375,6 @@ const SchedulingPage: React.FC = () => {
       setIsLoading(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
       const dateStr = format(selectedDate, "yyyy-MM-dd");
 
@@ -399,11 +383,10 @@ const SchedulingPage: React.FC = () => {
       console.log("🔄 [AGENDA] Formatted date string:", dateStr);
 
       // Fetch consultations for the selected date
-      const consultationsResponse = await fetch(
+      const consultationsResponse = await fetchWithAuth(
         `${apiUrl}/api/consultations/agenda?date=${dateStr}`,
         {
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         }
@@ -457,9 +440,8 @@ const SchedulingPage: React.FC = () => {
       }
 
       // Fetch services
-      const servicesResponse = await fetch(`${apiUrl}/api/services`, {
+      const servicesResponse = await fetchWithAuth(`${apiUrl}/api/services`, {
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
       });
@@ -470,9 +452,8 @@ const SchedulingPage: React.FC = () => {
       }
 
       // Fetch private patients
-      const patientsResponse = await fetch(`${apiUrl}/api/private-patients`, {
+      const patientsResponse = await fetchWithAuth(`${apiUrl}/api/private-patients`, {
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
       });
@@ -483,11 +464,10 @@ const SchedulingPage: React.FC = () => {
       }
 
       // Fetch attendance locations
-      const locationsResponse = await fetch(
+      const locationsResponse = await fetchWithAuth(
         `${apiUrl}/api/attendance-locations`,
         {
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         }
@@ -512,16 +492,12 @@ const SchedulingPage: React.FC = () => {
       setIsSearching(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
       const cleanCpf = formData.client_cpf.replace(/\D/g, "");
 
       // Search for client
-      const clientResponse = await fetch(
-        `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      const clientResponse = await fetchWithAuth(
+        `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`
       );
 
       if (clientResponse.ok) {
@@ -535,11 +511,8 @@ const SchedulingPage: React.FC = () => {
         setClientSearchResult(clientData);
 
         // Fetch dependents
-        const dependentsResponse = await fetch(
-          `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
+        const dependentsResponse = await fetchWithAuth(
+          `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`
         );
 
         if (dependentsResponse.ok) {
@@ -548,11 +521,8 @@ const SchedulingPage: React.FC = () => {
         }
       } else {
         // Try searching as dependent
-        const dependentResponse = await fetch(
-          `${apiUrl}/api/dependents/search?cpf=${cleanCpf}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
+        const dependentResponse = await fetchWithAuth(
+          `${apiUrl}/api/dependents/search?cpf=${cleanCpf}`
         );
 
         if (dependentResponse.ok) {
@@ -587,7 +557,6 @@ const SchedulingPage: React.FC = () => {
 
     try {
       setIsCreating(true);
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       // Create single consultation only (recurring moved to separate modal)
@@ -617,10 +586,9 @@ const SchedulingPage: React.FC = () => {
       }
 
       console.log("🔄 Single consultation data:", consultationData);
-      const response = await fetch(`${apiUrl}/api/consultations`, {
+      const response = await fetchWithAuth(`${apiUrl}/api/consultations`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(consultationData),
@@ -697,15 +665,13 @@ const SchedulingPage: React.FC = () => {
       setIsUpdatingStatus(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/consultations/${selectedConsultation.id}/status`,
         {
           method: "PUT",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ status: newStatus }),
@@ -763,15 +729,13 @@ const SchedulingPage: React.FC = () => {
     if (!selectedConsultation) return;
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/consultations/${selectedConsultation.id}/cancel`,
         {
           method: "PUT",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -799,14 +763,10 @@ const SchedulingPage: React.FC = () => {
 
   const openWhatsApp = async (consultation: Consultation) => {
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const response = await fetch(
-        `${apiUrl}/api/consultations/${consultation.id}/whatsapp`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/consultations/${consultation.id}/whatsapp`
       );
 
       if (!response.ok) {

@@ -15,6 +15,7 @@ import {
   Upload,
 } from "lucide-react";
 import UploadSignatureModal from "../../components/UploadSignatureModal";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type AttendanceLocation = {
   id: number;
@@ -83,17 +84,6 @@ const ProfessionalProfilePage: React.FC = () => {
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
 
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
-  };
-
   useEffect(() => {
     fetchData();
   }, []);
@@ -101,13 +91,10 @@ const ProfessionalProfilePage: React.FC = () => {
   const fetchData = async () => {
     try {
       setIsLoading(true);
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       // Fetch user profile
-      const userResponse = await fetch(`${apiUrl}/api/users/${user?.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const userResponse = await fetchWithAuth(`${apiUrl}/api/users/${user?.id}`);
 
       if (userResponse.ok) {
         const userData = await userResponse.json();
@@ -120,11 +107,8 @@ const ProfessionalProfilePage: React.FC = () => {
       }
 
       // Fetch attendance locations
-      const locationsResponse = await fetch(
-        `${apiUrl}/api/attendance-locations`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      const locationsResponse = await fetchWithAuth(
+        `${apiUrl}/api/attendance-locations`
       );
 
       if (locationsResponse.ok) {
@@ -133,11 +117,8 @@ const ProfessionalProfilePage: React.FC = () => {
       }
 
       // Fetch signature
-      const signatureResponse = await fetch(
-        `${apiUrl}/api/professionals/${user?.id}/signature`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      const signatureResponse = await fetchWithAuth(
+        `${apiUrl}/api/professionals/${user?.id}/signature`
       );
 
       if (signatureResponse.ok) {
@@ -174,7 +155,6 @@ const ProfessionalProfilePage: React.FC = () => {
     }
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       const updateData: any = {
@@ -188,10 +168,9 @@ const ProfessionalProfilePage: React.FC = () => {
         updateData.newPassword = profileData.newPassword;
       }
 
-      const response = await fetch(`${apiUrl}/api/users/${user?.id}`, {
+      const response = await fetchWithAuth(`${apiUrl}/api/users/${user?.id}`, {
         method: "PUT",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(updateData),
@@ -269,7 +248,6 @@ const ProfessionalProfilePage: React.FC = () => {
     setSuccess("");
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       const url =
@@ -279,10 +257,9 @@ const ProfessionalProfilePage: React.FC = () => {
 
       const method = locationModalMode === "create" ? "POST" : "PUT";
 
-      const response = await fetch(url, {
+      const response = await fetchWithAuth(url, {
         method,
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(locationData),
@@ -322,14 +299,12 @@ const ProfessionalProfilePage: React.FC = () => {
     if (!locationToDelete) return;
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/attendance-locations/${locationToDelete.id}`,
         {
           method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
         }
       );
 

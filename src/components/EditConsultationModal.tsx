@@ -11,6 +11,7 @@ import {
   utcToLocalTimeInput,
   toUTCString,
 } from "../utils/dateHelpers";
+import { fetchWithAuth, getApiUrl } from "../utils/apiHelpers";
 
 type Consultation = {
   id: number;
@@ -66,17 +67,6 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
       | "cancelled",
   });
 
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
-  };
-
   useEffect(() => {
     if (isOpen && consultation) {
       setFormData({
@@ -94,12 +84,9 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
 
   const fetchLocations = async () => {
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const response = await fetch(`${apiUrl}/api/attendance-locations`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await fetchWithAuth(`${apiUrl}/api/attendance-locations`);
 
       if (response.ok) {
         const locationsData = await response.json();
@@ -138,7 +125,6 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
 
     try {
       setIsUpdating(true);
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       const dateTimeUTC = toUTCString(formData.date, formData.time);
@@ -156,12 +142,11 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
         status: formData.status,
       };
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/consultations/${consultation.id}`,
         {
           method: "PUT",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify(updateData),

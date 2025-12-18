@@ -8,6 +8,7 @@ import {
   type SlotDuration,
 } from "../../utils/timeSlotValidation";
 import { Search, Calendar, User, Users, AlertTriangle } from "lucide-react";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type Service = {
   id: number;
@@ -94,35 +95,19 @@ const RegisterConsultationPage: React.FC = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  // Get API URL with fallback
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-
-    return "http://localhost:3001";
-  };
-
   // Load categories and services on component mount
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const token = localStorage.getItem("token");
         const apiUrl = getApiUrl();
 
         console.log("Fetching consultation data from:", apiUrl);
 
         // Fetch categories
-        const categoriesResponse = await fetch(
+        const categoriesResponse = await fetchWithAuth(
           `${apiUrl}/api/service-categories`,
           {
             method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
           }
         );
 
@@ -134,11 +119,8 @@ const RegisterConsultationPage: React.FC = () => {
         setCategories(categoriesData);
 
         // Fetch services
-        const servicesResponse = await fetch(`${apiUrl}/api/services`, {
+        const servicesResponse = await fetchWithAuth(`${apiUrl}/api/services`, {
           method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
         });
 
         if (!servicesResponse.ok) {
@@ -149,13 +131,10 @@ const RegisterConsultationPage: React.FC = () => {
         setServices(servicesData);
 
         // Fetch attendance locations
-        const locationsResponse = await fetch(
+        const locationsResponse = await fetchWithAuth(
           `${apiUrl}/api/attendance-locations`,
           {
             method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
           }
         );
 
@@ -210,18 +189,14 @@ const RegisterConsultationPage: React.FC = () => {
     try {
       setIsSearching(true);
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
       const cleanCpf = cpf.replace(/\D/g, "");
 
       // First, try to find a dependent with this CPF
-      const dependentResponse = await fetch(
+      const dependentResponse = await fetchWithAuth(
         `${apiUrl}/api/dependents/search?cpf=${cleanCpf}`,
         {
           method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
         }
       );
 
@@ -254,13 +229,10 @@ const RegisterConsultationPage: React.FC = () => {
       }
 
       // If not found as dependent, try to find as client
-      const clientResponse = await fetch(
+      const clientResponse = await fetchWithAuth(
         `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`,
         {
           method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
         }
       );
 
@@ -292,13 +264,10 @@ const RegisterConsultationPage: React.FC = () => {
       setFoundDependent(null);
 
       // Fetch dependents
-      const dependentsResponse = await fetch(
+      const dependentsResponse = await fetchWithAuth(
         `${apiUrl}/api/dependents?client_id=${clientData.id}&status=active`,
         {
           method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
         }
       );
 
@@ -406,7 +375,6 @@ const RegisterConsultationPage: React.FC = () => {
     try {
       setIsLoading(true);
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       // Prepare consultation data with proper patient identification
@@ -437,10 +405,9 @@ const RegisterConsultationPage: React.FC = () => {
 
       console.log("🔄 Final consultation data:", consultationData);
       // Create both consultation record and appointment
-      const response = await fetch(`${apiUrl}/api/consultations`, {
+      const response = await fetchWithAuth(`${apiUrl}/api/consultations`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(consultationData),

@@ -18,6 +18,7 @@ import {
   Briefcase,
   Shield,
 } from "lucide-react";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type UserData = {
   id: number;
@@ -89,17 +90,6 @@ const ManageUsersPage: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserData | null>(null);
 
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
-  };
-
   useEffect(() => {
     fetchUsers();
   }, []);
@@ -139,15 +129,13 @@ const ManageUsersPage: React.FC = () => {
       setIsLoading(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       console.log("🔄 Fetching users from:", `${apiUrl}/api/users`);
 
-      const response = await fetch(`${apiUrl}/api/users`, {
+      const response = await fetchWithAuth(`${apiUrl}/api/users`, {
         method: "GET",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
       });
@@ -321,7 +309,6 @@ const ManageUsersPage: React.FC = () => {
     setSuccess("");
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       // Validate form
@@ -366,10 +353,9 @@ const ManageUsersPage: React.FC = () => {
 
       console.log("🔄 Submitting user data:", { method, url, formData });
 
-      const response = await fetch(url, {
+      const response = await fetchWithAuth(url, {
         method,
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(formData),
@@ -426,14 +412,12 @@ const ManageUsersPage: React.FC = () => {
     if (!userToDelete) return;
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       console.log("🔄 Deleting user:", userToDelete.id);
 
-      const response = await fetch(`${apiUrl}/api/users/${userToDelete.id}`, {
+      const response = await fetchWithAuth(`${apiUrl}/api/users/${userToDelete.id}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
       });
 
       console.log("📡 Delete user response status:", response.status);

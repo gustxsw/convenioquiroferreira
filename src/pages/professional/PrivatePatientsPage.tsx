@@ -1,5 +1,6 @@
 import type React from "react";
 import { useState, useEffect } from "react";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 import {
   UserPlus,
   Edit,
@@ -88,16 +89,6 @@ const PrivatePatientsPage: React.FC = () => {
     state: "",
   });
 
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
-  };
 
   useEffect(() => {
     fetchPatients();
@@ -228,12 +219,9 @@ const PrivatePatientsPage: React.FC = () => {
   const fetchPatients = async () => {
     try {
       setIsLoading(true);
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const response = await fetch(`${apiUrl}/api/private-patients`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await fetchWithAuth(`${apiUrl}/api/private-patients`);
 
       if (!response.ok) {
         throw new Error("Falha ao carregar pacientes");
@@ -328,7 +316,6 @@ const PrivatePatientsPage: React.FC = () => {
     setSuccess("");
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       const url =
@@ -354,10 +341,9 @@ const PrivatePatientsPage: React.FC = () => {
         zip_code: formData.zip_code.replace(/\D/g, "") || null,
       };
 
-      const response = await fetch(url, {
+      const response = await fetchWithAuth(url, {
         method,
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(submitData),
@@ -399,14 +385,12 @@ const PrivatePatientsPage: React.FC = () => {
     if (!patientToDelete) return;
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/private-patients/${patientToDelete.id}`,
         {
           method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
         }
       );
 

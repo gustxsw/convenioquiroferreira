@@ -11,6 +11,7 @@ import {
   AlertCircle,
   CheckCircle,
 } from "lucide-react";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type Dependent = {
   id: number;
@@ -66,18 +67,6 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
   const [couponErrors, setCouponErrors] = useState<{ [key: number]: string }>({});
   const [isValidatingCoupon, setIsValidatingCoupon] = useState<number | null>(null);
 
-  // Get API URL with fallback
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-
-    return "http://localhost:3001";
-  };
-
   useEffect(() => {
     fetchDependents();
   }, [clientId]);
@@ -87,7 +76,6 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
       setIsLoading(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       console.log(
@@ -95,12 +83,11 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
         `${apiUrl}/api/dependents?client_id=${clientId}`
       );
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/dependents?client_id=${clientId}`,
         {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         }
@@ -155,7 +142,6 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
     setSuccess("");
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       if (modalMode === "create") {
@@ -166,10 +152,9 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
         }
 
         // Create dependent
-        const response = await fetch(`${apiUrl}/api/dependents`, {
+        const response = await fetchWithAuth(`${apiUrl}/api/dependents`, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -195,12 +180,11 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
         }, 1500);
       } else if (modalMode === "edit" && selectedDependent) {
         // Update dependent
-        const response = await fetch(
+        const response = await fetchWithAuth(
           `${apiUrl}/api/dependents/${selectedDependent.id}`,
           {
             method: "PUT",
             headers: {
-              Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
@@ -246,15 +230,13 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
       setIsValidatingCoupon(dependentId);
       setCouponErrors({ ...couponErrors, [dependentId]: "" });
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/validate-coupon/${couponCode.trim()}?type=dependente`,
         {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         }
@@ -283,17 +265,15 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
       setIsCreatingPayment(dependentId);
       setPaymentError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       const appliedCoupon = appliedCoupons[dependentId];
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/dependents/${dependentId}/create-payment`,
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -371,16 +351,12 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
     if (!dependentToDelete) return;
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/dependents/${dependentToDelete.id}`,
         {
           method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
         }
       );
 

@@ -10,6 +10,7 @@ import {
   CheckCircle,
   Printer,
 } from "lucide-react";
+import { fetchWithAuth, getApiUrl } from "../utils/apiHelpers";
 
 declare global {
   interface Window {
@@ -55,29 +56,14 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
   const [success, setSuccess] = useState("");
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
 
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
-  };
-
   // Fetch professional signature
   useEffect(() => {
     const fetchSignature = async () => {
       try {
-        const token = localStorage.getItem("token");
         const apiUrl = getApiUrl();
 
-        const response = await fetch(
-          `${apiUrl}/api/professionals/${user?.id}/signature`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
+        const response = await fetchWithAuth(
+          `${apiUrl}/api/professionals/${user?.id}/signature`
         );
 
         if (response.ok) {

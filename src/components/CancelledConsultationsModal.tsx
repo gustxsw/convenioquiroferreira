@@ -12,6 +12,7 @@ import {
   MapPin,
   RefreshCw,
 } from "lucide-react";
+import { fetchWithAuth, getApiUrl } from "../utils/apiHelpers";
 
 type CancelledConsultation = {
   id: number;
@@ -48,17 +49,6 @@ const CancelledConsultationsModal: React.FC<
   const [endDate, setEndDate] = useState(getDefaultEndDate());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
-  };
 
   // Get default date range (current month)
   function getDefaultStartDate() {
@@ -114,17 +104,15 @@ const CancelledConsultationsModal: React.FC<
       setIsLoading(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       console.log("🔄 [MODAL-CANCEL] Fetching cancelled consultations");
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/reports/cancelled-consultations?start_date=${startDate}&end_date=${endDate}`,
         {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           credentials: "include",

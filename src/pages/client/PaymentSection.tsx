@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 declare global {
   interface Window {
@@ -36,24 +37,11 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
   const [couponError, setCouponError] = useState("");
   const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
 
-  // Get API URL - PRODUCTION READY
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-
-    return "http://localhost:3001";
-  };
-
   // 🔥 VERIFICAÇÃO DUPLA: Sempre verificar status no servidor antes de mostrar pagamento
   useEffect(() => {
     const verifySubscriptionStatus = async () => {
       try {
         setIsVerifying(true);
-        const token = localStorage.getItem("token");
         const apiUrl = getApiUrl();
 
         console.log(
@@ -62,12 +50,11 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
         );
         console.log("🔍 Status recebido via props:", subscriptionStatus);
 
-        const response = await fetch(
+        const response = await fetchWithAuth(
           `${apiUrl}/api/users/${userId}/subscription-status`,
           {
             method: "GET",
             headers: {
-              Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
           }
@@ -144,13 +131,11 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
       setIsValidatingCoupon(true);
       setCouponError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const response = await fetch(`${apiUrl}/api/validate-coupon/${couponCode.trim()}`, {
+      const response = await fetchWithAuth(`${apiUrl}/api/validate-coupon/${couponCode.trim()}`, {
         method: "GET",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
       });
@@ -186,16 +171,14 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
       setIsLoading(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       console.log("🔄 Creating subscription payment for user:", userId);
       console.log("🔄 Verified status before payment:", verifiedStatus);
 
-      const response = await fetch(`${apiUrl}/api/create-subscription`, {
+      const response = await fetchWithAuth(`${apiUrl}/api/create-subscription`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({

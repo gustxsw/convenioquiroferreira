@@ -1,6 +1,7 @@
 import type React from "react";
 import { useState, useEffect } from "react";
 import { BarChart2, Calendar, TrendingUp, Users, FileText } from "lucide-react";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type DetailedReport = {
   summary: {
@@ -21,17 +22,6 @@ const ProfessionalReportsPage: React.FC = () => {
   const [report, setReport] = useState<DetailedReport | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
-  };
 
   // Get default date range (current month)
   function getDefaultStartDate() {
@@ -54,7 +44,6 @@ const ProfessionalReportsPage: React.FC = () => {
       setIsLoading(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       console.log("🔄 Fetching detailed report with dates:", {
@@ -66,12 +55,11 @@ const ProfessionalReportsPage: React.FC = () => {
         `start_date=${startDate}&end_date=${endDate}`
       );
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/reports/professional-detailed?start_date=${startDate}&end_date=${endDate}`,
         {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         }

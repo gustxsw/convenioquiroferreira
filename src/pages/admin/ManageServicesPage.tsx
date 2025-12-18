@@ -11,6 +11,7 @@ import {
   X,
   FolderPlus,
 } from "lucide-react";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type Service = {
   id: number;
@@ -58,17 +59,6 @@ const ManageServicesPage: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [serviceToDelete, setServiceToDelete] = useState<Service | null>(null);
 
-  // Get API URL with fallback
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-
-    return "http://localhost:3001";
-  };
 
   useEffect(() => {
     fetchData();
@@ -79,19 +69,17 @@ const ManageServicesPage: React.FC = () => {
       setIsLoading(true);
       setError("");
 
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       console.log("🔄 Fetching services data from:", `${apiUrl}/api/services`);
 
       try {
         // Fetch categories
-        const categoriesResponse = await fetch(
+        const categoriesResponse = await fetchWithAuth(
           `${apiUrl}/api/service-categories`,
           {
             method: "GET",
             headers: {
-              Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
           }
@@ -122,10 +110,9 @@ const ManageServicesPage: React.FC = () => {
 
       try {
         // Fetch services
-        const servicesResponse = await fetch(`${apiUrl}/api/services`, {
+        const servicesResponse = await fetchWithAuth(`${apiUrl}/api/services`, {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         });
@@ -194,7 +181,6 @@ const ManageServicesPage: React.FC = () => {
     setSuccess("");
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
       // Validate base price
@@ -214,10 +200,9 @@ const ManageServicesPage: React.FC = () => {
 
       if (modalMode === "create") {
         // Create service
-        const response = await fetch(`${apiUrl}/api/services`, {
+        const response = await fetchWithAuth(`${apiUrl}/api/services`, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify(serviceData),
@@ -231,12 +216,11 @@ const ManageServicesPage: React.FC = () => {
         setSuccess("Serviço criado com sucesso!");
       } else if (modalMode === "edit" && selectedService) {
         // Update service
-        const response = await fetch(
+        const response = await fetchWithAuth(
           `${apiUrl}/api/services/${selectedService.id}`,
           {
             method: "PUT",
             headers: {
-              Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify(serviceData),
@@ -273,13 +257,11 @@ const ManageServicesPage: React.FC = () => {
     setSuccess("");
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const response = await fetch(`${apiUrl}/api/service-categories`, {
+      const response = await fetchWithAuth(`${apiUrl}/api/service-categories`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -327,16 +309,12 @@ const ManageServicesPage: React.FC = () => {
     if (!serviceToDelete) return;
 
     try {
-      const token = localStorage.getItem("token");
       const apiUrl = getApiUrl();
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${apiUrl}/api/services/${serviceToDelete.id}`,
         {
           method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
         }
       );
 
