@@ -156,36 +156,60 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   useEffect(() => {
+    const checkAndRefreshToken = async () => {
+      const token = localStorage.getItem("token");
+      const refreshToken = localStorage.getItem("refreshToken");
+
+      if (!token || !refreshToken || !user) return;
+
+      try {
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          console.log("✅ Token refreshed proactively");
+        }
+      } catch (error) {
+        console.error("❌ Error during proactive token refresh:", error);
+      }
+    };
+
     const startTokenRefreshInterval = () => {
       if (refreshIntervalRef.current) {
         clearInterval(refreshIntervalRef.current);
       }
 
       if (user && localStorage.getItem("token")) {
-        console.log("🔄 Starting automatic token refresh interval (every 6 hours)");
+        console.log("🔄 Starting automatic token refresh interval (every 3 hours)");
 
         refreshIntervalRef.current = setInterval(async () => {
-          const token = localStorage.getItem("token");
-          const refreshToken = localStorage.getItem("refreshToken");
-
-          if (token && refreshToken) {
-            console.log("🔄 Automatically refreshing access token...");
-            try {
-              const newToken = await refreshAccessToken();
-              if (newToken) {
-                console.log("✅ Token refreshed successfully");
-              } else {
-                console.log("❌ Failed to refresh token - user will be logged out");
-                setUser(null);
-                navigate("/");
-              }
-            } catch (error) {
-              console.error("❌ Error during automatic token refresh:", error);
-            }
-          }
-        }, 6 * 60 * 60 * 1000);
+          await checkAndRefreshToken();
+        }, 3 * 60 * 60 * 1000);
       }
     };
+
+    // Listener para quando a página volta a ficar visível
+    const handleVisibilityChange = async () => {
+      if (!document.hidden && user) {
+        console.log("👁️ Page became visible - checking token status");
+        await checkAndRefreshToken();
+      }
+    };
+
+    // Listener para interações do usuário (com debounce)
+    let userInteractionTimeout: NodeJS.Timeout;
+    const handleUserInteraction = () => {
+      if (userInteractionTimeout) clearTimeout(userInteractionTimeout);
+
+      userInteractionTimeout = setTimeout(async () => {
+        if (user) {
+          await checkAndRefreshToken();
+        }
+      }, 5000); // Aguarda 5 segundos após última interação
+    };
+
+    // Adicionar listeners
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener("click", handleUserInteraction);
+    document.addEventListener("keydown", handleUserInteraction);
 
     startTokenRefreshInterval();
 
@@ -193,6 +217,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       if (refreshIntervalRef.current) {
         clearInterval(refreshIntervalRef.current);
       }
+      if (userInteractionTimeout) {
+        clearTimeout(userInteractionTimeout);
+      }
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      document.removeEventListener("click", handleUserInteraction);
+      document.removeEventListener("keydown", handleUserInteraction);
     };
   }, [user, navigate]);
 
