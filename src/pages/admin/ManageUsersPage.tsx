@@ -104,8 +104,9 @@ const ManageUsersPage: React.FC = () => {
 
       filtered = filtered.filter((user) => {
         const nameMatch = user.name?.toLowerCase().includes(searchLower);
-        const cpfMatch = user.cpf?.includes(searchNumbers);
         const emailMatch = user.email?.toLowerCase().includes(searchLower);
+        // Only check CPF if there are numbers in the search
+        const cpfMatch = searchNumbers.length > 0 && user.cpf?.includes(searchNumbers);
 
         return nameMatch || cpfMatch || emailMatch;
       });
