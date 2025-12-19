@@ -1797,6 +1797,262 @@ app.delete(
   }
 );
 
+// ===== PRIVATE PATIENTS ROUTES =====
+
+// Get all private patients for a professional
+app.get(
+  "/api/private-patients",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const professionalId = req.user.id;
+
+      console.log("🔄 Fetching private patients for professional:", professionalId);
+
+      const result = await pool.query(
+        `SELECT id, name, cpf, email, phone, birth_date, address, address_number,
+                address_complement, neighborhood, city, state, zip_code, created_at
+         FROM private_patients
+         WHERE professional_id = $1
+         ORDER BY name ASC`,
+        [professionalId]
+      );
+
+      console.log("✅ Private patients fetched:", result.rows.length);
+
+      res.json(result.rows);
+    } catch (error) {
+      console.error("❌ Error fetching private patients:", error);
+      res.status(500).json({ message: "Erro ao carregar pacientes" });
+    }
+  }
+);
+
+// Create new private patient
+app.post(
+  "/api/private-patients",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const professionalId = req.user.id;
+      const {
+        name,
+        cpf,
+        email,
+        phone,
+        birth_date,
+        address,
+        address_number,
+        address_complement,
+        neighborhood,
+        city,
+        state,
+        zip_code,
+      } = req.body;
+
+      console.log("🔄 Creating private patient:", { name, cpf });
+
+      // Validate required field
+      if (!name || name.trim() === "") {
+        return res.status(400).json({ message: "Nome é obrigatório" });
+      }
+
+      // Check if CPF is already registered for this professional (if provided)
+      if (cpf && cpf.trim()) {
+        const existingPatient = await pool.query(
+          `SELECT id FROM private_patients
+           WHERE professional_id = $1 AND cpf = $2`,
+          [professionalId, cpf.trim()]
+        );
+
+        if (existingPatient.rows.length > 0) {
+          return res.status(400).json({
+            message: "Já existe um paciente cadastrado com este CPF"
+          });
+        }
+      }
+
+      const result = await pool.query(
+        `INSERT INTO private_patients (
+          professional_id, name, cpf, email, phone, birth_date,
+          address, address_number, address_complement, neighborhood,
+          city, state, zip_code
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        RETURNING *`,
+        [
+          professionalId,
+          name.trim(),
+          cpf ? cpf.trim() : null,
+          email ? email.trim() : null,
+          phone ? phone.trim() : null,
+          birth_date || null,
+          address ? address.trim() : null,
+          address_number ? address_number.trim() : null,
+          address_complement ? address_complement.trim() : null,
+          neighborhood ? neighborhood.trim() : null,
+          city ? city.trim() : null,
+          state || null,
+          zip_code ? zip_code.trim() : null,
+        ]
+      );
+
+      console.log("✅ Private patient created:", result.rows[0].id);
+
+      res.status(201).json(result.rows[0]);
+    } catch (error) {
+      console.error("❌ Error creating private patient:", error);
+      res.status(500).json({ message: "Erro ao criar paciente" });
+    }
+  }
+);
+
+// Update private patient
+app.put(
+  "/api/private-patients/:id",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const professionalId = req.user.id;
+      const {
+        name,
+        cpf,
+        email,
+        phone,
+        birth_date,
+        address,
+        address_number,
+        address_complement,
+        neighborhood,
+        city,
+        state,
+        zip_code,
+      } = req.body;
+
+      console.log("🔄 Updating private patient:", id);
+
+      // Validate required field
+      if (!name || name.trim() === "") {
+        return res.status(400).json({ message: "Nome é obrigatório" });
+      }
+
+      // Check if patient exists and belongs to this professional
+      const existingPatient = await pool.query(
+        `SELECT id FROM private_patients
+         WHERE id = $1 AND professional_id = $2`,
+        [id, professionalId]
+      );
+
+      if (existingPatient.rows.length === 0) {
+        return res.status(404).json({ message: "Paciente não encontrado" });
+      }
+
+      // Check if CPF is already used by another patient (if provided)
+      if (cpf && cpf.trim()) {
+        const cpfCheck = await pool.query(
+          `SELECT id FROM private_patients
+           WHERE professional_id = $1 AND cpf = $2 AND id != $3`,
+          [professionalId, cpf.trim(), id]
+        );
+
+        if (cpfCheck.rows.length > 0) {
+          return res.status(400).json({
+            message: "Já existe outro paciente cadastrado com este CPF"
+          });
+        }
+      }
+
+      const result = await pool.query(
+        `UPDATE private_patients
+         SET name = $1, cpf = $2, email = $3, phone = $4, birth_date = $5,
+             address = $6, address_number = $7, address_complement = $8,
+             neighborhood = $9, city = $10, state = $11, zip_code = $12
+         WHERE id = $13 AND professional_id = $14
+         RETURNING *`,
+        [
+          name.trim(),
+          cpf ? cpf.trim() : null,
+          email ? email.trim() : null,
+          phone ? phone.trim() : null,
+          birth_date || null,
+          address ? address.trim() : null,
+          address_number ? address_number.trim() : null,
+          address_complement ? address_complement.trim() : null,
+          neighborhood ? neighborhood.trim() : null,
+          city ? city.trim() : null,
+          state || null,
+          zip_code ? zip_code.trim() : null,
+          id,
+          professionalId,
+        ]
+      );
+
+      console.log("✅ Private patient updated:", id);
+
+      res.json(result.rows[0]);
+    } catch (error) {
+      console.error("❌ Error updating private patient:", error);
+      res.status(500).json({ message: "Erro ao atualizar paciente" });
+    }
+  }
+);
+
+// Delete private patient
+app.delete(
+  "/api/private-patients/:id",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const professionalId = req.user.id;
+
+      console.log("🔄 Deleting private patient:", id);
+
+      // Check if patient exists and belongs to this professional
+      const existingPatient = await pool.query(
+        `SELECT id FROM private_patients
+         WHERE id = $1 AND professional_id = $2`,
+        [id, professionalId]
+      );
+
+      if (existingPatient.rows.length === 0) {
+        return res.status(404).json({ message: "Paciente não encontrado" });
+      }
+
+      // Check if patient has any consultations
+      const consultations = await pool.query(
+        `SELECT COUNT(*) as count FROM consultations
+         WHERE private_patient_id = $1`,
+        [id]
+      );
+
+      if (parseInt(consultations.rows[0].count) > 0) {
+        return res.status(400).json({
+          message: "Não é possível excluir paciente com consultas registradas"
+        });
+      }
+
+      // Delete patient
+      await pool.query(
+        `DELETE FROM private_patients
+         WHERE id = $1 AND professional_id = $2`,
+        [id, professionalId]
+      );
+
+      console.log("✅ Private patient deleted:", id);
+
+      res.json({ message: "Paciente excluído com sucesso" });
+    } catch (error) {
+      console.error("❌ Error deleting private patient:", error);
+      res.status(500).json({ message: "Erro ao excluir paciente" });
+    }
+  }
+);
+
 // ===== CONSULTATIONS ROUTES (MAIN AGENDA SYSTEM) =====
 
 // Get consultations for professional agenda (by date)
