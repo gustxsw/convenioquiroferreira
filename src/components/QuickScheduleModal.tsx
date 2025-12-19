@@ -12,7 +12,7 @@ import {
   Search,
 } from "lucide-react";
 import { toUTCString } from "../utils/dateHelpers";
-import { getApiUrl } from "../utils/apiHelpers";
+import { fetchWithAuth, getApiUrl } from "../utils/apiHelpers";
 import ScheduleConflictModal from "./ScheduleConflictModal";
 
 type Service = {
