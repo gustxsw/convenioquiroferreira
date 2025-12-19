@@ -64,7 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log("🔄 Validating session with backend...");
         const apiUrl = getApiUrl();
 
-        const response = await fetch(`${apiUrl}/api/auth/me`, {
+        let response = await fetch(`${apiUrl}/api/auth/me`, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
@@ -74,16 +74,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         });
 
         if (!response.ok) {
-          console.log("❌ Session validation failed - cleaning localStorage");
-          localStorage.removeItem("token");
-          localStorage.removeItem("refreshToken");
-          localStorage.removeItem("user");
-          localStorage.removeItem("tempUser");
-          localStorage.removeItem("role");
-          localStorage.removeItem("userType");
-          setUser(null);
-          setIsLoading(false);
-          return;
+          const errorData = await response.json();
+
+          if (errorData.code === "TOKEN_EXPIRED" && refreshToken) {
+            console.log("🔄 Token expired during auth check - attempting refresh...");
+            const newToken = await refreshAccessToken();
+
+            if (newToken) {
+              console.log("✅ Token refreshed - retrying session validation");
+              response = await fetch(`${apiUrl}/api/auth/me`, {
+                method: "GET",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${newToken}`,
+                },
+                credentials: "include",
+              });
+
+              if (!response.ok) {
+                console.log("❌ Session validation failed after refresh - cleaning localStorage");
+                localStorage.removeItem("token");
+                localStorage.removeItem("refreshToken");
+                localStorage.removeItem("user");
+                localStorage.removeItem("tempUser");
+                localStorage.removeItem("role");
+                localStorage.removeItem("userType");
+                setUser(null);
+                setIsLoading(false);
+                return;
+              }
+            } else {
+              console.log("❌ Failed to refresh token - cleaning localStorage");
+              localStorage.removeItem("token");
+              localStorage.removeItem("refreshToken");
+              localStorage.removeItem("user");
+              localStorage.removeItem("tempUser");
+              localStorage.removeItem("role");
+              localStorage.removeItem("userType");
+              setUser(null);
+              setIsLoading(false);
+              return;
+            }
+          } else {
+            console.log("❌ Session validation failed - cleaning localStorage");
+            localStorage.removeItem("token");
+            localStorage.removeItem("refreshToken");
+            localStorage.removeItem("user");
+            localStorage.removeItem("tempUser");
+            localStorage.removeItem("role");
+            localStorage.removeItem("userType");
+            setUser(null);
+            setIsLoading(false);
+            return;
+          }
         }
 
         const data = await response.json();
@@ -119,7 +162,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       if (user && localStorage.getItem("token")) {
-        console.log("🔄 Starting automatic token refresh interval (every 12 hours)");
+        console.log("🔄 Starting automatic token refresh interval (every 6 hours)");
 
         refreshIntervalRef.current = setInterval(async () => {
           const token = localStorage.getItem("token");
@@ -140,7 +183,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
               console.error("❌ Error during automatic token refresh:", error);
             }
           }
-        }, 12 * 60 * 60 * 1000);
+        }, 6 * 60 * 60 * 1000);
       }
     };
 

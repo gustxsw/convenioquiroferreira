@@ -766,7 +766,7 @@ const generateRefreshToken = () => {
   return jwt.sign(
     { type: "refresh" },
     process.env.JWT_SECRET || "your-secret-key",
-    { expiresIn: "7d" }
+    { expiresIn: "30d" }
   );
 };
 
@@ -777,7 +777,7 @@ const hashRefreshToken = async (token) => {
 const saveRefreshToken = async (userId, token) => {
   const tokenHash = await hashRefreshToken(token);
   const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7);
+  expiresAt.setDate(expiresAt.getDate() + 30);
 
   await pool.query(
     `INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
