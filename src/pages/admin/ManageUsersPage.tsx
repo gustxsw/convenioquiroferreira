@@ -99,12 +99,16 @@ const ManageUsersPage: React.FC = () => {
 
     // Filter by search term
     if (searchTerm) {
-      filtered = filtered.filter(
-        (user) =>
-          user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          user.cpf.includes(searchTerm.replace(/\D/g, "")) ||
-          user.email?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      const searchLower = searchTerm.toLowerCase();
+      const searchNumbers = searchTerm.replace(/\D/g, "");
+
+      filtered = filtered.filter((user) => {
+        const nameMatch = user.name?.toLowerCase().includes(searchLower);
+        const cpfMatch = user.cpf?.includes(searchNumbers);
+        const emailMatch = user.email?.toLowerCase().includes(searchLower);
+
+        return nameMatch || cpfMatch || emailMatch;
+      });
     }
 
     // Filter by role
