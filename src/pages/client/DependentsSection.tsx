@@ -555,7 +555,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
                                       [dependent.id]: e.target.value.toUpperCase(),
                                     })
                                   }
-                                  placeholder="Digite o código do cupom (ex: REIS50)"
+                                  placeholder="Digite o código do cupom"
                                   className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
                                   disabled={appliedCoupons[dependent.id] !== undefined}
                                 />
