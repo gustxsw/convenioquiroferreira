@@ -144,6 +144,7 @@ const SchedulingPage: React.FC = () => {
   >([]);
   const [showPrivatePatientDropdown, setShowPrivatePatientDropdown] =
     useState(false);
+  const [isLoadingPatients, setIsLoadingPatients] = useState(false);
 
 
   // 🔥 FUNÇÃO ÚNICA PARA CONVERSÃO DE TIMEZONE
@@ -268,6 +269,7 @@ const SchedulingPage: React.FC = () => {
 
   useEffect(() => {
     if (privatePatientSearch.trim() === "") {
+      console.log("🔍 [FILTER] Showing all patients:", privatePatients.length);
       setFilteredPrivatePatients(privatePatients);
     } else {
       const searchLower = privatePatientSearch.toLowerCase();
@@ -276,6 +278,7 @@ const SchedulingPage: React.FC = () => {
           patient.name.toLowerCase().includes(searchLower) ||
           (patient.cpf && patient.cpf.includes(searchLower.replace(/\D/g, "")))
       );
+      console.log("🔍 [FILTER] Search:", privatePatientSearch, "Found:", filtered.length);
       setFilteredPrivatePatients(filtered);
     }
   }, [privatePatientSearch, privatePatients]);
@@ -452,19 +455,27 @@ const SchedulingPage: React.FC = () => {
       }
 
       // Fetch private patients
-      const patientsResponse = await fetchWithAuth(`${apiUrl}/api/private-patients`, {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+      setIsLoadingPatients(true);
+      try {
+        const patientsResponse = await fetchWithAuth(`${apiUrl}/api/private-patients`, {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
 
-      if (patientsResponse.ok) {
-        const patientsData = await patientsResponse.json();
-        console.log("✅ [AGENDA] Private patients loaded:", patientsData.length);
-        setPrivatePatients(patientsData);
-      } else {
-        console.error("❌ [AGENDA] Failed to load private patients:", patientsResponse.status);
+        if (patientsResponse.ok) {
+          const patientsData = await patientsResponse.json();
+          console.log("✅ [AGENDA] Private patients loaded:", patientsData.length, patientsData);
+          setPrivatePatients(patientsData);
+        } else {
+          console.error("❌ [AGENDA] Failed to load private patients:", patientsResponse.status);
+          setPrivatePatients([]);
+        }
+      } catch (err) {
+        console.error("❌ [AGENDA] Error loading private patients:", err);
         setPrivatePatients([]);
+      } finally {
+        setIsLoadingPatients(false);
       }
 
       // Fetch attendance locations
@@ -1578,7 +1589,7 @@ const SchedulingPage: React.FC = () => {
 
                         {showPrivatePatientDropdown && (
                           <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                            {isLoading ? (
+                            {isLoadingPatients ? (
                               <div className="p-4 text-center">
                                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-red-600 mx-auto mb-2"></div>
                                 <p className="text-xs sm:text-sm text-gray-500">
