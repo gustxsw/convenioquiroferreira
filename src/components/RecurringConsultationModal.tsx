@@ -1,5 +1,5 @@
 import type React from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Repeat, X, AlertCircle, User, Search } from "lucide-react";
 import TimeInput from "./TimeInput";
 import { getCurrentDateString } from "../utils/dateHelpers";
@@ -73,11 +73,9 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
   const [clientCpf, setClientCpf] = useState("");
   const [privatePatientId, setPrivatePatientId] = useState("");
   const [privatePatientSearch, setPrivatePatientSearch] = useState("");
-  const [filteredPrivatePatients, setFilteredPrivatePatients] = useState<
-    PrivatePatient[]
-  >([]);
   const [showPrivatePatientDropdown, setShowPrivatePatientDropdown] =
     useState(false);
+  const privatePatientDropdownRef = useRef<HTMLDivElement>(null);
   const [serviceId, setServiceId] = useState("");
   const [value, setValue] = useState("");
   const [locationId, setLocationId] = useState("");
@@ -104,23 +102,39 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
   const [isSearching, setIsSearching] = useState(false);
 
   // Adicione este useEffect para filtrar pacientes particulares
-  useEffect(() => {
-    if (privatePatientSearch.trim() === "") {
-      setFilteredPrivatePatients(privatePatients);
-    } else {
-      const searchLower = privatePatientSearch.toLowerCase();
-      const filtered = privatePatients.filter(
-        (patient) =>
+  // Filter private patients based on search
+  const filteredPrivatePatients = privatePatientSearch.trim() === ""
+    ? privatePatients
+    : privatePatients.filter((patient) => {
+        const searchLower = privatePatientSearch.toLowerCase();
+        return (
           patient.name.toLowerCase().includes(searchLower) ||
           (patient.cpf && patient.cpf.includes(searchLower.replace(/\D/g, "")))
-      );
-      setFilteredPrivatePatients(filtered);
+        );
+      });
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        privatePatientDropdownRef.current &&
+        !privatePatientDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowPrivatePatientDropdown(false);
+      }
+    };
+
+    if (showPrivatePatientDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
     }
-  }, [privatePatientSearch, privatePatients]);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showPrivatePatientDropdown]);
 
   useEffect(() => {
     if (isOpen) {
-      console.log("🔄 [RECURRING-MODAL] Modal opened, fetching data...");
       fetchData();
       resetForm();
     }
@@ -130,41 +144,26 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
     try {
       const apiUrl = getApiUrl();
 
-      console.log("🔄 [RECURRING-MODAL] Fetching services...");
       const servicesResponse = await fetchWithAuth(`${apiUrl}/api/services`);
 
       if (servicesResponse.ok) {
         const servicesData = await servicesResponse.json();
-        console.log(
-          "✅ [RECURRING-MODAL] Services loaded:",
-          servicesData.length
-        );
         setServices(servicesData);
       }
 
-      console.log("🔄 [RECURRING-MODAL] Fetching private patients...");
       const patientsResponse = await fetchWithAuth(`${apiUrl}/api/private-patients`);
 
       if (patientsResponse.ok) {
         const patientsData = await patientsResponse.json();
-        console.log(
-          "✅ [RECURRING-MODAL] Private patients loaded:",
-          patientsData.length
-        );
         setPrivatePatients(Array.isArray(patientsData) ? patientsData : []);
       }
 
-      console.log("🔄 [RECURRING-MODAL] Fetching attendance locations...");
       const locationsResponse = await fetchWithAuth(
         `${apiUrl}/api/attendance-locations`
       );
 
       if (locationsResponse.ok) {
         const locationsData = await locationsResponse.json();
-        console.log(
-          "✅ [RECURRING-MODAL] Locations loaded:",
-          locationsData.length
-        );
         setAttendanceLocations(locationsData);
 
         const defaultLocation = locationsData.find(
@@ -216,7 +215,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
       const apiUrl = getApiUrl();
       const cleanCpf = clientCpf.replace(/\D/g, "");
 
-      console.log("🔄 [RECURRING-MODAL] Searching client by CPF:", cleanCpf);
 
       const clientResponse = await fetchWithAuth(
         `${apiUrl}/api/clients/lookup?cpf=${cleanCpf}`
@@ -306,7 +304,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
     setShowConflictModal(false);
     setConflictData([]);
 
-    console.log("🔄 [RECURRING-MODAL] Submitting form...");
 
     // Validation
     if (patientType === "convenio" && !clientSearchResult) {
@@ -360,7 +357,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
         }
       }
 
-      console.log("🔄 [RECURRING-MODAL] Sending data:", consultationData);
 
       const response = await fetchWithAuth(`${apiUrl}/api/consultations/recurring`, {
         method: "POST",
@@ -387,18 +383,10 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
       }
 
       const result = await response.json();
-      console.log(
-        "✅ [RECURRING-MODAL] Recurring consultations created:",
-        result
-      );
 
       onSuccess();
       onClose();
     } catch (error) {
-      console.error(
-        "❌ [RECURRING-MODAL] Error creating consultations:",
-        error
-      );
       setError(
         error instanceof Error
           ? error.message
@@ -426,8 +414,6 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
   if (!isOpen) {
     return null;
   }
-
-  console.log("🔄 [RECURRING-MODAL] Rendering modal...");
 
   const weekdays = [
     { value: 1, label: "Segunda", short: "SEG" },
@@ -515,7 +501,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
               {/* Private Patient Selection */}
               {patientType === "private" && (
-                <div className="relative">
+                <div className="relative" ref={privatePatientDropdownRef}>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Paciente Particular
                   </label>
@@ -536,10 +522,17 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                       />
                     </div>
 
-                    {showPrivatePatientDropdown &&
-                      filteredPrivatePatients.length > 0 && (
-                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                          {filteredPrivatePatients.map((patient) => (
+                    {showPrivatePatientDropdown && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {isLoadingPatients ? (
+                          <div className="p-4 text-center">
+                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-red-600 mx-auto mb-2"></div>
+                            <p className="text-sm text-gray-500">
+                              Carregando pacientes...
+                            </p>
+                          </div>
+                        ) : filteredPrivatePatients.length > 0 ? (
+                          filteredPrivatePatients.map((patient) => (
                             <button
                               key={patient.id}
                               type="button"
@@ -561,19 +554,23 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                                   : "CPF não informado"}
                               </div>
                             </button>
-                          ))}
-                        </div>
-                      )}
-
-                    {showPrivatePatientDropdown &&
-                      privatePatientSearch.trim() !== "" &&
-                      filteredPrivatePatients.length === 0 && (
-                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-4">
-                          <p className="text-sm text-gray-500 text-center">
-                            Nenhum paciente encontrado
-                          </p>
-                        </div>
-                      )}
+                          ))
+                        ) : (
+                          <div className="p-4 text-center">
+                            <p className="text-sm text-gray-500 mb-2">
+                              {privatePatients.length === 0
+                                ? "Nenhum paciente particular cadastrado"
+                                : "Nenhum paciente encontrado com esse termo"}
+                            </p>
+                            {privatePatients.length === 0 && (
+                              <p className="text-xs text-gray-400">
+                                Cadastre pacientes na página "Pacientes Particulares"
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {privatePatientId && (
