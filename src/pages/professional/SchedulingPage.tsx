@@ -460,7 +460,11 @@ const SchedulingPage: React.FC = () => {
 
       if (patientsResponse.ok) {
         const patientsData = await patientsResponse.json();
+        console.log("✅ [AGENDA] Private patients loaded:", patientsData.length);
         setPrivatePatients(patientsData);
+      } else {
+        console.error("❌ [AGENDA] Failed to load private patients:", patientsResponse.status);
+        setPrivatePatients([]);
       }
 
       // Fetch attendance locations
@@ -1525,6 +1529,7 @@ const SchedulingPage: React.FC = () => {
                       Tipo de Paciente *
                     </label>
                     <select
+                      value={formData.patient_type}
                       onChange={(e) => {
                         setFormData((prev) => ({
                           ...prev,
@@ -1536,6 +1541,9 @@ const SchedulingPage: React.FC = () => {
                         }));
                         setPrivatePatientSearch("");
                         setShowPrivatePatientDropdown(false);
+                        setClientSearchResult(null);
+                        setDependents([]);
+                        setSelectedDependentId(null);
                       }}
                       className="input text-sm sm:text-base"
                       required
@@ -1568,10 +1576,17 @@ const SchedulingPage: React.FC = () => {
                           />
                         </div>
 
-                        {showPrivatePatientDropdown &&
-                          filteredPrivatePatients.length > 0 && (
-                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                              {filteredPrivatePatients.map((patient) => (
+                        {showPrivatePatientDropdown && (
+                          <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                            {isLoading ? (
+                              <div className="p-4 text-center">
+                                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-red-600 mx-auto mb-2"></div>
+                                <p className="text-xs sm:text-sm text-gray-500">
+                                  Carregando pacientes...
+                                </p>
+                              </div>
+                            ) : filteredPrivatePatients.length > 0 ? (
+                              filteredPrivatePatients.map((patient) => (
                                 <button
                                   key={patient.id}
                                   type="button"
@@ -1594,19 +1609,23 @@ const SchedulingPage: React.FC = () => {
                                       : "CPF não informado"}
                                   </div>
                                 </button>
-                              ))}
-                            </div>
-                          )}
-
-                        {showPrivatePatientDropdown &&
-                          privatePatientSearch.trim() !== "" &&
-                          filteredPrivatePatients.length === 0 && (
-                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-4">
-                              <p className="text-xs sm:text-sm text-gray-500 text-center">
-                                Nenhum paciente encontrado
-                              </p>
-                            </div>
-                          )}
+                              ))
+                            ) : (
+                              <div className="p-4 text-center">
+                                <p className="text-xs sm:text-sm text-gray-500 mb-2">
+                                  {privatePatients.length === 0
+                                    ? "Nenhum paciente particular cadastrado"
+                                    : "Nenhum paciente encontrado com esse termo"}
+                                </p>
+                                {privatePatients.length === 0 && (
+                                  <p className="text-xs text-gray-400">
+                                    Cadastre pacientes na página "Pacientes Particulares"
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {formData.private_patient_id && (
