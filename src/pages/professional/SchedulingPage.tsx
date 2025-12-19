@@ -1,5 +1,5 @@
 import type React from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import {
   Calendar,
@@ -139,12 +139,10 @@ const SchedulingPage: React.FC = () => {
 
   // Private patient search state
   const [privatePatientSearch, setPrivatePatientSearch] = useState("");
-  const [filteredPrivatePatients, setFilteredPrivatePatients] = useState<
-    PrivatePatient[]
-  >([]);
   const [showPrivatePatientDropdown, setShowPrivatePatientDropdown] =
     useState(false);
   const [isLoadingPatients, setIsLoadingPatients] = useState(false);
+  const privatePatientDropdownRef = useRef<HTMLDivElement>(null);
 
 
   // 🔥 FUNÇÃO ÚNICA PARA CONVERSÃO DE TIMEZONE
@@ -267,21 +265,36 @@ const SchedulingPage: React.FC = () => {
     fetchData();
   }, [selectedDate]);
 
-  useEffect(() => {
-    if (privatePatientSearch.trim() === "") {
-      console.log("🔍 [FILTER] Showing all patients:", privatePatients.length);
-      setFilteredPrivatePatients(privatePatients);
-    } else {
-      const searchLower = privatePatientSearch.toLowerCase();
-      const filtered = privatePatients.filter(
-        (patient) =>
+  // Filter private patients based on search
+  const filteredPrivatePatients = privatePatientSearch.trim() === ""
+    ? privatePatients
+    : privatePatients.filter((patient) => {
+        const searchLower = privatePatientSearch.toLowerCase();
+        return (
           patient.name.toLowerCase().includes(searchLower) ||
           (patient.cpf && patient.cpf.includes(searchLower.replace(/\D/g, "")))
-      );
-      console.log("🔍 [FILTER] Search:", privatePatientSearch, "Found:", filtered.length);
-      setFilteredPrivatePatients(filtered);
+        );
+      });
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        privatePatientDropdownRef.current &&
+        !privatePatientDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowPrivatePatientDropdown(false);
+      }
+    };
+
+    if (showPrivatePatientDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
     }
-  }, [privatePatientSearch, privatePatients]);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showPrivatePatientDropdown]);
 
   const handlePrivatePatientSelect = (patient: PrivatePatient) => {
     setFormData((prev) => ({
@@ -465,14 +478,11 @@ const SchedulingPage: React.FC = () => {
 
         if (patientsResponse.ok) {
           const patientsData = await patientsResponse.json();
-          console.log("✅ [AGENDA] Private patients loaded:", patientsData.length, patientsData);
           setPrivatePatients(patientsData);
         } else {
-          console.error("❌ [AGENDA] Failed to load private patients:", patientsResponse.status);
           setPrivatePatients([]);
         }
       } catch (err) {
-        console.error("❌ [AGENDA] Error loading private patients:", err);
         setPrivatePatients([]);
       } finally {
         setIsLoadingPatients(false);
@@ -1566,7 +1576,7 @@ const SchedulingPage: React.FC = () => {
 
                   {/* Private Patient Selection */}
                   {formData.patient_type === "private" && (
-                    <div className="relative">
+                    <div className="relative" ref={privatePatientDropdownRef}>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Paciente Particular *
                       </label>
