@@ -119,7 +119,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       if (user && localStorage.getItem("token")) {
-        console.log("🔄 Starting automatic token refresh interval (every 10 minutes)");
+        console.log("🔄 Starting automatic token refresh interval (every 12 hours)");
 
         refreshIntervalRef.current = setInterval(async () => {
           const token = localStorage.getItem("token");
@@ -140,7 +140,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
               console.error("❌ Error during automatic token refresh:", error);
             }
           }
-        }, 10 * 60 * 1000);
+        }, 12 * 60 * 60 * 1000);
       }
     };
 
