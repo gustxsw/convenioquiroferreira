@@ -6523,78 +6523,6 @@ app.all("/api/webhook/payment", (req, res, next) => {
   next();
 });
 
-app.use((err, req, res, next) => {
-  console.error("❌ [ERROR-HANDLER] Unhandled error:", err);
-
-  if (process.env.NODE_ENV === "development") {
-    logAudit(
-      null,
-      "error_occurred",
-      null,
-      null,
-      null,
-      {
-        error: err.message,
-        stack: err.stack,
-        url: req.url,
-        method: req.method,
-      },
-      req
-    ).catch(console.error);
-  }
-
-  res.status(500).json({
-    message: "Erro interno do servidor",
-    ...(process.env.NODE_ENV === "development" && { error: err.message }),
-  });
-});
-
-// Serve React app for all non-API routes in production
-if (process.env.NODE_ENV === "production") {
-  app.get("*", (req, res) => {
-    res.sendFile(path.join(__dirname, "../dist/index.html"));
-  });
-}
-
-// 404 handler for API routes
-app.use((req, res) => {
-  res.status(404).json({ message: "Rota não encontrada" });
-});
-
-// ===== SERVER STARTUP =====
-
-const startServer = async () => {
-  try {
-    console.log("🔄 Starting server initialization...");
-
-    console.log("📊 Initializing database...");
-    await initializeDatabase();
-    console.log("✅ Database initialized successfully");
-
-    console.log(`🌐 Starting HTTP server on port ${PORT}...`);
-    const server = app.listen(PORT, "0.0.0.0", () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(`📊 Database: Connected`);
-      console.log(`💳 MercadoPago: Configured`);
-      console.log(`📋 Consultations System: Active`);
-      console.log(`✅ All systems operational`);
-    });
-
-    server.on("error", (error) => {
-      console.error("❌ Server error:", error);
-      if (error.code === "EADDRINUSE") {
-        console.error(`❌ Port ${PORT} is already in use`);
-      }
-      process.exit(1);
-    });
-  } catch (error) {
-    console.error("❌ Failed to start server:", error);
-    console.error("❌ Error stack:", error.stack);
-    process.exit(1);
-  }
-};
-
 // ========================================
 // AFFILIATES ROUTES (ADMIN)
 // ========================================
@@ -6933,6 +6861,78 @@ app.get("/api/affiliates/validate/:code", async (req, res) => {
     res.status(500).json({ error: "Erro ao validar código" });
   }
 });
+
+app.use((err, req, res, next) => {
+  console.error("❌ [ERROR-HANDLER] Unhandled error:", err);
+
+  if (process.env.NODE_ENV === "development") {
+    logAudit(
+      null,
+      "error_occurred",
+      null,
+      null,
+      null,
+      {
+        error: err.message,
+        stack: err.stack,
+        url: req.url,
+        method: req.method,
+      },
+      req
+    ).catch(console.error);
+  }
+
+  res.status(500).json({
+    message: "Erro interno do servidor",
+    ...(process.env.NODE_ENV === "development" && { error: err.message }),
+  });
+});
+
+// Serve React app for all non-API routes in production
+if (process.env.NODE_ENV === "production") {
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "../dist/index.html"));
+  });
+}
+
+// 404 handler for API routes
+app.use((req, res) => {
+  res.status(404).json({ message: "Rota não encontrada" });
+});
+
+// ===== SERVER STARTUP =====
+
+const startServer = async () => {
+  try {
+    console.log("🔄 Starting server initialization...");
+
+    console.log("📊 Initializing database...");
+    await initializeDatabase();
+    console.log("✅ Database initialized successfully");
+
+    console.log(`🌐 Starting HTTP server on port ${PORT}...`);
+    const server = app.listen(PORT, "0.0.0.0", () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log(`📊 Database: Connected`);
+      console.log(`💳 MercadoPago: Configured`);
+      console.log(`📋 Consultations System: Active`);
+      console.log(`✅ All systems operational`);
+    });
+
+    server.on("error", (error) => {
+      console.error("❌ Server error:", error);
+      if (error.code === "EADDRINUSE") {
+        console.error(`❌ Port ${PORT} is already in use`);
+      }
+      process.exit(1);
+    });
+  } catch (error) {
+    console.error("❌ Failed to start server:", error);
+    console.error("❌ Error stack:", error.stack);
+    process.exit(1);
+  }
+};
 
 // Handle graceful shutdown
 process.on("SIGTERM", async () => {
