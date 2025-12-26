@@ -261,6 +261,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         navigate("/professional", { replace: true });
       } else if (selectedRole === "admin") {
         navigate("/admin", { replace: true });
+      } else if (selectedRole === "vendedor") {
+        navigate("/affiliate", { replace: true });
       }
     } catch (error) {
       console.error("❌ Role selection error:", error);
@@ -313,6 +315,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         navigate("/professional", { replace: true });
       } else if (switchedRole === "admin") {
         navigate("/admin", { replace: true });
+      } else if (switchedRole === "vendedor") {
+        navigate("/affiliate", { replace: true });
       }
     } catch (error) {
       console.error("❌ Role switch error:", error);
