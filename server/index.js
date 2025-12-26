@@ -6557,11 +6557,31 @@ app.get("/api/admin/affiliates", authenticate, authorize(["admin"]), async (req,
 // Create affiliate
 app.post("/api/admin/affiliates", authenticate, authorize(["admin"]), async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, cpf, email, password } = req.body;
 
-    if (!name) {
-      return res.status(400).json({ error: "Nome é obrigatório" });
+    if (!name || !cpf || !password) {
+      return res.status(400).json({ error: "Nome, CPF e senha são obrigatórios" });
     }
+
+    const cpfClean = cpf.replace(/\D/g, "");
+
+    if (cpfClean.length !== 11) {
+      return res.status(400).json({ error: "CPF inválido" });
+    }
+
+    const existingUser = await pool.query("SELECT id FROM users WHERE cpf = $1", [cpfClean]);
+    if (existingUser.rows.length > 0) {
+      return res.status(400).json({ error: "CPF já cadastrado no sistema" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const userResult = await pool.query(
+      "INSERT INTO users (name, cpf, email, password, roles) VALUES ($1, $2, $3, $4, ARRAY['vendedor']) RETURNING id",
+      [name, cpfClean, email || null, hashedPassword]
+    );
+
+    const userId = userResult.rows[0].id;
 
     const generateCode = (name) => {
       const cleaned = name
@@ -6580,8 +6600,8 @@ app.post("/api/admin/affiliates", authenticate, authorize(["admin"]), async (req
     while (attempts < maxAttempts) {
       try {
         const result = await pool.query(
-          "INSERT INTO affiliates (name, code, status) VALUES ($1, $2, 'active') RETURNING *",
-          [name, code]
+          "INSERT INTO affiliates (name, code, status, user_id) VALUES ($1, $2, 'active', $3) RETURNING *",
+          [name, code, userId]
         );
         return res.status(201).json(result.rows[0]);
       } catch (error) {
