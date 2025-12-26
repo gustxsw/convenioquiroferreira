@@ -54,13 +54,7 @@ const AffiliateDashboard: React.FC = () => {
   const copyAffiliateLink = () => {
     if (!data) return;
 
-    const baseUrl =
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-        ? "https://www.cartaoquiroferreira.com.br"
-        : "http://localhost:5173";
-
-    const link = `${baseUrl}/cadastro?ref=${data.affiliate.code}`;
+    const link = `${window.location.origin}/register?affiliate=${data.affiliate.code}`;
 
     navigator.clipboard.writeText(link);
     setCopied(true);
@@ -100,11 +94,7 @@ const AffiliateDashboard: React.FC = () => {
         </h2>
         <div className="flex items-center gap-2">
           <code className="flex-1 p-3 bg-white rounded border text-sm">
-            {window.location.hostname === "cartaoquiroferreira.com.br" ||
-            window.location.hostname === "www.cartaoquiroferreira.com.br"
-              ? "https://www.cartaoquiroferreira.com.br"
-              : "http://localhost:5173"}
-            /cadastro?ref={data.affiliate.code}
+            {window.location.origin}/register?affiliate={data.affiliate.code}
           </code>
           <button
             onClick={copyAffiliateLink}

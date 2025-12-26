@@ -6557,22 +6557,45 @@ app.get("/api/admin/affiliates", authenticate, authorize(["admin"]), async (req,
 // Create affiliate
 app.post("/api/admin/affiliates", authenticate, authorize(["admin"]), async (req, res) => {
   try {
-    const { name, code } = req.body;
+    const { name } = req.body;
 
-    if (!name || !code) {
-      return res.status(400).json({ error: "Nome e código são obrigatórios" });
+    if (!name) {
+      return res.status(400).json({ error: "Nome é obrigatório" });
     }
 
-    const result = await pool.query(
-      "INSERT INTO affiliates (name, code, status) VALUES ($1, $2, 'active') RETURNING *",
-      [name, code]
-    );
+    const generateCode = (name) => {
+      const cleaned = name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+      const random = Math.random().toString(36).substring(2, 6);
+      return `${cleaned.substring(0, 10)}_${random}`;
+    };
 
-    res.status(201).json(result.rows[0]);
+    let code = generateCode(name);
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (attempts < maxAttempts) {
+      try {
+        const result = await pool.query(
+          "INSERT INTO affiliates (name, code, status) VALUES ($1, $2, 'active') RETURNING *",
+          [name, code]
+        );
+        return res.status(201).json(result.rows[0]);
+      } catch (error) {
+        if (error.code === "23505") {
+          attempts++;
+          code = generateCode(name);
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    return res.status(500).json({ error: "Não foi possível gerar um código único" });
   } catch (error) {
-    if (error.code === "23505") {
-      return res.status(400).json({ error: "Código já existe" });
-    }
     console.error("Error creating affiliate:", error);
     res.status(500).json({ error: "Erro ao criar afiliado" });
   }

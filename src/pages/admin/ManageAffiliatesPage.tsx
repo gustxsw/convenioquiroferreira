@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
-import { Users, Plus, DollarSign, CheckCircle, XCircle } from "lucide-react";
+import { Users, Plus, DollarSign, CheckCircle, XCircle, Copy, Check } from "lucide-react";
 
 interface Affiliate {
   id: number;
@@ -31,10 +31,10 @@ const ManageAffiliatesPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     name: "",
-    code: "",
   });
 
   useEffect(() => {
@@ -76,7 +76,7 @@ const ManageAffiliatesPage: React.FC = () => {
       if (response.ok) {
         setSuccess("Afiliado criado com sucesso!");
         setShowCreateModal(false);
-        setFormData({ name: "", code: "" });
+        setFormData({ name: "" });
         loadAffiliates();
       } else {
         const data = await response.json();
@@ -155,6 +155,13 @@ const ManageAffiliatesPage: React.FC = () => {
     }
   };
 
+  const copyAffiliateLink = (code: string) => {
+    const link = `${window.location.origin}/register?affiliate=${code}`;
+    navigator.clipboard.writeText(link);
+    setCopiedCode(code);
+    setTimeout(() => setCopiedCode(null), 2000);
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -193,10 +200,10 @@ const ManageAffiliatesPage: React.FC = () => {
           <thead className="bg-gray-50">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                Código
+                Nome
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                Nome
+                Código / Link
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                 Clientes
@@ -218,11 +225,24 @@ const ManageAffiliatesPage: React.FC = () => {
           <tbody className="bg-white divide-y divide-gray-200">
             {affiliates.map((affiliate) => (
               <tr key={affiliate.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  {affiliate.code}
-                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {affiliate.name}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <div className="flex items-center space-x-2">
+                    <span>{affiliate.code}</span>
+                    <button
+                      onClick={() => copyAffiliateLink(affiliate.code)}
+                      className="text-blue-600 hover:text-blue-700 p-1 rounded hover:bg-blue-50"
+                      title="Copiar link de cadastro"
+                    >
+                      {copiedCode === affiliate.code ? (
+                        <Check className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {affiliate.clients_count}
@@ -271,7 +291,7 @@ const ManageAffiliatesPage: React.FC = () => {
             <form onSubmit={handleCreateAffiliate}>
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Nome
+                  Nome do Afiliado
                 </label>
                 <input
                   type="text"
@@ -281,21 +301,11 @@ const ManageAffiliatesPage: React.FC = () => {
                   }
                   className="w-full px-3 py-2 border rounded-lg"
                   required
+                  placeholder="Ex: João Silva"
                 />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Código (ex: AF1234)
-                </label>
-                <input
-                  type="text"
-                  value={formData.code}
-                  onChange={(e) =>
-                    setFormData({ ...formData, code: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border rounded-lg"
-                  required
-                />
+                <p className="mt-1 text-sm text-gray-500">
+                  O código será gerado automaticamente
+                </p>
               </div>
               <div className="flex justify-end space-x-2">
                 <button
