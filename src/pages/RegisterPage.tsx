@@ -1,9 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { UserPlus, ArrowLeft, Eye, EyeOff, FileText, X, Check } from "lucide-react";
 
 const RegisterPage: React.FC = () => {
+  const [searchParams] = useSearchParams();
+
   // Form state
   const [formData, setFormData] = useState({
     name: "",
@@ -25,12 +27,37 @@ const RegisterPage: React.FC = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  
+  const [affiliateCode, setAffiliateCode] = useState<string | null>(null);
+  const [affiliateName, setAffiliateName] = useState<string | null>(null);
+
   // Terms of service state
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
-  
+
   const { selectRole } = useAuth();
+
+  // Capture affiliate code from URL
+  useEffect(() => {
+    const refCode = searchParams.get("ref");
+    if (refCode) {
+      validateAffiliateCode(refCode);
+    }
+  }, [searchParams]);
+
+  const validateAffiliateCode = async (code: string) => {
+    try {
+      const apiUrl = getApiUrl();
+      const response = await fetch(`${apiUrl}/api/affiliates/validate/${code}`);
+      const data = await response.json();
+
+      if (data.valid) {
+        setAffiliateCode(code);
+        setAffiliateName(data.affiliate.name);
+      }
+    } catch (error) {
+      console.error("Error validating affiliate code:", error);
+    }
+  };
 
   // Get API URL - PRODUCTION READY
   const getApiUrl = () => {
@@ -158,6 +185,7 @@ const RegisterPage: React.FC = () => {
           city: formData.city.trim() || null,
           state: formData.state || null,
           password: formData.password,
+          affiliate_code: affiliateCode || null,
         }),
         credentials: "include",
       });
@@ -225,6 +253,15 @@ const RegisterPage: React.FC = () => {
           </div>
 
           {/* Back to login link */}
+          {affiliateName && (
+            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-sm text-green-800">
+                <Check className="inline w-4 h-4 mr-1" />
+                Você está se cadastrando através da indicação de: <strong>{affiliateName}</strong>
+              </p>
+            </div>
+          )}
+
           <div className="mb-6">
             <Link
               to="/"

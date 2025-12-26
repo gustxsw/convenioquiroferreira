@@ -26,6 +26,9 @@ import ManageUsersPage from "./pages/admin/ManageUsersPage";
 import ManageServicesPage from "./pages/admin/ManageServicesPage";
 import ManageSchedulingAccessPage from "./pages/admin/ManageSchedulingAccessPage";
 import ReportsPage from "./pages/admin/ReportsPage";
+import ManageAffiliatesPage from "./pages/admin/ManageAffiliatesPage";
+import ManageCouponsPage from "./pages/admin/ManageCouponsPage";
+import AffiliateDashboard from "./pages/affiliate/AffiliateDashboard";
 
 // Route guards
 const ProtectedRoute = ({
@@ -58,6 +61,8 @@ const ProtectedRoute = ({
       return <Navigate to="/professional" replace />;
     } else if (user.currentRole === "admin") {
       return <Navigate to="/admin" replace />;
+    } else if (user.currentRole === "vendedor") {
+      return <Navigate to="/affiliate" replace />;
     }
 
     return <Navigate to="/" replace />;
@@ -93,6 +98,7 @@ function App() {
       <Route element={<AuthLayout />}>
         <Route path="/select-role" element={<RoleSelectionPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/cadastro" element={<RegisterPage />} />
       </Route>
 
       {/* Client routes */}
@@ -141,6 +147,19 @@ function App() {
         <Route path="/admin/services" element={<ManageServicesPage />} />
         <Route path="/admin/scheduling-access" element={<ManageSchedulingAccessPage />} />
         <Route path="/admin/reports" element={<ReportsPage />} />
+        <Route path="/admin/affiliates" element={<ManageAffiliatesPage />} />
+        <Route path="/admin/coupons" element={<ManageCouponsPage />} />
+      </Route>
+
+      {/* Affiliate/Vendedor routes */}
+      <Route
+        element={
+          <ProtectedRoute allowedRoles={["vendedor"]}>
+            <MainLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="/affiliate" element={<AffiliateDashboard />} />
       </Route>
 
       {/* 🔥 CATCH-ALL - QUALQUER ROTA DESCONHECIDA VAI PARA LOGIN */}

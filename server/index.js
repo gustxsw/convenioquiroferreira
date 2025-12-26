@@ -730,6 +730,84 @@ const initializeDatabase = async () => {
       WHERE NOT EXISTS (SELECT 1 FROM coupons WHERE code = 'REIS60')
     `);
 
+    // Add missing columns to coupons table for admin panel
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'coupons' AND column_name = 'valid_from'
+        ) THEN
+          ALTER TABLE coupons ADD COLUMN valid_from TIMESTAMP;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'coupons' AND column_name = 'valid_until'
+        ) THEN
+          ALTER TABLE coupons ADD COLUMN valid_until TIMESTAMP;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'coupons' AND column_name = 'final_price'
+        ) THEN
+          ALTER TABLE coupons ADD COLUMN final_price DECIMAL(10,2);
+        END IF;
+      END $$;
+    `);
+
+    // Add affiliate_code column to users table
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'affiliate_code'
+        ) THEN
+          ALTER TABLE users ADD COLUMN affiliate_code VARCHAR(20);
+        END IF;
+      END $$;
+    `);
+
+    // Create affiliates table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS affiliates (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        code VARCHAR(20) UNIQUE NOT NULL,
+        status VARCHAR(20) DEFAULT 'active',
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Add user_id column to existing affiliates table
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'affiliates' AND column_name = 'user_id'
+        ) THEN
+          ALTER TABLE affiliates ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+    `);
+
+    // Create affiliate_commissions table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS affiliate_commissions (
+        id SERIAL PRIMARY KEY,
+        affiliate_id INTEGER REFERENCES affiliates(id) ON DELETE CASCADE,
+        client_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        amount DECIMAL(10,2) NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        paid_at TIMESTAMP
+      )
+    `);
+
     console.log("✅ Database tables initialized successfully");
   } catch (error) {
     console.error("❌ Error initializing database:", error);
@@ -884,6 +962,7 @@ app.post("/api/auth/register", async (req, res) => {
       city,
       state,
       password,
+      affiliate_code,
     } = req.body;
 
     console.log("🔄 Registration attempt for CPF:", cpf);
@@ -930,9 +1009,9 @@ app.post("/api/auth/register", async (req, res) => {
     const userResult = await pool.query(
       `
       INSERT INTO users (
-        name, cpf, email, phone, birth_date, address, address_number, 
-        address_complement, neighborhood, city, state, password, roles
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        name, cpf, email, phone, birth_date, address, address_number,
+        address_complement, neighborhood, city, state, password, roles, affiliate_code
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING id, name, cpf, email, roles, subscription_status
     `,
       [
@@ -949,6 +1028,7 @@ app.post("/api/auth/register", async (req, res) => {
         state || null,
         hashedPassword,
         ["client"],
+        affiliate_code || null,
       ]
     );
 
@@ -6075,6 +6155,34 @@ async function processClientPayment(userId, payment) {
       [expirationDate, userId]
     );
 
+    // 3. Registrar comissão de afiliado (se houver)
+    const userResult = await pool.query(
+      "SELECT affiliate_code FROM users WHERE id = $1",
+      [userId]
+    );
+
+    if (userResult.rows[0]?.affiliate_code) {
+      const affiliateCode = userResult.rows[0].affiliate_code;
+
+      const affiliateResult = await pool.query(
+        "SELECT id FROM affiliates WHERE code = $1 AND status = 'active'",
+        [affiliateCode]
+      );
+
+      if (affiliateResult.rows.length > 0) {
+        const affiliateId = affiliateResult.rows[0].id;
+        const commissionAmount = 10.00;
+
+        await pool.query(
+          `INSERT INTO affiliate_commissions (affiliate_id, client_id, amount, status)
+           VALUES ($1, $2, $3, 'pending')`,
+          [affiliateId, userId, commissionAmount]
+        );
+
+        console.log(`💰 [COMISSÃO] Registrada comissão de R$ ${commissionAmount} para afiliado ${affiliateCode}`);
+      }
+    }
+
     console.log(
       `✅ [PAGAMENTO] Cliente atualizado e ações aplicadas com sucesso`
     );
@@ -6486,6 +6594,345 @@ const startServer = async () => {
     process.exit(1);
   }
 };
+
+// ========================================
+// AFFILIATES ROUTES (ADMIN)
+// ========================================
+
+// Get all affiliates
+app.get("/api/admin/affiliates", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        a.id,
+        a.name,
+        a.code,
+        a.status,
+        a.created_at,
+        COUNT(DISTINCT u.id) as clients_count,
+        COALESCE(SUM(CASE WHEN ac.status = 'pending' THEN ac.amount ELSE 0 END), 0) as pending_total,
+        COALESCE(SUM(CASE WHEN ac.status = 'paid' THEN ac.amount ELSE 0 END), 0) as paid_total
+      FROM affiliates a
+      LEFT JOIN users u ON u.affiliate_code = a.code
+      LEFT JOIN affiliate_commissions ac ON ac.affiliate_id = a.id
+      GROUP BY a.id
+      ORDER BY a.created_at DESC
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching affiliates:", error);
+    res.status(500).json({ error: "Erro ao buscar afiliados" });
+  }
+});
+
+// Create affiliate
+app.post("/api/admin/affiliates", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const { name, code } = req.body;
+
+    if (!name || !code) {
+      return res.status(400).json({ error: "Nome e código são obrigatórios" });
+    }
+
+    const result = await pool.query(
+      "INSERT INTO affiliates (name, code, status) VALUES ($1, $2, 'active') RETURNING *",
+      [name, code]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    if (error.code === "23505") {
+      return res.status(400).json({ error: "Código já existe" });
+    }
+    console.error("Error creating affiliate:", error);
+    res.status(500).json({ error: "Erro ao criar afiliado" });
+  }
+});
+
+// Update affiliate status
+app.put("/api/admin/affiliates/:id", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const result = await pool.query(
+      "UPDATE affiliates SET status = $1 WHERE id = $2 RETURNING *",
+      [status, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Afiliado não encontrado" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating affiliate:", error);
+    res.status(500).json({ error: "Erro ao atualizar afiliado" });
+  }
+});
+
+// Get affiliate details with commissions
+app.get("/api/admin/affiliates/:id/commissions", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(`
+      SELECT
+        ac.*,
+        u.name as client_name,
+        u.cpf as client_cpf
+      FROM affiliate_commissions ac
+      JOIN users u ON u.id = ac.client_id
+      WHERE ac.affiliate_id = $1
+      ORDER BY ac.created_at DESC
+    `, [id]);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching commissions:", error);
+    res.status(500).json({ error: "Erro ao buscar comissões" });
+  }
+});
+
+// Mark commission as paid
+app.put("/api/admin/affiliates/:id/commissions/:commissionId/pay", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const { commissionId } = req.params;
+
+    const result = await pool.query(
+      "UPDATE affiliate_commissions SET status = 'paid', paid_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *",
+      [commissionId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Comissão não encontrada" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error marking commission as paid:", error);
+    res.status(500).json({ error: "Erro ao marcar comissão como paga" });
+  }
+});
+
+// ========================================
+// AFFILIATE PANEL ROUTES
+// ========================================
+
+// Get affiliate dashboard data
+app.get("/api/affiliate/dashboard", authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Check if user is an affiliate (has the 'vendedor' role)
+    const userResult = await pool.query(
+      "SELECT roles FROM users WHERE id = $1",
+      [userId]
+    );
+
+    if (!userResult.rows[0] || !userResult.rows[0].roles.includes("vendedor")) {
+      return res.status(403).json({ error: "Acesso negado" });
+    }
+
+    // Get affiliate info
+    const affiliateResult = await pool.query(
+      "SELECT * FROM affiliates WHERE user_id = $1",
+      [userId]
+    );
+
+    if (affiliateResult.rows.length === 0) {
+      return res.status(404).json({ error: "Afiliado não encontrado" });
+    }
+
+    const affiliate = affiliateResult.rows[0];
+
+    // Get stats
+    const statsResult = await pool.query(`
+      SELECT
+        COUNT(DISTINCT u.id) as clients_count,
+        COALESCE(SUM(CASE WHEN ac.status = 'pending' THEN ac.amount ELSE 0 END), 0) as pending_total,
+        COALESCE(SUM(CASE WHEN ac.status = 'paid' THEN ac.amount ELSE 0 END), 0) as paid_total
+      FROM users u
+      LEFT JOIN affiliate_commissions ac ON ac.client_id = u.id
+      WHERE u.affiliate_code = $1
+    `, [affiliate.code]);
+
+    // Get referred clients
+    const clientsResult = await pool.query(`
+      SELECT
+        u.name,
+        u.created_at,
+        u.subscription_status
+      FROM users u
+      WHERE u.affiliate_code = $1
+      ORDER BY u.created_at DESC
+    `, [affiliate.code]);
+
+    res.json({
+      affiliate,
+      stats: statsResult.rows[0],
+      clients: clientsResult.rows
+    });
+  } catch (error) {
+    console.error("Error fetching affiliate dashboard:", error);
+    res.status(500).json({ error: "Erro ao buscar dados do painel" });
+  }
+});
+
+// ========================================
+// COUPONS ROUTES (ADMIN)
+// ========================================
+
+// Get all coupons
+app.get("/api/admin/coupons", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT * FROM coupons
+      ORDER BY created_at DESC
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching coupons:", error);
+    res.status(500).json({ error: "Erro ao buscar cupons" });
+  }
+});
+
+// Create coupon
+app.post("/api/admin/coupons", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const {
+      code,
+      coupon_type,
+      discount_value,
+      final_price,
+      valid_from,
+      valid_until,
+      description,
+      unlimited_use
+    } = req.body;
+
+    if (!code || !coupon_type || (!discount_value && !final_price)) {
+      return res.status(400).json({ error: "Dados obrigatórios faltando" });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO coupons
+        (code, coupon_type, discount_type, discount_value, final_price, valid_from, valid_until, description, unlimited_use, is_active, created_by)
+       VALUES ($1, $2, 'fixed', $3, $4, $5, $6, $7, $8, true, $9)
+       RETURNING *`,
+      [code, coupon_type, discount_value || 0, final_price, valid_from, valid_until, description, unlimited_use || false, req.user.id]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    if (error.code === "23505") {
+      return res.status(400).json({ error: "Código de cupom já existe" });
+    }
+    console.error("Error creating coupon:", error);
+    res.status(500).json({ error: "Erro ao criar cupom" });
+  }
+});
+
+// Update coupon
+app.put("/api/admin/coupons/:id", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      code,
+      coupon_type,
+      discount_value,
+      final_price,
+      valid_from,
+      valid_until,
+      description,
+      unlimited_use,
+      is_active
+    } = req.body;
+
+    const result = await pool.query(
+      `UPDATE coupons
+       SET code = $1, coupon_type = $2, discount_value = $3, final_price = $4,
+           valid_from = $5, valid_until = $6, description = $7, unlimited_use = $8, is_active = $9
+       WHERE id = $10
+       RETURNING *`,
+      [code, coupon_type, discount_value, final_price, valid_from, valid_until, description, unlimited_use, is_active, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Cupom não encontrado" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating coupon:", error);
+    res.status(500).json({ error: "Erro ao atualizar cupom" });
+  }
+});
+
+// Toggle coupon status
+app.put("/api/admin/coupons/:id/toggle", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      "UPDATE coupons SET is_active = NOT is_active WHERE id = $1 RETURNING *",
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Cupom não encontrado" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error toggling coupon:", error);
+    res.status(500).json({ error: "Erro ao ativar/desativar cupom" });
+  }
+});
+
+// Delete coupon
+app.delete("/api/admin/coupons/:id", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      "DELETE FROM coupons WHERE id = $1 RETURNING *",
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Cupom não encontrado" });
+    }
+
+    res.json({ message: "Cupom excluído com sucesso" });
+  } catch (error) {
+    console.error("Error deleting coupon:", error);
+    res.status(500).json({ error: "Erro ao excluir cupom" });
+  }
+});
+
+// Validate affiliate code (public endpoint for registration)
+app.get("/api/affiliates/validate/:code", async (req, res) => {
+  try {
+    const { code } = req.params;
+
+    const result = await pool.query(
+      "SELECT id, name, code FROM affiliates WHERE code = $1 AND status = 'active'",
+      [code]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ valid: false });
+    }
+
+    res.json({ valid: true, affiliate: result.rows[0] });
+  } catch (error) {
+    console.error("Error validating affiliate code:", error);
+    res.status(500).json({ error: "Erro ao validar código" });
+  }
+});
 
 // Handle graceful shutdown
 process.on("SIGTERM", async () => {
