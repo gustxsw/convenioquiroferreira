@@ -907,10 +907,10 @@ const logAudit = async (
 
 // Get production URLs
 const getProductionUrls = () => {
-  const baseUrl =
-    process.env.NODE_ENV === "production"
-      ? "https://www.cartaoquiroferreira.com.br"
-      : "http://localhost:5173";
+  const isProduction = process.env.NODE_ENV === "production";
+  const baseUrl = isProduction
+    ? "https://www.cartaoquiroferreira.com.br"
+    : "http://localhost:5173";
 
   return {
     client: {
@@ -933,15 +933,14 @@ const getProductionUrls = () => {
       failure: `${baseUrl}/professional?payment=failure&type=agenda`,
       pending: `${baseUrl}/professional?payment=pending&type=agenda`,
     },
-    webhook:
-      process.env.NODE_ENV === "production"
-        ? "https://www.cartaoquiroferreira.com.br/api/webhooks/payment-success"
-        : "http://localhost:3001/api/webhooks/payment-success",
+    webhook: isProduction
+      ? "https://www.cartaoquiroferreira.com.br/api/webhooks/payment-success"
+      : "http://localhost:3001/api/webhooks/payment-success",
     // Webhook alternativo para mobile
-    webhookAlt:
-      process.env.NODE_ENV === "production"
-        ? "https://www.cartaoquiroferreira.com.br/api/webhooks/payment"
-        : "http://localhost:3001/api/webhook/payment",
+    webhookAlt: isProduction
+      ? "https://www.cartaoquiroferreira.com.br/api/webhooks/payment"
+      : "http://localhost:3001/api/webhook/payment",
+    isProduction,
   };
 };
 
@@ -5565,7 +5564,6 @@ app.post(
           failure: urls.client.failure,
           pending: urls.client.pending,
         },
-        auto_return: "approved",
         notification_url: urls.webhook,
         external_reference: `subscription_${user_id}_${Date.now()}`,
         statement_descriptor: "QUIRO FERREIRA",
@@ -5579,6 +5577,11 @@ app.post(
           },
         },
       };
+
+      // Only add auto_return in production (sandbox doesn't accept localhost URLs)
+      if (urls.isProduction) {
+        preferenceData.auto_return = "approved";
+      }
 
       const subscriptionResult = await preference.create({
         body: preferenceData,
@@ -5721,7 +5724,6 @@ app.post(
           failure: urls.dependent.failure,
           pending: urls.dependent.pending,
         },
-        auto_return: "approved",
         notification_url: urls.webhook,
         external_reference: `dependent_${dependent_id}_${Date.now()}`,
         statement_descriptor: "QUIRO FERREIRA",
@@ -5736,6 +5738,11 @@ app.post(
           },
         },
       };
+
+      // Only add auto_return in production (sandbox doesn't accept localhost URLs)
+      if (urls.isProduction) {
+        preferenceData.auto_return = "approved";
+      }
 
       const dependentPaymentResult = await preference.create({
         body: preferenceData,
@@ -5832,7 +5839,6 @@ app.post(
           failure: urls.professional.failure,
           pending: urls.professional.pending,
         },
-        auto_return: "approved",
         notification_url: urls.webhook,
         external_reference: `professional_${req.user.id}_${Date.now()}`,
         statement_descriptor: "QUIRO FERREIRA",
@@ -5842,6 +5848,11 @@ app.post(
           email: req.user.email || `professional${req.user.id}@temp.com`,
         },
       };
+
+      // Only add auto_return in production (sandbox doesn't accept localhost URLs)
+      if (urls.isProduction) {
+        preferenceData.auto_return = "approved";
+      }
 
       const professionalResult = await preference.create({
         body: preferenceData,
@@ -5924,7 +5935,6 @@ app.post(
           failure: urls.agenda.failure,
           pending: urls.agenda.pending,
         },
-        auto_return: "approved",
         notification_url: urls.webhook,
         external_reference: `agenda_${
           req.user.id
@@ -5940,6 +5950,11 @@ app.post(
           email: req.user.email || `professional${req.user.id}@temp.com`,
         },
       };
+
+      // Only add auto_return in production (sandbox doesn't accept localhost URLs)
+      if (urls.isProduction) {
+        preferenceData.auto_return = "approved";
+      }
 
       const agendaResult = await preference.create({ body: preferenceData });
 
