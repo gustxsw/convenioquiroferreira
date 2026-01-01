@@ -4,6 +4,8 @@
 
 O sistema agora possui um rastreamento completo de afiliados que persiste a referência desde o primeiro click até a conversão final, independente do tempo que levar.
 
+**Importante**: Todas as tabelas do banco de dados são criadas automaticamente quando o servidor inicia pela primeira vez, através da função `initializeDatabase()` em `server/index.js`. Não há arquivos de migrations separados.
+
 ## Como Funciona
 
 ### 1. Click no Link do Afiliado

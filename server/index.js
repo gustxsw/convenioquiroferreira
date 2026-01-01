@@ -810,6 +810,73 @@ const initializeDatabase = async () => {
       )
     `);
 
+    // Create affiliate_referrals table for persistent tracking
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS affiliate_referrals (
+        id SERIAL PRIMARY KEY,
+        affiliate_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        visitor_identifier TEXT NOT NULL,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        converted BOOLEAN DEFAULT false,
+        converted_at TIMESTAMP,
+        referral_code TEXT NOT NULL,
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create indexes for affiliate_referrals
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_affiliate_referrals_affiliate_id ON affiliate_referrals(affiliate_id);
+      CREATE INDEX IF NOT EXISTS idx_affiliate_referrals_visitor_identifier ON affiliate_referrals(visitor_identifier);
+      CREATE INDEX IF NOT EXISTS idx_affiliate_referrals_user_id ON affiliate_referrals(user_id);
+      CREATE INDEX IF NOT EXISTS idx_affiliate_referrals_referral_code ON affiliate_referrals(referral_code);
+      CREATE INDEX IF NOT EXISTS idx_affiliate_referrals_converted ON affiliate_referrals(converted);
+    `);
+
+    // Add affiliate tracking columns to users table
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'referred_by_affiliate_id'
+        ) THEN
+          ALTER TABLE users ADD COLUMN referred_by_affiliate_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+          CREATE INDEX IF NOT EXISTS idx_users_referred_by_affiliate_id ON users(referred_by_affiliate_id);
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'affiliate_referral_id'
+        ) THEN
+          ALTER TABLE users ADD COLUMN affiliate_referral_id INTEGER REFERENCES affiliate_referrals(id) ON DELETE SET NULL;
+          CREATE INDEX IF NOT EXISTS idx_users_affiliate_referral_id ON users(affiliate_referral_id);
+        END IF;
+      END $$;
+    `);
+
+    // Create updated_at trigger function
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION update_updated_at_column()
+      RETURNS TRIGGER AS $$
+      BEGIN
+        NEW.updated_at = CURRENT_TIMESTAMP;
+        RETURN NEW;
+      END;
+      $$ language 'plpgsql';
+    `);
+
+    // Add trigger to affiliate_referrals
+    await pool.query(`
+      DROP TRIGGER IF EXISTS update_affiliate_referrals_updated_at ON affiliate_referrals;
+      CREATE TRIGGER update_affiliate_referrals_updated_at
+        BEFORE UPDATE ON affiliate_referrals
+        FOR EACH ROW
+        EXECUTE FUNCTION update_updated_at_column();
+    `);
+
     console.log("✅ Database tables initialized successfully");
   } catch (error) {
     console.error("❌ Error initializing database:", error);
