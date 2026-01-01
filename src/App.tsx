@@ -1,6 +1,7 @@
 import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
+import { useAffiliateTracking } from "./hooks/useAffiliateTracking";
 
 // Layouts
 import MainLayout from "./layouts/MainLayout";
@@ -73,6 +74,9 @@ const ProtectedRoute = ({
 
 function App() {
   const { user, isAuthenticated, isLoading } = useAuth();
+
+  // Track affiliate referrals automatically
+  useAffiliateTracking();
 
   // Show loading while checking authentication
   if (isLoading) {

@@ -22,14 +22,36 @@ interface AffiliateData {
   }>;
 }
 
+interface ReferralStats {
+  total_clicks: string;
+  total_registrations: string;
+  total_conversions: string;
+}
+
+interface Referral {
+  id: number;
+  visitor_identifier: string;
+  user_id: number | null;
+  user_name: string | null;
+  user_email: string | null;
+  user_cpf: string | null;
+  subscription_status: string | null;
+  converted: boolean;
+  converted_at: string | null;
+  created_at: string;
+}
+
 const AffiliateDashboard: React.FC = () => {
   const [data, setData] = useState<AffiliateData | null>(null);
+  const [referrals, setReferrals] = useState<Referral[]>([]);
+  const [referralStats, setReferralStats] = useState<ReferralStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     loadDashboard();
+    loadReferrals();
   }, []);
 
   const loadDashboard = async () => {
@@ -51,10 +73,25 @@ const AffiliateDashboard: React.FC = () => {
     }
   };
 
+  const loadReferrals = async () => {
+    try {
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(`${apiUrl}/api/affiliate-tracking/my-referrals`);
+
+      if (response.ok) {
+        const data = await response.json();
+        setReferrals(data.referrals || []);
+        setReferralStats(data.stats || null);
+      }
+    } catch (err) {
+      console.error("Erro ao carregar referências:", err);
+    }
+  };
+
   const copyAffiliateLink = () => {
     if (!data) return;
 
-    const link = `${window.location.origin}/register?affiliate=${data.affiliate.code}`;
+    const link = `${window.location.origin}/register?ref=${data.affiliate.id}`;
 
     navigator.clipboard.writeText(link);
     setCopied(true);
@@ -94,7 +131,7 @@ const AffiliateDashboard: React.FC = () => {
         </h2>
         <div className="flex items-center gap-2">
           <code className="flex-1 p-3 bg-white rounded border text-sm">
-            {window.location.origin}/register?affiliate={data.affiliate.code}
+            {window.location.origin}/register?ref={data.affiliate.id}
           </code>
           <button
             onClick={copyAffiliateLink}
@@ -201,11 +238,113 @@ const AffiliateDashboard: React.FC = () => {
         )}
       </div>
 
+      {referralStats && (
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white p-6 rounded-lg shadow border-l-4 border-blue-500">
+            <p className="text-sm text-gray-600 mb-1">Total de Clicks</p>
+            <p className="text-3xl font-bold text-blue-600">{referralStats.total_clicks}</p>
+            <p className="text-xs text-gray-500 mt-1">Pessoas que acessaram seu link</p>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow border-l-4 border-yellow-500">
+            <p className="text-sm text-gray-600 mb-1">Cadastros</p>
+            <p className="text-3xl font-bold text-yellow-600">{referralStats.total_registrations}</p>
+            <p className="text-xs text-gray-500 mt-1">Usuários que se registraram</p>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500">
+            <p className="text-sm text-gray-600 mb-1">Conversões</p>
+            <p className="text-3xl font-bold text-green-600">{referralStats.total_conversions}</p>
+            <p className="text-xs text-gray-500 mt-1">Pagamentos realizados</p>
+          </div>
+        </div>
+      )}
+
+      {referrals.length > 0 && (
+        <div className="mt-6 bg-white rounded-lg shadow">
+          <div className="p-6 border-b">
+            <h2 className="text-xl font-bold text-gray-900">Histórico de Referências</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Acompanhe o status de cada pessoa que clicou no seu link
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Data do Click
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Nome
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Email
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Conversão
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {referrals.map((referral) => (
+                  <tr key={referral.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {new Date(referral.created_at).toLocaleDateString("pt-BR")}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {referral.user_name || (
+                        <span className="text-gray-400 italic">Aguardando cadastro</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {referral.user_email || (
+                        <span className="text-gray-400 italic">-</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {!referral.user_id ? (
+                        <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800">
+                          Apenas Click
+                        </span>
+                      ) : (
+                        <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
+                          Cadastrado
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {referral.converted ? (
+                        <span className="flex items-center text-green-600">
+                          <CheckCircle className="w-4 h-4 mr-1" />
+                          Convertido
+                        </span>
+                      ) : (
+                        <span className="flex items-center text-yellow-600">
+                          <Clock className="w-4 h-4 mr-1" />
+                          Pendente
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
         <h3 className="font-semibold text-blue-900 mb-2">Como funciona?</h3>
         <ul className="text-sm text-blue-800 space-y-1">
-          <li>• Você recebe R$ 10,00 de comissão por cada cliente que se cadastrar através do seu link</li>
-          <li>• A comissão é registrada automaticamente quando o cliente efetua o pagamento</li>
+          <li>• Compartilhe seu link único de indicação</li>
+          <li>• O sistema rastreia automaticamente cada pessoa que clica no seu link</li>
+          <li>• Quando o visitante se cadastra, ele fica vinculado a você permanentemente</li>
+          <li>• Se ele pagar o convênio hoje, amanhã ou daqui 1 mês, você recebe a comissão</li>
+          <li>• Você recebe R$ 10,00 de comissão por cada cliente que efetuar o pagamento</li>
           <li>• O pagamento da comissão é feito manualmente pelo administrador</li>
         </ul>
       </div>

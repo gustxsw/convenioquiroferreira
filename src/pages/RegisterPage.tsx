@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { Link, useSearchParams } from "react-router-dom";
 import { UserPlus, ArrowLeft, Eye, EyeOff, FileText, X, Check } from "lucide-react";
+import { linkUserToAffiliate } from "../hooks/useAffiliateTracking";
 
 const RegisterPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -205,6 +206,14 @@ const RegisterPage: React.FC = () => {
 
       const data = await response.json();
       console.log("Registration successful:", data);
+
+      // Link user to affiliate if they came from a referral link
+      try {
+        await linkUserToAffiliate(data.user.id);
+      } catch (affiliateError) {
+        console.error("Error linking to affiliate:", affiliateError);
+        // Don't block registration if affiliate linking fails
+      }
 
       // Auto-select client role since registration is only for clients
       await selectRole(data.user.id, "client");

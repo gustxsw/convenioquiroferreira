@@ -13,6 +13,7 @@ import { generateDocumentPDF } from "./utils/documentGenerator.js";
 import { MercadoPagoConfig, Preference } from "mercadopago";
 import documentsRoutes from "./routes/documents.js";
 import pdfRoutes from "./routes/pdf.js";
+import affiliateTrackingRoutes from "./routes/affiliateTracking.js";
 import {
   checkSchedulingAccess,
   getSchedulingAccessStatus,
@@ -56,6 +57,7 @@ app.use(cookieParser());
 // Import route modules
 app.use("/api/documents", documentsRoutes);
 app.use("/api/pdf", pdfRoutes);
+app.use("/api/affiliate-tracking", affiliateTrackingRoutes);
 
 // Serve static files in production
 if (process.env.NODE_ENV === "production") {
@@ -6169,6 +6171,22 @@ async function processClientPayment(userId, payment) {
        WHERE id = $2`,
       [expirationDate, userId]
     );
+
+    // 2.5. Marcar referência como convertida (novo sistema de tracking de afiliados)
+    try {
+      await pool.query(
+        `UPDATE affiliate_referrals
+         SET converted = true,
+             converted_at = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $1 AND converted = false`,
+        [userId]
+      );
+      console.log(`✅ [AFFILIATE] Referência marcada como convertida para usuário ${userId}`);
+    } catch (affiliateError) {
+      console.error(`⚠️ [AFFILIATE] Erro ao marcar referência como convertida:`, affiliateError);
+      // Não bloquear o processamento do pagamento se houver erro no tracking
+    }
 
     // 3. Registrar comissão de afiliado (se houver)
     const userResult = await pool.query(
