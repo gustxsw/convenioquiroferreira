@@ -6823,6 +6823,114 @@ app.put("/api/admin/affiliates/:id/commissions/:commissionId/pay", authenticate,
   }
 });
 
+// Search user by CPF
+app.get("/api/admin/users/search", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const { cpf } = req.query;
+
+    if (!cpf) {
+      return res.status(400).json({ error: "CPF é obrigatório" });
+    }
+
+    const cleanCpf = cpf.replace(/\D/g, "");
+
+    const result = await pool.query(
+      "SELECT id, name, cpf, email, roles FROM users WHERE cpf = $1",
+      [cleanCpf]
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({ user: null });
+    }
+
+    res.json({ user: result.rows[0] });
+  } catch (error) {
+    console.error("Error searching user:", error);
+    res.status(500).json({ error: "Erro ao buscar usuário" });
+  }
+});
+
+// Import existing user as affiliate
+app.post("/api/admin/affiliates/import", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: "userId é obrigatório" });
+    }
+
+    // Check if user exists
+    const userResult = await pool.query(
+      "SELECT id, name, cpf, roles FROM users WHERE id = $1",
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "Usuário não encontrado" });
+    }
+
+    const user = userResult.rows[0];
+
+    // Check if user is already an affiliate
+    if (user.roles.includes("vendedor")) {
+      return res.status(400).json({ error: "Usuário já é vendedor" });
+    }
+
+    // Check if affiliate record already exists
+    const existingAffiliate = await pool.query(
+      "SELECT id FROM affiliates WHERE user_id = $1",
+      [userId]
+    );
+
+    if (existingAffiliate.rows.length > 0) {
+      return res.status(400).json({ error: "Registro de afiliado já existe para este usuário" });
+    }
+
+    // Add 'vendedor' role to user
+    await pool.query(
+      "UPDATE users SET roles = array_append(roles, 'vendedor') WHERE id = $1",
+      [userId]
+    );
+
+    // Generate affiliate code
+    const generateCode = (name) => {
+      const cleaned = name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+      const random = Math.random().toString(36).substring(2, 6);
+      return `${cleaned.substring(0, 10)}_${random}`;
+    };
+
+    let code = generateCode(user.name);
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (attempts < maxAttempts) {
+      try {
+        const result = await pool.query(
+          "INSERT INTO affiliates (name, code, status, user_id) VALUES ($1, $2, 'active', $3) RETURNING *",
+          [user.name, code, userId]
+        );
+        return res.status(201).json(result.rows[0]);
+      } catch (error) {
+        if (error.code === "23505") {
+          attempts++;
+          code = generateCode(user.name);
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    return res.status(500).json({ error: "Não foi possível gerar um código único" });
+  } catch (error) {
+    console.error("Error importing user as affiliate:", error);
+    res.status(500).json({ error: "Erro ao importar usuário" });
+  }
+});
+
 // ========================================
 // AFFILIATE PANEL ROUTES
 // ========================================

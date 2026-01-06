@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
-import { Users, Plus, DollarSign, CheckCircle, XCircle, Copy, Check } from "lucide-react";
+import { Users, Plus, DollarSign, CheckCircle, XCircle, Copy, Check, UserPlus, Search } from "lucide-react";
 
 interface Affiliate {
   id: number;
@@ -22,16 +22,28 @@ interface Commission {
   created_at: string;
 }
 
+interface ExistingUser {
+  id: number;
+  name: string;
+  cpf: string;
+  email: string | null;
+  roles: string[];
+}
+
 const ManageAffiliatesPage: React.FC = () => {
   const [affiliates, setAffiliates] = useState<Affiliate[]>([]);
   const [selectedAffiliate, setSelectedAffiliate] = useState<Affiliate | null>(null);
   const [commissions, setCommissions] = useState<Commission[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [showCommissionsModal, setShowCommissionsModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [searchCpf, setSearchCpf] = useState("");
+  const [searchedUser, setSearchedUser] = useState<ExistingUser | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -60,6 +72,68 @@ const ManageAffiliatesPage: React.FC = () => {
       setError("Erro ao carregar afiliados");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const searchUser = async () => {
+    if (!searchCpf) return;
+
+    try {
+      setIsSearching(true);
+      setError("");
+      setSearchedUser(null);
+
+      const apiUrl = getApiUrl();
+      const cleanCpf = searchCpf.replace(/\D/g, "");
+      const response = await fetchWithAuth(`${apiUrl}/api/admin/users/search?cpf=${cleanCpf}`);
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.user) {
+          if (data.user.roles.includes("vendedor")) {
+            setError("Este usuário já é um vendedor");
+          } else {
+            setSearchedUser(data.user);
+          }
+        } else {
+          setError("Usuário não encontrado");
+        }
+      } else {
+        setError("Erro ao buscar usuário");
+      }
+    } catch (err) {
+      setError("Erro ao buscar usuário");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleImportUser = async () => {
+    if (!searchedUser) return;
+
+    try {
+      setError("");
+      setSuccess("");
+
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(`${apiUrl}/api/admin/affiliates/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: searchedUser.id }),
+      });
+
+      if (response.ok) {
+        setSuccess("Usuário importado como vendedor com sucesso!");
+        setShowImportModal(false);
+        setSearchCpf("");
+        setSearchedUser(null);
+        loadAffiliates();
+      } else {
+        const data = await response.json();
+        setError(data.error || "Erro ao importar usuário");
+      }
+    } catch (err) {
+      setError("Erro ao importar usuário");
     }
   };
 
@@ -174,31 +248,108 @@ const ManageAffiliatesPage: React.FC = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Gerenciar Afiliados</h1>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          Novo Afiliado
-        </button>
+    <div className="max-w-7xl mx-auto p-4 sm:p-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Gerenciar Afiliados</h1>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <UserPlus className="w-5 h-5 mr-2" />
+            Importar Usuário
+          </button>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center justify-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            Novo Afiliado
+          </button>
+        </div>
       </div>
 
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg">
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
           {error}
         </div>
       )}
 
       {success && (
-        <div className="mb-4 p-4 bg-green-50 border border-green-200 text-green-700 rounded-lg">
+        <div className="mb-4 p-4 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">
           {success}
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      {/* Mobile View - Cards */}
+      <div className="block lg:hidden space-y-4">
+        {affiliates.map((affiliate) => (
+          <div key={affiliate.id} className="bg-white rounded-lg shadow p-4">
+            <div className="flex justify-between items-start mb-3">
+              <div>
+                <h3 className="font-semibold text-gray-900">{affiliate.name}</h3>
+                <span
+                  className={`inline-block mt-1 px-2 py-1 text-xs rounded-full ${
+                    affiliate.status === "active"
+                      ? "bg-green-100 text-green-800"
+                      : "bg-red-100 text-red-800"
+                  }`}
+                >
+                  {affiliate.status === "active" ? "Ativo" : "Inativo"}
+                </span>
+              </div>
+              <button
+                onClick={() => copyAffiliateLink(affiliate.id, affiliate.code)}
+                className="text-blue-600 hover:text-blue-700 p-2 rounded hover:bg-blue-50"
+                title="Copiar link"
+              >
+                {copiedCode === affiliate.code ? (
+                  <Check className="w-5 h-5 text-green-600" />
+                ) : (
+                  <Copy className="w-5 h-5" />
+                )}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 mb-3 text-sm">
+              <div>
+                <p className="text-gray-500 text-xs">Clientes</p>
+                <p className="font-semibold">{affiliate.clients_count}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 text-xs">Pendente</p>
+                <p className="font-semibold text-yellow-600">
+                  R$ {Number.parseFloat(affiliate.pending_total).toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-500 text-xs">Pago</p>
+                <p className="font-semibold text-green-600">
+                  R$ {Number.parseFloat(affiliate.paid_total).toFixed(2)}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => viewCommissions(affiliate)}
+                className="flex-1 px-3 py-2 text-sm text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50"
+              >
+                Ver Comissões
+              </button>
+              <button
+                onClick={() => toggleStatus(affiliate.id, affiliate.status)}
+                className="flex-1 px-3 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                {affiliate.status === "active" ? "Desativar" : "Ativar"}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop View - Table */}
+      <div className="hidden lg:block bg-white rounded-lg shadow overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -206,7 +357,7 @@ const ManageAffiliatesPage: React.FC = () => {
                 Nome
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                Código / Link
+                Link
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                 Clientes
@@ -231,21 +382,24 @@ const ManageAffiliatesPage: React.FC = () => {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {affiliate.name}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  <div className="flex items-center space-x-2">
-                    <span>{affiliate.code}</span>
-                    <button
-                      onClick={() => copyAffiliateLink(affiliate.id, affiliate.code)}
-                      className="text-blue-600 hover:text-blue-700 p-1 rounded hover:bg-blue-50"
-                      title="Copiar link de cadastro"
-                    >
-                      {copiedCode === affiliate.code ? (
+                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  <button
+                    onClick={() => copyAffiliateLink(affiliate.id, affiliate.code)}
+                    className="flex items-center space-x-2 text-blue-600 hover:text-blue-700"
+                    title="Copiar link de cadastro"
+                  >
+                    {copiedCode === affiliate.code ? (
+                      <>
                         <Check className="w-4 h-4 text-green-600" />
-                      ) : (
+                        <span className="text-green-600">Copiado!</span>
+                      </>
+                    ) : (
+                      <>
                         <Copy className="w-4 h-4" />
-                      )}
-                    </button>
-                  </div>
+                        <span>Copiar Link</span>
+                      </>
+                    )}
+                  </button>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {affiliate.clients_count}
@@ -380,6 +534,80 @@ const ManageAffiliatesPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h2 className="text-xl font-bold mb-4">Importar Usuário Existente</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Busque um usuário pelo CPF para torná-lo vendedor
+            </p>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                CPF do Usuário
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={searchCpf}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, "");
+                    const formatted = value
+                      .replace(/(\d{3})(\d)/, "$1.$2")
+                      .replace(/(\d{3})(\d)/, "$1.$2")
+                      .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+                    setSearchCpf(formatted);
+                  }}
+                  maxLength={14}
+                  className="flex-1 px-3 py-2 border rounded-lg"
+                  placeholder="000.000.000-00"
+                />
+                <button
+                  onClick={searchUser}
+                  disabled={isSearching || !searchCpf}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  <Search className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {searchedUser && (
+              <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                <h3 className="font-semibold text-green-900 mb-2">Usuário Encontrado</h3>
+                <p className="text-sm text-green-800"><strong>Nome:</strong> {searchedUser.name}</p>
+                <p className="text-sm text-green-800"><strong>CPF:</strong> {searchedUser.cpf}</p>
+                <p className="text-sm text-green-800"><strong>Email:</strong> {searchedUser.email || "Não informado"}</p>
+                <p className="text-sm text-green-800"><strong>Roles:</strong> {searchedUser.roles.join(", ")}</p>
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowImportModal(false);
+                  setSearchCpf("");
+                  setSearchedUser(null);
+                  setError("");
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancelar
+              </button>
+              {searchedUser && (
+                <button
+                  onClick={handleImportUser}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  Importar como Vendedor
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

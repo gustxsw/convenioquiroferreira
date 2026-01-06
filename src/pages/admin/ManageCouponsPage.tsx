@@ -27,7 +27,6 @@ const ManageCouponsPage: React.FC = () => {
   const [formData, setFormData] = useState({
     code: "",
     coupon_type: "titular",
-    discount_value: "",
     final_price: "",
     valid_from: "",
     valid_until: "",
@@ -63,6 +62,10 @@ const ManageCouponsPage: React.FC = () => {
     setError("");
     setSuccess("");
 
+    const basePrice = formData.coupon_type === "titular" ? 600 : 150;
+    const finalPrice = parseFloat(formData.final_price);
+    const discountValue = basePrice - finalPrice;
+
     try {
       const apiUrl = getApiUrl();
       const url = editingCoupon
@@ -74,6 +77,7 @@ const ManageCouponsPage: React.FC = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
+          discount_value: discountValue.toString(),
           is_active: editingCoupon ? editingCoupon.is_active : true,
         }),
       });
@@ -101,7 +105,6 @@ const ManageCouponsPage: React.FC = () => {
     setFormData({
       code: coupon.code,
       coupon_type: coupon.coupon_type,
-      discount_value: coupon.discount_value || "",
       final_price: coupon.final_price || "",
       valid_from: coupon.valid_from
         ? new Date(coupon.valid_from).toISOString().split("T")[0]
@@ -163,7 +166,6 @@ const ManageCouponsPage: React.FC = () => {
     setFormData({
       code: "",
       coupon_type: "titular",
-      discount_value: "",
       final_price: "",
       valid_from: "",
       valid_until: "",
@@ -181,16 +183,21 @@ const ManageCouponsPage: React.FC = () => {
     );
   }
 
+  const basePrice = formData.coupon_type === "titular" ? 600 : 150;
+  const discount = formData.final_price
+    ? basePrice - parseFloat(formData.final_price)
+    : 0;
+
   return (
-    <div className="max-w-7xl mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Gerenciar Cupons</h1>
+    <div className="max-w-7xl mx-auto p-4 sm:p-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Gerenciar Cupons</h1>
         <button
           onClick={() => {
             resetForm();
             setShowModal(true);
           }}
-          className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+          className="flex items-center justify-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
         >
           <Plus className="w-5 h-5 mr-2" />
           Novo Cupom
@@ -198,18 +205,98 @@ const ManageCouponsPage: React.FC = () => {
       </div>
 
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg">
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
           {error}
         </div>
       )}
 
       {success && (
-        <div className="mb-4 p-4 bg-green-50 border border-green-200 text-green-700 rounded-lg">
+        <div className="mb-4 p-4 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">
           {success}
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      {/* Mobile View - Cards */}
+      <div className="block lg:hidden space-y-4">
+        {coupons.map((coupon) => (
+          <div key={coupon.id} className="bg-white rounded-lg shadow p-4">
+            <div className="flex justify-between items-start mb-3">
+              <div>
+                <h3 className="font-semibold text-gray-900 text-lg">{coupon.code}</h3>
+                <span className="text-sm text-gray-600">
+                  {coupon.coupon_type === "titular" ? "Cliente" : "Dependente"}
+                </span>
+              </div>
+              <span
+                className={`px-2 py-1 text-xs rounded-full ${
+                  coupon.is_active
+                    ? "bg-green-100 text-green-800"
+                    : "bg-red-100 text-red-800"
+                }`}
+              >
+                {coupon.is_active ? "Ativo" : "Inativo"}
+              </span>
+            </div>
+
+            <div className="mb-3 text-sm space-y-2">
+              <div>
+                <p className="text-gray-500 text-xs">Valor Final</p>
+                <p className="font-semibold text-green-600">
+                  {coupon.final_price
+                    ? `R$ ${Number.parseFloat(coupon.final_price).toFixed(2)}`
+                    : "-"}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-500 text-xs">Validade</p>
+                <p className="text-gray-900">
+                  {coupon.valid_from && coupon.valid_until
+                    ? `${new Date(coupon.valid_from).toLocaleDateString(
+                        "pt-BR"
+                      )} - ${new Date(coupon.valid_until).toLocaleDateString(
+                        "pt-BR"
+                      )}`
+                    : "Sem limite"}
+                </p>
+              </div>
+              {coupon.description && (
+                <div>
+                  <p className="text-gray-500 text-xs">Descrição</p>
+                  <p className="text-gray-900">{coupon.description}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleEdit(coupon)}
+                className="flex-1 px-3 py-2 text-sm text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50 flex items-center justify-center"
+                title="Editar"
+              >
+                <Edit className="w-4 h-4 mr-1" />
+                Editar
+              </button>
+              <button
+                onClick={() => toggleStatus(coupon.id)}
+                className="px-3 py-2 text-sm text-yellow-600 border border-yellow-600 rounded-lg hover:bg-yellow-50"
+                title={coupon.is_active ? "Desativar" : "Ativar"}
+              >
+                <Power className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => handleDelete(coupon.id)}
+                className="px-3 py-2 text-sm text-red-600 border border-red-600 rounded-lg hover:bg-red-50"
+                title="Excluir"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop View - Table */}
+      <div className="hidden lg:block bg-white rounded-lg shadow overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -298,105 +385,63 @@ const ManageCouponsPage: React.FC = () => {
 
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">
               {editingCoupon ? "Editar Cupom" : "Criar Novo Cupom"}
             </h2>
             <form onSubmit={handleSubmit}>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Código do Cupom
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.code}
-                    onChange={(e) =>
-                      setFormData({ ...formData, code: e.target.value.toUpperCase() })
-                    }
-                    className="w-full px-3 py-2 border rounded-lg"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tipo
-                  </label>
-                  <select
-                    value={formData.coupon_type}
-                    onChange={(e) =>
-                      setFormData({ ...formData, coupon_type: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border rounded-lg"
-                    required
-                  >
-                    <option value="titular">Cliente</option>
-                    <option value="dependente">Dependente</option>
-                  </select>
-                </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Código do Cupom
+                </label>
+                <input
+                  type="text"
+                  value={formData.code}
+                  onChange={(e) =>
+                    setFormData({ ...formData, code: e.target.value.toUpperCase() })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                  placeholder="EX: PROMO2024"
+                />
               </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Valor Final (R$)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.final_price}
-                    onChange={(e) =>
-                      setFormData({ ...formData, final_price: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border rounded-lg"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Valor que o cliente pagará ao usar o cupom
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tipo de Cupom
+                </label>
+                <select
+                  value={formData.coupon_type}
+                  onChange={(e) =>
+                    setFormData({ ...formData, coupon_type: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                >
+                  <option value="titular">Cliente (R$ 600 → ?)</option>
+                  <option value="dependente">Dependente (R$ 150 → ?)</option>
+                </select>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Valor Final (R$)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formData.final_price}
+                  onChange={(e) =>
+                    setFormData({ ...formData, final_price: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                  placeholder="0.00"
+                />
+                {formData.final_price && (
+                  <p className="mt-1 text-sm text-gray-600">
+                    Desconto: R$ {discount.toFixed(2)} (de R$ {basePrice.toFixed(2)} → R$ {parseFloat(formData.final_price).toFixed(2)})
                   </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Desconto (R$)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.discount_value}
-                    onChange={(e) =>
-                      setFormData({ ...formData, discount_value: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border rounded-lg"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Válido de
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.valid_from}
-                    onChange={(e) =>
-                      setFormData({ ...formData, valid_from: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Válido até
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.valid_until}
-                    onChange={(e) =>
-                      setFormData({ ...formData, valid_until: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border rounded-lg"
-                  />
-                </div>
+                )}
               </div>
 
               <div className="mb-4">
@@ -410,7 +455,37 @@ const ManageCouponsPage: React.FC = () => {
                   }
                   className="w-full px-3 py-2 border rounded-lg"
                   rows={3}
+                  placeholder="Descrição do cupom..."
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Válido De
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.valid_from}
+                    onChange={(e) =>
+                      setFormData({ ...formData, valid_from: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Válido Até
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.valid_until}
+                    onChange={(e) =>
+                      setFormData({ ...formData, valid_until: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
               </div>
 
               <div className="mb-4">
