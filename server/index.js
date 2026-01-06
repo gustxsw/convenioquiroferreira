@@ -1327,7 +1327,7 @@ app.post("/api/auth/select-role", async (req, res) => {
 app.post(
   "/api/auth/switch-role",
   authenticate,
-  authorize(["professional", "admin", "client"]),
+  authorize(["professional", "admin", "client", "vendedor"]),
   async (req, res) => {
     try {
       const { role } = req.body;

@@ -31,7 +31,6 @@ const ManageCouponsPage: React.FC = () => {
     valid_from: "",
     valid_until: "",
     description: "",
-    unlimited_use: false,
   });
 
   useEffect(() => {
@@ -113,7 +112,6 @@ const ManageCouponsPage: React.FC = () => {
         ? new Date(coupon.valid_until).toISOString().split("T")[0]
         : "",
       description: coupon.description || "",
-      unlimited_use: coupon.unlimited_use,
     });
     setShowModal(true);
   };
@@ -170,7 +168,6 @@ const ManageCouponsPage: React.FC = () => {
       valid_from: "",
       valid_until: "",
       description: "",
-      unlimited_use: false,
     });
     setEditingCoupon(null);
   };
@@ -486,20 +483,6 @@ const ManageCouponsPage: React.FC = () => {
                     className="w-full px-3 py-2 border rounded-lg"
                   />
                 </div>
-              </div>
-
-              <div className="mb-4">
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={formData.unlimited_use}
-                    onChange={(e) =>
-                      setFormData({ ...formData, unlimited_use: e.target.checked })
-                    }
-                    className="mr-2"
-                  />
-                  <span className="text-sm text-gray-700">Uso ilimitado</span>
-                </label>
               </div>
 
               <div className="flex justify-end space-x-2">
