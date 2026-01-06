@@ -24,6 +24,10 @@ import {
   formatToBrazilDate,
   formatToBrazilTimeOnly,
 } from "./utils/dateHelpers.js";
+import {
+  scheduleExpiryCheck,
+  checkExpiredSubscriptionsNow,
+} from "./jobs/checkExpiredSubscriptions.js";
 
 // ES6 module compatibility
 const __filename = fileURLToPath(import.meta.url);
@@ -7052,6 +7056,11 @@ const startServer = async () => {
     console.log("📊 Initializing database...");
     await initializeDatabase();
     console.log("✅ Database initialized successfully");
+
+    console.log("⏰ Setting up subscription expiry check job...");
+    scheduleExpiryCheck();
+    await checkExpiredSubscriptionsNow();
+    console.log("✅ Subscription expiry check job initialized");
 
     console.log(`🌐 Starting HTTP server on port ${PORT}...`);
     const server = app.listen(PORT, "0.0.0.0", () => {
