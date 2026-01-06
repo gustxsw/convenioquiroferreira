@@ -21,6 +21,8 @@ import {
   Gift,
   MapPin,
   Search,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -66,10 +68,20 @@ type PrivatePatient = {
 
 type SlotDuration = 15 | 30 | 60;
 
+type BlockedSlot = {
+  id: number;
+  professional_id: number;
+  date: string;
+  time_slot: string;
+  reason?: string;
+  created_at: string;
+};
+
 const SchedulingPage: React.FC = () => {
   const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [consultations, setConsultations] = useState<Consultation[]>([]);
+  const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [privatePatients, setPrivatePatients] = useState<PrivatePatient[]>([]);
   const [attendanceLocations, setAttendanceLocations] = useState<
@@ -502,11 +514,93 @@ const SchedulingPage: React.FC = () => {
         const locationsData = await locationsResponse.json();
         setAttendanceLocations(locationsData);
       }
+
+      // Fetch blocked slots
+      const blockedSlotsResponse = await fetchWithAuth(
+        `${apiUrl}/api/blocked-slots?date=${dateStr}`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (blockedSlotsResponse.ok) {
+        const blockedSlotsData = await blockedSlotsResponse.json();
+        setBlockedSlots(blockedSlotsData);
+      } else {
+        setBlockedSlots([]);
+      }
     } catch (error) {
       console.error("Error fetching data:", error);
       setError("Erro ao carregar dados");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const toggleBlockSlot = async (timeSlot: string) => {
+    try {
+      const apiUrl = getApiUrl();
+      const dateStr = format(selectedDate, "yyyy-MM-dd");
+
+      // Check if slot is already blocked
+      const existingBlock = blockedSlots.find(
+        (slot) => slot.time_slot === timeSlot && slot.date === dateStr
+      );
+
+      if (existingBlock) {
+        // Unblock the slot
+        const response = await fetchWithAuth(
+          `${apiUrl}/api/blocked-slots/${existingBlock.id}`,
+          {
+            method: "DELETE",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (response.ok) {
+          setBlockedSlots((prev) =>
+            prev.filter((slot) => slot.id !== existingBlock.id)
+          );
+          setSuccess("Horário desbloqueado com sucesso!");
+          setTimeout(() => setSuccess(""), 2000);
+        } else {
+          setError("Erro ao desbloquear horário");
+          setTimeout(() => setError(""), 3000);
+        }
+      } else {
+        // Block the slot
+        const response = await fetchWithAuth(
+          `${apiUrl}/api/blocked-slots`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              date: dateStr,
+              time_slot: timeSlot,
+            }),
+          }
+        );
+
+        if (response.ok) {
+          const newBlockedSlot = await response.json();
+          setBlockedSlots((prev) => [...prev, newBlockedSlot]);
+          setSuccess("Horário bloqueado com sucesso!");
+          setTimeout(() => setSuccess(""), 2000);
+        } else {
+          setError("Erro ao bloquear horário");
+          setTimeout(() => setError(""), 3000);
+        }
+      }
+    } catch (error) {
+      console.error("Error toggling block slot:", error);
+      setError("Erro ao processar bloqueio de horário");
+      setTimeout(() => setError(""), 3000);
     }
   };
 
@@ -897,6 +991,12 @@ const SchedulingPage: React.FC = () => {
     return acc;
   }, {} as Record<string, Consultation>);
 
+  // Group blocked slots by time
+  const blockedSlotsByTime = blockedSlots.reduce((acc, slot) => {
+    acc[slot.time_slot] = slot;
+    return acc;
+  }, {} as Record<string, BlockedSlot>);
+
   // Calculate daily statistics
   const dailyStats = {
     scheduled: consultations.filter((c) => c.status === "scheduled").length,
@@ -1221,26 +1321,36 @@ const SchedulingPage: React.FC = () => {
                     <div className="relative">
                       {timeSlots.map((timeSlot) => {
                         const consultation = consultationsByTime[timeSlot];
+                        const blockedSlot = blockedSlotsByTime[timeSlot];
                         const isOccupied = !!consultation;
+                        const isBlocked = !!blockedSlot;
 
                         return (
                           <div
                             key={timeSlot}
-                            onClick={() => handleSlotClick(timeSlot)}
+                            onClick={() => {
+                              if (!isOccupied && !isBlocked) {
+                                handleSlotClick(timeSlot);
+                              }
+                            }}
                             className={`${
                               slotDuration === 15
                                 ? "h-12"
                                 : slotDuration === 30
                                 ? "h-20"
                                 : "h-32"
-                            } border-b border-gray-100 flex items-center px-4 transition-all cursor-pointer ${
+                            } border-b border-gray-100 flex items-center px-4 transition-all ${
                               isOccupied
-                                ? `${getSlotStyling(consultation)}`
-                                : "hover:bg-blue-50 hover:border-l-4 hover:border-blue-300"
+                                ? `${getSlotStyling(consultation)} cursor-pointer`
+                                : isBlocked
+                                ? "bg-gray-200 border-l-4 border-gray-500"
+                                : "hover:bg-blue-50 hover:border-l-4 hover:border-blue-300 cursor-pointer"
                             }`}
                             title={
                               isOccupied
                                 ? "Use o botão de edição para editar"
+                                : isBlocked
+                                ? "Horário bloqueado"
                                 : "Clique para agendar"
                             }
                           >
@@ -1343,10 +1453,41 @@ const SchedulingPage: React.FC = () => {
                                   </button>
                                 </div>
                               </div>
+                            ) : isBlocked ? (
+                              <div className="flex items-center justify-between w-full">
+                                <div className="text-xs text-gray-500 italic flex items-center">
+                                  <Lock className="h-3 w-3 mr-1" />
+                                  Horário bloqueado
+                                </div>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleBlockSlot(timeSlot);
+                                  }}
+                                  className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 flex items-center"
+                                  title="Desbloquear horário"
+                                >
+                                  <Unlock className="h-3 w-3 mr-1" />
+                                  Desbloquear
+                                </button>
+                              </div>
                             ) : (
-                              <div className="text-xs text-gray-400 italic flex items-center">
-                                <Plus className="h-3 w-3 mr-1" />
-                                Clique para agendar
+                              <div className="flex items-center justify-between w-full">
+                                <div className="text-xs text-gray-400 italic flex items-center">
+                                  <Plus className="h-3 w-3 mr-1" />
+                                  Clique para agendar
+                                </div>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleBlockSlot(timeSlot);
+                                  }}
+                                  className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 flex items-center"
+                                  title="Bloquear horário"
+                                >
+                                  <Lock className="h-3 w-3 mr-1" />
+                                  Bloquear
+                                </button>
                               </div>
                             )}
                           </div>
@@ -1361,10 +1502,40 @@ const SchedulingPage: React.FC = () => {
                 <div className="p-4 space-y-3">
                   {timeSlots.map((timeSlot) => {
                     const consultation = consultationsByTime[timeSlot];
+                    const blockedSlot = blockedSlotsByTime[timeSlot];
                     const isOccupied = !!consultation;
+                    const isBlocked = !!blockedSlot;
 
-                    // Skip empty slots on mobile to save space
-                    if (!consultation) return null;
+                    // Skip empty slots on mobile to save space (but show blocked ones)
+                    if (!consultation && !isBlocked) return null;
+
+                    // Render blocked slot
+                    if (isBlocked && !consultation) {
+                      return (
+                        <div
+                          key={timeSlot}
+                          className="border rounded-lg p-3 bg-gray-200 border-gray-400"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Clock className="h-4 w-4 text-gray-600" />
+                              <span className="font-semibold text-gray-900">
+                                {timeSlot}
+                              </span>
+                              <Lock className="h-4 w-4 text-gray-600" />
+                              <span className="text-sm text-gray-600">Bloqueado</span>
+                            </div>
+                            <button
+                              onClick={() => toggleBlockSlot(timeSlot)}
+                              className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 flex items-center"
+                            >
+                              <Unlock className="h-3 w-3 mr-1" />
+                              Desbloquear
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
 
                     return (
                       <div

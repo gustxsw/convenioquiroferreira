@@ -261,6 +261,19 @@ const initializeDatabase = async () => {
       )
     `);
 
+    // Blocked slots table - for blocking specific time slots
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS blocked_slots (
+        id SERIAL PRIMARY KEY,
+        professional_id INTEGER REFERENCES users(id) NOT NULL,
+        date DATE NOT NULL,
+        time_slot VARCHAR(5) NOT NULL,
+        reason TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(professional_id, date, time_slot)
+      )
+    `);
+
     // Add missing columns to existing consultations table if they don't exist
     await pool.query(`
       DO $$
@@ -3839,6 +3852,103 @@ app.delete(
     }
   }
 );
+
+// ===== BLOCKED SLOTS ROUTES =====
+
+// Get blocked slots for a specific date
+app.get("/api/blocked-slots", authenticate, async (req, res) => {
+  try {
+    const { date } = req.query;
+    const professionalId = req.user.id;
+
+    if (!date) {
+      return res.status(400).json({ error: "Date is required" });
+    }
+
+    const result = await pool.query(
+      `SELECT * FROM blocked_slots
+       WHERE professional_id = $1 AND date = $2
+       ORDER BY time_slot`,
+      [professionalId, date]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching blocked slots:", error);
+    res.status(500).json({ error: "Erro ao carregar horários bloqueados" });
+  }
+});
+
+// Block a time slot
+app.post("/api/blocked-slots", authenticate, async (req, res) => {
+  try {
+    const { date, time_slot, reason } = req.body;
+    const professionalId = req.user.id;
+
+    if (!date || !time_slot) {
+      return res.status(400).json({ error: "Date and time_slot are required" });
+    }
+
+    // Check if slot already has a consultation
+    const consultationCheck = await pool.query(
+      `SELECT id FROM consultations
+       WHERE professional_id = $1
+       AND DATE(date) = $2
+       AND TO_CHAR(date, 'HH24:MI') = $3
+       AND status != 'cancelled'`,
+      [professionalId, date, time_slot]
+    );
+
+    if (consultationCheck.rows.length > 0) {
+      return res.status(400).json({
+        error: "Não é possível bloquear um horário que já possui consulta agendada"
+      });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO blocked_slots (professional_id, date, time_slot, reason)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [professionalId, date, time_slot, reason || null]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error("Error blocking slot:", error);
+
+    // Check if it's a unique constraint violation
+    if (error.code === "23505") {
+      return res.status(400).json({ error: "Este horário já está bloqueado" });
+    }
+
+    res.status(500).json({ error: "Erro ao bloquear horário" });
+  }
+});
+
+// Unblock a time slot
+app.delete("/api/blocked-slots/:id", authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const professionalId = req.user.id;
+
+    // Verify ownership
+    const checkResult = await pool.query(
+      "SELECT id FROM blocked_slots WHERE id = $1 AND professional_id = $2",
+      [id, professionalId]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: "Bloqueio não encontrado" });
+    }
+
+    await pool.query("DELETE FROM blocked_slots WHERE id = $1", [id]);
+
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error unblocking slot:", error);
+    res.status(500).json({ error: "Erro ao desbloquear horário" });
+  }
+});
 
 // ===== SERVICES ROUTES =====
 
