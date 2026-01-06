@@ -15,7 +15,6 @@ export function scheduleExpiryCheck() {
           UPDATE users
           SET
             subscription_status = 'expired',
-            subscription_active = false,
             updated_at = CURRENT_TIMESTAMP
           WHERE
             subscription_status = 'active'
@@ -27,8 +26,7 @@ export function scheduleExpiryCheck() {
         const dependentsResult = await client.query(`
           UPDATE dependents
           SET
-            subscription_status = 'expired',
-            subscription_active = false
+            subscription_status = 'expired'
           WHERE
             subscription_status = 'active'
             AND subscription_expiry IS NOT NULL
@@ -67,7 +65,6 @@ export async function checkExpiredSubscriptionsNow() {
         UPDATE users
         SET
           subscription_status = 'expired',
-          subscription_active = false,
           updated_at = CURRENT_TIMESTAMP
         WHERE
           subscription_status = 'active'
@@ -79,8 +76,7 @@ export async function checkExpiredSubscriptionsNow() {
       const dependentsResult = await client.query(`
         UPDATE dependents
         SET
-          subscription_status = 'expired',
-          subscription_active = false
+          subscription_status = 'expired'
         WHERE
           subscription_status = 'active'
           AND subscription_expiry IS NOT NULL

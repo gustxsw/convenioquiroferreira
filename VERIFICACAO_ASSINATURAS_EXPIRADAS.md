@@ -20,7 +20,6 @@ O sistema busca por registros que atendam TODOS estes critérios:
 
 Quando encontra registros, atualiza:
 - `subscription_status` → `'expired'`
-- `subscription_active` → `false`
 - `updated_at` → timestamp atual (apenas para usuários)
 
 ### Estados de Assinatura
