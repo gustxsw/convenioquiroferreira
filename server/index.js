@@ -1077,13 +1077,30 @@ app.post("/api/auth/register", async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
+    // Check if affiliate_code is provided and get affiliate_id
+    let referredByAffiliateId = null;
+    if (affiliate_code) {
+      const affiliateResult = await pool.query(
+        "SELECT user_id FROM affiliates WHERE user_id = $1 AND status = 'active'",
+        [affiliate_code]
+      );
+
+      if (affiliateResult.rows.length > 0) {
+        referredByAffiliateId = affiliateResult.rows[0].user_id;
+        console.log("✅ User will be linked to affiliate:", referredByAffiliateId);
+      } else {
+        console.log("⚠️ Affiliate code provided but not found or inactive:", affiliate_code);
+      }
+    }
+
     // Create user
     const userResult = await pool.query(
       `
       INSERT INTO users (
         name, cpf, email, phone, birth_date, address, address_number,
-        address_complement, neighborhood, city, state, password, roles, affiliate_code
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        address_complement, neighborhood, city, state, password, roles,
+        affiliate_code, referred_by_affiliate_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING id, name, cpf, email, roles, subscription_status
     `,
       [
@@ -1101,6 +1118,7 @@ app.post("/api/auth/register", async (req, res) => {
         hashedPassword,
         ["client"],
         affiliate_code || null,
+        referredByAffiliateId,
       ]
     );
 
@@ -5506,7 +5524,7 @@ app.get(
       const { type } = req.query;
 
       const couponResult = await pool.query(
-        `SELECT id, code, discount_type, discount_value, is_active, coupon_type, unlimited_use
+        `SELECT id, code, discount_type, discount_value, is_active, coupon_type, unlimited_use, valid_until
          FROM coupons
          WHERE UPPER(code) = UPPER($1)`,
         [code]
@@ -5526,6 +5544,20 @@ app.get(
           valid: false,
           message: "Cupom inválido",
         });
+      }
+
+      // Check if coupon is expired
+      if (coupon.valid_until) {
+        const expiryDate = new Date(coupon.valid_until);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        if (expiryDate < today) {
+          return res.status(400).json({
+            valid: false,
+            message: "Este cupom expirou",
+          });
+        }
       }
 
       if (type && coupon.coupon_type !== type) {

@@ -158,8 +158,8 @@ const ManageAffiliatesPage: React.FC = () => {
     }
   };
 
-  const copyAffiliateLink = (code: string) => {
-    const link = `${window.location.origin}/register?affiliate=${code}`;
+  const copyAffiliateLink = (affiliateId: number, code: string) => {
+    const link = `${window.location.origin}/register?ref=${affiliateId}`;
     navigator.clipboard.writeText(link);
     setCopiedCode(code);
     setTimeout(() => setCopiedCode(null), 2000);
@@ -235,7 +235,7 @@ const ManageAffiliatesPage: React.FC = () => {
                   <div className="flex items-center space-x-2">
                     <span>{affiliate.code}</span>
                     <button
-                      onClick={() => copyAffiliateLink(affiliate.code)}
+                      onClick={() => copyAffiliateLink(affiliate.id, affiliate.code)}
                       className="text-blue-600 hover:text-blue-700 p-1 rounded hover:bg-blue-50"
                       title="Copiar link de cadastro"
                     >
