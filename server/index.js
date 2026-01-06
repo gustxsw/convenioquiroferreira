@@ -1090,17 +1090,17 @@ app.post("/api/auth/register", async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Check if affiliate_code is provided and get affiliate_id
+    // Check if affiliate_code is provided and get affiliate user_id
     let referredByAffiliateId = null;
     if (affiliate_code) {
       const affiliateResult = await pool.query(
-        "SELECT user_id FROM affiliates WHERE user_id = $1 AND status = 'active'",
+        "SELECT user_id FROM affiliates WHERE (user_id::text = $1 OR code = $1) AND status = 'active'",
         [affiliate_code]
       );
 
       if (affiliateResult.rows.length > 0) {
         referredByAffiliateId = affiliateResult.rows[0].user_id;
-        console.log("✅ User will be linked to affiliate:", referredByAffiliateId);
+        console.log("✅ User will be linked to affiliate user_id:", referredByAffiliateId);
       } else {
         console.log("⚠️ Affiliate code provided but not found or inactive:", affiliate_code);
       }
@@ -7243,8 +7243,12 @@ app.get("/api/affiliates/validate/:code", async (req, res) => {
   try {
     const { code } = req.params;
 
+    // Try to find by user_id first (for numeric codes), then by code string
     const result = await pool.query(
-      "SELECT id, name, code FROM affiliates WHERE code = $1 AND status = 'active'",
+      `SELECT a.id, a.name, a.code, a.user_id, u.name as user_name
+       FROM affiliates a
+       LEFT JOIN users u ON a.user_id = u.id
+       WHERE (a.user_id::text = $1 OR a.code = $1) AND a.status = 'active'`,
       [code]
     );
 
