@@ -20,11 +20,26 @@ interface AffiliateData {
     clients_count: number;
     pending_total: string;
     paid_total: string;
+    total_commissions: string;
   };
   clients: Array<{
     name: string;
     created_at: string;
     subscription_status: string;
+    commission_amount: string | null;
+    commission_status: string | null;
+    commission_paid_at: string | null;
+    commission_created_at: string | null;
+  }>;
+  commissions: Array<{
+    id: number;
+    amount: string;
+    status: string;
+    created_at: string;
+    paid_at: string | null;
+    client_name: string;
+    client_cpf: string;
+    client_subscription_status: string;
   }>;
 }
 
@@ -253,6 +268,109 @@ const AffiliateDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* Resumo Financeiro */}
+      <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg shadow-sm border border-green-200 p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <DollarSign className="w-5 h-5 text-green-600" />
+          Resumo Financeiro
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <p className="text-sm text-gray-600 mb-1">Total Ganho</p>
+            <p className="text-3xl font-bold text-green-600">
+              R$ {Number.parseFloat(data.stats.total_commissions || "0").toFixed(2)}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">Soma de todas as comissões</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600 mb-1">Aguardando Pagamento</p>
+            <p className="text-3xl font-bold text-yellow-600">
+              R$ {Number.parseFloat(data.stats.pending_total || "0").toFixed(2)}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">Comissões pendentes</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600 mb-1">Já Recebido</p>
+            <p className="text-3xl font-bold text-blue-600">
+              R$ {Number.parseFloat(data.stats.paid_total || "0").toFixed(2)}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">Comissões pagas</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Histórico de Comissões */}
+      {data.commissions && data.commissions.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+          <div className="p-6 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <CreditCard className="w-5 h-5 text-gray-600" />
+              Histórico de Comissões ({data.commissions.length})
+            </h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Cliente
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    CPF
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Valor
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Data
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Pago em
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {data.commissions.map((commission) => (
+                  <tr key={commission.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {commission.client_name}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {commission.client_cpf}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-green-600">
+                      R$ {Number.parseFloat(commission.amount).toFixed(2)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          commission.status === "paid"
+                            ? "bg-green-100 text-green-800"
+                            : "bg-yellow-100 text-yellow-800"
+                        }`}
+                      >
+                        {commission.status === "paid" ? "Pago" : "Pendente"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {new Date(commission.created_at).toLocaleDateString("pt-BR")}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {commission.paid_at
+                        ? new Date(commission.paid_at).toLocaleDateString("pt-BR")
+                        : "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Estatísticas Detalhadas */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -324,11 +442,28 @@ const AffiliateDashboard: React.FC = () => {
                             : "bg-yellow-100 text-yellow-800"
                         }`}
                       >
-                        {client.subscription_status === "active" ? "Pago" : "Pendente"}
+                        {client.subscription_status === "active" ? "Ativo" : "Pendente"}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
-                      {client.subscription_status === "active" ? "R$ 10,00" : "R$ 0,00"}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {client.commission_amount ? (
+                        <div className="flex flex-col">
+                          <span className="text-sm font-semibold text-green-600">
+                            R$ {Number.parseFloat(client.commission_amount).toFixed(2)}
+                          </span>
+                          <span
+                            className={`text-xs ${
+                              client.commission_status === "paid"
+                                ? "text-green-600"
+                                : "text-yellow-600"
+                            }`}
+                          >
+                            {client.commission_status === "paid" ? "✓ Pago" : "⏳ Pendente"}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-400">Sem comissão</span>
+                      )}
                     </td>
                   </tr>
                 ))}

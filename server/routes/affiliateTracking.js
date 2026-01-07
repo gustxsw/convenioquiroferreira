@@ -45,6 +45,28 @@ router.post("/track", async (req, res) => {
       });
     }
 
+    // Also check for recent referrals from the same browser fingerprint to prevent duplicates
+    // if user clears localStorage
+    if (metadata && metadata.userAgent) {
+      const recentDuplicateCheck = await pool.query(
+        `SELECT id FROM affiliate_referrals
+         WHERE affiliate_id = $1
+         AND metadata->>'userAgent' = $2
+         AND created_at > NOW() - INTERVAL '7 days'
+         LIMIT 1`,
+        [affiliate.id, metadata.userAgent]
+      );
+
+      if (recentDuplicateCheck.rows.length > 0) {
+        // Found a recent referral with same fingerprint, return that one
+        return res.json({
+          success: true,
+          referralId: recentDuplicateCheck.rows[0].id,
+          message: "Referral already tracked (detected by browser fingerprint)",
+        });
+      }
+    }
+
     // Create new referral
     const result = await pool.query(
       `INSERT INTO affiliate_referrals

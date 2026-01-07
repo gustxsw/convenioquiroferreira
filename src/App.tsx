@@ -29,6 +29,7 @@ import ManageSchedulingAccessPage from "./pages/admin/ManageSchedulingAccessPage
 import ReportsPage from "./pages/admin/ReportsPage";
 import ManageAffiliatesPage from "./pages/admin/ManageAffiliatesPage";
 import ManageCouponsPage from "./pages/admin/ManageCouponsPage";
+import AffiliateFinancialReport from "./pages/admin/AffiliateFinancialReport";
 import AffiliateDashboard from "./pages/affiliate/AffiliateDashboard";
 
 // Route guards
@@ -152,6 +153,7 @@ function App() {
         <Route path="/admin/scheduling-access" element={<ManageSchedulingAccessPage />} />
         <Route path="/admin/reports" element={<ReportsPage />} />
         <Route path="/admin/affiliates" element={<ManageAffiliatesPage />} />
+        <Route path="/admin/affiliates/financial-report" element={<AffiliateFinancialReport />} />
         <Route path="/admin/coupons" element={<ManageCouponsPage />} />
       </Route>
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
-import { Users, Plus, DollarSign, CheckCircle, XCircle, Copy, Check, UserPlus, Search } from "lucide-react";
+import { Users, Plus, DollarSign, CheckCircle, XCircle, Copy, Check, UserPlus, Search, FileText } from "lucide-react";
 
 interface Affiliate {
   id: number;
@@ -32,6 +33,7 @@ interface ExistingUser {
 }
 
 const ManageAffiliatesPage: React.FC = () => {
+  const navigate = useNavigate();
   const [affiliates, setAffiliates] = useState<Affiliate[]>([]);
   const [selectedAffiliate, setSelectedAffiliate] = useState<Affiliate | null>(null);
   const [commissions, setCommissions] = useState<Commission[]>([]);
@@ -295,6 +297,13 @@ const ManageAffiliatesPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Gerenciar Afiliados</h1>
         <div className="flex flex-col sm:flex-row gap-2">
+          <button
+            onClick={() => navigate("/admin/affiliates/financial-report")}
+            className="flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+          >
+            <FileText className="w-5 h-5 mr-2" />
+            Relatório Financeiro
+          </button>
           <button
             onClick={() => setShowImportModal(true)}
             className="flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"

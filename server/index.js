@@ -6416,30 +6416,48 @@ async function processClientPayment(userId, payment) {
 
     // 3. Registrar comissão de afiliado (se houver)
     const userResult = await pool.query(
-      "SELECT affiliate_code FROM users WHERE id = $1",
+      "SELECT referred_by_affiliate_id FROM users WHERE id = $1",
       [userId]
     );
 
-    if (userResult.rows[0]?.affiliate_code) {
-      const affiliateCode = userResult.rows[0].affiliate_code;
+    if (userResult.rows[0]?.referred_by_affiliate_id) {
+      const affiliateUserId = userResult.rows[0].referred_by_affiliate_id;
 
       const affiliateResult = await pool.query(
-        "SELECT id, commission_amount FROM affiliates WHERE code = $1 AND status = 'active'",
-        [affiliateCode]
+        `SELECT a.id, a.commission_amount, a.code, u.name as affiliate_name
+         FROM affiliates a
+         JOIN users u ON u.id = a.user_id
+         WHERE a.user_id = $1 AND a.status = 'active'`,
+        [affiliateUserId]
       );
 
       if (affiliateResult.rows.length > 0) {
         const affiliateId = affiliateResult.rows[0].id;
         const commissionAmount = parseFloat(affiliateResult.rows[0].commission_amount) || 10.00;
+        const affiliateName = affiliateResult.rows[0].affiliate_name;
 
-        await pool.query(
-          `INSERT INTO affiliate_commissions (affiliate_id, client_id, amount, status)
-           VALUES ($1, $2, $3, 'pending')`,
-          [affiliateId, userId, commissionAmount]
+        // Verificar se já existe comissão registrada para este cliente
+        const existingCommission = await pool.query(
+          `SELECT id FROM affiliate_commissions WHERE affiliate_id = $1 AND client_id = $2`,
+          [affiliateId, userId]
         );
 
-        console.log(`💰 [COMISSÃO] Registrada comissão de R$ ${commissionAmount.toFixed(2)} para afiliado ${affiliateCode}`);
+        if (existingCommission.rows.length === 0) {
+          await pool.query(
+            `INSERT INTO affiliate_commissions (affiliate_id, client_id, amount, status)
+             VALUES ($1, $2, $3, 'pending')`,
+            [affiliateId, userId, commissionAmount]
+          );
+
+          console.log(`💰 [COMISSÃO] Registrada comissão de R$ ${commissionAmount.toFixed(2)} para afiliado ${affiliateName} (ID: ${affiliateUserId})`);
+        } else {
+          console.log(`ℹ️ [COMISSÃO] Comissão já existe para este cliente`);
+        }
+      } else {
+        console.log(`⚠️ [COMISSÃO] Afiliado não encontrado ou inativo para user_id ${affiliateUserId}`);
       }
+    } else {
+      console.log(`ℹ️ [COMISSÃO] Cliente não foi indicado por afiliado`);
     }
 
     console.log(
@@ -6797,11 +6815,12 @@ app.get("/api/admin/affiliates", authenticate, authorize(["admin"]), async (req,
         a.status,
         a.commission_amount,
         a.created_at,
+        a.user_id,
         COUNT(DISTINCT u.id) as clients_count,
         COALESCE(SUM(CASE WHEN ac.status = 'pending' THEN ac.amount ELSE 0 END), 0) as pending_total,
         COALESCE(SUM(CASE WHEN ac.status = 'paid' THEN ac.amount ELSE 0 END), 0) as paid_total
       FROM affiliates a
-      LEFT JOIN users u ON u.affiliate_code = a.code
+      LEFT JOIN users u ON u.referred_by_affiliate_id = a.user_id
       LEFT JOIN affiliate_commissions ac ON ac.affiliate_id = a.id
       GROUP BY a.id
       ORDER BY a.created_at DESC
@@ -7089,6 +7108,70 @@ app.post("/api/admin/affiliates/import", authenticate, authorize(["admin"]), asy
   }
 });
 
+// Get consolidated financial report
+app.get("/api/admin/affiliates/financial-report", authenticate, authorize(["admin"]), async (req, res) => {
+  try {
+    // Get all affiliates with commission summaries
+    const affiliatesResult = await pool.query(`
+      SELECT
+        a.id,
+        a.name,
+        a.code,
+        a.status,
+        a.commission_amount,
+        a.created_at,
+        COUNT(DISTINCT ac.id) as total_commissions_count,
+        COALESCE(SUM(CASE WHEN ac.status = 'pending' THEN ac.amount ELSE 0 END), 0) as pending_total,
+        COALESCE(SUM(CASE WHEN ac.status = 'paid' THEN ac.amount ELSE 0 END), 0) as paid_total,
+        COALESCE(SUM(ac.amount), 0) as total_amount
+      FROM affiliates a
+      LEFT JOIN affiliate_commissions ac ON ac.affiliate_id = a.id
+      GROUP BY a.id
+      ORDER BY total_amount DESC
+    `);
+
+    // Get all commissions with details
+    const commissionsResult = await pool.query(`
+      SELECT
+        ac.id,
+        ac.amount,
+        ac.status,
+        ac.created_at,
+        ac.paid_at,
+        a.name as affiliate_name,
+        a.code as affiliate_code,
+        u.name as client_name,
+        u.cpf as client_cpf
+      FROM affiliate_commissions ac
+      JOIN affiliates a ON ac.affiliate_id = a.id
+      JOIN users u ON ac.client_id = u.id
+      ORDER BY ac.created_at DESC
+    `);
+
+    // Get overall stats
+    const statsResult = await pool.query(`
+      SELECT
+        COUNT(DISTINCT a.id) as total_affiliates,
+        COUNT(DISTINCT CASE WHEN a.status = 'active' THEN a.id END) as active_affiliates,
+        COUNT(ac.id) as total_commissions,
+        COALESCE(SUM(CASE WHEN ac.status = 'pending' THEN ac.amount ELSE 0 END), 0) as total_pending,
+        COALESCE(SUM(CASE WHEN ac.status = 'paid' THEN ac.amount ELSE 0 END), 0) as total_paid,
+        COALESCE(SUM(ac.amount), 0) as total_commissions_amount
+      FROM affiliates a
+      LEFT JOIN affiliate_commissions ac ON ac.affiliate_id = a.id
+    `);
+
+    res.json({
+      affiliates: affiliatesResult.rows,
+      commissions: commissionsResult.rows,
+      stats: statsResult.rows[0]
+    });
+  } catch (error) {
+    console.error("Error fetching financial report:", error);
+    res.status(500).json({ error: "Erro ao buscar relatório financeiro" });
+  }
+});
+
 // ========================================
 // AFFILIATE PANEL ROUTES
 // ========================================
@@ -7125,27 +7208,51 @@ app.get("/api/affiliate/dashboard", authenticate, async (req, res) => {
       SELECT
         COUNT(DISTINCT u.id) as clients_count,
         COALESCE(SUM(CASE WHEN ac.status = 'pending' THEN ac.amount ELSE 0 END), 0) as pending_total,
-        COALESCE(SUM(CASE WHEN ac.status = 'paid' THEN ac.amount ELSE 0 END), 0) as paid_total
+        COALESCE(SUM(CASE WHEN ac.status = 'paid' THEN ac.amount ELSE 0 END), 0) as paid_total,
+        COALESCE(SUM(ac.amount), 0) as total_commissions
       FROM users u
       LEFT JOIN affiliate_commissions ac ON ac.client_id = u.id
-      WHERE u.affiliate_code = $1
-    `, [affiliate.code]);
+      WHERE u.referred_by_affiliate_id = $1
+    `, [userId]);
 
-    // Get referred clients
+    // Get referred clients with commission details
     const clientsResult = await pool.query(`
       SELECT
         u.name,
         u.created_at,
-        u.subscription_status
+        u.subscription_status,
+        ac.amount as commission_amount,
+        ac.status as commission_status,
+        ac.paid_at as commission_paid_at,
+        ac.created_at as commission_created_at
       FROM users u
-      WHERE u.affiliate_code = $1
+      LEFT JOIN affiliate_commissions ac ON ac.client_id = u.id AND ac.affiliate_id = $2
+      WHERE u.referred_by_affiliate_id = $1
       ORDER BY u.created_at DESC
-    `, [affiliate.code]);
+    `, [userId, affiliate.id]);
+
+    // Get detailed commissions list
+    const commissionsResult = await pool.query(`
+      SELECT
+        ac.id,
+        ac.amount,
+        ac.status,
+        ac.created_at,
+        ac.paid_at,
+        u.name as client_name,
+        u.cpf as client_cpf,
+        u.subscription_status as client_subscription_status
+      FROM affiliate_commissions ac
+      JOIN users u ON ac.client_id = u.id
+      WHERE ac.affiliate_id = $1
+      ORDER BY ac.created_at DESC
+    `, [affiliate.id]);
 
     res.json({
       affiliate,
       stats: statsResult.rows[0],
-      clients: clientsResult.rows
+      clients: clientsResult.rows,
+      commissions: commissionsResult.rows
     });
   } catch (error) {
     console.error("Error fetching affiliate dashboard:", error);
