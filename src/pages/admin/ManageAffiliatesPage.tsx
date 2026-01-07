@@ -7,6 +7,7 @@ interface Affiliate {
   name: string;
   code: string;
   status: string;
+  commission_amount: string;
   clients_count: number;
   pending_total: string;
   paid_total: string;
@@ -37,6 +38,9 @@ const ManageAffiliatesPage: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showCommissionsModal, setShowCommissionsModal] = useState(false);
+  const [showEditCommissionModal, setShowEditCommissionModal] = useState(false);
+  const [editingAffiliate, setEditingAffiliate] = useState<Affiliate | null>(null);
+  const [newCommissionAmount, setNewCommissionAmount] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -50,6 +54,7 @@ const ManageAffiliatesPage: React.FC = () => {
     cpf: "",
     email: "",
     password: "",
+    commission_amount: "10.00",
   });
 
   useEffect(() => {
@@ -153,7 +158,7 @@ const ManageAffiliatesPage: React.FC = () => {
       if (response.ok) {
         setSuccess("Afiliado criado com sucesso! O afiliado pode fazer login com o CPF e senha cadastrados.");
         setShowCreateModal(false);
-        setFormData({ name: "", cpf: "", email: "", password: "" });
+        setFormData({ name: "", cpf: "", email: "", password: "", commission_amount: "10.00" });
         loadAffiliates();
       } else {
         const data = await response.json();
@@ -185,6 +190,44 @@ const ManageAffiliatesPage: React.FC = () => {
       }
     } catch (err) {
       setError("Erro ao atualizar status");
+    }
+  };
+
+  const openEditCommissionModal = (affiliate: Affiliate) => {
+    setEditingAffiliate(affiliate);
+    setNewCommissionAmount(affiliate.commission_amount);
+    setShowEditCommissionModal(true);
+  };
+
+  const handleUpdateCommission = async () => {
+    if (!editingAffiliate) return;
+
+    try {
+      setError("");
+      setSuccess("");
+
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/admin/affiliates/${editingAffiliate.id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ commission_amount: newCommissionAmount }),
+        }
+      );
+
+      if (response.ok) {
+        setSuccess("Comissão atualizada com sucesso!");
+        setShowEditCommissionModal(false);
+        setEditingAffiliate(null);
+        setNewCommissionAmount("");
+        loadAffiliates();
+      } else {
+        const data = await response.json();
+        setError(data.error || "Erro ao atualizar comissão");
+      }
+    } catch (err) {
+      setError("Erro ao atualizar comissão");
     }
   };
 
@@ -363,6 +406,9 @@ const ManageAffiliatesPage: React.FC = () => {
                 Clientes
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Comissão
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                 Total Pendente
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
@@ -403,6 +449,20 @@ const ManageAffiliatesPage: React.FC = () => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {affiliate.clients_count}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-semibold text-green-600">
+                      R$ {Number.parseFloat(affiliate.commission_amount).toFixed(2)}
+                    </span>
+                    <button
+                      onClick={() => openEditCommissionModal(affiliate)}
+                      className="text-blue-600 hover:text-blue-700 text-xs underline"
+                      title="Editar comissão"
+                    >
+                      Editar
+                    </button>
+                  </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   R$ {Number.parseFloat(affiliate.pending_total).toFixed(2)}
@@ -514,8 +574,25 @@ const ManageAffiliatesPage: React.FC = () => {
                   placeholder="Senha de acesso"
                   minLength={6}
                 />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Valor da Comissão (R$)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formData.commission_amount}
+                  onChange={(e) =>
+                    setFormData({ ...formData, commission_amount: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                  placeholder="10.00"
+                />
                 <p className="mt-1 text-sm text-gray-500">
-                  O código de afiliado será gerado automaticamente
+                  Valor que o afiliado receberá por cada venda concluída
                 </p>
               </div>
               <div className="flex justify-end space-x-2">
@@ -692,6 +769,55 @@ const ManageAffiliatesPage: React.FC = () => {
                 </tbody>
               </table>
             )}
+          </div>
+        </div>
+      )}
+
+      {showEditCommissionModal && editingAffiliate && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h2 className="text-xl font-bold mb-4">Editar Comissão</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Afiliado: <span className="font-semibold">{editingAffiliate.name}</span>
+            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Novo Valor da Comissão (R$)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={newCommissionAmount}
+                onChange={(e) => setNewCommissionAmount(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg"
+                required
+                placeholder="0.00"
+              />
+              <p className="mt-2 text-sm text-gray-500">
+                Valor atual: R$ {Number.parseFloat(editingAffiliate.commission_amount).toFixed(2)}
+              </p>
+            </div>
+            <div className="flex justify-end space-x-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEditCommissionModal(false);
+                  setEditingAffiliate(null);
+                  setNewCommissionAmount("");
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleUpdateCommission}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Atualizar
+              </button>
+            </div>
           </div>
         </div>
       )}

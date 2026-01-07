@@ -814,6 +814,19 @@ const initializeDatabase = async () => {
       END $$;
     `);
 
+    // Add commission_amount column to affiliates table
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'affiliates' AND column_name = 'commission_amount'
+        ) THEN
+          ALTER TABLE affiliates ADD COLUMN commission_amount DECIMAL(10,2) DEFAULT 10.00 NOT NULL;
+        END IF;
+      END $$;
+    `);
+
     // Create affiliate_commissions table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS affiliate_commissions (
@@ -6411,13 +6424,13 @@ async function processClientPayment(userId, payment) {
       const affiliateCode = userResult.rows[0].affiliate_code;
 
       const affiliateResult = await pool.query(
-        "SELECT id FROM affiliates WHERE code = $1 AND status = 'active'",
+        "SELECT id, commission_amount FROM affiliates WHERE code = $1 AND status = 'active'",
         [affiliateCode]
       );
 
       if (affiliateResult.rows.length > 0) {
         const affiliateId = affiliateResult.rows[0].id;
-        const commissionAmount = 10.00;
+        const commissionAmount = parseFloat(affiliateResult.rows[0].commission_amount) || 10.00;
 
         await pool.query(
           `INSERT INTO affiliate_commissions (affiliate_id, client_id, amount, status)
@@ -6425,7 +6438,7 @@ async function processClientPayment(userId, payment) {
           [affiliateId, userId, commissionAmount]
         );
 
-        console.log(`💰 [COMISSÃO] Registrada comissão de R$ ${commissionAmount} para afiliado ${affiliateCode}`);
+        console.log(`💰 [COMISSÃO] Registrada comissão de R$ ${commissionAmount.toFixed(2)} para afiliado ${affiliateCode}`);
       }
     }
 
@@ -6782,6 +6795,7 @@ app.get("/api/admin/affiliates", authenticate, authorize(["admin"]), async (req,
         a.name,
         a.code,
         a.status,
+        a.commission_amount,
         a.created_at,
         COUNT(DISTINCT u.id) as clients_count,
         COALESCE(SUM(CASE WHEN ac.status = 'pending' THEN ac.amount ELSE 0 END), 0) as pending_total,
@@ -6803,10 +6817,17 @@ app.get("/api/admin/affiliates", authenticate, authorize(["admin"]), async (req,
 // Create affiliate
 app.post("/api/admin/affiliates", authenticate, authorize(["admin"]), async (req, res) => {
   try {
-    const { name, cpf, email, password } = req.body;
+    const { name, cpf, email, password, commission_amount } = req.body;
 
     if (!name || !cpf || !password) {
       return res.status(400).json({ error: "Nome, CPF e senha são obrigatórios" });
+    }
+
+    if (commission_amount !== undefined) {
+      const commissionValue = parseFloat(commission_amount);
+      if (isNaN(commissionValue) || commissionValue < 0) {
+        return res.status(400).json({ error: "Valor de comissão inválido" });
+      }
     }
 
     const cpfClean = cpf.replace(/\D/g, "");
@@ -6842,12 +6863,13 @@ app.post("/api/admin/affiliates", authenticate, authorize(["admin"]), async (req
     let code = generateCode(name);
     let attempts = 0;
     const maxAttempts = 10;
+    const finalCommissionAmount = commission_amount || 10.00;
 
     while (attempts < maxAttempts) {
       try {
         const result = await pool.query(
-          "INSERT INTO affiliates (name, code, status, user_id) VALUES ($1, $2, 'active', $3) RETURNING *",
-          [name, code, userId]
+          "INSERT INTO affiliates (name, code, status, user_id, commission_amount) VALUES ($1, $2, 'active', $3, $4) RETURNING *",
+          [name, code, userId, finalCommissionAmount]
         );
         return res.status(201).json(result.rows[0]);
       } catch (error) {
@@ -6867,15 +6889,41 @@ app.post("/api/admin/affiliates", authenticate, authorize(["admin"]), async (req
   }
 });
 
-// Update affiliate status
+// Update affiliate status and commission
 app.put("/api/admin/affiliates/:id", authenticate, authorize(["admin"]), async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, commission_amount } = req.body;
+
+    const updates = [];
+    const values = [];
+    let paramCounter = 1;
+
+    if (status !== undefined) {
+      updates.push(`status = $${paramCounter}`);
+      values.push(status);
+      paramCounter++;
+    }
+
+    if (commission_amount !== undefined) {
+      const commissionValue = parseFloat(commission_amount);
+      if (isNaN(commissionValue) || commissionValue < 0) {
+        return res.status(400).json({ error: "Valor de comissão inválido" });
+      }
+      updates.push(`commission_amount = $${paramCounter}`);
+      values.push(commissionValue);
+      paramCounter++;
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "Nenhum campo para atualizar" });
+    }
+
+    values.push(id);
 
     const result = await pool.query(
-      "UPDATE affiliates SET status = $1 WHERE id = $2 RETURNING *",
-      [status, id]
+      `UPDATE affiliates SET ${updates.join(", ")} WHERE id = $${paramCounter} RETURNING *`,
+      values
     );
 
     if (result.rows.length === 0) {
@@ -7020,7 +7068,7 @@ app.post("/api/admin/affiliates/import", authenticate, authorize(["admin"]), asy
     while (attempts < maxAttempts) {
       try {
         const result = await pool.query(
-          "INSERT INTO affiliates (name, code, status, user_id) VALUES ($1, $2, 'active', $3) RETURNING *",
+          "INSERT INTO affiliates (name, code, status, user_id, commission_amount) VALUES ($1, $2, 'active', $3, 10.00) RETURNING *",
           [user.name, code, userId]
         );
         return res.status(201).json(result.rows[0]);

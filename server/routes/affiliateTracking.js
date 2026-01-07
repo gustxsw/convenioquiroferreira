@@ -15,11 +15,11 @@ router.post("/track", async (req, res) => {
       });
     }
 
-    // Find affiliate by referral code (assuming percentage > 0 means affiliate)
+    // Find affiliate by referral code (checking if user has vendedor role)
     const affiliateResult = await pool.query(
       `SELECT id, name, email
        FROM users
-       WHERE id = $1 AND percentage > 0`,
+       WHERE id = $1 AND 'vendedor' = ANY(roles)`,
       [referralCode]
     );
 
