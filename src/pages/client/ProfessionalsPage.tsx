@@ -1,18 +1,5 @@
-"use client";
-
-import type React from "react";
-import { useState, useEffect } from "react";
-import {
-  Phone,
-  MapPin,
-  Briefcase,
-  Mail,
-  Calendar,
-  X,
-  Filter,
-  Search,
-} from "lucide-react";
-import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
+import React, { useState, useEffect } from "react";
+import { Phone, MapPin, Briefcase, Mail, Calendar, Camera, X } from "lucide-react";
 
 type Professional = {
   id: number;
@@ -32,38 +19,43 @@ type Professional = {
 
 const ProfessionalsPage: React.FC = () => {
   const [professionals, setProfessionals] = useState<Professional[]>([]);
-  const [filteredProfessionals, setFilteredProfessionals] = useState<
-    Professional[]
-  >([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCity, setSelectedCity] = useState("");
-  const [availableCities, setAvailableCities] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-
-  // Photo modal state
+  
+  // 🔥 NEW: Modal state for photo viewing
   const [selectedPhoto, setSelectedPhoto] = useState<{
     url: string;
     name: string;
   } | null>(null);
+
+  // Get API URL with fallback
+  const getApiUrl = () => {
+    if (
+      window.location.hostname === "cartaoquiroferreira.com.br" ||
+      window.location.hostname === "www.cartaoquiroferreira.com.br"
+    ) {
+      return "https://www.cartaoquiroferreira.com.br";
+    }
+
+    return "http://localhost:3001";
+  };
 
   useEffect(() => {
     const fetchProfessionals = async () => {
       try {
         setIsLoading(true);
         setError("");
-
+        
+        const token = localStorage.getItem("token");
         const apiUrl = getApiUrl();
 
-        console.log(
-          "Fetching professionals from:",
-          `${apiUrl}/api/professionals`
-        );
+        console.log("Fetching professionals from:", `${apiUrl}/api/professionals`);
 
-        const response = await fetchWithAuth(`${apiUrl}/api/professionals`, {
-          method: "GET",
+        const response = await fetch(`${apiUrl}/api/professionals`, {
+          method: 'GET',
           headers: {
-            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
           },
         });
 
@@ -71,27 +63,13 @@ const ProfessionalsPage: React.FC = () => {
 
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(
-            errorData.message || "Falha ao carregar profissionais"
-          );
+          throw new Error(errorData.message || "Falha ao carregar profissionais");
         }
 
         const data = await response.json();
         console.log("Professionals data received:", data);
-
+        
         setProfessionals(data);
-
-        // Extract unique cities for filter
-        const uniqueCities = data
-          .map((prof: Professional) => prof.city)
-          .filter((city: string) => city && city.trim() !== "")
-          .filter(
-            (city: string, index: number, array: string[]) =>
-              array.indexOf(city) === index
-          )
-          .sort();
-
-        setAvailableCities(uniqueCities);
       } catch (error) {
         console.error("Error fetching professionals:", error);
         setError("Não foi possível carregar a lista de profissionais");
@@ -103,72 +81,47 @@ const ProfessionalsPage: React.FC = () => {
     fetchProfessionals();
   }, []);
 
-  // Filter professionals based on search and city
-  useEffect(() => {
-    let filtered = professionals;
-
-    // Filter by search term (name or category)
-    if (searchTerm) {
-      filtered = filtered.filter(
-        (prof) =>
-          prof.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          prof.category_name?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    // Filter by city
-    if (selectedCity) {
-      filtered = filtered.filter((prof) => prof.city === selectedCity);
-    }
-
-    setFilteredProfessionals(filtered);
-  }, [professionals, searchTerm, selectedCity]);
-
-  // Function to open photo modal
+  // 🔥 NEW: Function to open photo modal
   const openPhotoModal = (photoUrl: string, professionalName: string) => {
     setSelectedPhoto({
       url: photoUrl,
-      name: professionalName,
+      name: professionalName
     });
   };
 
-  // Function to close photo modal
+  // 🔥 NEW: Function to close photo modal
   const closePhotoModal = () => {
     setSelectedPhoto(null);
   };
 
-  // Handle escape key to close modal
+  // 🔥 NEW: Handle escape key to close modal
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === 'Escape') {
         closePhotoModal();
       }
     };
 
     if (selectedPhoto) {
-      document.addEventListener("keydown", handleEscape);
+      document.addEventListener('keydown', handleEscape);
       // Prevent body scroll when modal is open
-      document.body.style.overflow = "hidden";
+      document.body.style.overflow = 'hidden';
     }
 
     return () => {
-      document.removeEventListener("keydown", handleEscape);
-      document.body.style.overflow = "unset";
+      document.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'unset';
     };
   }, [selectedPhoto]);
 
   const formatPhone = (phone: string) => {
     if (!phone) return "Não informado";
-
+    
     const cleaned = phone.replace(/\D/g, "");
     if (cleaned.length === 11) {
-      return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 7)}-${cleaned.slice(
-        7
-      )}`;
+      return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 7)}-${cleaned.slice(7)}`;
     } else if (cleaned.length === 10) {
-      return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 6)}-${cleaned.slice(
-        6
-      )}`;
+      return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 6)}-${cleaned.slice(6)}`;
     }
     return phone;
   };
@@ -182,7 +135,7 @@ const ProfessionalsPage: React.FC = () => {
       professional.city,
       professional.state,
     ].filter(Boolean);
-
+    
     return parts.length > 0 ? parts.join(", ") : "Endereço não informado";
   };
 
@@ -197,60 +150,6 @@ const ProfessionalsPage: React.FC = () => {
         </p>
       </div>
 
-      {/* Filters Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-        <div className="flex items-center mb-4">
-          <Filter className="h-5 w-5 text-red-600 mr-2" />
-          <h2 className="text-lg font-semibold">Filtros</h2>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por nome ou especialidade..."
-              className="input"
-            />
-          </div>
-
-          <select
-            value={selectedCity}
-            onChange={(e) => setSelectedCity(e.target.value)}
-            className="input"
-          >
-            <option value="">Todas as cidades</option>
-            {availableCities.map((city) => (
-              <option key={city} value={city}>
-                {city}
-              </option>
-            ))}
-          </select>
-
-          <button
-            onClick={() => {
-              setSearchTerm("");
-              setSelectedCity("");
-            }}
-            className="btn btn-secondary"
-          >
-            Limpar Filtros
-          </button>
-        </div>
-
-        {/* Results count */}
-        {(searchTerm || selectedCity) && (
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <p className="text-sm text-gray-600">
-              {filteredProfessionals.length} profissional(is) encontrado(s)
-              {selectedCity && ` em ${selectedCity}`}
-              {searchTerm && ` para "${searchTerm}"`}
-            </p>
-          </div>
-        )}
-      </div>
-
       {error && (
         <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 flex items-center">
           <Calendar className="h-5 w-5 mr-2 flex-shrink-0" />
@@ -263,23 +162,19 @@ const ProfessionalsPage: React.FC = () => {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Carregando profissionais...</p>
         </div>
-      ) : filteredProfessionals.length === 0 ? (
+      ) : professionals.length === 0 ? (
         <div className="text-center py-12 bg-gray-50 rounded-lg">
           <Briefcase className="h-16 w-16 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">
-            {searchTerm || selectedCity
-              ? "Nenhum profissional encontrado"
-              : "Nenhum profissional cadastrado"}
+            Nenhum profissional encontrado
           </h3>
           <p className="text-gray-600">
-            {searchTerm || selectedCity
-              ? "Tente ajustar os filtros de busca."
-              : "Não há profissionais cadastrados no momento."}
+            Não há profissionais cadastrados no momento.
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredProfessionals.map((professional) => (
+          {professionals.map((professional) => (
             <div
               key={professional.id}
               className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-all duration-200 hover:scale-105"
@@ -290,37 +185,24 @@ const ProfessionalsPage: React.FC = () => {
                   <div className="w-20 h-20 mx-auto mb-3 relative">
                     {professional.photo_url ? (
                       <button
-                        onClick={() =>
-                          openPhotoModal(
-                            professional.photo_url!,
-                            professional.name
-                          )
-                        }
+                        onClick={() => openPhotoModal(professional.photo_url!, professional.name)}
                         className="w-full h-full rounded-full overflow-hidden border-2 border-red-100 hover:border-red-300 transition-colors cursor-pointer group"
                         title="Clique para ampliar a foto"
                       >
                         <img
-                          src={professional.photo_url || "/placeholder.svg"}
+                          src={professional.photo_url}
                           alt={`Foto de ${professional.name}`}
                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200"
                           onError={(e) => {
+                            // Fallback to default icon if image fails to load
                             const target = e.target as HTMLImageElement;
-                            target.style.display = "none";
-                            const parent = target.parentElement;
-                            if (parent && parent.nextElementSibling) {
-                              (
-                                parent.nextElementSibling as HTMLElement
-                              ).classList.remove("hidden");
-                            }
+                            target.style.display = 'none';
+                            target.parentElement?.nextElementSibling?.classList.remove('hidden');
                           }}
                         />
                       </button>
                     ) : null}
-                    <div
-                      className={`w-full h-full bg-red-100 rounded-full flex items-center justify-center ${
-                        professional.photo_url ? "hidden" : ""
-                      }`}
-                    >
+                    <div className={`w-full h-full bg-red-100 rounded-full flex items-center justify-center ${professional.photo_url ? 'hidden' : ''}`}>
                       <Briefcase className="h-8 w-8 text-red-600" />
                     </div>
                   </div>
@@ -365,16 +247,11 @@ const ProfessionalsPage: React.FC = () => {
                 {/* Action Button */}
                 {professional.phone && (
                   <a
-                    href={`https://wa.me/55${professional.phone.replace(
-                      /\D/g,
-                      ""
-                    )}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block w-full text-center bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 transition-colors duration-200 font-medium"
+                    href={`tel:${professional.phone.replace(/\D/g, '')}`}
+                    className="block w-full text-center bg-red-600 text-white py-3 px-4 rounded-lg hover:bg-red-700 transition-colors duration-200 font-medium"
                   >
                     <Phone className="h-4 w-4 inline mr-2" />
-                    Entrar em contato pelo WhatsApp
+                    Ligar
                   </a>
                 )}
               </div>
@@ -383,15 +260,15 @@ const ProfessionalsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Photo Modal */}
+      {/* 🔥 NEW: Photo Modal */}
       {selectedPhoto && (
         <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4">
           {/* Backdrop - click to close */}
-          <div
+          <div 
             className="absolute inset-0 cursor-pointer"
             onClick={closePhotoModal}
           />
-
+          
           {/* Modal Content */}
           <div className="relative max-w-4xl max-h-full w-full h-full flex items-center justify-center">
             {/* Close Button */}
@@ -402,15 +279,15 @@ const ProfessionalsPage: React.FC = () => {
             >
               <X className="h-6 w-6" />
             </button>
-
+            
             {/* Professional Name */}
             <div className="absolute top-4 left-4 z-10 bg-black bg-opacity-50 text-white px-4 py-2 rounded-lg">
               <p className="font-medium">{selectedPhoto.name}</p>
             </div>
-
+            
             {/* Image */}
             <img
-              src={selectedPhoto.url || "/placeholder.svg"}
+              src={selectedPhoto.url}
               alt={`Foto de ${selectedPhoto.name}`}
               className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
               onClick={(e) => e.stopPropagation()} // Prevent closing when clicking on image

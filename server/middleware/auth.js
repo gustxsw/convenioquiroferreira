@@ -3,35 +3,29 @@ import { pool } from '../db.js';
 
 export const authenticate = async (req, res, next) => {
   try {
+    // Get token from cookie or Authorization header
     const token = req.cookies.token || req.headers.authorization?.split(' ')[1];
 
     if (!token) {
-      return res.status(401).json({ message: 'Não autorizado', code: 'NO_TOKEN' });
+      return res.status(401).json({ message: 'Não autorizado' });
     }
 
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    } catch (error) {
-      if (error.name === 'TokenExpiredError') {
-        console.log('❌ Access token expired');
-        return res.status(401).json({ message: 'Token expirado', code: 'TOKEN_EXPIRED' });
-      }
-      console.error('❌ Invalid token:', error.message);
-      return res.status(401).json({ message: 'Token inválido', code: 'INVALID_TOKEN' });
-    }
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
 
+    // Get user from database - FIXED: use roles array instead of role column
     const result = await pool.query(
       'SELECT id, name, cpf, roles FROM users WHERE id = $1',
       [decoded.id]
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ message: 'Usuário não encontrado', code: 'USER_NOT_FOUND' });
+      return res.status(401).json({ message: 'Usuário não encontrado' });
     }
 
     const user = result.rows[0];
 
+    // Add user to request object with current role from token
     req.user = {
       id: user.id,
       name: user.name,
@@ -42,8 +36,8 @@ export const authenticate = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error('❌ Auth error:', error);
-    return res.status(401).json({ message: 'Erro de autenticação', code: 'AUTH_ERROR' });
+    console.error('Auth error:', error);
+    return res.status(401).json({ message: 'Token inválido' });
   }
 };
 

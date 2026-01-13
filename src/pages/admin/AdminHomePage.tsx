@@ -8,7 +8,6 @@ import {
   CalendarClock,
   DollarSign,
 } from "lucide-react";
-import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type ConsultationCount = {
   total: number;
@@ -60,6 +59,17 @@ const AdminHomePage: React.FC = () => {
     null
   );
 
+  // Get API URL with fallback
+  const getApiUrl = () => {
+    if (
+      window.location.hostname === "cartaoquiroferreira.com.br" ||
+      window.location.hostname === "www.cartaoquiroferreira.com.br"
+    ) {
+      return "https://www.cartaoquiroferreira.com.br";
+    }
+
+    return "http://localhost:3001";
+  };
 
   // Get current month date range
   const getCurrentMonthRange = () => {
@@ -77,15 +87,19 @@ const AdminHomePage: React.FC = () => {
       try {
         setIsLoading(true);
 
+        const token = localStorage.getItem("token");
         const apiUrl = getApiUrl();
 
         console.log("Fetching admin data from:", apiUrl);
 
         // Fetch all consultations
-        const consultationsResponse = await fetchWithAuth(
+        const consultationsResponse = await fetch(
           `${apiUrl}/api/consultations`,
           {
             method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
           }
         );
 
@@ -96,39 +110,34 @@ const AdminHomePage: React.FC = () => {
         const consultationsData = await consultationsResponse.json();
 
         // Fetch all users
-        const usersResponse = await fetchWithAuth(`${apiUrl}/api/users`, {
+        const usersResponse = await fetch(`${apiUrl}/api/users`, {
           method: "GET",
           headers: {
-            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
           },
         });
 
         if (!usersResponse.ok) {
           throw new Error("Falha ao carregar dados de usuários");
-          console.error(
-            "Consultations response error:",
-            consultationsResponse.status
-          );
         }
 
         const usersData = await usersResponse.json();
-        console.log("Users data loaded:", usersData.length);
 
         // Fetch monthly revenue report
         const dateRange = getCurrentMonthRange();
-        const revenueResponse = await fetchWithAuth(
+        const revenueResponse = await fetch(
           `${apiUrl}/api/reports/revenue?start_date=${dateRange.start}&end_date=${dateRange.end}`,
           {
             method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
           }
         );
 
         if (revenueResponse.ok) {
           const revenueData = await revenueResponse.json();
-          console.log("Revenue data loaded:", revenueData);
           setMonthlyRevenue(revenueData);
-        } else {
-          console.warn("Revenue data not available:", revenueResponse.status);
         }
 
         // Calculate consultation counts
@@ -152,7 +161,6 @@ const AdminHomePage: React.FC = () => {
         const monthCount = consultationsData.filter(
           (c: any) => new Date(c.date) >= monthAgo
         ).length;
-        console.log("Consultations data loaded:", consultationsData.length);
 
         setConsultationCounts({
           total: consultationsData.length,
@@ -161,38 +169,19 @@ const AdminHomePage: React.FC = () => {
           month: monthCount,
         });
 
-        // Calculate user counts correctly using roles array
+        // 🔥 FIXED: Calculate user counts correctly using roles array
         const clientCount = usersData.filter(
-          (u: any) => u.roles && u.roles.includes("client")
+          (u: any) => u.roles && u.roles.includes('client')
         ).length;
         const professionalCount = usersData.filter(
-          (u: any) => u.roles && u.roles.includes("professional")
+          (u: any) => u.roles && u.roles.includes('professional')
         ).length;
 
         setUserCounts({
-          clients: Number(clientCount) || 0,
-          professionals: Number(professionalCount) || 0,
-          total: Number(usersData.length) || 0,
+          clients: clientCount,
+          professionals: professionalCount,
+          total: usersData.length,
         });
-
-        // Fetch dependents data for additional stats
-        try {
-          const dependentsResponse = await fetchWithAuth(
-            `${apiUrl}/api/admin/dependents`
-          );
-
-          if (dependentsResponse.ok) {
-            const dependentsData = await dependentsResponse.json();
-            console.log(
-              "Dependents data loaded for stats:",
-              dependentsData.length
-            );
-
-            // You could add dependent stats here if needed
-          }
-        } catch (error) {
-          console.warn("Could not load dependents data:", error);
-        }
       } catch (error) {
         console.error("Error fetching admin data:", error);
         setError("Não foi possível carregar os dados do painel");
@@ -214,13 +203,8 @@ const AdminHomePage: React.FC = () => {
   // Calculate total clinic revenue (what admin will receive)
   const calculateClinicRevenue = () => {
     if (!monthlyRevenue) return 0;
-    if (
-      !monthlyRevenue.revenue_by_professional ||
-      !Array.isArray(monthlyRevenue.revenue_by_professional)
-    )
-      return 0;
     return monthlyRevenue.revenue_by_professional.reduce(
-      (total, prof) => total + (Number(prof.clinic_revenue) || 0),
+      (total, prof) => total + prof.clinic_revenue,
       0
     );
   };
@@ -343,7 +327,7 @@ const AdminHomePage: React.FC = () => {
                     Receita do Convênio
                   </p>
                   <p className="text-2xl font-bold text-green-700">
-                    {formatCurrency(Number(calculateClinicRevenue()) || 0)}
+                    {formatCurrency(calculateClinicRevenue())}
                   </p>
                 </div>
                 <div className="bg-orange-50 p-4 rounded-lg">
@@ -352,11 +336,10 @@ const AdminHomePage: React.FC = () => {
                   </p>
                   <p className="text-2xl font-bold text-orange-700">
                     {formatCurrency(
-                      monthlyRevenue.revenue_by_professional?.reduce(
-                        (total, prof) =>
-                          total + (Number(prof.professional_payment) || 0),
+                      monthlyRevenue.revenue_by_professional.reduce(
+                        (total, prof) => total + prof.professional_payment,
                         0
-                      ) || 0
+                      )
                     )}
                   </p>
                 </div>
