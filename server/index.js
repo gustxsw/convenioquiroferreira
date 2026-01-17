@@ -905,8 +905,7 @@ const initializeDatabase = async () => {
 
     await pool.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_affiliate_commissions_mp_payment_id
-      ON affiliate_commissions (mp_payment_id)
-      WHERE mp_payment_id IS NOT NULL;
+      ON affiliate_commissions (mp_payment_id);
     `);
 
     // Create affiliate_referrals table for persistent tracking
@@ -6974,7 +6973,8 @@ app.post(
   authorize(["admin"]),
   async (req, res) => {
     try {
-      const { name, cpf, email, password, commission_amount, pix_key } = req.body;
+      const { name, cpf, email, password, commission_amount, pix_key } =
+        req.body;
 
       if (!name || !cpf || !password) {
         return res
