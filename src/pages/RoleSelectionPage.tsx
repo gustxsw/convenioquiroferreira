@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
-import { Users, Award, Briefcase, ArrowLeft, RefreshCw } from "lucide-react";
+import { Users, Award, Briefcase, ArrowLeft, RefreshCw, TrendingUp } from "lucide-react";
 
 const RoleSelectionPage: React.FC = () => {
   const [user, setUser] = useState<any>(null);
@@ -87,6 +87,15 @@ const RoleSelectionPage: React.FC = () => {
           color: 'bg-red-500 hover:bg-red-600',
           bgColor: 'bg-red-50',
           textColor: 'text-red-700'
+        };
+      case 'vendedor':
+        return {
+          title: 'Vendedor',
+          description: 'Gere links de indicação, acompanhe conversões e receba comissões',
+          icon: <TrendingUp className="h-8 w-8" />,
+          color: 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600',
+          bgColor: 'bg-gradient-to-br from-orange-50 to-red-50',
+          textColor: 'text-orange-700'
         };
       default:
         return {
