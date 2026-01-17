@@ -15,11 +15,14 @@ router.post("/track", async (req, res) => {
       });
     }
 
-    // Find affiliate by referral code (checking if user has vendedor role)
+    // Find affiliate by referral code (current) or legacy user id
     const affiliateResult = await pool.query(
-      `SELECT id, name, email
-       FROM users
-       WHERE id = $1 AND 'vendedor' = ANY(roles)`,
+      `SELECT u.id, u.name, u.email
+       FROM affiliates a
+       JOIN users u ON u.id = a.user_id
+       WHERE (a.code = $1 OR u.id::text = $1)
+         AND a.status = 'active'
+         AND 'vendedor' = ANY(u.roles)`,
       [referralCode]
     );
 
@@ -219,8 +222,8 @@ router.get("/my-referrals", authenticate, async (req, res) => {
          u.name as user_name,
          u.email as user_email,
          u.cpf as user_cpf,
-         u.subscription_status,
-         u.subscription_expires_at
+        u.subscription_status,
+        u.subscription_expiry
        FROM affiliate_referrals ar
        LEFT JOIN users u ON ar.user_id = u.id
        WHERE ar.affiliate_id = $1
