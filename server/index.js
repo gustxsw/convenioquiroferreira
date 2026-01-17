@@ -903,6 +903,12 @@ const initializeDatabase = async () => {
       END $$;
     `);
 
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_affiliate_commissions_mp_payment_id
+      ON affiliate_commissions (mp_payment_id)
+      WHERE mp_payment_id IS NOT NULL;
+    `);
+
     // Create affiliate_referrals table for persistent tracking
     await pool.query(`
       CREATE TABLE IF NOT EXISTS affiliate_referrals (
@@ -6558,7 +6564,8 @@ async function processClientPayment(userId, payment) {
               mp_payment_id,
               payment_reference
             )
-             VALUES ($1, $2, $3, 'pending', $4, $5)`,
+             VALUES ($1, $2, $3, 'pending', $4, $5)
+             ON CONFLICT (mp_payment_id) DO NOTHING`,
             [affiliateId, userId, commissionAmount, paymentId, paymentReference]
           );
 
