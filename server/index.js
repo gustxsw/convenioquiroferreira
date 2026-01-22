@@ -6949,12 +6949,19 @@ app.get(
         a.created_at,
         a.user_id,
         COUNT(DISTINCT u.id) as clients_count,
-        COALESCE(SUM(CASE WHEN ac.status = 'pending' THEN ac.amount ELSE 0 END), 0) as pending_total,
-        COALESCE(SUM(CASE WHEN ac.status = 'paid' THEN ac.amount ELSE 0 END), 0) as paid_total
+        COALESCE(ac.pending_total, 0) as pending_total,
+        COALESCE(ac.paid_total, 0) as paid_total
       FROM affiliates a
       LEFT JOIN users u ON u.referred_by_affiliate_id = a.user_id
-      LEFT JOIN affiliate_commissions ac ON ac.affiliate_id = a.id
-      GROUP BY a.id
+      LEFT JOIN (
+        SELECT
+          affiliate_id,
+          COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_total,
+          COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) as paid_total
+        FROM affiliate_commissions
+        GROUP BY affiliate_id
+      ) ac ON ac.affiliate_id = a.id
+      GROUP BY a.id, ac.pending_total, ac.paid_total
       ORDER BY a.created_at DESC
     `);
 
@@ -7140,6 +7147,7 @@ app.get(
         ac.*,
         u.name as client_name,
         u.cpf as client_cpf,
+        u.created_at as client_created_at,
         pb.name as paid_by_name
       FROM affiliate_commissions ac
       JOIN users u ON u.id = ac.client_id

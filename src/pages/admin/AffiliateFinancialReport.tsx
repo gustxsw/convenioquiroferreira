@@ -30,6 +30,7 @@ interface Commission {
   affiliate_pix_key?: string | null;
   client_name: string;
   client_cpf: string;
+  client_created_at?: string | null;
   paid_by_name?: string | null;
   paid_method?: string | null;
   paid_receipt_url?: string | null;
@@ -54,16 +55,17 @@ const AffiliateFinancialReport: React.FC = () => {
   const [data, setData] = useState<ReportData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "paid">("all");
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
-  const [showPayModal, setShowPayModal] = useState(false);
-  const [payingCommission, setPayingCommission] = useState<Commission | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState("");
-  const [paymentReceipt, setPaymentReceipt] = useState<File | null>(null);
-  const [isPaying, setIsPaying] = useState(false);
+  const [selectedCommissionIds, setSelectedCommissionIds] = useState<number[]>([]);
+  const [batchReceipt, setBatchReceipt] = useState<File | null>(null);
+  const [isBatchPaying, setIsBatchPaying] = useState(false);
+  const [selectedAffiliateId, setSelectedAffiliateId] = useState<number | null>(null);
+  const [affiliateSearchTerm, setAffiliateSearchTerm] = useState("");
 
   useEffect(() => {
     loadReport();
@@ -88,56 +90,6 @@ const AffiliateFinancialReport: React.FC = () => {
     }
   };
 
-  const openPayModal = (commission: Commission) => {
-    setPayingCommission(commission);
-    setPaymentMethod("Pix");
-    setPaymentReceipt(null);
-    setShowPayModal(true);
-  };
-
-  const closePayModal = () => {
-    setShowPayModal(false);
-    setPayingCommission(null);
-    setPaymentMethod("");
-    setPaymentReceipt(null);
-  };
-
-  const markAsPaid = async () => {
-    if (!payingCommission) return;
-
-    try {
-      setIsPaying(true);
-      setError("");
-      setSuccess("");
-
-      const apiUrl = getApiUrl();
-      const formData = new FormData();
-
-      formData.append("paid_method", paymentMethod.trim() || "Pix");
-
-      if (paymentReceipt) {
-        formData.append("receipt", paymentReceipt);
-      }
-
-      const response = await fetchWithAuth(
-        `${apiUrl}/api/admin/affiliates/${payingCommission.affiliate_id}/commissions/${payingCommission.id}/pay`,
-        { method: "PUT", body: formData }
-      );
-
-      if (response.ok) {
-        setSuccess("Comissão marcada como paga!");
-        closePayModal();
-        loadReport();
-      } else {
-        const data = await response.json();
-        setError(data.error || "Erro ao marcar como pago");
-      }
-    } catch (err) {
-      setError("Erro ao marcar como pago");
-    } finally {
-      setIsPaying(false);
-    }
-  };
 
   const copyPixKey = async (pixKey?: string | null) => {
     if (!pixKey) return;
@@ -148,6 +100,75 @@ const AffiliateFinancialReport: React.FC = () => {
     } catch (err) {
       setError("Não foi possível copiar a chave Pix");
       setTimeout(() => setError(""), 2000);
+    }
+  };
+
+  const toggleCommissionSelection = (commission: Commission) => {
+    if (commission.status !== "pending") return;
+
+    const alreadySelected = selectedCommissionIds.includes(commission.id);
+    if (alreadySelected) {
+      setSelectedCommissionIds((prev) => prev.filter((id) => id !== commission.id));
+      return;
+    }
+
+    if (selectedCommissionIds.length > 0) {
+      const selected = filteredCommissions.find(
+        (item) => item.id === selectedCommissionIds[0]
+      );
+      if (selected && selected.affiliate_id !== commission.affiliate_id) {
+        setError("Selecione comissões do mesmo afiliado para pagamento em lote.");
+        setTimeout(() => setError(""), 3000);
+        return;
+      }
+    }
+
+    setSelectedCommissionIds((prev) => [...prev, commission.id]);
+  };
+
+  const clearBatchSelection = () => {
+    setSelectedCommissionIds([]);
+    setBatchReceipt(null);
+  };
+
+  const markAsPaidBatch = async () => {
+    if (selectedCommissionIds.length === 0) return;
+
+    try {
+      setIsBatchPaying(true);
+      setError("");
+      setSuccess("");
+
+      const apiUrl = getApiUrl();
+      const batchCommissions = filteredCommissions.filter((commission) =>
+        selectedCommissionIds.includes(commission.id)
+      );
+
+      for (const commission of batchCommissions) {
+        const formData = new FormData();
+        formData.append("paid_method", "Pix");
+        if (batchReceipt) {
+          formData.append("receipt", batchReceipt);
+        }
+
+        const response = await fetchWithAuth(
+          `${apiUrl}/api/admin/affiliates/${commission.affiliate_id}/commissions/${commission.id}/pay`,
+          { method: "PUT", body: formData }
+        );
+
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || "Erro ao registrar pagamento em lote");
+        }
+      }
+
+      setSuccess("Pagamentos registrados com sucesso!");
+      clearBatchSelection();
+      loadReport();
+    } catch (err) {
+      setError("Erro ao registrar pagamento em lote");
+    } finally {
+      setIsBatchPaying(false);
     }
   };
 
@@ -225,6 +246,15 @@ const AffiliateFinancialReport: React.FC = () => {
     return commission.status === filterStatus;
   });
 
+  const filteredCommissionsBySearch = filteredCommissions.filter((commission) => {
+    const term = affiliateSearchTerm.trim().toLowerCase();
+    if (!term) return true;
+    return (
+      commission.affiliate_name.toLowerCase().includes(term) ||
+      commission.affiliate_code.toLowerCase().includes(term)
+    );
+  });
+
   const periodTotals = periodCommissions.reduce(
     (acc, commission) => {
       const amount = Number.parseFloat(commission.amount) || 0;
@@ -270,6 +300,26 @@ const AffiliateFinancialReport: React.FC = () => {
     (commission) => commission.status === "pending"
   );
   const pendingTotal = pendingCommissions.reduce((sum, commission) => {
+    return sum + (Number.parseFloat(commission.amount) || 0);
+  }, 0);
+
+  const selectedCommissions = filteredCommissions.filter((commission) =>
+    selectedCommissionIds.includes(commission.id)
+  );
+  const selectedTotal = selectedCommissions.reduce((sum, commission) => {
+    return sum + (Number.parseFloat(commission.amount) || 0);
+  }, 0);
+  const selectedAffiliate =
+    selectedCommissions.length > 0 ? selectedCommissions[0] : null;
+
+  const affiliateForDetail = data.affiliates.find(
+    (affiliate) => affiliate.id === selectedAffiliateId
+  );
+  const commissionsForAffiliate = filteredCommissions.filter(
+    (commission) => commission.affiliate_id === selectedAffiliateId
+  );
+  const affiliatePendingTotal = commissionsForAffiliate.reduce((sum, commission) => {
+    if (commission.status !== "pending") return sum;
     return sum + (Number.parseFloat(commission.amount) || 0);
   }, 0);
 
@@ -378,86 +428,147 @@ const AffiliateFinancialReport: React.FC = () => {
         </p>
       </div>
 
-      {/* Pagamentos */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-2">Pagamentos</h2>
-        <p className="text-sm text-gray-600 mb-4">
-          Fluxo simples para registrar o pagamento das comissões do mês.
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-          <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
-            <p className="font-semibold text-gray-900 mb-1">1. Escolha a comissão</p>
-            <p className="text-gray-600">
-              Na tabela abaixo, clique em <strong>Registrar pagamento</strong>.
-            </p>
+      {selectedAffiliateId && affiliateForDetail && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Comissões de {affiliateForDetail.name}
+              </h2>
+              <p className="text-xs text-gray-500">
+                Pix: {affiliateForDetail.pix_key || "não informado"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedAffiliateId(null);
+                clearBatchSelection();
+              }}
+              className="text-sm text-gray-500 hover:text-gray-700"
+            >
+              Voltar ao resumo
+            </button>
           </div>
-          <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
-            <p className="font-semibold text-gray-900 mb-1">2. Copie a chave Pix</p>
-            <p className="text-gray-600">
-              Use o botão <strong>Copiar Pix</strong> para agilizar o pagamento.
-            </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="p-4 border rounded-lg">
+              <p className="text-xs text-gray-500">Total pendente</p>
+              <p className="text-xl font-bold text-gray-900">
+                R$ {affiliatePendingTotal.toFixed(2)}
+              </p>
+              <button
+                type="button"
+                onClick={() => copyPixKey(affiliateForDetail.pix_key)}
+                className="mt-2 px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                disabled={!affiliateForDetail.pix_key}
+              >
+                Copiar Pix
+              </button>
+            </div>
+            <div className="p-4 border rounded-lg">
+              <p className="text-xs text-gray-500 mb-2">Comprovante (opcional)</p>
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => setBatchReceipt(e.target.files?.[0] || null)}
+                className="w-full text-sm"
+              />
+              <button
+                type="button"
+                onClick={markAsPaidBatch}
+                className="mt-3 w-full px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                disabled={isBatchPaying || selectedCommissions.length === 0}
+              >
+                {isBatchPaying ? "Processando..." : "Registrar pagamento selecionado"}
+              </button>
+            </div>
+            <div className="p-4 border rounded-lg text-sm text-gray-600">
+              <p className="font-semibold text-gray-900 mb-1">Seleção</p>
+              <p>Marque as comissões abaixo para pagar todas ou parcialmente.</p>
+            </div>
           </div>
-          <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
-            <p className="font-semibold text-gray-900 mb-1">3. Anexe o comprovante</p>
-            <p className="text-gray-600">
-              Suba o print ou PDF para registrar no Cloudinary.
-            </p>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Seleção
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Cliente
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Cadastro
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Pagamento
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Valor
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {commissionsForAffiliate.length === 0 ? (
+                  <tr>
+                    <td className="px-6 py-8 text-center text-sm text-gray-500" colSpan={6}>
+                      Nenhuma comissão encontrada para este afiliado.
+                    </td>
+                  </tr>
+                ) : (
+                  commissionsForAffiliate.map((commission) => (
+                    <tr key={commission.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <input
+                          type="checkbox"
+                          checked={selectedCommissionIds.includes(commission.id)}
+                          disabled={commission.status !== "pending"}
+                          onChange={() => toggleCommissionSelection(commission)}
+                          className="h-4 w-4 text-green-600 border-gray-300 rounded"
+                        />
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {commission.client_name}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {commission.client_created_at
+                          ? new Date(commission.client_created_at).toLocaleDateString("pt-BR")
+                          : "-"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {commission.paid_at
+                          ? new Date(commission.paid_at).toLocaleDateString("pt-BR")
+                          : commission.created_at
+                            ? new Date(commission.created_at).toLocaleDateString("pt-BR")
+                            : "-"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-green-600">
+                        R$ {Number.parseFloat(commission.amount).toFixed(2)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span
+                          className={`px-2 py-1 text-xs rounded-full ${
+                            commission.status === "paid"
+                              ? "bg-green-100 text-green-800"
+                              : "bg-yellow-100 text-yellow-800"
+                          }`}
+                        >
+                          {commission.status === "paid" ? "Pago" : "Pendente"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-        <div className="mt-6">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-900">
-              A pagar no mês ({pendingCommissions.length})
-            </h3>
-            <span className="text-sm text-gray-600">
-              Total: R$ {pendingTotal.toFixed(2)}
-            </span>
-          </div>
-          {pendingCommissions.length === 0 ? (
-            <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-500">
-              Nenhuma comissão pendente neste mês.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {pendingCommissions.map((commission) => (
-                <div
-                  key={commission.id}
-                  className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-4 border border-gray-200 rounded-lg"
-                >
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">
-                      {commission.affiliate_name} · {commission.client_name}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      Valor: R$ {Number.parseFloat(commission.amount).toFixed(2)}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      Pix: {commission.affiliate_pix_key || "não informado"}
-                    </p>
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <button
-                      type="button"
-                      onClick={() => copyPixKey(commission.affiliate_pix_key)}
-                      disabled={!commission.affiliate_pix_key}
-                      className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50"
-                    >
-                      Copiar Pix
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openPayModal(commission)}
-                      className="px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700"
-                    >
-                      Registrar pagamento
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+      )}
 
       {/* Resumo por Afiliado */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
@@ -486,12 +597,15 @@ const AffiliateFinancialReport: React.FC = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Total
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Detalhes
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {data.affiliates.length === 0 ? (
                 <tr>
-                  <td className="px-6 py-8 text-center text-sm text-gray-500" colSpan={6}>
+                  <td className="px-6 py-8 text-center text-sm text-gray-500" colSpan={7}>
                     Nenhum afiliado encontrado.
                   </td>
                 </tr>
@@ -535,6 +649,18 @@ const AffiliateFinancialReport: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
                         R$ {summary.total_amount.toFixed(2)}
                       </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedAffiliateId(affiliate.id);
+                          clearBatchSelection();
+                        }}
+                        className="text-blue-600 hover:text-blue-700"
+                      >
+                        Ver comissões
+                      </button>
+                    </td>
                     </tr>
                   );
                 })
@@ -551,7 +677,14 @@ const AffiliateFinancialReport: React.FC = () => {
             <h2 className="text-lg font-semibold text-gray-900">
               Histórico de Comissões ({filteredCommissions.length})
             </h2>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={affiliateSearchTerm}
+                onChange={(e) => setAffiliateSearchTerm(e.target.value)}
+                placeholder="Filtrar por afiliado"
+                className="px-3 py-2 border rounded-lg text-sm"
+              />
               <button
                 onClick={() => setFilterStatus("all")}
                 className={`px-3 py-1 text-sm rounded-lg ${
@@ -619,14 +752,14 @@ const AffiliateFinancialReport: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredCommissions.length === 0 ? (
+              {filteredCommissionsBySearch.length === 0 ? (
                 <tr>
                   <td className="px-6 py-8 text-center text-sm text-gray-500" colSpan={9}>
                     Nenhuma comissão encontrada.
                   </td>
                 </tr>
               ) : (
-                filteredCommissions.map((commission) => (
+                filteredCommissionsBySearch.map((commission) => (
                   <tr key={commission.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {new Date(commission.created_at).toLocaleDateString("pt-BR")}
@@ -689,89 +822,6 @@ const AffiliateFinancialReport: React.FC = () => {
         </div>
       </div>
 
-      {showPayModal && payingCommission && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
-            <h2 className="text-xl font-bold mb-4">Registrar Pagamento</h2>
-            <div className="mb-4 text-sm text-gray-600">
-              Comissão de{" "}
-              <span className="font-semibold">{payingCommission.client_name}</span> - R${" "}
-              {Number.parseFloat(payingCommission.amount).toFixed(2)}
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Chave Pix do Afiliado
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={payingCommission.affiliate_pix_key || ""}
-                  readOnly
-                  className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50"
-                  placeholder="Chave Pix não cadastrada"
-                />
-                <button
-                  type="button"
-                  onClick={() => copyPixKey(payingCommission.affiliate_pix_key)}
-                  className="px-3 py-2 bg-gray-100 rounded-lg text-sm hover:bg-gray-200"
-                  disabled={!payingCommission.affiliate_pix_key}
-                >
-                  Copiar Pix
-                </button>
-              </div>
-              {!payingCommission.affiliate_pix_key && (
-                <p className="mt-1 text-xs text-gray-500">
-                  Cadastre a chave Pix do afiliado no cadastro.
-                </p>
-              )}
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Método de Pagamento
-              </label>
-              <div className="px-3 py-2 border rounded-lg bg-gray-50 text-sm text-gray-700">
-                Pix
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Comprovante (opcional)
-              </label>
-              <input
-                type="file"
-                accept="image/*,application/pdf"
-                onChange={(e) => setPaymentReceipt(e.target.files?.[0] || null)}
-                className="w-full text-sm"
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                Aceita imagem ou PDF
-              </p>
-            </div>
-
-            <div className="flex justify-end space-x-2">
-              <button
-                type="button"
-                onClick={closePayModal}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-                disabled={isPaying}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={markAsPaid}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                disabled={isPaying}
-              >
-                {isPaying ? "Salvando..." : "Confirmar Pagamento"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

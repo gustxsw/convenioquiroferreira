@@ -54,6 +54,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
   const [attendanceLocations, setAttendanceLocations] = useState<
     AttendanceLocation[]
   >([]);
+  const [isLoadingPatients, setIsLoadingPatients] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -76,6 +77,23 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
   const [showPrivatePatientDropdown, setShowPrivatePatientDropdown] =
     useState(false);
   const privatePatientDropdownRef = useRef<HTMLDivElement>(null);
+  const [showQuickPrivatePatientModal, setShowQuickPrivatePatientModal] =
+    useState(false);
+  const [isSavingQuickPatient, setIsSavingQuickPatient] = useState(false);
+  const [quickPatientForm, setQuickPatientForm] = useState({
+    name: "",
+    cpf: "",
+    email: "",
+    phone: "",
+    birth_date: "",
+    address: "",
+    address_number: "",
+    address_complement: "",
+    neighborhood: "",
+    city: "",
+    state: "",
+    zip_code: "",
+  });
   const [serviceId, setServiceId] = useState("");
   const [value, setValue] = useState("");
   const [locationId, setLocationId] = useState("");
@@ -151,12 +169,14 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
         setServices(servicesData);
       }
 
+      setIsLoadingPatients(true);
       const patientsResponse = await fetchWithAuth(`${apiUrl}/api/private-patients`);
 
       if (patientsResponse.ok) {
         const patientsData = await patientsResponse.json();
         setPrivatePatients(Array.isArray(patientsData) ? patientsData : []);
       }
+      setIsLoadingPatients(false);
 
       const locationsResponse = await fetchWithAuth(
         `${apiUrl}/api/attendance-locations`
@@ -176,6 +196,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
     } catch (error) {
       console.error("❌ [RECURRING-MODAL] Error fetching data:", error);
       setError("Não foi possível carregar os dados necessários");
+      setIsLoadingPatients(false);
     }
   };
 
@@ -203,6 +224,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
     setSuccess("");
     setShowConflictModal(false);
     setConflictData([]);
+    setShowQuickPrivatePatientModal(false);
   };
 
   const searchClientByCpf = async () => {
@@ -295,6 +317,60 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
     setPrivatePatientId(patient.id.toString());
     setPrivatePatientSearch("");
     setShowPrivatePatientDropdown(false);
+  };
+
+  const openQuickPrivatePatientModal = () => {
+    setQuickPatientForm({
+      name: privatePatientSearch.trim(),
+      cpf: "",
+      email: "",
+      phone: "",
+      birth_date: "",
+      address: "",
+      address_number: "",
+      address_complement: "",
+      neighborhood: "",
+      city: "",
+      state: "",
+      zip_code: "",
+    });
+    setShowQuickPrivatePatientModal(true);
+  };
+
+  const handleCreateQuickPrivatePatient = async () => {
+    if (!quickPatientForm.name.trim()) {
+      setError("Nome é obrigatório");
+      setTimeout(() => setError(""), 3000);
+      return;
+    }
+
+    try {
+      setIsSavingQuickPatient(true);
+      setError("");
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(`${apiUrl}/api/private-patients`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(quickPatientForm),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const patient = data.patient;
+        setPrivatePatients((prev) => [...prev, patient]);
+        setPrivatePatientId(patient.id.toString());
+        setPrivatePatientSearch(patient.name);
+        setShowPrivatePatientDropdown(false);
+        setShowQuickPrivatePatientModal(false);
+      } else {
+        const errorData = await response.json();
+        setError(errorData.message || "Erro ao cadastrar paciente");
+      }
+    } catch (err) {
+      setError("Erro ao cadastrar paciente");
+    } finally {
+      setIsSavingQuickPatient(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -562,11 +638,13 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                                 ? "Nenhum paciente particular cadastrado"
                                 : "Nenhum paciente encontrado com esse termo"}
                             </p>
-                            {privatePatients.length === 0 && (
-                              <p className="text-xs text-gray-400">
-                                Cadastre pacientes na página "Pacientes Particulares"
-                              </p>
-                            )}
+                            <button
+                              type="button"
+                              onClick={openQuickPrivatePatientModal}
+                              className="mt-2 px-3 py-2 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700"
+                            >
+                              Cadastrar Novo Paciente
+                            </button>
                           </div>
                         )}
                       </div>
@@ -1025,6 +1103,240 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
           </form>
         </div>
       </div>
+
+      {showQuickPrivatePatientModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[95vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Cadastrar Novo Paciente Particular
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowQuickPrivatePatientModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Nome *
+                  </label>
+                  <input
+                    type="text"
+                    value={quickPatientForm.name}
+                    onChange={(e) =>
+                      setQuickPatientForm((prev) => ({
+                        ...prev,
+                        name: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    CPF
+                  </label>
+                  <input
+                    type="text"
+                    value={formatCpf(quickPatientForm.cpf)}
+                    onChange={(e) =>
+                      setQuickPatientForm((prev) => ({
+                        ...prev,
+                        cpf: e.target.value.replace(/\D/g, ""),
+                      }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={quickPatientForm.email}
+                    onChange={(e) =>
+                      setQuickPatientForm((prev) => ({
+                        ...prev,
+                        email: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Telefone
+                  </label>
+                  <input
+                    type="text"
+                    value={quickPatientForm.phone}
+                    onChange={(e) =>
+                      setQuickPatientForm((prev) => ({
+                        ...prev,
+                        phone: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Data de Nascimento
+                  </label>
+                  <input
+                    type="date"
+                    value={quickPatientForm.birth_date}
+                    onChange={(e) =>
+                      setQuickPatientForm((prev) => ({
+                        ...prev,
+                        birth_date: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    CEP
+                  </label>
+                  <input
+                    type="text"
+                    value={quickPatientForm.zip_code}
+                    onChange={(e) =>
+                      setQuickPatientForm((prev) => ({
+                        ...prev,
+                        zip_code: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Endereço
+                  </label>
+                  <input
+                    type="text"
+                    value={quickPatientForm.address}
+                    onChange={(e) =>
+                      setQuickPatientForm((prev) => ({
+                        ...prev,
+                        address: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Número
+                  </label>
+                  <input
+                    type="text"
+                    value={quickPatientForm.address_number}
+                    onChange={(e) =>
+                      setQuickPatientForm((prev) => ({
+                        ...prev,
+                        address_number: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Complemento
+                  </label>
+                  <input
+                    type="text"
+                    value={quickPatientForm.address_complement}
+                    onChange={(e) =>
+                      setQuickPatientForm((prev) => ({
+                        ...prev,
+                        address_complement: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Bairro
+                  </label>
+                  <input
+                    type="text"
+                    value={quickPatientForm.neighborhood}
+                    onChange={(e) =>
+                      setQuickPatientForm((prev) => ({
+                        ...prev,
+                        neighborhood: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Cidade
+                  </label>
+                  <input
+                    type="text"
+                    value={quickPatientForm.city}
+                    onChange={(e) =>
+                      setQuickPatientForm((prev) => ({
+                        ...prev,
+                        city: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Estado
+                  </label>
+                  <input
+                    type="text"
+                    value={quickPatientForm.state}
+                    onChange={(e) =>
+                      setQuickPatientForm((prev) => ({
+                        ...prev,
+                        state: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickPrivatePatientModal(false)}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  disabled={isSavingQuickPatient}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateQuickPrivatePatient}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                  disabled={isSavingQuickPatient}
+                >
+                  {isSavingQuickPatient ? "Salvando..." : "Cadastrar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ScheduleConflictModal
         isOpen={showConflictModal}
