@@ -4503,16 +4503,49 @@ app.get(
   authorize(["professional"]),
   async (req, res) => {
     try {
-      const locationsResult = await pool.query(
+      const rawQuery = typeof req.query.q === "string" ? req.query.q.trim() : "";
+      const maxLimit = 200;
+      const parsedLimit =
+        typeof req.query.limit === "string" && !Number.isNaN(Number(req.query.limit))
+          ? Math.min(Number(req.query.limit), maxLimit)
+          : 50;
+
+      if (rawQuery) {
+        const cleanCpf = rawQuery.replace(/\D/g, "");
+        const params = [req.user.id, `%${rawQuery}%`];
+        let query = `
+          SELECT * FROM private_patients
+          WHERE professional_id = $1
+            AND (name ILIKE $2
+        `;
+
+        if (cleanCpf) {
+          params.push(`%${cleanCpf}%`);
+          query += ` OR cpf LIKE $3`;
+        }
+
+        params.push(parsedLimit);
+        query += `
+            )
+          ORDER BY name
+          LIMIT $${params.length}
+        `;
+
+        const patientsResult = await pool.query(query, params);
+        res.json(patientsResult.rows);
+        return;
+      }
+
+      const patientsResult = await pool.query(
         `
-      SELECT * FROM private_patients 
-      WHERE professional_id = $1 
-      ORDER BY name
-    `,
+          SELECT * FROM private_patients 
+          WHERE professional_id = $1 
+          ORDER BY name
+        `,
         [req.user.id]
       );
 
-      res.json(locationsResult.rows);
+      res.json(patientsResult.rows);
     } catch (error) {
       console.error("❌ Error fetching private patients:", error);
       res

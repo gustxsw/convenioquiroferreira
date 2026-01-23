@@ -84,6 +84,8 @@ const SchedulingPage: React.FC = () => {
   const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [privatePatients, setPrivatePatients] = useState<PrivatePatient[]>([]);
+  const [selectedPrivatePatient, setSelectedPrivatePatient] =
+    useState<PrivatePatient | null>(null);
   const [attendanceLocations, setAttendanceLocations] = useState<
     AttendanceLocation[]
   >([]);
@@ -295,16 +297,47 @@ const SchedulingPage: React.FC = () => {
     fetchData();
   }, [selectedDate]);
 
-  // Filter private patients based on search
-  const filteredPrivatePatients = privatePatientSearch.trim() === ""
-    ? privatePatients
-    : privatePatients.filter((patient) => {
-        const searchLower = privatePatientSearch.toLowerCase();
-        return (
-          patient.name.toLowerCase().includes(searchLower) ||
-          (patient.cpf && patient.cpf.includes(searchLower.replace(/\D/g, "")))
+  useEffect(() => {
+    if (formData.patient_type !== "private") {
+      return;
+    }
+
+    const searchTerm = privatePatientSearch.trim();
+
+    if (!searchTerm) {
+      setPrivatePatients([]);
+      setIsLoadingPatients(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsLoadingPatients(true);
+        const apiUrl = getApiUrl();
+        const response = await fetchWithAuth(
+          `${apiUrl}/api/private-patients?q=${encodeURIComponent(searchTerm)}&limit=50`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+            },
+          }
         );
-      });
+
+        if (response.ok) {
+          const patientsData = await response.json();
+          setPrivatePatients(Array.isArray(patientsData) ? patientsData : []);
+        } else {
+          setPrivatePatients([]);
+        }
+      } catch (err) {
+        setPrivatePatients([]);
+      } finally {
+        setIsLoadingPatients(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [privatePatientSearch, formData.patient_type]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -327,6 +360,7 @@ const SchedulingPage: React.FC = () => {
   }, [showPrivatePatientDropdown]);
 
   const handlePrivatePatientSelect = (patient: PrivatePatient) => {
+    setSelectedPrivatePatient(patient);
     setFormData((prev) => ({
       ...prev,
       private_patient_id: patient.id.toString(),
@@ -498,25 +532,8 @@ const SchedulingPage: React.FC = () => {
       }
 
       // Fetch private patients
-      setIsLoadingPatients(true);
-      try {
-        const patientsResponse = await fetchWithAuth(`${apiUrl}/api/private-patients`, {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
-
-        if (patientsResponse.ok) {
-          const patientsData = await patientsResponse.json();
-          setPrivatePatients(patientsData);
-        } else {
-          setPrivatePatients([]);
-        }
-      } catch (err) {
-        setPrivatePatients([]);
-      } finally {
-        setIsLoadingPatients(false);
-      }
+      setPrivatePatients([]);
+      setIsLoadingPatients(false);
 
       // Fetch attendance locations
       const locationsResponse = await fetchWithAuth(
@@ -677,7 +694,8 @@ const SchedulingPage: React.FC = () => {
       if (response.ok) {
         const data = await response.json();
         const patient = data.patient;
-        setPrivatePatients((prev) => [...prev, patient]);
+        setPrivatePatients((prev) => [patient, ...prev]);
+        setSelectedPrivatePatient(patient);
         setFormData((prev) => ({
           ...prev,
           private_patient_id: patient.id.toString(),
@@ -1887,6 +1905,7 @@ const SchedulingPage: React.FC = () => {
                         }));
                         setPrivatePatientSearch("");
                         setShowPrivatePatientDropdown(false);
+                        setSelectedPrivatePatient(null);
                         setClientSearchResult(null);
                         setDependents([]);
                         setSelectedDependentId(null);
@@ -1931,8 +1950,14 @@ const SchedulingPage: React.FC = () => {
                                   Carregando pacientes...
                                 </p>
                               </div>
-                            ) : filteredPrivatePatients.length > 0 ? (
-                              filteredPrivatePatients.map((patient) => (
+                            ) : privatePatientSearch.trim() === "" ? (
+                              <div className="p-4 text-center">
+                                <p className="text-xs sm:text-sm text-gray-500">
+                                  Digite para buscar pacientes
+                                </p>
+                              </div>
+                            ) : privatePatients.length > 0 ? (
+                              privatePatients.map((patient) => (
                                 <button
                                   key={patient.id}
                                   type="button"
@@ -1959,9 +1984,7 @@ const SchedulingPage: React.FC = () => {
                             ) : (
                               <div className="p-4 text-center">
                                 <p className="text-xs sm:text-sm text-gray-500 mb-2">
-                                  {privatePatients.length === 0
-                                    ? "Nenhum paciente particular cadastrado"
-                                    : "Nenhum paciente encontrado com esse termo"}
+                                  Nenhum paciente encontrado com esse termo
                                 </p>
                                 <button
                                   type="button"
@@ -1981,12 +2004,7 @@ const SchedulingPage: React.FC = () => {
                           <div className="flex items-center">
                             <User className="h-4 w-4 text-green-600 mr-2" />
                             <span className="text-xs sm:text-sm font-medium text-green-800">
-                              {
-                                privatePatients.find(
-                                  (p) =>
-                                    p.id.toString() === formData.private_patient_id
-                                )?.name
-                              }
+                              {selectedPrivatePatient?.name || privatePatientSearch}
                             </span>
                           </div>
                           <button
@@ -1997,6 +2015,7 @@ const SchedulingPage: React.FC = () => {
                                 private_patient_id: "",
                               }));
                               setPrivatePatientSearch("");
+                              setSelectedPrivatePatient(null);
                             }}
                             className="text-green-600 hover:text-green-800"
                           >

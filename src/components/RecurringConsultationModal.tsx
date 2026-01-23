@@ -51,6 +51,8 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
   // Data states
   const [services, setServices] = useState<Service[]>([]);
   const [privatePatients, setPrivatePatients] = useState<PrivatePatient[]>([]);
+  const [selectedPrivatePatient, setSelectedPrivatePatient] =
+    useState<PrivatePatient | null>(null);
   const [attendanceLocations, setAttendanceLocations] = useState<
     AttendanceLocation[]
   >([]);
@@ -119,17 +121,42 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
   );
   const [isSearching, setIsSearching] = useState(false);
 
-  // Adicione este useEffect para filtrar pacientes particulares
-  // Filter private patients based on search
-  const filteredPrivatePatients = privatePatientSearch.trim() === ""
-    ? privatePatients
-    : privatePatients.filter((patient) => {
-        const searchLower = privatePatientSearch.toLowerCase();
-        return (
-          patient.name.toLowerCase().includes(searchLower) ||
-          (patient.cpf && patient.cpf.includes(searchLower.replace(/\D/g, "")))
+  useEffect(() => {
+    if (!isOpen || patientType !== "private") {
+      return;
+    }
+
+    const searchTerm = privatePatientSearch.trim();
+
+    if (!searchTerm) {
+      setPrivatePatients([]);
+      setIsLoadingPatients(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsLoadingPatients(true);
+        const apiUrl = getApiUrl();
+        const response = await fetchWithAuth(
+          `${apiUrl}/api/private-patients?q=${encodeURIComponent(searchTerm)}&limit=50`
         );
-      });
+
+        if (response.ok) {
+          const patientsData = await response.json();
+          setPrivatePatients(Array.isArray(patientsData) ? patientsData : []);
+        } else {
+          setPrivatePatients([]);
+        }
+      } catch (err) {
+        setPrivatePatients([]);
+      } finally {
+        setIsLoadingPatients(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [privatePatientSearch, patientType, isOpen]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -169,13 +196,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
         setServices(servicesData);
       }
 
-      setIsLoadingPatients(true);
-      const patientsResponse = await fetchWithAuth(`${apiUrl}/api/private-patients`);
-
-      if (patientsResponse.ok) {
-        const patientsData = await patientsResponse.json();
-        setPrivatePatients(Array.isArray(patientsData) ? patientsData : []);
-      }
+      setPrivatePatients([]);
       setIsLoadingPatients(false);
 
       const locationsResponse = await fetchWithAuth(
@@ -206,6 +227,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
     setPrivatePatientId("");
     setPrivatePatientSearch("");
     setShowPrivatePatientDropdown(false);
+    setSelectedPrivatePatient(null);
     setServiceId("");
     setValue("");
     setStartDate(getCurrentDateString());
@@ -314,8 +336,9 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
   const handlePrivatePatientSelect = (patient: PrivatePatient) => {
     // Declare handlePrivatePatientSelect
+    setSelectedPrivatePatient(patient);
     setPrivatePatientId(patient.id.toString());
-    setPrivatePatientSearch("");
+    setPrivatePatientSearch(patient.name);
     setShowPrivatePatientDropdown(false);
   };
 
@@ -357,7 +380,8 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
       if (response.ok) {
         const data = await response.json();
         const patient = data.patient;
-        setPrivatePatients((prev) => [...prev, patient]);
+        setPrivatePatients((prev) => [patient, ...prev]);
+        setSelectedPrivatePatient(patient);
         setPrivatePatientId(patient.id.toString());
         setPrivatePatientSearch(patient.name);
         setShowPrivatePatientDropdown(false);
@@ -561,6 +585,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                     setPatientType(e.target.value as "convenio" | "private");
                     setClientCpf("");
                     setPrivatePatientId("");
+                    setSelectedPrivatePatient(null);
                     setPrivatePatientSearch("");
                     setShowPrivatePatientDropdown(false);
                     setClientSearchResult(null);
@@ -604,11 +629,17 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                           <div className="p-4 text-center">
                             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-red-600 mx-auto mb-2"></div>
                             <p className="text-sm text-gray-500">
-                              Carregando pacientes...
+                              Buscando pacientes...
                             </p>
                           </div>
-                        ) : filteredPrivatePatients.length > 0 ? (
-                          filteredPrivatePatients.map((patient) => (
+                        ) : privatePatientSearch.trim() === "" ? (
+                          <div className="p-4 text-center">
+                            <p className="text-sm text-gray-500">
+                              Digite para buscar pacientes
+                            </p>
+                          </div>
+                        ) : privatePatients.length > 0 ? (
+                          privatePatients.map((patient) => (
                             <button
                               key={patient.id}
                               type="button"
@@ -634,9 +665,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                         ) : (
                           <div className="p-4 text-center">
                             <p className="text-sm text-gray-500 mb-2">
-                              {privatePatients.length === 0
-                                ? "Nenhum paciente particular cadastrado"
-                                : "Nenhum paciente encontrado com esse termo"}
+                              Nenhum paciente encontrado com esse termo
                             </p>
                             <button
                               type="button"
@@ -656,11 +685,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                       <div className="flex items-center">
                         <User className="h-4 w-4 text-green-600 mr-2" />
                         <span className="text-sm font-medium text-green-800">
-                          {
-                            privatePatients.find(
-                              (p) => p.id.toString() === privatePatientId
-                            )?.name
-                          }
+                          {selectedPrivatePatient?.name || privatePatientSearch}
                         </span>
                       </div>
                       <button
@@ -668,6 +693,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                         onClick={() => {
                           setPrivatePatientId("");
                           setPrivatePatientSearch("");
+                          setSelectedPrivatePatient(null);
                         }}
                         className="text-green-600 hover:text-green-800"
                       >

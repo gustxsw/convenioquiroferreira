@@ -97,11 +97,11 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
   const [privatePatients, setPrivatePatients] = useState<PrivatePatient[]>([]);
 
   const [privatePatientSearch, setPrivatePatientSearch] = useState("");
-  const [filteredPrivatePatients, setFilteredPrivatePatients] = useState<
-    PrivatePatient[]
-  >([]);
   const [showPrivatePatientDropdown, setShowPrivatePatientDropdown] =
     useState(false);
+  const [isLoadingPatients, setIsLoadingPatients] = useState(false);
+  const [selectedPrivatePatient, setSelectedPrivatePatient] =
+    useState<PrivatePatient | null>(null);
   const [showQuickPrivatePatientModal, setShowQuickPrivatePatientModal] =
     useState(false);
   const [isSavingQuickPatient, setIsSavingQuickPatient] = useState(false);
@@ -164,13 +164,6 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
           }));
         }
       }
-
-      const patientsResponse = await fetchWithAuth(`${apiUrl}/api/private-patients`);
-
-      if (patientsResponse.ok) {
-        const patientsData = await patientsResponse.json();
-        setPrivatePatients(patientsData);
-      }
     } catch (error) {
       console.error("Error fetching data:", error);
       setError("Não foi possível carregar os dados necessários");
@@ -185,6 +178,8 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
     setSelectedDependentId(null);
     setPrivatePatientSearch("");
     setShowPrivatePatientDropdown(false);
+    setPrivatePatients([]);
+    setSelectedPrivatePatient(null);
     setFormData({
       service_id: "",
       value: "",
@@ -381,20 +376,44 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
   };
 
   useEffect(() => {
-    if (privatePatientSearch.trim() === "") {
-      setFilteredPrivatePatients(privatePatients);
-    } else {
-      const searchLower = privatePatientSearch.toLowerCase();
-      const filtered = privatePatients.filter(
-        (patient) =>
-          patient.name.toLowerCase().includes(searchLower) ||
-          (patient.cpf && patient.cpf.includes(searchLower.replace(/\D/g, "")))
-      );
-      setFilteredPrivatePatients(filtered);
+    if (!isOpen || patientType !== "private") {
+      return;
     }
-  }, [privatePatientSearch, privatePatients]);
+
+    const searchTerm = privatePatientSearch.trim();
+
+    if (!searchTerm) {
+      setPrivatePatients([]);
+      setIsLoadingPatients(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsLoadingPatients(true);
+        const apiUrl = getApiUrl();
+        const response = await fetchWithAuth(
+          `${apiUrl}/api/private-patients?q=${encodeURIComponent(searchTerm)}&limit=50`
+        );
+
+        if (response.ok) {
+          const patientsData = await response.json();
+          setPrivatePatients(Array.isArray(patientsData) ? patientsData : []);
+        } else {
+          setPrivatePatients([]);
+        }
+      } catch (err) {
+        setPrivatePatients([]);
+      } finally {
+        setIsLoadingPatients(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [privatePatientSearch, patientType, isOpen]);
 
   const handlePrivatePatientSelect = (patient: PrivatePatient) => {
+    setSelectedPrivatePatient(patient);
     setFormData((prev) => ({
       ...prev,
       private_patient_id: patient.id.toString(),
@@ -441,7 +460,8 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
       if (response.ok) {
         const data = await response.json();
         const patient = data.patient;
-        setPrivatePatients((prev) => [...prev, patient]);
+        setPrivatePatients((prev) => [patient, ...prev]);
+        setSelectedPrivatePatient(patient);
         setFormData((prev) => ({
           ...prev,
           private_patient_id: patient.id.toString(),
@@ -628,10 +648,23 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
                       />
                     </div>
 
-                    {showPrivatePatientDropdown &&
-                      filteredPrivatePatients.length > 0 && (
-                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                          {filteredPrivatePatients.map((patient) => (
+                    {showPrivatePatientDropdown && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {isLoadingPatients ? (
+                          <div className="p-4 text-center">
+                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-red-600 mx-auto mb-2"></div>
+                            <p className="text-xs text-gray-500">
+                              Buscando pacientes...
+                            </p>
+                          </div>
+                        ) : privatePatientSearch.trim() === "" ? (
+                          <div className="p-4 text-center">
+                            <p className="text-xs text-gray-500">
+                              Digite para buscar pacientes
+                            </p>
+                          </div>
+                        ) : privatePatients.length > 0 ? (
+                          privatePatients.map((patient) => (
                             <button
                               key={patient.id}
                               type="button"
@@ -654,28 +687,25 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
                                   : "CPF não informado"}
                               </div>
                             </button>
-                          ))}
-                        </div>
-                      )}
-
-                    {showPrivatePatientDropdown &&
-                      privatePatientSearch.trim() !== "" &&
-                      filteredPrivatePatients.length === 0 && (
-                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-4">
-                          <p className="text-sm text-gray-500 text-center">
-                            Nenhum paciente encontrado
-                          </p>
-                          <div className="mt-3 flex justify-center">
-                            <button
-                              type="button"
-                              onClick={openQuickPrivatePatientModal}
-                              className="px-3 py-2 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700"
-                            >
-                              Cadastrar Novo Paciente
-                            </button>
+                          ))
+                        ) : (
+                          <div className="p-4 text-center">
+                            <p className="text-sm text-gray-500">
+                              Nenhum paciente encontrado
+                            </p>
+                            <div className="mt-3 flex justify-center">
+                              <button
+                                type="button"
+                                onClick={openQuickPrivatePatientModal}
+                                className="px-3 py-2 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700"
+                              >
+                                Cadastrar Novo Paciente
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {formData.private_patient_id && (
@@ -683,12 +713,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
                       <div className="flex items-center">
                         <User className="h-4 w-4 text-green-600 mr-2" />
                         <span className="text-sm font-medium text-green-800">
-                          {
-                            privatePatients.find(
-                              (p) =>
-                                p.id.toString() === formData.private_patient_id
-                            )?.name
-                          }
+                          {selectedPrivatePatient?.name || privatePatientSearch}
                         </span>
                       </div>
                       <button
@@ -699,6 +724,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
                             private_patient_id: "",
                           }));
                           setPrivatePatientSearch("");
+                          setSelectedPrivatePatient(null);
                         }}
                         className="text-green-600 hover:text-green-800"
                       >
