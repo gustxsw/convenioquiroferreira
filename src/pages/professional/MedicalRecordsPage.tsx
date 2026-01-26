@@ -121,16 +121,18 @@ const MedicalRecordsPage: React.FC = () => {
     let filtered = records;
 
     if (searchTerm) {
-      filtered = filtered.filter(
-        (record) =>
-          record.patient_name
-            .toLowerCase()
-            .includes(searchTerm.toLowerCase()) ||
-          record.chief_complaint
-            .toLowerCase()
-            .includes(searchTerm.toLowerCase()) ||
-          record.diagnosis.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      const normalizedSearch = searchTerm.toLowerCase();
+      filtered = filtered.filter((record) => {
+        const patientName = (record.patient_name || "").toLowerCase();
+        const chiefComplaint = (record.chief_complaint || "").toLowerCase();
+        const diagnosis = (record.diagnosis || "").toLowerCase();
+
+        return (
+          patientName.includes(normalizedSearch) ||
+          chiefComplaint.includes(normalizedSearch) ||
+          diagnosis.includes(normalizedSearch)
+        );
+      });
     }
 
     if (selectedPatient) {
