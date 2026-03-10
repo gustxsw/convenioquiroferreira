@@ -17,6 +17,7 @@ type Dependent = {
   id: number;
   name: string;
   cpf: string;
+  phone?: string | null;
   birth_date: string;
   created_at: string;
   subscription_status: string;
@@ -47,6 +48,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
   // Form state
   const [name, setName] = useState("");
   const [cpf, setCpf] = useState("");
+  const [phone, setPhone] = useState("");
   const [birthDate, setBirthDate] = useState("");
 
   // Delete confirmation state
@@ -61,11 +63,11 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
   );
   const [paymentError, setPaymentError] = useState("");
 
-  // Coupon state per dependent
-  const [couponCodes, setCouponCodes] = useState<{ [key: number]: string }>({});
-  const [appliedCoupons, setAppliedCoupons] = useState<{ [key: number]: any }>({});
-  const [couponErrors, setCouponErrors] = useState<{ [key: number]: string }>({});
-  const [isValidatingCoupon, setIsValidatingCoupon] = useState<number | null>(null);
+  // Coupon state (applied to all dependents)
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
+  const [couponError, setCouponError] = useState("");
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
 
   useEffect(() => {
     fetchDependents();
@@ -116,6 +118,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
     setModalMode("create");
     setName("");
     setCpf("");
+    setPhone("");
     setBirthDate("");
     setSelectedDependent(null);
     setIsModalOpen(true);
@@ -125,6 +128,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
     setModalMode("edit");
     setName(dependent.name);
     setCpf(dependent.cpf);
+    setPhone(dependent.phone || "");
     setBirthDate(dependent.birth_date);
     setSelectedDependent(dependent);
     setIsModalOpen(true);
@@ -161,6 +165,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
             client_id: clientId,
             name,
             cpf: cpf.replace(/\D/g, ""),
+            phone,
             birth_date: birthDate,
           }),
         });
@@ -189,6 +194,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
             },
             body: JSON.stringify({
               name,
+              phone,
               birth_date: birthDate,
             }),
           }
@@ -218,17 +224,15 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
     }
   };
 
-  const handleApplyCoupon = async (dependentId: number) => {
-    const couponCode = couponCodes[dependentId];
-
-    if (!couponCode?.trim()) {
-      setCouponErrors({ ...couponErrors, [dependentId]: "Digite um código de cupom" });
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) {
+      setCouponError("Digite um código de cupom");
       return;
     }
 
     try {
-      setIsValidatingCoupon(dependentId);
-      setCouponErrors({ ...couponErrors, [dependentId]: "" });
+      setIsValidatingCoupon(true);
+      setCouponError("");
 
       const apiUrl = getApiUrl();
 
@@ -245,18 +249,18 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
       const data = await response.json();
 
       if (data.valid && data.coupon) {
-        setAppliedCoupons({ ...appliedCoupons, [dependentId]: data.coupon });
-        setCouponErrors({ ...couponErrors, [dependentId]: "" });
+        setAppliedCoupon(data.coupon);
+        setCouponError("");
       } else {
-        setCouponErrors({ ...couponErrors, [dependentId]: data.message || "Cupom inválido" });
-        setAppliedCoupons({ ...appliedCoupons, [dependentId]: null });
+        setCouponError(data.message || "Cupom inválido");
+        setAppliedCoupon(null);
       }
     } catch (error) {
       console.error("Error validating coupon:", error);
-      setCouponErrors({ ...couponErrors, [dependentId]: "Cupom inválido" });
-      setAppliedCoupons({ ...appliedCoupons, [dependentId]: null });
+      setCouponError("Cupom inválido");
+      setAppliedCoupon(null);
     } finally {
-      setIsValidatingCoupon(null);
+      setIsValidatingCoupon(false);
     }
   };
 
@@ -266,8 +270,6 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
       setPaymentError("");
 
       const apiUrl = getApiUrl();
-
-      const appliedCoupon = appliedCoupons[dependentId];
 
       const response = await fetchWithAuth(
         `${apiUrl}/api/dependents/${dependentId}/create-payment`,
@@ -289,7 +291,16 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
 
       const data = await response.json();
 
-      window.open(data.init_point, "_blank");
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      if (isIOS) {
+        window.location.href = data.init_point;
+        return;
+      }
+
+      const newWindow = window.open(data.init_point, "_blank");
+      if (!newWindow) {
+        window.location.href = data.init_point;
+      }
     } catch (error) {
       console.error("Error creating dependent payment:", error);
       setPaymentError(
@@ -406,6 +417,10 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
     }
   };
 
+  const baseAmount = 100;
+  const appliedDiscount = appliedCoupon ? appliedCoupon.discount_value : 0;
+  const totalAmount = Math.max(baseAmount - appliedDiscount, 0);
+
   return (
     <div className="card mb-6">
       <div className="flex justify-between items-center mb-4">
@@ -458,7 +473,54 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
           </p>
         </div>
       ) : (
-        <div className="table-container">
+        <>
+          <div className="mb-4 bg-gray-50 rounded-lg border border-gray-200 p-4">
+            <h4 className="font-medium mb-2 flex items-center">
+              <Tag className="h-4 w-4 mr-2 text-red-600" />
+              Cupom de Desconto (aplica para todos os dependentes)
+            </h4>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={couponCode}
+                onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                placeholder="Digite o código do cupom"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+                disabled={appliedCoupon !== null || isValidatingCoupon}
+              />
+              <button
+                onClick={handleApplyCoupon}
+                disabled={
+                  appliedCoupon !== null || isValidatingCoupon || !couponCode.trim()
+                }
+                className={`px-4 py-2 rounded-lg font-medium transition-colors text-sm ${
+                  appliedCoupon !== null
+                    ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                    : "bg-red-600 text-white hover:bg-red-700"
+                }`}
+              >
+                {isValidatingCoupon
+                  ? "Validando..."
+                  : appliedCoupon
+                  ? "Aplicado"
+                  : "Aplicar"}
+              </button>
+            </div>
+            {couponError && (
+              <div className="mt-2 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-1" />
+                {couponError}
+              </div>
+            )}
+            {appliedCoupon && (
+              <div className="mt-2 bg-green-50 text-green-700 p-2 rounded-lg flex items-center text-sm border border-green-200">
+                <CheckCircle className="h-4 w-4 mr-2" />
+                Cupom {appliedCoupon.code} aplicado! Desconto de R${" "}
+                {appliedCoupon.discount_value.toFixed(2)} em cada dependente.
+              </div>
+            )}
+          </div>
+          <div className="table-container">
           <table className="table">
             <thead>
               <tr>
@@ -496,7 +558,22 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
                             </div>
                           )}
                       </td>
-                      <td>{formatCurrency(100)}</td>
+                      <td>
+                        <div className="flex flex-col">
+                          <span
+                            className={`${
+                              appliedCoupon ? "line-through text-gray-400 text-sm" : ""
+                            }`}
+                          >
+                            {formatCurrency(baseAmount)}
+                          </span>
+                          {appliedCoupon && (
+                            <span className="text-sm font-semibold text-green-600">
+                              {formatCurrency(totalAmount)}
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td>{formatDate(dependent.birth_date)}</td>
                       <td>{formatDate(dependent.created_at)}</td>
                       <td>
@@ -536,102 +613,13 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
                         </div>
                       </td>
                     </tr>
-                    {statusInfo.showPayButton && (
-                      <tr>
-                        <td colSpan={7} className="bg-gray-50 p-4 border-t">
-                          <div className="max-w-2xl">
-                            <div className="mb-3">
-                              <h4 className="font-medium mb-2 flex items-center">
-                                <Tag className="h-4 w-4 mr-2 text-red-600" />
-                                Cupom de Desconto
-                              </h4>
-                              <div className="flex gap-2">
-                                <input
-                                  type="text"
-                                  value={couponCodes[dependent.id] || ""}
-                                  onChange={(e) =>
-                                    setCouponCodes({
-                                      ...couponCodes,
-                                      [dependent.id]: e.target.value.toUpperCase(),
-                                    })
-                                  }
-                                  placeholder="Digite o código do cupom"
-                                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
-                                  disabled={appliedCoupons[dependent.id] !== undefined}
-                                />
-                                <button
-                                  onClick={() => handleApplyCoupon(dependent.id)}
-                                  disabled={
-                                    appliedCoupons[dependent.id] !== undefined ||
-                                    isValidatingCoupon === dependent.id ||
-                                    !couponCodes[dependent.id]?.trim()
-                                  }
-                                  className={`px-4 py-2 rounded-lg font-medium transition-colors text-sm ${
-                                    appliedCoupons[dependent.id]
-                                      ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                                      : "bg-red-600 text-white hover:bg-red-700"
-                                  }`}
-                                >
-                                  {isValidatingCoupon === dependent.id
-                                    ? "Validando..."
-                                    : appliedCoupons[dependent.id]
-                                    ? "Aplicado"
-                                    : "Aplicar"}
-                                </button>
-                              </div>
-                              {couponErrors[dependent.id] && (
-                                <div className="mt-2 text-sm text-red-600 flex items-center">
-                                  <AlertCircle className="h-4 w-4 mr-1" />
-                                  {couponErrors[dependent.id]}
-                                </div>
-                              )}
-                              {appliedCoupons[dependent.id] && (
-                                <div className="mt-2 bg-green-50 text-green-700 p-2 rounded-lg flex items-center text-sm border border-green-200">
-                                  <CheckCircle className="h-4 w-4 mr-2" />
-                                  Cupom {appliedCoupons[dependent.id].code} aplicado! Desconto de R${" "}
-                                  {appliedCoupons[dependent.id].discount_value.toFixed(2)}
-                                </div>
-                              )}
-                            </div>
-                            <div className="bg-white p-3 rounded-lg border border-gray-200">
-                              <div className="flex justify-between items-center mb-2">
-                                <span className="text-sm text-gray-600">Valor original:</span>
-                                <span
-                                  className={`text-sm ${
-                                    appliedCoupons[dependent.id] ? "line-through text-gray-400" : "font-medium"
-                                  }`}
-                                >
-                                  R$ 100,00
-                                </span>
-                              </div>
-                              {appliedCoupons[dependent.id] && (
-                                <>
-                                  <div className="flex justify-between items-center mb-2 text-green-600">
-                                    <span className="text-sm">Desconto:</span>
-                                    <span className="text-sm font-medium">
-                                      - R$ {appliedCoupons[dependent.id].discount_value.toFixed(2)}
-                                    </span>
-                                  </div>
-                                  <div className="flex justify-between items-center pt-2 border-t">
-                                    <span className="font-medium text-green-600">Total:</span>
-                                    <span className="font-bold text-lg text-green-600">
-                                      R${" "}
-                                      {(100 - appliedCoupons[dependent.id].discount_value).toFixed(2)}
-                                    </span>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
                   </React.Fragment>
                 );
               })}
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {/* Summary */}
@@ -672,7 +660,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
               <div className="text-lg font-bold text-blue-600">
                 {formatCurrency(
                   dependents.filter((d) => d.subscription_status === "pending")
-                    .length * 100
+                    .length * totalAmount
                 )}
               </div>
               <div className="text-blue-700">Total Pendente</div>
@@ -748,6 +736,23 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
                   />
                 </div>
               )}
+
+              <div className="mb-4">
+                <label
+                  htmlFor="phone"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
+                  Telefone
+                </label>
+                <input
+                  id="phone"
+                  type="text"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="(00) 00000-0000"
+                  className="input"
+                />
+              </div>
 
               <div className="mb-6">
                 <label

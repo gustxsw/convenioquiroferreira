@@ -26,6 +26,7 @@ const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [documentContent, setDocumentContent] = useState("");
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
   useEffect(() => {
     if (isOpen && documentUrl) {
@@ -69,10 +70,18 @@ const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
   };
 
   const openInNewTab = () => {
+    if (isMobile) {
+      window.location.href = documentUrl;
+      return;
+    }
     window.open(documentUrl, "_blank", "noopener,noreferrer");
   };
 
   const downloadDocument = () => {
+    if (isMobile) {
+      window.location.href = documentUrl;
+      return;
+    }
     const link = document.createElement("a");
     link.href = documentUrl;
     link.download = documentTitle;

@@ -10,6 +10,12 @@ interface Affiliate {
   status: string;
   commission_amount: string;
   pix_key?: string | null;
+  leader_affiliate_id?: number | null;
+  leader_name?: string | null;
+  leadership_enabled?: boolean;
+  leader_limit?: number | null;
+  override_amount?: string | null;
+  downline_count?: number | null;
   clients_count: number;
   pending_total: string;
   paid_total: string;
@@ -49,12 +55,20 @@ const ManageAffiliatesPage: React.FC = () => {
   const [showCommissionsModal, setShowCommissionsModal] = useState(false);
   const [showEditCommissionModal, setShowEditCommissionModal] = useState(false);
   const [showEditPixModal, setShowEditPixModal] = useState(false);
+  const [showLeadershipModal, setShowLeadershipModal] = useState(false);
   const [showPayModal, setShowPayModal] = useState(false);
   const [editingAffiliate, setEditingAffiliate] = useState<Affiliate | null>(null);
   const [editingPixAffiliate, setEditingPixAffiliate] = useState<Affiliate | null>(null);
+  const [editingLeadershipAffiliate, setEditingLeadershipAffiliate] =
+    useState<Affiliate | null>(null);
   const [payingCommission, setPayingCommission] = useState<Commission | null>(null);
   const [newCommissionAmount, setNewCommissionAmount] = useState("");
   const [newPixKey, setNewPixKey] = useState("");
+  const [leadershipForm, setLeadershipForm] = useState({
+    leadership_enabled: false,
+    leader_limit: "",
+    override_amount: "",
+  });
   const [paymentMethod, setPaymentMethod] = useState("");
   const [paymentReceipt, setPaymentReceipt] = useState<File | null>(null);
   const [isPaying, setIsPaying] = useState(false);
@@ -302,6 +316,81 @@ const ManageAffiliatesPage: React.FC = () => {
     }
   };
 
+  const openLeadershipModal = (affiliate: Affiliate) => {
+    setEditingLeadershipAffiliate(affiliate);
+    setLeadershipForm({
+      leadership_enabled: Boolean(affiliate.leadership_enabled),
+      leader_limit: affiliate.leader_limit ? String(affiliate.leader_limit) : "",
+      override_amount: affiliate.override_amount || "",
+    });
+    setShowLeadershipModal(true);
+  };
+
+  const handleUpdateLeadership = async () => {
+    if (!editingLeadershipAffiliate) return;
+
+    try {
+      setError("");
+      setSuccess("");
+
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/admin/affiliates/${editingLeadershipAffiliate.id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            leadership_enabled: leadershipForm.leadership_enabled,
+            leader_limit: leadershipForm.leadership_enabled
+              ? leadershipForm.leader_limit
+              : undefined,
+            override_amount: leadershipForm.leadership_enabled
+              ? leadershipForm.override_amount
+              : 0,
+          }),
+        }
+      );
+
+      if (response.ok) {
+        setSuccess("Liderança atualizada com sucesso!");
+        setShowLeadershipModal(false);
+        setEditingLeadershipAffiliate(null);
+        loadAffiliates();
+      } else {
+        const data = await response.json();
+        setError(data.error || "Erro ao atualizar liderança");
+      }
+    } catch (err) {
+      setError("Erro ao atualizar liderança");
+    }
+  };
+
+  const unlinkLeader = async (affiliate: Affiliate) => {
+    try {
+      setError("");
+      setSuccess("");
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/admin/affiliates/${affiliate.id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ leader_affiliate_id: null }),
+        }
+      );
+
+      if (response.ok) {
+        setSuccess("Vínculo com líder removido!");
+        loadAffiliates();
+      } else {
+        const data = await response.json();
+        setError(data.error || "Erro ao desvincular líder");
+      }
+    } catch (err) {
+      setError("Erro ao desvincular líder");
+    }
+  };
+
   const viewCommissions = async (affiliate: Affiliate) => {
     try {
       setSelectedAffiliate(affiliate);
@@ -466,6 +555,17 @@ const ManageAffiliatesPage: React.FC = () => {
                 >
                   {affiliate.status === "active" ? "Ativo" : "Inativo"}
                 </span>
+                <div className="mt-2 text-xs text-gray-600">
+                  {affiliate.leadership_enabled ? (
+                    <span className="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">
+                      Líder ({affiliate.downline_count || 0})
+                    </span>
+                  ) : affiliate.leader_name ? (
+                    <span>Líder: {affiliate.leader_name}</span>
+                  ) : (
+                    <span>Sem líder</span>
+                  )}
+                </div>
               </div>
               <button
                 onClick={() => copyAffiliateLink(affiliate.id, affiliate.code)}
@@ -514,23 +614,40 @@ const ManageAffiliatesPage: React.FC = () => {
                 Ver Comissões
               </button>
               <button
+                onClick={() => openLeadershipModal(affiliate)}
+                className="flex-1 px-3 py-2 text-sm text-purple-600 border border-purple-600 rounded-lg hover:bg-purple-50"
+              >
+                Liderança
+              </button>
+              <button
                 onClick={() => toggleStatus(affiliate.id, affiliate.status)}
                 className="flex-1 px-3 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 {affiliate.status === "active" ? "Desativar" : "Ativar"}
               </button>
             </div>
+            {affiliate.leader_affiliate_id && (
+              <button
+                onClick={() => unlinkLeader(affiliate)}
+                className="mt-2 w-full px-3 py-2 text-sm text-yellow-700 border border-yellow-600 rounded-lg hover:bg-yellow-50"
+              >
+                Desvincular líder
+              </button>
+            )}
           </div>
         ))}
       </div>
 
       {/* Desktop View - Table */}
-      <div className="hidden lg:block bg-white rounded-lg shadow overflow-hidden">
+      <div className="hidden lg:block bg-white rounded-lg shadow overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                 Nome
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Líder
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                 Link
@@ -560,6 +677,19 @@ const ManageAffiliatesPage: React.FC = () => {
               <tr key={affiliate.id}>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {affiliate.name}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {affiliate.leadership_enabled ? (
+                    <span className="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">
+                      Líder ({affiliate.downline_count || 0})
+                    </span>
+                  ) : affiliate.leader_name ? (
+                    <span className="text-xs text-gray-700">
+                      {affiliate.leader_name}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-400">Sem líder</span>
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
                   <button
@@ -628,6 +758,20 @@ const ManageAffiliatesPage: React.FC = () => {
                   >
                     Ver Comissões
                   </button>
+                  <button
+                    onClick={() => openLeadershipModal(affiliate)}
+                    className="text-purple-600 hover:text-purple-700"
+                  >
+                    Liderança
+                  </button>
+                  {affiliate.leader_affiliate_id && (
+                    <button
+                      onClick={() => unlinkLeader(affiliate)}
+                      className="text-yellow-600 hover:text-yellow-700"
+                    >
+                      Desvincular
+                    </button>
+                  )}
                   <button
                     onClick={() => toggleStatus(affiliate.id, affiliate.status)}
                     className="text-gray-600 hover:text-gray-700"
@@ -1085,6 +1229,99 @@ const ManageAffiliatesPage: React.FC = () => {
                 type="button"
                 onClick={handleUpdateCommission}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Atualizar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLeadershipModal && editingLeadershipAffiliate && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h2 className="text-xl font-bold mb-4">Permissão de Liderança</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Afiliado:{" "}
+              <span className="font-semibold">
+                {editingLeadershipAffiliate.name}
+              </span>
+            </p>
+
+            <div className="mb-4">
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={leadershipForm.leadership_enabled}
+                  onChange={(e) =>
+                    setLeadershipForm((prev) => ({
+                      ...prev,
+                      leadership_enabled: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 text-purple-600 border-gray-300 rounded"
+                />
+                Conceder liderança
+              </label>
+            </div>
+
+            {leadershipForm.leadership_enabled && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Limite de vendedores
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={leadershipForm.leader_limit}
+                    onChange={(e) =>
+                      setLeadershipForm((prev) => ({
+                        ...prev,
+                        leader_limit: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                    placeholder="Ex: 10"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Override fixo (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={leadershipForm.override_amount}
+                    onChange={(e) =>
+                      setLeadershipForm((prev) => ({
+                        ...prev,
+                        override_amount: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-2 mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLeadershipModal(false);
+                  setEditingLeadershipAffiliate(null);
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleUpdateLeadership}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
               >
                 Atualizar
               </button>

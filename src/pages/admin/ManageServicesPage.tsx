@@ -12,6 +12,7 @@ import {
   FolderPlus,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
+import { useAuth } from "../../contexts/AuthContext";
 
 type Service = {
   id: number;
@@ -30,6 +31,8 @@ type Category = {
 };
 
 const ManageServicesPage: React.FC = () => {
+  const { user } = useAuth();
+  const isProfessional = user?.currentRole === "professional";
   const [services, setServices] = useState<Service[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -351,21 +354,25 @@ const ManageServicesPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
-            Gerenciar Serviços
+            {isProfessional ? "Meus Serviços" : "Gerenciar Serviços"}
           </h1>
           <p className="text-sm sm:text-base text-gray-600">
-            Adicione, edite ou remova serviços do sistema
+            {isProfessional
+              ? "Cadastre seus serviços e valores"
+              : "Adicione, edite ou remova serviços do sistema"}
           </p>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2">
-          <button
-            onClick={() => setIsCategoryModalOpen(true)}
-            className="btn btn-outline flex items-center justify-center text-sm sm:text-base"
-          >
-            <FolderPlus className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-            Nova Categoria
-          </button>
+          {!isProfessional && (
+            <button
+              onClick={() => setIsCategoryModalOpen(true)}
+              className="btn btn-outline flex items-center justify-center text-sm sm:text-base"
+            >
+              <FolderPlus className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+              Nova Categoria
+            </button>
+          )}
 
           <button
             onClick={openCreateModal}
@@ -424,9 +431,11 @@ const ManageServicesPage: React.FC = () => {
                       <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
                         Preço Base
                       </th>
-                      <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
-                        Tipo
-                      </th>
+                      {!isProfessional && (
+                        <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
+                          Tipo
+                        </th>
+                      )}
                       <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
                         Ações
                       </th>
@@ -445,19 +454,21 @@ const ManageServicesPage: React.FC = () => {
                               <div className="md:hidden text-xs text-gray-500 mt-1">
                                 {service.category_name || "Sem categoria"}
                               </div>
-                              <div className="sm:hidden mt-1">
-                                <span
-                                  className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                    service.is_base_service
-                                      ? "bg-blue-100 text-blue-800"
-                                      : "bg-gray-100 text-gray-800"
-                                  }`}
-                                >
-                                  {service.is_base_service
-                                    ? "Base"
-                                    : "Específico"}
-                                </span>
-                              </div>
+                              {!isProfessional && (
+                                <div className="sm:hidden mt-1">
+                                  <span
+                                    className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                      service.is_base_service
+                                        ? "bg-blue-100 text-blue-800"
+                                        : "bg-gray-100 text-gray-800"
+                                    }`}
+                                  >
+                                    {service.is_base_service
+                                      ? "Base"
+                                      : "Específico"}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -470,17 +481,19 @@ const ManageServicesPage: React.FC = () => {
                         <td className="px-3 sm:px-6 py-4 text-xs sm:text-sm font-medium">
                           {formatCurrency(service.base_price)}
                         </td>
-                        <td className="hidden sm:table-cell px-6 py-4">
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              service.is_base_service
-                                ? "bg-blue-100 text-blue-800"
-                                : "bg-gray-100 text-gray-800"
-                            }`}
-                          >
-                            {service.is_base_service ? "Base" : "Específico"}
-                          </span>
-                        </td>
+                        {!isProfessional && (
+                          <td className="hidden sm:table-cell px-6 py-4">
+                            <span
+                              className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                service.is_base_service
+                                  ? "bg-blue-100 text-blue-800"
+                                  : "bg-gray-100 text-gray-800"
+                              }`}
+                            >
+                              {service.is_base_service ? "Base" : "Específico"}
+                            </span>
+                          </td>
+                        )}
                         <td className="px-3 sm:px-6 py-4">
                           <div className="flex gap-2">
                             <button
@@ -614,19 +627,21 @@ const ManageServicesPage: React.FC = () => {
                 />
               </div>
 
-              <div className="mb-6">
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={isBaseService}
-                    onChange={(e) => setIsBaseService(e.target.checked)}
-                    className="rounded border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50"
-                  />
-                  <span className="ml-2 text-sm text-gray-600">
-                    Este é um serviço base da categoria
-                  </span>
-                </label>
-              </div>
+              {!isProfessional && (
+                <div className="mb-6">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={isBaseService}
+                      onChange={(e) => setIsBaseService(e.target.checked)}
+                      className="rounded border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50"
+                    />
+                    <span className="ml-2 text-sm text-gray-600">
+                      Este é um serviço base da categoria
+                    </span>
+                  </label>
+                </div>
+              )}
 
               <div className="flex flex-col sm:flex-row justify-end gap-3">
                 <button

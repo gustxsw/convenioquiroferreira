@@ -55,6 +55,7 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
   // Fetch professional signature
   useEffect(() => {
@@ -375,6 +376,14 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
       // Gerar HTML otimizado
       const htmlContent = generateHTML();
 
+      if (isMobile) {
+        const blob = new Blob([htmlContent], { type: "text/html;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        window.location.href = url;
+        setSuccess("Documento aberto no navegador. Use Compartilhar/Imprimir.");
+        return;
+      }
+
       // Criar nova janela para impressão
       const printWindow = window.open("", "_blank", "width=800,height=600");
 
@@ -415,6 +424,11 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
       const htmlContent = generateHTML();
       const blob = new Blob([htmlContent], { type: "text/html;charset=utf-8" });
       const url = URL.createObjectURL(blob);
+      if (isMobile) {
+        window.location.href = url;
+        setSuccess("Documento aberto no navegador.");
+        return;
+      }
       const link = document.createElement("a");
       link.href = url;
       link.download = `Prontuario_${recordData.patient_name

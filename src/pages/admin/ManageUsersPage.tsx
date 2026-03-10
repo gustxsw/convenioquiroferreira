@@ -59,6 +59,8 @@ const ManageUsersPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [viewingUser, setViewingUser] = useState<UserData | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -258,6 +260,16 @@ const ManageUsersPage: React.FC = () => {
     });
     setSelectedUser(user);
     setIsModalOpen(true);
+  };
+
+  const openViewModal = (user: UserData) => {
+    setViewingUser(user);
+    setIsViewModalOpen(true);
+  };
+
+  const closeViewModal = () => {
+    setViewingUser(null);
+    setIsViewModalOpen(false);
   };
 
   const closeModal = () => {
@@ -700,161 +712,146 @@ const ManageUsersPage: React.FC = () => {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Usuário
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Contato
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Roles
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Categoria/CRM
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Data de Cadastro
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Ações
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredUsers.map((user) => {
-                  const roleDisplays = getRoleDisplay(user.roles);
-                  const statusInfo = getStatusDisplay(user.subscription_status);
+          <>
+            <div className="sm:hidden space-y-3">
+              {filteredUsers.map((user) => {
+                const statusInfo = getStatusDisplay(user.subscription_status);
+                return (
+                  <button
+                    key={user.id}
+                    type="button"
+                    onClick={() => openViewModal(user)}
+                    className="w-full text-left bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:bg-gray-50"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center mr-3">
+                          <User className="h-5 w-5 text-red-600" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-900">
+                            {user.name}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {formatCpfDisplay(user.cpf)}
+                          </div>
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-1 text-xs font-medium rounded-full ${statusInfo.className}`}
+                      >
+                        {statusInfo.text}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-xs text-gray-500">
+                      {user.email || "Sem email"}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="hidden sm:block">
+              <table className="min-w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Usuário
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Contato
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Roles
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Cadastro
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredUsers.map((user) => {
+                    const roleDisplays = getRoleDisplay(user.roles);
+                    const statusInfo = getStatusDisplay(user.subscription_status);
 
-                  return (
-                    <tr key={user.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0 h-10 w-10">
-                            {user.photo_url ? (
-                              <img
-                                src={user.photo_url || "/placeholder.svg"}
-                                alt={user.name}
-                                className="h-10 w-10 rounded-full object-cover"
-                              />
-                            ) : (
-                              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
-                                <User className="h-5 w-5 text-red-600" />
+                    return (
+                      <tr
+                        key={user.id}
+                        className="hover:bg-gray-50 cursor-pointer"
+                        onClick={() => openViewModal(user)}
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-10 w-10">
+                              {user.photo_url ? (
+                                <img
+                                  src={user.photo_url || "/placeholder.svg"}
+                                  alt={user.name}
+                                  className="h-10 w-10 rounded-full object-cover"
+                                />
+                              ) : (
+                                <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
+                                  <User className="h-5 w-5 text-red-600" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-medium text-gray-900">
+                                {user.name}
                               </div>
+                              <div className="text-sm text-gray-500">
+                                CPF: {formatCpfDisplay(user.cpf)}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">
+                            {user.email && (
+                              <div className="mb-1">{user.email}</div>
+                            )}
+                            {user.phone && (
+                              <div className="text-gray-500">
+                                {formatPhoneDisplay(user.phone)}
+                              </div>
+                            )}
+                            {!user.email && !user.phone && (
+                              <span className="text-gray-400">Não informado</span>
                             )}
                           </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900">
-                              {user.name}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              CPF: {formatCpfDisplay(user.cpf)}
-                            </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex flex-wrap gap-1">
+                            {roleDisplays.map((roleInfo, index) => (
+                              <span
+                                key={index}
+                                className={`px-2 py-1 text-xs font-medium rounded-full flex items-center ${roleInfo.color}`}
+                              >
+                                {roleInfo.icon}
+                                <span className="ml-1">{roleInfo.text}</span>
+                              </span>
+                            ))}
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {user.email && (
-                            <div className="mb-1">{user.email}</div>
-                          )}
-                          {user.phone && (
-                            <div className="text-gray-500">
-                              {formatPhoneDisplay(user.phone)}
-                            </div>
-                          )}
-                          {!user.email && !user.phone && (
-                            <span className="text-gray-400">Não informado</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex flex-wrap gap-1">
-                          {roleDisplays.map((roleInfo, index) => (
-                            <span
-                              key={index}
-                              className={`px-2 py-1 text-xs font-medium rounded-full flex items-center ${roleInfo.color}`}
-                            >
-                              {roleInfo.icon}
-                              <span className="ml-1">{roleInfo.text}</span>
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span
-                          className={`px-2 py-1 text-xs font-medium rounded-full ${statusInfo.className}`}
-                        >
-                          {statusInfo.text}
-                        </span>
-                        {user.subscription_expiry &&
-                          user.subscription_status === "active" && (
-                            <div className="text-xs text-gray-500 mt-1">
-                              Expira: {formatDate(user.subscription_expiry)}
-                            </div>
-                          )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {user.category_name && (
-                            <div className="mb-1">{user.category_name}</div>
-                          )}
-                          {user.crm && (
-                            <div className="text-gray-500 text-xs">
-                              Registro: {user.crm}
-                            </div>
-                          )}
-                          {user.percentage &&
-                            user.roles?.includes("professional") &&
-                            user.professional_type === "convenio" && (
-                              <div className="text-blue-600 text-xs">
-                                {user.percentage}%
-                              </div>
-                            )}
-                          {user.roles?.includes("professional") &&
-                            user.professional_type === "agenda_only" && (
-                              <div className="text-purple-600 text-xs">
-                                Apenas Agenda
-                              </div>
-                            )}
-                          {!user.category_name && !user.crm && (
-                            <span className="text-gray-400 text-sm">-</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {formatDate(user.created_at)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end space-x-2">
-                          <button
-                            onClick={() => openEditModal(user)}
-                            className="text-blue-600 hover:text-blue-900"
-                            title="Editar"
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span
+                            className={`px-2 py-1 text-xs font-medium rounded-full ${statusInfo.className}`}
                           >
-                            <Edit className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => confirmDelete(user)}
-                            className="text-red-600 hover:text-red-900"
-                            title="Excluir"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                            {statusInfo.text}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {formatDate(user.created_at)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 
@@ -1318,6 +1315,159 @@ const ManageUsersPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {isViewModalOpen && viewingUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold">Dados do Usuário</h2>
+                <p className="text-sm text-gray-600">{viewingUser.name}</p>
+              </div>
+              <button
+                onClick={closeViewModal}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-gray-500">CPF</p>
+                  <p className="text-sm font-medium">
+                    {formatCpfDisplay(viewingUser.cpf)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Email</p>
+                  <p className="text-sm font-medium">
+                    {viewingUser.email || "-"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Telefone</p>
+                  <p className="text-sm font-medium">
+                    {viewingUser.phone
+                      ? formatPhoneDisplay(viewingUser.phone)
+                      : "-"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Data de Nascimento</p>
+                  <p className="text-sm font-medium">
+                    {viewingUser.birth_date
+                      ? formatDate(viewingUser.birth_date)
+                      : "-"}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">
+                  Endereço
+                </h3>
+                <p className="text-sm text-gray-700">
+                  {viewingUser.address
+                    ? `${viewingUser.address}${
+                        viewingUser.address_number
+                          ? `, ${viewingUser.address_number}`
+                          : ""
+                      }${viewingUser.address_complement ? ` - ${viewingUser.address_complement}` : ""}`
+                    : "Não informado"}
+                </p>
+                {viewingUser.city && viewingUser.state && (
+                  <p className="text-xs text-gray-500">
+                    {viewingUser.city}, {viewingUser.state}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">
+                  Perfil
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {getRoleDisplay(viewingUser.roles).map((roleInfo, index) => (
+                    <span
+                      key={index}
+                      className={`px-2 py-1 text-xs font-medium rounded-full flex items-center ${roleInfo.color}`}
+                    >
+                      {roleInfo.icon}
+                      <span className="ml-1">{roleInfo.text}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-gray-500">Status da assinatura</p>
+                  <p className="text-sm font-medium">
+                    {getStatusDisplay(viewingUser.subscription_status).text}
+                  </p>
+                  {viewingUser.subscription_expiry && (
+                    <p className="text-xs text-gray-500">
+                      Expira: {formatDate(viewingUser.subscription_expiry)}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Cadastro</p>
+                  <p className="text-sm font-medium">
+                    {formatDate(viewingUser.created_at)}
+                  </p>
+                </div>
+              </div>
+
+              {(viewingUser.category_name || viewingUser.crm) && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-2">
+                    Profissional
+                  </h3>
+                  <p className="text-sm text-gray-700">
+                    {viewingUser.category_name || "-"}
+                  </p>
+                  {viewingUser.crm && (
+                    <p className="text-xs text-gray-500">
+                      Registro: {viewingUser.crm}
+                    </p>
+                  )}
+                  {viewingUser.percentage &&
+                    viewingUser.roles?.includes("professional") &&
+                    viewingUser.professional_type === "convenio" && (
+                      <p className="text-xs text-blue-600">
+                        {viewingUser.percentage}%
+                      </p>
+                    )}
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-200 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  closeViewModal();
+                  openEditModal(viewingUser);
+                }}
+                className="btn btn-primary"
+              >
+                Editar
+              </button>
+              <button
+                onClick={() => {
+                  closeViewModal();
+                  confirmDelete(viewingUser);
+                }}
+                className="btn bg-red-600 text-white hover:bg-red-700"
+              >
+                Excluir
+              </button>
+            </div>
           </div>
         </div>
       )}

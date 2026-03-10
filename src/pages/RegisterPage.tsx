@@ -34,6 +34,9 @@ const RegisterPage: React.FC = () => {
   // Terms of service state
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
+  const [registrationRole, setRegistrationRole] = useState<
+    "client" | "professional"
+  >("client");
 
   const { selectRole } = useAuth();
 
@@ -187,6 +190,7 @@ const RegisterPage: React.FC = () => {
           state: formData.state || null,
           password: formData.password,
           affiliate_code: affiliateCode || null,
+          registration_role: registrationRole,
         }),
         credentials: "include",
       });
@@ -215,8 +219,8 @@ const RegisterPage: React.FC = () => {
         // Don't block registration if affiliate linking fails
       }
 
-      // Auto-select client role since registration is only for clients
-      await selectRole(data.user.id, "client");
+      // Auto-select role based on registration
+      await selectRole(data.user.id, registrationRole);
     } catch (error) {
       console.error("Registration error:", error);
       if (error instanceof Error) {
@@ -254,10 +258,12 @@ const RegisterPage: React.FC = () => {
               className="w-32 mx-auto mb-6"
             />
             <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              Criar Conta de Cliente
+              Criar Conta
             </h1>
             <p className="text-gray-600">
-              Preencha seus dados para se cadastrar no convênio
+              {registrationRole === "professional"
+                ? "Cadastre-se como profissional e ganhe 30 dias grátis de agenda"
+                : "Preencha seus dados para se cadastrar no convênio"}
             </p>
           </div>
 
@@ -288,6 +294,38 @@ const RegisterPage: React.FC = () => {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setRegistrationRole("client")}
+                className={`p-4 rounded-lg border text-left transition-colors ${
+                  registrationRole === "client"
+                    ? "border-red-500 bg-red-50"
+                    : "border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                <p className="text-sm font-semibold text-gray-900">Cliente</p>
+                <p className="text-xs text-gray-500">
+                  Acesso ao convênio e consultas
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRegistrationRole("professional")}
+                className={`p-4 rounded-lg border text-left transition-colors ${
+                  registrationRole === "professional"
+                    ? "border-red-500 bg-red-50"
+                    : "border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                <p className="text-sm font-semibold text-gray-900">
+                  Profissional
+                </p>
+                <p className="text-xs text-gray-500">
+                  30 dias grátis de agenda
+                </p>
+              </button>
+            </div>
             {/* Personal Information */}
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
@@ -361,11 +399,12 @@ const RegisterPage: React.FC = () => {
                     Data de Nascimento
                   </label>
                   <input
-                    type="date"
+                    type="text"
                     name="birth_date"
                     value={formData.birth_date}
                     onChange={handleInputChange}
                     className="input"
+                    placeholder="DD/MM/AAAA"
                     disabled={isLoading}
                   />
                 </div>

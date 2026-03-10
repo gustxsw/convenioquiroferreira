@@ -131,6 +131,7 @@ function App() {
         <Route path="/professional/private-patients" element={<PrivatePatientsPage />} />
         <Route path="/professional/medical-records" element={<MedicalRecordsPage />} />
         <Route path="/professional/documents" element={<DocumentsPage />} />
+        <Route path="/professional/services" element={<ManageServicesPage />} />
         <Route path="/professional/reports" element={<ProfessionalReportsPage />} />
         <Route path="/professional/profile" element={<ProfessionalProfilePage />} />
         <Route
@@ -149,7 +150,6 @@ function App() {
       >
         <Route path="/admin" element={<AdminHomePage />} />
         <Route path="/admin/users" element={<ManageUsersPage />} />
-        <Route path="/admin/services" element={<ManageServicesPage />} />
         <Route path="/admin/scheduling-access" element={<ManageSchedulingAccessPage />} />
         <Route path="/admin/reports" element={<ReportsPage />} />
         <Route path="/admin/affiliates" element={<ManageAffiliatesPage />} />

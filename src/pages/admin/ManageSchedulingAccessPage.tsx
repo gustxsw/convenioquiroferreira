@@ -42,6 +42,9 @@ const ManageSchedulingAccessPage: React.FC = () => {
   const [modalMode, setModalMode] = useState<"grant" | "extend">("grant");
   const [selectedProfessional, setSelectedProfessional] =
     useState<Professional | null>(null);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [viewingProfessional, setViewingProfessional] =
+    useState<Professional | null>(null);
 
   // Form state
   const [expiryDate, setExpiryDate] = useState("");
@@ -136,12 +139,12 @@ const ManageSchedulingAccessPage: React.FC = () => {
     setModalMode("grant");
     setSelectedProfessional(professional);
 
-    // Set default expiry to 7 days from now
+    // Set default expiry to 30 days from now
     const defaultExpiry = new Date();
-    defaultExpiry.setDate(defaultExpiry.getDate() + 7);
+    defaultExpiry.setDate(defaultExpiry.getDate() + 30);
     setExpiryDate(defaultExpiry.toISOString().split("T")[0]);
 
-    setReason("Acesso promocional para teste da agenda");
+    setReason("Acesso promocional para teste da agenda (30 dias)");
     setIsModalOpen(true);
   };
 
@@ -149,16 +152,26 @@ const ManageSchedulingAccessPage: React.FC = () => {
     setModalMode("extend");
     setSelectedProfessional(professional);
 
-    // Set default expiry to 7 days from current expiry or now
+    // Set default expiry to 30 days from current expiry or now
     const currentExpiry = professional.access_expires_at
       ? new Date(professional.access_expires_at)
       : new Date();
     const defaultExpiry = new Date(currentExpiry);
-    defaultExpiry.setDate(defaultExpiry.getDate() + 7);
+    defaultExpiry.setDate(defaultExpiry.getDate() + 30);
     setExpiryDate(defaultExpiry.toISOString().split("T")[0]);
 
     setReason("Extensão do período de teste");
     setIsModalOpen(true);
+  };
+
+  const openViewModal = (professional: Professional) => {
+    setViewingProfessional(professional);
+    setIsViewModalOpen(true);
+  };
+
+  const closeViewModal = () => {
+    setViewingProfessional(null);
+    setIsViewModalOpen(false);
   };
 
   const closeModal = () => {
@@ -384,7 +397,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
             Gerenciar Acesso à Agenda
           </h1>
           <p className="text-gray-600">
-            Conceda acesso promocional à agenda (7 dias grátis) para campanhas
+            Conceda acesso promocional à agenda (30 dias grátis) para campanhas
             de marketing.
             <span className="font-medium text-red-600">
               Valor mensal: R$ 24,99
@@ -411,7 +424,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
                     • Profissionais começam <strong>sem acesso</strong> à agenda
                   </li>
                   <li>
-                    • Admin concede <strong>7 dias gratuitos</strong> para teste
+                    • Admin concede <strong>30 dias gratuitos</strong> para teste
                   </li>
                   <li>
                     • Após expirar, profissional paga{" "}
@@ -563,137 +576,104 @@ const ManageSchedulingAccessPage: React.FC = () => {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Profissional
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Categoria
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status do Acesso
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Expira em
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Concedido por
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Ações
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredProfessionals.map((professional) => {
-                  const statusInfo = getAccessStatusDisplay(professional);
-                  return (
-                    <tr key={professional.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0 h-10 w-10">
-                            <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
-                              <UserCheck className="h-5 w-5 text-red-600" />
-                            </div>
-                          </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900">
-                              {professional.name}
-                            </div>
-                            {professional.email && (
-                              <div className="text-sm text-gray-500">
-                                {professional.email}
+          <>
+            <div className="sm:hidden space-y-3 p-4">
+              {filteredProfessionals.map((professional) => {
+                const statusInfo = getAccessStatusDisplay(professional);
+                return (
+                  <button
+                    key={professional.id}
+                    type="button"
+                    onClick={() => openViewModal(professional)}
+                    className="w-full text-left bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:bg-gray-50"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-semibold text-gray-900">
+                          {professional.name}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {professional.email || "Sem email"}
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-1 text-xs font-medium rounded-full ${statusInfo.className}`}
+                      >
+                        {statusInfo.text}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-xs text-gray-500">
+                      {professional.access_expires_at
+                        ? `Expira: ${formatDate(professional.access_expires_at)}`
+                        : "Sem expiração"}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="hidden sm:block">
+              <table className="min-w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Profissional
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status do Acesso
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Expira em
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredProfessionals.map((professional) => {
+                    const statusInfo = getAccessStatusDisplay(professional);
+                    return (
+                      <tr
+                        key={professional.id}
+                        className="hover:bg-gray-50 cursor-pointer"
+                        onClick={() => openViewModal(professional)}
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-10 w-10">
+                              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
+                                <UserCheck className="h-5 w-5 text-red-600" />
                               </div>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-900">
-                          {professional.category_name || "Sem categoria"}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span
-                          className={`px-2 py-1 text-xs font-medium rounded-full flex items-center w-fit ${statusInfo.className}`}
-                        >
-                          {statusInfo.icon}
-                          {statusInfo.text}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {professional.access_expires_at
-                          ? formatDate(professional.access_expires_at)
-                          : "-"}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {professional.access_granted_by || "-"}
-                        {professional.access_reason && (
-                          <div className="text-xs text-gray-400 mt-1">
-                            {professional.access_reason}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end space-x-2">
-                          {!professional.has_scheduling_access ? (
-                            <button
-                              onClick={() => openGrantModal(professional)}
-                              className="text-green-600 hover:text-green-900 flex items-center px-3 py-1 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
-                              title="Conceder Acesso"
-                              disabled={isLoading}
-                            >
-                              <Gift className="h-4 w-4 mr-1" />
-                              Conceder 7 dias
-                            </button>
-                          ) : (
-                            <>
-                              {/* Check if access is expired */}
-                              {professional.access_expires_at &&
-                              new Date(professional.access_expires_at) <
-                                new Date() ? (
-                                <button
-                                  onClick={() => openGrantModal(professional)}
-                                  className="text-green-600 hover:text-green-900 flex items-center px-3 py-1 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
-                                  title="Renovar Acesso"
-                                  disabled={isLoading}
-                                >
-                                  <Gift className="h-4 w-4 mr-1" />
-                                  Renovar
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => openExtendModal(professional)}
-                                  className="text-blue-600 hover:text-blue-900 flex items-center px-2 py-1 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
-                                  title="Estender Acesso"
-                                  disabled={isLoading}
-                                >
-                                  <Clock className="h-4 w-4 mr-1" />
-                                  Estender
-                                </button>
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-medium text-gray-900">
+                                {professional.name}
+                              </div>
+                              {professional.email && (
+                                <div className="text-sm text-gray-500">
+                                  {professional.email}
+                                </div>
                               )}
-                              <button
-                                onClick={() => confirmRevoke(professional)}
-                                className="text-red-600 hover:text-red-900 flex items-center px-2 py-1 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
-                                title="Revogar Acesso"
-                                disabled={isLoading}
-                              >
-                                <Trash2 className="h-4 w-4 mr-1" />
-                                Revogar
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span
+                            className={`px-2 py-1 text-xs font-medium rounded-full flex items-center w-fit ${statusInfo.className}`}
+                          >
+                            {statusInfo.icon}
+                            {statusInfo.text}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {professional.access_expires_at
+                            ? formatDate(professional.access_expires_at)
+                            : "-"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 
@@ -746,7 +726,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {modalMode === "grant"
-                      ? "Data de Expiração (7 dias padrão) *"
+                      ? "Data de Expiração (30 dias padrão) *"
                       : "Nova Data de Expiração *"}
                   </label>
                   <input
@@ -759,7 +739,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
                   />
                   <p className="text-xs text-gray-500 mt-1">
                     {modalMode === "grant"
-                      ? "Período promocional gratuito de 7 dias para teste"
+                      ? "Período promocional gratuito de 30 dias para teste"
                       : "Estender o período de acesso gratuito"}
                   </p>
                 </div>
@@ -796,7 +776,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
                   <li>• Geração de documentos médicos</li>
                   <li>• Relatórios detalhados</li>
                   <li>
-                    • <strong>Período de teste: 7 dias gratuitos</strong>
+                    • <strong>Período de teste: 30 dias gratuitos</strong>
                   </li>
                   <li>
                     • <strong>Após o período: R$ 24,99/mês</strong>
@@ -807,7 +787,7 @@ const ManageSchedulingAccessPage: React.FC = () => {
                   <p className="text-xs text-yellow-700">
                     <strong>💡 Estratégia de Marketing:</strong> Use este acesso
                     gratuito para demonstrar o valor da agenda aos
-                    profissionais. Após 7 dias, eles podem assinar por R$
+                    profissionais. Após 30 dias, eles podem assinar por R$
                     24,99/mês.
                   </p>
                 </div>
@@ -845,6 +825,124 @@ const ManageSchedulingAccessPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {isViewModalOpen && viewingProfessional && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold">Dados do Profissional</h2>
+                <p className="text-sm text-gray-600">
+                  {viewingProfessional.name}
+                </p>
+              </div>
+              <button
+                onClick={closeViewModal}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-gray-500">Email</p>
+                  <p className="text-sm font-medium">
+                    {viewingProfessional.email || "-"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Telefone</p>
+                  <p className="text-sm font-medium">
+                    {viewingProfessional.phone || "-"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Categoria</p>
+                  <p className="text-sm font-medium">
+                    {viewingProfessional.category_name || "Sem categoria"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Status do acesso</p>
+                  <p className="text-sm font-medium">
+                    {getAccessStatusDisplay(viewingProfessional).text}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Expira em</p>
+                  <p className="text-sm font-medium">
+                    {viewingProfessional.access_expires_at
+                      ? formatDate(viewingProfessional.access_expires_at)
+                      : "-"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Concedido por</p>
+                  <p className="text-sm font-medium">
+                    {viewingProfessional.access_granted_by || "-"}
+                  </p>
+                  {viewingProfessional.access_reason && (
+                    <p className="text-xs text-gray-500">
+                      {viewingProfessional.access_reason}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-200 flex flex-wrap justify-end gap-2">
+              {!viewingProfessional.has_scheduling_access ? (
+                <button
+                  onClick={() => {
+                    closeViewModal();
+                    openGrantModal(viewingProfessional);
+                  }}
+                  className="btn btn-primary"
+                >
+                  Conceder acesso
+                </button>
+              ) : (
+                <>
+                  {viewingProfessional.access_expires_at &&
+                  new Date(viewingProfessional.access_expires_at) <
+                    new Date() ? (
+                    <button
+                      onClick={() => {
+                        closeViewModal();
+                        openGrantModal(viewingProfessional);
+                      }}
+                      className="btn btn-primary"
+                    >
+                      Renovar
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        closeViewModal();
+                        openExtendModal(viewingProfessional);
+                      }}
+                      className="btn btn-primary"
+                    >
+                      Estender
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      closeViewModal();
+                      confirmRevoke(viewingProfessional);
+                    }}
+                    className="btn bg-red-600 text-white hover:bg-red-700"
+                  >
+                    Revogar
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

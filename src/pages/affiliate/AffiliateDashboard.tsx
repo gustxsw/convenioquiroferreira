@@ -11,6 +11,8 @@ interface AffiliateData {
     status: string;
     created_at: string;
     user_id?: number;
+    leadership_enabled?: boolean;
+    leader_limit?: number | null;
   };
   stats: {
     clients_count: number;
@@ -37,12 +39,25 @@ interface AffiliateData {
     paid_method?: string | null;
     paid_receipt_url?: string | null;
     paid_by_name?: string | null;
+    commission_type?: string | null;
+    source_affiliate_id?: number | null;
     payment_reference?: string | null;
     mp_payment_id?: string | null;
     client_name: string;
     client_cpf: string;
     client_subscription_status: string;
   }>;
+  leadership?: {
+    leader_limit: number;
+    downline: Array<{
+      id: number;
+      name: string;
+      status: string;
+      created_at: string;
+      sales_count: number;
+      override_total: string;
+    }>;
+  } | null;
 }
 
 interface ReferralStats {
@@ -58,6 +73,14 @@ const AffiliateDashboard: React.FC = () => {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [clientSearch, setClientSearch] = useState("");
+  const [showCreateSellerModal, setShowCreateSellerModal] = useState(false);
+  const [isCreatingSeller, setIsCreatingSeller] = useState(false);
+  const [sellerForm, setSellerForm] = useState({
+    name: "",
+    cpf: "",
+    email: "",
+    password: "",
+  });
 
   useEffect(() => {
     loadDashboard();
@@ -105,6 +128,34 @@ const AffiliateDashboard: React.FC = () => {
     navigator.clipboard.writeText(link);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCreateSeller = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    try {
+      setIsCreatingSeller(true);
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(`${apiUrl}/api/affiliate/affiliates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sellerForm),
+      });
+
+      if (response.ok) {
+        setShowCreateSellerModal(false);
+        setSellerForm({ name: "", cpf: "", email: "", password: "" });
+        loadDashboard();
+      } else {
+        const data = await response.json();
+        setError(data.error || "Erro ao cadastrar vendedor");
+      }
+    } catch (err) {
+      setError("Erro ao cadastrar vendedor");
+    } finally {
+      setIsCreatingSeller(false);
+    }
   };
 
   if (isLoading) {
@@ -235,6 +286,82 @@ const AffiliateDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {data.leadership && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+          <div className="p-6 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Meus Vendedores
+              </h2>
+              <p className="text-xs text-gray-500">
+                Limite: {data.leadership.leader_limit}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowCreateSellerModal(true)}
+              className="px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700"
+            >
+              Cadastrar vendedor
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Vendedor
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Vendas
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Comissão do líder
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {data.leadership.downline.length === 0 ? (
+                  <tr>
+                    <td className="px-6 py-8 text-center text-sm text-gray-500" colSpan={4}>
+                      Nenhum vendedor vinculado.
+                    </td>
+                  </tr>
+                ) : (
+                  data.leadership.downline.map((seller) => (
+                    <tr key={seller.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {seller.name}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span
+                          className={`px-2 py-1 text-xs rounded-full ${
+                            seller.status === "active"
+                              ? "bg-green-100 text-green-800"
+                              : "bg-red-100 text-red-800"
+                          }`}
+                        >
+                          {seller.status === "active" ? "Ativo" : "Inativo"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {seller.sales_count}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-green-600">
+                        R$ {Number.parseFloat(seller.override_total || "0").toFixed(2)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Gráfico de Conversão */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -437,6 +564,89 @@ const AffiliateDashboard: React.FC = () => {
           <p>5. O pagamento é feito manualmente pelo administrador do sistema</p>
         </div>
       </div>
+
+      {showCreateSellerModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h2 className="text-xl font-bold mb-4">Cadastrar Vendedor</h2>
+            <form onSubmit={handleCreateSeller}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nome
+                </label>
+                <input
+                  type="text"
+                  value={sellerForm.name}
+                  onChange={(e) =>
+                    setSellerForm((prev) => ({ ...prev, name: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  CPF
+                </label>
+                <input
+                  type="text"
+                  value={sellerForm.cpf}
+                  onChange={(e) =>
+                    setSellerForm((prev) => ({ ...prev, cpf: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email (opcional)
+                </label>
+                <input
+                  type="email"
+                  value={sellerForm.email}
+                  onChange={(e) =>
+                    setSellerForm((prev) => ({ ...prev, email: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Senha
+                </label>
+                <input
+                  type="password"
+                  value={sellerForm.password}
+                  onChange={(e) =>
+                    setSellerForm((prev) => ({ ...prev, password: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                  minLength={6}
+                />
+              </div>
+              <div className="flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateSellerModal(false)}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  disabled={isCreatingSeller}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                  disabled={isCreatingSeller}
+                >
+                  {isCreatingSeller ? "Salvando..." : "Cadastrar"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

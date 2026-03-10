@@ -55,6 +55,10 @@ const PrivatePatientsPage: React.FC = () => {
   const [selectedPatient, setSelectedPatient] = useState<PrivatePatient | null>(
     null
   );
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [viewingPatient, setViewingPatient] = useState<PrivatePatient | null>(
+    null
+  );
 
   // Form state
   const [formData, setFormData] = useState({
@@ -275,6 +279,16 @@ const PrivatePatientsPage: React.FC = () => {
     });
     setSelectedPatient(patient);
     setIsModalOpen(true);
+  };
+
+  const openViewModal = (patient: PrivatePatient) => {
+    setViewingPatient(patient);
+    setIsViewModalOpen(true);
+  };
+
+  const closeViewModal = () => {
+    setViewingPatient(null);
+    setIsViewModalOpen(false);
   };
 
   const closeModal = () => {
@@ -779,125 +793,112 @@ const PrivatePatientsPage: React.FC = () => {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Paciente
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Contato
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Endereço
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Data de Cadastro
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Ações
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredPatients.map((patient) => (
-                  <tr key={patient.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-10 w-10">
-                          <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
-                            <User className="h-5 w-5 text-red-600" />
+          <>
+            <div className="sm:hidden space-y-3">
+              {filteredPatients.map((patient) => (
+                <button
+                  key={patient.id}
+                  type="button"
+                  onClick={() => openViewModal(patient)}
+                  className="w-full text-left bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:bg-gray-50"
+                >
+                  <div className="flex items-center">
+                    <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center mr-3">
+                      <User className="h-5 w-5 text-red-600" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">
+                        {patient.name}
+                      </div>
+                      {patient.cpf && (
+                        <div className="text-xs text-gray-500">
+                          {formatCpfDisplay(patient.cpf)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-gray-500">
+                    {patient.phone
+                      ? formatPhoneDisplay(patient.phone)
+                      : "Sem telefone"}
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="hidden sm:block">
+              <table className="min-w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Paciente
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Contato
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Cadastro
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredPatients.map((patient) => (
+                    <tr
+                      key={patient.id}
+                      className="hover:bg-gray-50 cursor-pointer"
+                      onClick={() => openViewModal(patient)}
+                    >
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 h-10 w-10">
+                            <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
+                              <User className="h-5 w-5 text-red-600" />
+                            </div>
+                          </div>
+                          <div className="ml-4">
+                            <div className="text-sm font-medium text-gray-900">
+                              {patient.name}
+                            </div>
+                            {patient.cpf && (
+                              <div className="text-sm text-gray-500">
+                                CPF: {formatCpfDisplay(patient.cpf)}
+                              </div>
+                            )}
                           </div>
                         </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">
-                            {patient.name}
-                          </div>
-                          {patient.cpf && (
-                            <div className="text-sm text-gray-500">
-                              CPF: {formatCpfDisplay(patient.cpf)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {patient.phone && (
+                            <div className="flex items-center mb-1">
+                              <Phone className="h-3 w-3 text-gray-400 mr-1" />
+                              {formatPhoneDisplay(patient.phone)}
                             </div>
                           )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {patient.phone && (
-                          <div className="flex items-center mb-1">
-                            <Phone className="h-3 w-3 text-gray-400 mr-1" />
-                            {formatPhoneDisplay(patient.phone)}
-                          </div>
-                        )}
-                        {patient.email && (
-                          <div className="flex items-center">
-                            <Mail className="h-3 w-3 text-gray-400 mr-1" />
-                            {patient.email}
-                          </div>
-                        )}
-                        {!patient.phone && !patient.email && (
-                          <span className="text-gray-400 text-sm">
-                            Não informado
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {patient.address && (
-                          <div className="flex items-start">
-                            <MapPin className="h-3 w-3 text-gray-400 mr-1 mt-0.5" />
-                            <div>
-                              <div>
-                                {patient.address}
-                                {patient.address_number &&
-                                  `, ${patient.address_number}`}
-                              </div>
-                              {patient.city && patient.state && (
-                                <div className="text-xs text-gray-500">
-                                  {patient.city}, {patient.state}
-                                </div>
-                              )}
+                          {patient.email && (
+                            <div className="flex items-center">
+                              <Mail className="h-3 w-3 text-gray-400 mr-1" />
+                              {patient.email}
                             </div>
-                          </div>
-                        )}
-                        {!patient.address && (
-                          <span className="text-gray-400 text-sm">
-                            Não informado
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center text-sm text-gray-500">
-                        <Calendar className="h-3 w-3 mr-1" />
-                        {formatDate(patient.created_at)}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex items-center justify-end space-x-2">
-                        <button
-                          onClick={() => openEditModal(patient)}
-                          className="text-blue-600 hover:text-blue-900"
-                          title="Editar"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => confirmDelete(patient)}
-                          className="text-red-600 hover:text-red-900"
-                          title="Excluir"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                          )}
+                          {!patient.phone && !patient.email && (
+                            <span className="text-gray-400 text-sm">
+                              Não informado
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center text-sm text-gray-500">
+                          <Calendar className="h-3 w-3 mr-1" />
+                          {formatDate(patient.created_at)}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 
@@ -1146,6 +1147,108 @@ const PrivatePatientsPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {isViewModalOpen && viewingPatient && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold">Dados do Paciente</h2>
+                <p className="text-sm text-gray-600">{viewingPatient.name}</p>
+              </div>
+              <button
+                onClick={closeViewModal}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-gray-500">CPF</p>
+                  <p className="text-sm font-medium">
+                    {viewingPatient.cpf
+                      ? formatCpfDisplay(viewingPatient.cpf)
+                      : "-"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Email</p>
+                  <p className="text-sm font-medium">
+                    {viewingPatient.email || "-"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Telefone</p>
+                  <p className="text-sm font-medium">
+                    {viewingPatient.phone
+                      ? formatPhoneDisplay(viewingPatient.phone)
+                      : "-"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Data de Nascimento</p>
+                  <p className="text-sm font-medium">
+                    {viewingPatient.birth_date
+                      ? formatDate(viewingPatient.birth_date)
+                      : "-"}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">
+                  Endereço
+                </h3>
+                <p className="text-sm text-gray-700">
+                  {viewingPatient.address
+                    ? `${viewingPatient.address}${
+                        viewingPatient.address_number
+                          ? `, ${viewingPatient.address_number}`
+                          : ""
+                      }${viewingPatient.address_complement ? ` - ${viewingPatient.address_complement}` : ""}`
+                    : "Não informado"}
+                </p>
+                {viewingPatient.city && viewingPatient.state && (
+                  <p className="text-xs text-gray-500">
+                    {viewingPatient.city}, {viewingPatient.state}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <p className="text-xs text-gray-500">Cadastro</p>
+                <p className="text-sm font-medium">
+                  {formatDate(viewingPatient.created_at)}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-200 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  closeViewModal();
+                  openEditModal(viewingPatient);
+                }}
+                className="btn btn-primary"
+              >
+                Editar
+              </button>
+              <button
+                onClick={() => {
+                  closeViewModal();
+                  confirmDelete(viewingPatient);
+                }}
+                className="btn bg-red-600 text-white hover:bg-red-700"
+              >
+                Excluir
+              </button>
+            </div>
           </div>
         </div>
       )}

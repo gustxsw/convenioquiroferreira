@@ -121,18 +121,16 @@ const MedicalRecordsPage: React.FC = () => {
     let filtered = records;
 
     if (searchTerm) {
-      const normalizedSearch = searchTerm.toLowerCase();
-      filtered = filtered.filter((record) => {
-        const patientName = (record.patient_name || "").toLowerCase();
-        const chiefComplaint = (record.chief_complaint || "").toLowerCase();
-        const diagnosis = (record.diagnosis || "").toLowerCase();
-
-        return (
-          patientName.includes(normalizedSearch) ||
-          chiefComplaint.includes(normalizedSearch) ||
-          diagnosis.includes(normalizedSearch)
-        );
-      });
+      filtered = filtered.filter(
+        (record) =>
+          record.patient_name
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase()) ||
+          record.chief_complaint
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase()) ||
+          record.diagnosis.toLowerCase().includes(searchTerm.toLowerCase())
+      );
     }
 
     if (selectedPatient) {
@@ -726,6 +724,15 @@ const MedicalRecordsPage: React.FC = () => {
     </script>
 </body>
 </html>`;
+
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+      if (isMobile) {
+        const blob = new Blob([htmlContent], { type: "text/html;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        window.location.href = url;
+        return;
+      }
 
       // Criar nova janela
       const printWindow = window.open("", "_blank", "width=800,height=600");

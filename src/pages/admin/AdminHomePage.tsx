@@ -262,12 +262,6 @@ const AdminHomePage: React.FC = () => {
       link: "/admin/users",
     },
     {
-      title: "Gerenciar Serviços",
-      description: "Configurar os serviços oferecidos e seus preços",
-      icon: <FileText className="h-6 w-6 text-red-600" />,
-      link: "/admin/services",
-    },
-    {
       title: "Ver Relatórios",
       description: "Acessar relatórios de faturamento e estatísticas",
       icon: <BarChart2 className="h-6 w-6 text-red-600" />,

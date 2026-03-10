@@ -28,6 +28,7 @@ import {
   scheduleExpiryCheck,
   checkExpiredSubscriptionsNow,
 } from "./jobs/checkExpiredSubscriptions.js";
+import { scheduleAffiliateInactivityCheck } from "./jobs/checkInactiveAffiliates.js";
 
 // ES6 module compatibility
 const __filename = fileURLToPath(import.meta.url);
@@ -148,9 +149,31 @@ const initializeDatabase = async () => {
         percentage DECIMAL(5,2) DEFAULT 50.00,
         crm VARCHAR(20),
         professional_type VARCHAR(20) DEFAULT 'convenio',
+        professional_registration_number VARCHAR(20),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
+    `);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'professional_registration_number'
+        ) THEN
+          ALTER TABLE users ADD COLUMN professional_registration_number VARCHAR(20);
+        END IF;
+      END $$;
+    `);
+
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_professional_registration_number
+      ON users (professional_registration_number);
+    `);
+
+    await pool.query(`
+      CREATE SEQUENCE IF NOT EXISTS qfs_professional_reg_seq START 1;
     `);
 
     // Service categories table
@@ -171,9 +194,24 @@ const initializeDatabase = async () => {
         description TEXT,
         base_price DECIMAL(10,2) NOT NULL,
         category_id INTEGER REFERENCES service_categories(id),
+        professional_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         is_base_service BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
+    `);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'services' AND column_name = 'professional_id'
+        ) THEN
+          ALTER TABLE services
+          ADD COLUMN professional_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+          CREATE INDEX IF NOT EXISTS idx_services_professional_id ON services(professional_id);
+        END IF;
+      END $$;
     `);
 
     // Dependents table
@@ -183,6 +221,7 @@ const initializeDatabase = async () => {
         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         name VARCHAR(255) NOT NULL,
         cpf VARCHAR(11) UNIQUE NOT NULL,
+        phone VARCHAR(20),
         birth_date DATE,
         subscription_status VARCHAR(20) DEFAULT 'pending',
         subscription_expiry TIMESTAMP,
@@ -192,6 +231,18 @@ const initializeDatabase = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
+    `);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'dependents' AND column_name = 'phone'
+        ) THEN
+          ALTER TABLE dependents ADD COLUMN phone VARCHAR(20);
+        END IF;
+      END $$;
     `);
 
     // Private patients table
@@ -800,7 +851,11 @@ const initializeDatabase = async () => {
         status VARCHAR(20) DEFAULT 'active',
         user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        pix_key TEXT
+        pix_key TEXT,
+        leader_affiliate_id INTEGER REFERENCES affiliates(id) ON DELETE SET NULL,
+        leadership_enabled BOOLEAN DEFAULT false,
+        leader_limit INTEGER DEFAULT 0,
+        override_amount DECIMAL(10,2) DEFAULT 0
       )
     `);
 
@@ -813,7 +868,36 @@ const initializeDatabase = async () => {
         ) THEN
           ALTER TABLE affiliates ADD COLUMN pix_key TEXT;
         END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'affiliates' AND column_name = 'leader_affiliate_id'
+        ) THEN
+          ALTER TABLE affiliates ADD COLUMN leader_affiliate_id INTEGER REFERENCES affiliates(id) ON DELETE SET NULL;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'affiliates' AND column_name = 'leadership_enabled'
+        ) THEN
+          ALTER TABLE affiliates ADD COLUMN leadership_enabled BOOLEAN DEFAULT false;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'affiliates' AND column_name = 'leader_limit'
+        ) THEN
+          ALTER TABLE affiliates ADD COLUMN leader_limit INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'affiliates' AND column_name = 'override_amount'
+        ) THEN
+          ALTER TABLE affiliates ADD COLUMN override_amount DECIMAL(10,2) DEFAULT 0;
+        END IF;
       END $$;
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_affiliates_leader_affiliate_id
+      ON affiliates (leader_affiliate_id);
     `);
 
     // Add user_id column to existing affiliates table
@@ -847,6 +931,8 @@ const initializeDatabase = async () => {
       CREATE TABLE IF NOT EXISTS affiliate_commissions (
         id SERIAL PRIMARY KEY,
         affiliate_id INTEGER REFERENCES affiliates(id) ON DELETE CASCADE,
+        commission_type VARCHAR(20) DEFAULT 'direct',
+        source_affiliate_id INTEGER REFERENCES affiliates(id) ON DELETE SET NULL,
         client_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         amount DECIMAL(10,2) NOT NULL,
         status VARCHAR(20) DEFAULT 'pending',
@@ -864,6 +950,20 @@ const initializeDatabase = async () => {
         ) THEN
           ALTER TABLE affiliate_commissions
           ADD COLUMN paid_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'affiliate_commissions' AND column_name = 'commission_type'
+        ) THEN
+          ALTER TABLE affiliate_commissions ADD COLUMN commission_type VARCHAR(20) DEFAULT 'direct';
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'affiliate_commissions' AND column_name = 'source_affiliate_id'
+        ) THEN
+          ALTER TABLE affiliate_commissions ADD COLUMN source_affiliate_id INTEGER REFERENCES affiliates(id) ON DELETE SET NULL;
         END IF;
 
         IF NOT EXISTS (
@@ -904,8 +1004,8 @@ const initializeDatabase = async () => {
     `);
 
     await pool.query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_affiliate_commissions_mp_payment_id
-      ON affiliate_commissions (mp_payment_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_affiliate_commissions_payment_affiliate
+      ON affiliate_commissions (mp_payment_id, affiliate_id);
     `);
 
     // Create affiliate_referrals table for persistent tracking
@@ -1129,6 +1229,7 @@ app.post("/api/auth/register", async (req, res) => {
       state,
       password,
       affiliate_code,
+      registration_role,
     } = req.body;
 
     console.log("🔄 Registration attempt for CPF:", cpf);
@@ -1193,14 +1294,29 @@ app.post("/api/auth/register", async (req, res) => {
       }
     }
 
+    const roleToRegister =
+      registration_role === "professional" ? "professional" : "client";
+
+    let professionalRegistrationNumber = null;
+    if (roleToRegister === "professional") {
+      const seqResult = await pool.query(
+        "SELECT nextval('qfs_professional_reg_seq') as seq"
+      );
+      const sequenceValue = Number(seqResult.rows[0].seq);
+      professionalRegistrationNumber = `QFS-${String(sequenceValue).padStart(
+        6,
+        "0"
+      )}`;
+    }
+
     // Create user
     const userResult = await pool.query(
       `
       INSERT INTO users (
         name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, password, roles,
-        affiliate_code, referred_by_affiliate_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        affiliate_code, referred_by_affiliate_id, professional_registration_number
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING id, name, cpf, email, roles, subscription_status
     `,
       [
@@ -1216,13 +1332,24 @@ app.post("/api/auth/register", async (req, res) => {
         city?.trim() || null,
         state || null,
         hashedPassword,
-        ["client"],
+        [roleToRegister],
         affiliate_code || null,
         referredByAffiliateId,
+        professionalRegistrationNumber,
       ]
     );
 
     const user = userResult.rows[0];
+
+    if (roleToRegister === "professional") {
+      await pool.query(
+        `
+        INSERT INTO scheduling_access (professional_id, granted_by, expires_at, reason)
+        VALUES ($1, NULL, CURRENT_TIMESTAMP + INTERVAL '30 days', $2)
+      `,
+        [user.id, "Cadastro profissional - 30 dias grátis"]
+      );
+    }
 
     console.log("✅ User registered successfully:", user.id);
 
@@ -2719,13 +2846,15 @@ app.post(
         });
       }
 
-      // Validate service exists
+      // Validate service exists and belongs to professional
       const serviceResult = await pool.query(
-        "SELECT * FROM services WHERE id = $1",
-        [service_id]
+        "SELECT * FROM services WHERE id = $1 AND professional_id = $2",
+        [service_id, req.user.id]
       );
       if (serviceResult.rows.length === 0) {
-        return res.status(404).json({ message: "Serviço não encontrado" });
+        return res
+          .status(404)
+          .json({ message: "Serviço não encontrado para este profissional" });
       }
 
       // If it's a convenio patient, validate subscription status
@@ -2902,6 +3031,17 @@ app.post(
         return res.status(400).json({
           message: "Serviço, valor, data de início e horário são obrigatórios",
         });
+      }
+
+      // Validate service exists and belongs to professional
+      const serviceResult = await pool.query(
+        "SELECT * FROM services WHERE id = $1 AND professional_id = $2",
+        [service_id, req.user.id]
+      );
+      if (serviceResult.rows.length === 0) {
+        return res
+          .status(404)
+          .json({ message: "Serviço não encontrado para este profissional" });
       }
 
       // Validate patient type
@@ -3178,6 +3318,15 @@ app.put(
       let paramCount = 1;
 
       if (service_id !== undefined) {
+        const serviceResult = await pool.query(
+          "SELECT * FROM services WHERE id = $1 AND professional_id = $2",
+          [service_id, req.user.id]
+        );
+        if (serviceResult.rows.length === 0) {
+          return res
+            .status(404)
+            .json({ message: "Serviço não encontrado para este profissional" });
+        }
         updateFields.push(`service_id = $${paramCount++}`);
         updateValues.push(service_id);
       }
@@ -3279,7 +3428,7 @@ app.get(
         END as patient_name,
         CASE 
           WHEN c.private_patient_id IS NOT NULL THEN pp.phone
-          WHEN c.dependent_id IS NOT NULL THEN cu.phone
+          WHEN c.dependent_id IS NOT NULL THEN d.phone
           ELSE u.phone
         END as patient_phone,
         s.name as service_name,
@@ -3782,7 +3931,7 @@ app.get(
 
 app.post("/api/dependents", authenticate, async (req, res) => {
   try {
-    const { client_id, name, cpf, birth_date } = req.body;
+    const { client_id, name, cpf, birth_date, phone } = req.body;
 
     console.log("🔄 Creating dependent:", {
       client_id,
@@ -3844,10 +3993,10 @@ app.post("/api/dependents", authenticate, async (req, res) => {
     }
 
     const dependentResult = await pool.query(
-      `INSERT INTO dependents (user_id, name, cpf, birth_date)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO dependents (user_id, name, cpf, birth_date, phone)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [client_id, name.trim(), cleanCPF, birth_date || null]
+      [client_id, name.trim(), cleanCPF, birth_date || null, phone?.trim() || null]
     );
 
     const dependent = dependentResult.rows[0];
@@ -3871,7 +4020,7 @@ app.put(
   async (req, res) => {
     try {
       const { id } = req.params;
-      const { name, birth_date } = req.body;
+      const { name, birth_date, phone } = req.body;
 
       // Get current dependent data
       const currentDependentResult = await pool.query(
@@ -3892,11 +4041,11 @@ app.put(
       const updatedDependentResult = await pool.query(
         `
       UPDATE dependents 
-      SET name = $1, birth_date = $2, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3 AND user_id = $4
+      SET name = $1, birth_date = $2, phone = $3, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4 AND user_id = $5
       RETURNING *
     `,
-        [name.trim(), birth_date || null, id, req.user.id]
+        [name.trim(), birth_date || null, phone?.trim() || null, id, req.user.id]
       );
 
       const updatedDependent = updatedDependentResult.rows[0];
@@ -4052,13 +4201,21 @@ app.delete("/api/blocked-slots/:id", authenticate, async (req, res) => {
 
 app.get("/api/services", authenticate, async (req, res) => {
   try {
-    const servicesResult = await pool.query(`
-      SELECT 
-        s.*, sc.name as category_name
-      FROM services s
-      LEFT JOIN service_categories sc ON s.category_id = sc.id
-      ORDER BY sc.name, s.name
-    `);
+    const isProfessional =
+      req.user?.currentRole === "professional" ||
+      (Array.isArray(req.user?.roles) && req.user.roles.includes("professional"));
+
+    const servicesResult = await pool.query(
+      `
+        SELECT 
+          s.*, sc.name as category_name
+        FROM services s
+        LEFT JOIN service_categories sc ON s.category_id = sc.id
+        WHERE ($1::int IS NULL OR s.professional_id = $1)
+        ORDER BY sc.name, s.name
+      `,
+      [isProfessional ? req.user.id : null]
+    );
 
     res.json(servicesResult.rows);
   } catch (error) {
@@ -4121,7 +4278,7 @@ app.post(
 app.post(
   "/api/services",
   authenticate,
-  authorize(["admin"]),
+  authorize(["admin", "professional"]),
   async (req, res) => {
     try {
       const { name, description, base_price, category_id, is_base_service } =
@@ -4142,10 +4299,14 @@ app.post(
           .json({ message: "Preço base deve ser um número maior que zero" });
       }
 
+      const isProfessional =
+        req.user?.currentRole === "professional" ||
+        (Array.isArray(req.user?.roles) && req.user.roles.includes("professional"));
+
       const serviceResult = await pool.query(
         `
-      INSERT INTO services (name, description, base_price, category_id, is_base_service)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO services (name, description, base_price, category_id, is_base_service, professional_id)
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
     `,
         [
@@ -4153,7 +4314,8 @@ app.post(
           description?.trim() || null,
           Number.parseFloat(base_price),
           category_id || null,
-          is_base_service || false,
+          isProfessional ? false : is_base_service || false,
+          isProfessional ? req.user.id : null,
         ]
       );
 
@@ -4175,7 +4337,7 @@ app.post(
 app.put(
   "/api/services/:id",
   authenticate,
-  authorize(["admin"]),
+  authorize(["admin", "professional"]),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -4189,6 +4351,17 @@ app.put(
       );
       if (currentServiceResult.rows.length === 0) {
         return res.status(404).json({ message: "Serviço não encontrado" });
+      }
+
+      const isProfessional =
+        req.user?.currentRole === "professional" ||
+        (Array.isArray(req.user?.roles) && req.user.roles.includes("professional"));
+
+      if (
+        isProfessional &&
+        currentServiceResult.rows[0].professional_id !== req.user.id
+      ) {
+        return res.status(403).json({ message: "Acesso negado" });
       }
 
       if (!name || !base_price) {
@@ -4218,7 +4391,7 @@ app.put(
           description?.trim() || null,
           Number.parseFloat(base_price),
           category_id || null,
-          is_base_service || false,
+          isProfessional ? false : is_base_service || false,
           id,
         ]
       );
@@ -4241,7 +4414,7 @@ app.put(
 app.delete(
   "/api/services/:id",
   authenticate,
-  authorize(["admin"]),
+  authorize(["admin", "professional"]),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -4253,6 +4426,14 @@ app.delete(
       );
       if (serviceResult.rows.length === 0) {
         return res.status(404).json({ message: "Serviço não encontrado" });
+      }
+
+      const isProfessional =
+        req.user?.currentRole === "professional" ||
+        (Array.isArray(req.user?.roles) && req.user.roles.includes("professional"));
+
+      if (isProfessional && serviceResult.rows[0].professional_id !== req.user.id) {
+        return res.status(403).json({ message: "Acesso negado" });
       }
 
       // Check if service is being used in consultations
@@ -6556,9 +6737,14 @@ async function processClientPayment(userId, payment) {
       const affiliateUserId = userResult.rows[0].referred_by_affiliate_id;
 
       const affiliateResult = await pool.query(
-        `SELECT a.id, a.commission_amount, a.code, u.name as affiliate_name
+        `SELECT a.id,
+                a.commission_amount,
+                a.code,
+                a.leader_affiliate_id,
+                a.status,
+                a.leadership_enabled,
+                a.override_amount
          FROM affiliates a
-         JOIN users u ON u.id = a.user_id
          WHERE a.user_id = $1 AND a.status = 'active'`,
         [affiliateUserId]
       );
@@ -6567,7 +6753,9 @@ async function processClientPayment(userId, payment) {
         const affiliateId = affiliateResult.rows[0].id;
         const commissionAmount =
           parseFloat(affiliateResult.rows[0].commission_amount) || 10.0;
-        const affiliateName = affiliateResult.rows[0].affiliate_name;
+        const leaderAffiliateId = affiliateResult.rows[0].leader_affiliate_id;
+        const overrideAmount =
+          parseFloat(affiliateResult.rows[0].override_amount) || 0;
 
         const paymentId = payment?.id?.toString() || null;
         const paymentReference = payment?.external_reference || null;
@@ -6590,21 +6778,66 @@ async function processClientPayment(userId, payment) {
           await pool.query(
             `INSERT INTO affiliate_commissions (
               affiliate_id,
+              commission_type,
+              source_affiliate_id,
               client_id,
               amount,
               status,
               mp_payment_id,
               payment_reference
             )
-             VALUES ($1, $2, $3, 'pending', $4, $5)
-             ON CONFLICT (mp_payment_id) DO NOTHING`,
+             VALUES ($1, 'direct', NULL, $2, $3, 'pending', $4, $5)
+             ON CONFLICT (mp_payment_id, affiliate_id) DO NOTHING`,
             [affiliateId, userId, commissionAmount, paymentId, paymentReference]
           );
+
+          if (leaderAffiliateId) {
+            const leaderResult = await pool.query(
+              `SELECT id, status, leadership_enabled, override_amount
+               FROM affiliates
+               WHERE id = $1`,
+              [leaderAffiliateId]
+            );
+
+            if (
+              leaderResult.rows.length > 0 &&
+              leaderResult.rows[0].status === "active" &&
+              leaderResult.rows[0].leadership_enabled
+            ) {
+              const leaderOverrideAmount =
+                parseFloat(leaderResult.rows[0].override_amount) || 0;
+
+              if (leaderOverrideAmount > 0) {
+                await pool.query(
+                  `INSERT INTO affiliate_commissions (
+                    affiliate_id,
+                    commission_type,
+                    source_affiliate_id,
+                    client_id,
+                    amount,
+                    status,
+                    mp_payment_id,
+                    payment_reference
+                  )
+                   VALUES ($1, 'override', $2, $3, $4, 'pending', $5, $6)
+                   ON CONFLICT (mp_payment_id, affiliate_id) DO NOTHING`,
+                  [
+                    leaderResult.rows[0].id,
+                    affiliateId,
+                    userId,
+                    leaderOverrideAmount,
+                    paymentId,
+                    paymentReference,
+                  ]
+                );
+              }
+            }
+          }
 
           console.log(
             `💰 [COMISSÃO] Registrada comissão de R$ ${commissionAmount.toFixed(
               2
-            )} para afiliado ${affiliateName} (ID: ${affiliateUserId})`
+            )} para afiliado (user_id: ${affiliateUserId})`
           );
         } else {
           console.log(
@@ -6981,10 +7214,17 @@ app.get(
         a.pix_key,
         a.created_at,
         a.user_id,
+        a.leader_affiliate_id,
+        a.leadership_enabled,
+        a.leader_limit,
+        a.override_amount,
+        leader.name as leader_name,
         COUNT(DISTINCT u.id) as clients_count,
         COALESCE(ac.pending_total, 0) as pending_total,
-        COALESCE(ac.paid_total, 0) as paid_total
+        COALESCE(ac.paid_total, 0) as paid_total,
+        COALESCE(dl.downline_count, 0) as downline_count
       FROM affiliates a
+      LEFT JOIN affiliates leader ON leader.id = a.leader_affiliate_id
       LEFT JOIN users u ON u.referred_by_affiliate_id = a.user_id
       LEFT JOIN (
         SELECT
@@ -6994,7 +7234,13 @@ app.get(
         FROM affiliate_commissions
         GROUP BY affiliate_id
       ) ac ON ac.affiliate_id = a.id
-      GROUP BY a.id, ac.pending_total, ac.paid_total
+      LEFT JOIN (
+        SELECT leader_affiliate_id, COUNT(*) as downline_count
+        FROM affiliates
+        WHERE leader_affiliate_id IS NOT NULL
+        GROUP BY leader_affiliate_id
+      ) dl ON dl.leader_affiliate_id = a.id
+      GROUP BY a.id, leader.name, ac.pending_total, ac.paid_total, dl.downline_count
       ORDER BY a.created_at DESC
     `);
 
@@ -7112,11 +7358,30 @@ app.put(
   async (req, res) => {
     try {
       const { id } = req.params;
-      const { status, commission_amount, pix_key } = req.body;
+      const {
+        status,
+        commission_amount,
+        pix_key,
+        leadership_enabled,
+        leader_limit,
+        override_amount,
+        leader_affiliate_id,
+      } = req.body;
 
       const updates = [];
       const values = [];
       let paramCounter = 1;
+
+      const affiliateResult = await pool.query(
+        "SELECT id, leader_affiliate_id FROM affiliates WHERE id = $1",
+        [id]
+      );
+
+      if (affiliateResult.rows.length === 0) {
+        return res.status(404).json({ error: "Afiliado não encontrado" });
+      }
+
+      const currentAffiliate = affiliateResult.rows[0];
 
       if (status !== undefined) {
         updates.push(`status = $${paramCounter}`);
@@ -7140,6 +7405,60 @@ app.put(
         paramCounter++;
       }
 
+      if (leader_affiliate_id !== undefined) {
+        if (leader_affiliate_id !== null) {
+          return res.status(400).json({
+            error: "Não é permitido vincular líder manualmente",
+          });
+        }
+        updates.push(`leader_affiliate_id = $${paramCounter}`);
+        values.push(null);
+        paramCounter++;
+      }
+
+      if (leadership_enabled !== undefined) {
+        if (leadership_enabled && currentAffiliate.leader_affiliate_id) {
+          return res.status(400).json({
+            error: "Líder não pode estar vinculado a outro líder",
+          });
+        }
+        updates.push(`leadership_enabled = $${paramCounter}`);
+        values.push(Boolean(leadership_enabled));
+        paramCounter++;
+      }
+
+      if (leader_limit !== undefined) {
+        const leaderLimitValue = Number.parseInt(leader_limit, 10);
+        if (Number.isNaN(leaderLimitValue) || leaderLimitValue < 1) {
+          return res.status(400).json({ error: "Limite inválido" });
+        }
+
+        const downlineCountResult = await pool.query(
+          "SELECT COUNT(*)::int as count FROM affiliates WHERE leader_affiliate_id = $1",
+          [id]
+        );
+
+        if (leaderLimitValue < downlineCountResult.rows[0].count) {
+          return res.status(400).json({
+            error: "Limite menor que o número atual de vendedores",
+          });
+        }
+
+        updates.push(`leader_limit = $${paramCounter}`);
+        values.push(leaderLimitValue);
+        paramCounter++;
+      }
+
+      if (override_amount !== undefined) {
+        const overrideValue = parseFloat(override_amount);
+        if (Number.isNaN(overrideValue) || overrideValue < 0) {
+          return res.status(400).json({ error: "Override inválido" });
+        }
+        updates.push(`override_amount = $${paramCounter}`);
+        values.push(overrideValue);
+        paramCounter++;
+      }
+
       if (updates.length === 0) {
         return res.status(400).json({ error: "Nenhum campo para atualizar" });
       }
@@ -7155,6 +7474,17 @@ app.put(
 
       if (result.rows.length === 0) {
         return res.status(404).json({ error: "Afiliado não encontrado" });
+      }
+
+      if (status === "inactive") {
+        await pool.query(
+          "UPDATE affiliates SET leader_affiliate_id = NULL WHERE leader_affiliate_id = $1",
+          [id]
+        );
+        await pool.query(
+          "UPDATE affiliates SET leadership_enabled = false WHERE id = $1",
+          [id]
+        );
       }
 
       res.json(result.rows[0]);
@@ -7453,6 +7783,139 @@ app.get(
 // AFFILIATE PANEL ROUTES
 // ========================================
 
+// Leader creates a new affiliate
+app.post("/api/affiliate/affiliates", authenticate, async (req, res) => {
+  try {
+    const { name, cpf, email, password } = req.body;
+
+    if (!name || !cpf || !password) {
+      return res
+        .status(400)
+        .json({ error: "Nome, CPF e senha são obrigatórios" });
+    }
+
+    const userResult = await pool.query(
+      "SELECT roles FROM users WHERE id = $1",
+      [req.user.id]
+    );
+
+    if (!userResult.rows[0] || !userResult.rows[0].roles.includes("vendedor")) {
+      return res.status(403).json({ error: "Acesso negado" });
+    }
+
+    const leaderResult = await pool.query(
+      `SELECT id, leadership_enabled, status, leader_limit, leader_affiliate_id, commission_amount
+       FROM affiliates
+       WHERE user_id = $1`,
+      [req.user.id]
+    );
+
+    if (leaderResult.rows.length === 0) {
+      return res.status(403).json({ error: "Afiliado não encontrado" });
+    }
+
+    const leader = leaderResult.rows[0];
+
+    if (!leader.leadership_enabled || leader.status !== "active") {
+      return res.status(403).json({ error: "Liderança não habilitada" });
+    }
+
+    if (leader.leader_affiliate_id) {
+      return res
+        .status(403)
+        .json({ error: "Líder não pode estar vinculado a outro líder" });
+    }
+
+    const downlineCountResult = await pool.query(
+      "SELECT COUNT(*)::int as count FROM affiliates WHERE leader_affiliate_id = $1",
+      [leader.id]
+    );
+
+    if (leader.leader_limit <= downlineCountResult.rows[0].count) {
+      return res.status(400).json({ error: "Limite de vendedores atingido" });
+    }
+
+    const cpfClean = cpf.replace(/\D/g, "");
+
+    if (cpfClean.length !== 11) {
+      return res.status(400).json({ error: "CPF inválido" });
+    }
+
+    const existingAffiliateByName = await pool.query(
+      "SELECT id FROM affiliates WHERE LOWER(name) = LOWER($1)",
+      [name.trim()]
+    );
+    if (existingAffiliateByName.rows.length > 0) {
+      return res
+        .status(400)
+        .json({ error: "Nome de afiliado já cadastrado" });
+    }
+
+    const existingUser = await pool.query(
+      "SELECT id FROM users WHERE cpf = $1",
+      [cpfClean]
+    );
+    if (existingUser.rows.length > 0) {
+      return res.status(400).json({ error: "CPF já cadastrado no sistema" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const createdUserResult = await pool.query(
+      "INSERT INTO users (name, cpf, email, password, roles) VALUES ($1, $2, $3, $4, ARRAY['vendedor']) RETURNING id",
+      [name, cpfClean, email || null, hashedPassword]
+    );
+
+    const userId = createdUserResult.rows[0].id;
+
+    const generateCode = (affiliateName) => {
+      const cleaned = affiliateName
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+      const random = Math.random().toString(36).substring(2, 6);
+      return `${cleaned.substring(0, 10)}_${random}`;
+    };
+
+    let code = generateCode(name);
+    let attempts = 0;
+    const maxAttempts = 10;
+    const finalCommissionAmount = leader.commission_amount || 10.0;
+
+    while (attempts < maxAttempts) {
+      try {
+        const result = await pool.query(
+          `INSERT INTO affiliates (
+            name,
+            code,
+            status,
+            user_id,
+            commission_amount,
+            leader_affiliate_id
+          ) VALUES ($1, $2, 'active', $3, $4, $5) RETURNING *`,
+          [name, code, userId, finalCommissionAmount, leader.id]
+        );
+        return res.status(201).json(result.rows[0]);
+      } catch (error) {
+        if (error.code === "23505") {
+          attempts++;
+          code = generateCode(name);
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    return res
+      .status(500)
+      .json({ error: "Não foi possível gerar um código único" });
+  } catch (error) {
+    console.error("Error creating affiliate by leader:", error);
+    res.status(500).json({ error: "Erro ao cadastrar vendedor" });
+  }
+});
+
 // Get affiliate dashboard data
 app.get("/api/affiliate/dashboard", authenticate, async (req, res) => {
   try {
@@ -7480,19 +7943,20 @@ app.get("/api/affiliate/dashboard", authenticate, async (req, res) => {
 
     const affiliate = affiliateResult.rows[0];
 
-    // Get stats
+    // Get stats (direct clients + commissions for this affiliate)
     const statsResult = await pool.query(
       `
       SELECT
-        COUNT(DISTINCT u.id) as clients_count,
+        (SELECT COUNT(DISTINCT u.id)
+         FROM users u
+         WHERE u.referred_by_affiliate_id = $1) as clients_count,
         COALESCE(SUM(CASE WHEN ac.status = 'pending' THEN ac.amount ELSE 0 END), 0) as pending_total,
         COALESCE(SUM(CASE WHEN ac.status = 'paid' THEN ac.amount ELSE 0 END), 0) as paid_total,
         COALESCE(SUM(ac.amount), 0) as total_commissions
-      FROM users u
-      LEFT JOIN affiliate_commissions ac ON ac.client_id = u.id
-      WHERE u.referred_by_affiliate_id = $1
+      FROM affiliate_commissions ac
+      WHERE ac.affiliate_id = $2
     `,
-      [userId]
+      [userId, affiliate.id]
     );
 
     // Get referred clients with commission details
@@ -7528,6 +7992,8 @@ app.get("/api/affiliate/dashboard", authenticate, async (req, res) => {
         ac.paid_receipt_url,
         ac.payment_reference,
         ac.mp_payment_id,
+        ac.commission_type,
+        ac.source_affiliate_id,
         u.name as client_name,
         u.cpf as client_cpf,
         u.subscription_status as client_subscription_status
@@ -7539,11 +8005,45 @@ app.get("/api/affiliate/dashboard", authenticate, async (req, res) => {
       [affiliate.id]
     );
 
+    let downline = [];
+    if (affiliate.leadership_enabled) {
+      const downlineResult = await pool.query(
+        `
+        SELECT
+          a.id,
+          a.name,
+          a.status,
+          a.created_at,
+          COUNT(ac_direct.id) as sales_count,
+          COALESCE(SUM(ac_override.amount), 0) as override_total
+        FROM affiliates a
+        LEFT JOIN affiliate_commissions ac_direct
+          ON ac_direct.affiliate_id = a.id
+         AND ac_direct.commission_type = 'direct'
+        LEFT JOIN affiliate_commissions ac_override
+          ON ac_override.affiliate_id = $1
+         AND ac_override.source_affiliate_id = a.id
+         AND ac_override.commission_type = 'override'
+        WHERE a.leader_affiliate_id = $1
+        GROUP BY a.id
+        ORDER BY a.created_at DESC
+      `,
+        [affiliate.id]
+      );
+      downline = downlineResult.rows;
+    }
+
     res.json({
       affiliate,
       stats: statsResult.rows[0],
       clients: clientsResult.rows,
       commissions: commissionsResult.rows,
+      leadership: affiliate.leadership_enabled
+        ? {
+            leader_limit: affiliate.leader_limit,
+            downline,
+          }
+        : null,
     });
   } catch (error) {
     console.error("Error fetching affiliate dashboard:", error);
@@ -7807,6 +8307,10 @@ const startServer = async () => {
     scheduleExpiryCheck();
     await checkExpiredSubscriptionsNow();
     console.log("✅ Subscription expiry check job initialized");
+
+    console.log("⏰ Setting up affiliate inactivity check job...");
+    scheduleAffiliateInactivityCheck();
+    console.log("✅ Affiliate inactivity check job initialized");
 
     console.log(`🌐 Starting HTTP server on port ${PORT}...`);
     const server = app.listen(PORT, "0.0.0.0", () => {
