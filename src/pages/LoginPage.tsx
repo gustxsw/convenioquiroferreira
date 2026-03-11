@@ -202,6 +202,15 @@ const LoginPage: React.FC = () => {
                 />
               </div>
 
+              <div className="flex justify-end">
+                <Link
+                  to="/forgot-password"
+                  className="text-sm text-red-700 hover:text-red-800 hover:underline"
+                >
+                  Esqueci minha senha
+                </Link>
+              </div>
+
               <button
                 type="submit"
                 className={`w-full py-3 bg-red-700 text-white rounded-lg hover:bg-red-800 transition-colors ${

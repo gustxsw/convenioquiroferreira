@@ -12,6 +12,8 @@ import LoginPage from "./pages/LoginPage";
 import RoleSelectionPage from "./pages/RoleSelectionPage";
 import RegisterPage from "./pages/RegisterPage";
 import MaintenancePage from "./pages/MaintenancePage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import ClientHomePage from "./pages/client/ClientHomePage";
 import ProfessionalsPage from "./pages/client/ProfessionalsPage";
 import ProfessionalHomePage from "./pages/professional/ProfessionalHomePage";
@@ -98,6 +100,8 @@ function App() {
       
       {/* 🔥 ROOT ROUTE - SEMPRE LOGIN */}
       <Route path="/" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       {/* Auth routes */}
       <Route element={<AuthLayout />}>

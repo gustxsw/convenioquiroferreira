@@ -18,6 +18,8 @@ import {
   checkSchedulingAccess,
   getSchedulingAccessStatus,
 } from "./middleware/schedulingAccess.js";
+import { sendEmail } from "./utils/email.js";
+import crypto from "crypto";
 
 import {
   toUTCString,
@@ -150,6 +152,8 @@ const initializeDatabase = async () => {
         crm VARCHAR(20),
         professional_type VARCHAR(20) DEFAULT 'convenio',
         professional_registration_number VARCHAR(20),
+        reset_password_token TEXT,
+        reset_password_expires_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -163,6 +167,20 @@ const initializeDatabase = async () => {
           WHERE table_name = 'users' AND column_name = 'professional_registration_number'
         ) THEN
           ALTER TABLE users ADD COLUMN professional_registration_number VARCHAR(20);
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'reset_password_token'
+        ) THEN
+          ALTER TABLE users ADD COLUMN reset_password_token TEXT;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'reset_password_expires_at'
+        ) THEN
+          ALTER TABLE users ADD COLUMN reset_password_expires_at TIMESTAMP;
         END IF;
       END $$;
     `);
@@ -1427,6 +1445,189 @@ app.post("/api/auth/login", async (req, res) => {
   } catch (error) {
     console.error("❌ Login error:", error);
     res.status(500).json({ message: "Erro interno do servidor" });
+  }
+});
+
+app.post("/api/auth/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res
+        .status(400)
+        .json({ message: "E-mail é obrigatório para recuperar a senha" });
+    }
+
+    const userResult = await pool.query(
+      `
+      SELECT id, email, name
+      FROM users
+      WHERE LOWER(email) = LOWER($1)
+    `,
+      [email]
+    );
+
+    if (userResult.rows.length === 0) {
+      // Não revelar se o e-mail existe ou não
+      return res.json({
+        message:
+          "Se este e-mail estiver cadastrado, você receberá instruções para redefinir sua senha.",
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    const token = crypto.randomBytes(32).toString("hex");
+    const hashedToken = await bcrypt.hash(token, 10);
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
+
+    await pool.query(
+      `
+      UPDATE users
+      SET reset_password_token = $1,
+          reset_password_expires_at = $2
+      WHERE id = $3
+    `,
+      [hashedToken, expiresAt, user.id]
+    );
+
+    const isProduction = process.env.NODE_ENV === "production";
+    const frontendBaseUrl = isProduction
+      ? "https://www.cartaoquiroferreira.com.br"
+      : "http://localhost:5173";
+
+    const resetLink = `${frontendBaseUrl}/reset-password?token=${encodeURIComponent(
+      token
+    )}`;
+
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: "Redefinição de senha - Convênio Quiro Ferreira",
+        html: `
+          <div style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background-color: #f9fafb; padding: 24px;">
+            <div style="max-width: 520px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; padding: 24px; border: 1px solid #e5e7eb;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <h1 style="margin: 0; font-size: 24px; color: #111827; font-weight: 500;">
+                  Convênio Quiro Ferreira
+                </h1>
+                <p style="margin: 8px 0 0; color: #6b7280; font-size: 14px;">
+                  Redefinição de senha de acesso
+                </p>
+              </div>
+
+              <p style="color: #111827; font-size: 15px; line-height: 1.5; margin-bottom: 16px;">
+                Olá, <strong>${user.name || ""}</strong>
+              </p>
+
+              <p style="color: #374151; font-size: 14px; line-height: 1.6; margin-bottom: 16px;">
+                Recebemos uma solicitação para redefinir a senha da sua conta no
+                <strong>Convênio Quiro Ferreira</strong>.
+              </p>
+
+              <p style="color: #374151; font-size: 14px; line-height: 1.6; margin-bottom: 16px;">
+                Para criar uma nova senha, clique no botão abaixo. Este link é válido por
+                <strong>1 hora</strong>.
+              </p>
+
+              <div style="text-align: center; margin: 24px 0;">
+                <a href="${resetLink}" style="display: inline-block; padding: 12px 24px; background-color: #b91c1c; color: #ffffff; text-decoration: none; border-radius: 999px; font-size: 14px; font-weight: 500;">
+                  Redefinir minha senha
+                </a>
+              </div>
+
+              <p style="color: #6b7280; font-size: 12px; line-height: 1.6; margin-bottom: 12px;">
+                Se o botão acima não funcionar, copie e cole o link abaixo no seu navegador:
+              </p>
+
+              <p style="color: #111827; font-size: 12px; word-break: break-all; margin-bottom: 24px;">
+                ${resetLink}
+              </p>
+
+              <p style="color: #9ca3af; font-size: 12px; line-height: 1.6; margin-bottom: 0;">
+                Se você não solicitou esta redefinição, pode ignorar este e-mail com segurança.
+              </p>
+            </div>
+          </div>
+        `,
+      });
+    } catch (emailError) {
+      console.error("❌ Error sending password reset email:", emailError);
+      // Mesmo em caso de erro no envio, não revelar detalhes para o cliente
+    }
+
+    return res.json({
+      message:
+        "Se este e-mail estiver cadastrado, você receberá instruções para redefinir sua senha.",
+    });
+  } catch (error) {
+    console.error("❌ Forgot password error:", error);
+    res.status(500).json({ message: "Erro ao processar solicitação" });
+  }
+});
+
+app.post("/api/auth/reset-password", async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res
+        .status(400)
+        .json({ message: "Token e nova senha são obrigatórios" });
+    }
+
+    if (typeof password !== "string" || password.length < 6) {
+      return res.status(400).json({
+        message: "A nova senha deve ter pelo menos 6 caracteres",
+      });
+    }
+
+    const candidatesResult = await pool.query(
+      `
+      SELECT id, reset_password_token, reset_password_expires_at
+      FROM users
+      WHERE reset_password_token IS NOT NULL
+        AND reset_password_expires_at IS NOT NULL
+        AND reset_password_expires_at > NOW()
+    `
+    );
+
+    let matchedUserId = null;
+
+    for (const user of candidatesResult.rows) {
+      const isMatch = await bcrypt.compare(token, user.reset_password_token);
+      if (isMatch) {
+        matchedUserId = user.id;
+        break;
+      }
+    }
+
+    if (!matchedUserId) {
+      return res
+        .status(400)
+        .json({ message: "Token inválido ou expirado. Solicite um novo link." });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    await pool.query(
+      `
+      UPDATE users
+      SET password = $1,
+          reset_password_token = NULL,
+          reset_password_expires_at = NULL,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+    `,
+      [hashedPassword, matchedUserId]
+    );
+
+    return res.json({
+      message: "Senha redefinida com sucesso. Você já pode fazer login com a nova senha.",
+    });
+  } catch (error) {
+    console.error("❌ Reset password error:", error);
+    res.status(500).json({ message: "Erro ao redefinir senha" });
   }
 });
 
