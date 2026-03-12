@@ -507,12 +507,15 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
               <Clock className="h-5 w-5 text-blue-600 mr-2" />
               <div>
                 <p className="font-medium text-blue-900">
-                  {new Date(selectedSlot.date).toLocaleDateString("pt-BR", {
-                    weekday: "long",
-                    day: "2-digit",
-                    month: "long",
-                    year: "numeric",
-                  })}
+                  {new Date(`${selectedSlot.date}T12:00:00`).toLocaleDateString(
+                    "pt-BR",
+                    {
+                      weekday: "long",
+                      day: "2-digit",
+                      month: "long",
+                      year: "numeric",
+                    }
+                  )}
                 </p>
                 <p className="text-sm text-blue-700">
                   Horário: {selectedSlot.time}

@@ -1,9 +1,9 @@
+import dotenv from "dotenv";
 import express from "express";
 import cors from "cors";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
-import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import { pool } from "./db.js";
@@ -42,21 +42,35 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// CORS configuration for production
+// Allowed origins for CORS
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://cartaoquiroferreira.com.br",
+  "https://www.cartaoquiroferreira.com.br",
+  "https://testes-quiro-ferreira.onrender.com",
+];
+
+// CORS configuration (supports credentials, never sends wildcard *)
 const corsOptions = {
-  origin: [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "https://cartaoquiroferreira.com.br",
-    "https://www.cartaoquiroferreira.com.br",
-    "https://testes-quiro-ferreira.onrender.com",
-  ],
+  origin: (origin, callback) => {
+    // Allow non-browser clients (no origin) and allowed origins
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, origin || true);
+    }
+    return callback(new Error("Not allowed by CORS"), false);
+  },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 };
 
+// Ensure CORS + credentials headers are applied before routes
 app.use(cors(corsOptions));
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Credentials", "true");
+  next();
+});
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -280,6 +294,7 @@ const initializeDatabase = async () => {
         city VARCHAR(100),
         state VARCHAR(2),
         zip_code VARCHAR(8),
+        is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -1468,6 +1483,7 @@ app.post("/api/auth/forgot-password", async (req, res) => {
     );
 
     if (userResult.rows.length === 0) {
+      console.log("🔎 Forgot-password requested for non-existing email:", email);
       // Não revelar se o e-mail existe ou não
       return res.json({
         message:
@@ -1476,6 +1492,17 @@ app.post("/api/auth/forgot-password", async (req, res) => {
     }
 
     const user = userResult.rows[0];
+
+    if (!user.email) {
+      console.warn(
+        "⚠️ User found for forgot-password but has no email registered:",
+        { userId: user.id }
+      );
+      return res.json({
+        message:
+          "Se este e-mail estiver cadastrado, você receberá instruções para redefinir sua senha.",
+      });
+    }
 
     const token = crypto.randomBytes(32).toString("hex");
     const hashedToken = await bcrypt.hash(token, 10);
@@ -1501,6 +1528,7 @@ app.post("/api/auth/forgot-password", async (req, res) => {
     )}`;
 
     try {
+      console.log("📧 Sending forgot-password email to:", user.email);
       await sendEmail({
         to: user.email,
         subject: "Redefinição de senha - Convênio Quiro Ferreira",
@@ -1551,6 +1579,7 @@ app.post("/api/auth/forgot-password", async (req, res) => {
           </div>
         `,
       });
+      console.log("✅ Forgot-password email queued successfully for:", user.email);
     } catch (emailError) {
       console.error("❌ Error sending password reset email:", emailError);
       // Mesmo em caso de erro no envio, não revelar detalhes para o cliente
@@ -3699,6 +3728,132 @@ app.get(
   }
 );
 
+// GET /api/medical-records/:id/whatsapp - Get WhatsApp URL for medical record
+app.get(
+  "/api/medical-records/:id/whatsapp",
+  authenticate,
+  authorize(["professional", "admin"]),
+  async (req, res) => {
+    try {
+      const recordId = req.params.id;
+
+      console.log("🔄 Getting WhatsApp URL for medical record:", recordId);
+
+      const recordResult = await pool.query(
+        `SELECT 
+          mr.*,
+          COALESCE(pp.name, mr.patient_name) AS patient_name,
+          COALESCE(pp.phone, u.phone) AS patient_phone,
+          u.name AS professional_name
+        FROM medical_records mr
+        LEFT JOIN private_patients pp ON mr.private_patient_id = pp.id
+        LEFT JOIN users u ON mr.professional_id = u.id
+        WHERE mr.id = $1 AND mr.professional_id = $2`,
+        [recordId, req.user.id]
+      );
+
+      if (recordResult.rows.length === 0) {
+        return res.status(404).json({ message: "Prontuário não encontrado" });
+      }
+
+      const record = recordResult.rows[0];
+
+      if (!record.patient_phone) {
+        return res.status(400).json({
+          message:
+            "Não há telefone cadastrado para este paciente. Atualize o cadastro antes de enviar pelo WhatsApp.",
+        });
+      }
+
+      const cleanPhone = record.patient_phone.replace(/\D/g, "");
+      const formattedPhone = cleanPhone.startsWith("55")
+        ? cleanPhone
+        : `55${cleanPhone}`;
+
+      const message = `Olá ${
+        record.patient_name || ""
+      }, envio aqui informações do seu prontuário referente ao atendimento com ${
+        record.professional_name || "seu profissional de saúde"
+      }.`;
+
+      const encodedMessage = encodeURIComponent(message);
+      const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
+
+      console.log("✅ WhatsApp URL generated for medical record:", whatsappUrl);
+      res.json({ whatsapp_url: whatsappUrl });
+    } catch (error) {
+      console.error("❌ Error generating WhatsApp URL for medical record:", error);
+      res
+        .status(500)
+        .json({ message: "Erro interno do servidor ao gerar link do WhatsApp" });
+    }
+  }
+);
+
+// GET /api/documents/:id/whatsapp - Get WhatsApp URL for document
+app.get(
+  "/api/documents/:id/whatsapp",
+  authenticate,
+  authorize(["professional", "admin"]),
+  async (req, res) => {
+    try {
+      const documentId = req.params.id;
+
+      console.log("🔄 Getting WhatsApp URL for document:", documentId);
+
+      const documentResult = await pool.query(
+        `SELECT 
+          d.*,
+          COALESCE(pp.name, d.patient_name) AS patient_name,
+          COALESCE(pp.phone, u.phone) AS patient_phone,
+          u.name AS professional_name
+        FROM documents d
+        LEFT JOIN private_patients pp ON d.private_patient_id = pp.id
+        LEFT JOIN users u ON d.professional_id = u.id
+        WHERE d.id = $1 AND d.professional_id = $2`,
+        [documentId, req.user.id]
+      );
+
+      if (documentResult.rows.length === 0) {
+        return res.status(404).json({ message: "Documento não encontrado" });
+      }
+
+      const document = documentResult.rows[0];
+
+      if (!document.patient_phone) {
+        return res.status(400).json({
+          message:
+            "Não há telefone cadastrado para este paciente. Atualize o cadastro antes de enviar pelo WhatsApp.",
+        });
+      }
+
+      const cleanPhone = document.patient_phone.replace(/\D/g, "");
+      const formattedPhone = cleanPhone.startsWith("55")
+        ? cleanPhone
+        : `55${cleanPhone}`;
+
+      const message = `Olá ${
+        document.patient_name || ""
+      }, envio aqui o documento "${
+        document.title
+      }" referente ao seu atendimento com ${
+        document.professional_name || "seu profissional de saúde"
+      }.`;
+
+      const encodedMessage = encodeURIComponent(message);
+      const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
+
+      console.log("✅ WhatsApp URL generated for document:", whatsappUrl);
+      res.json({ whatsapp_url: whatsappUrl });
+    } catch (error) {
+      console.error("❌ Error generating WhatsApp URL for document:", error);
+      res
+        .status(500)
+        .json({ message: "Erro interno do servidor ao gerar link do WhatsApp" });
+    }
+  }
+);
+
 // Cancel consultation
 app.put(
   "/api/consultations/:id/cancel",
@@ -5153,13 +5308,17 @@ app.delete(
       }
 
       await pool.query(
-        "DELETE FROM private_patients WHERE id = $1 AND professional_id = $2",
+        `
+        UPDATE private_patients
+        SET is_active = false, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 AND professional_id = $2
+      `,
         [id, req.user.id]
       );
 
-      console.log("✅ Private patient deleted:", id);
+      console.log("✅ Private patient deactivated:", id);
 
-      res.json({ message: "Paciente excluído com sucesso" });
+      res.json({ message: "Paciente desativado com sucesso" });
     } catch (error) {
       console.error("❌ Error deleting private patient:", error);
       res.status(500).json({ message: "Erro ao excluir paciente particular" });

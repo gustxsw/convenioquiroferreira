@@ -15,6 +15,7 @@ import {
   Download,
   Printer,
   AlertCircle,
+  Phone,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
@@ -334,6 +335,39 @@ const DocumentsPage: React.FC = () => {
       setError("Erro ao buscar paciente.");
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  const sendDocumentViaWhatsApp = async (document: SavedDocument) => {
+    try {
+      setError("");
+
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/documents/${document.id}/whatsapp`
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.message || "Não foi possível gerar o link do WhatsApp"
+        );
+      }
+
+      const data = await response.json();
+      if (data.whatsapp_url) {
+        window.open(data.whatsapp_url, "_blank");
+      } else {
+        throw new Error("Link do WhatsApp não recebido do servidor");
+      }
+    } catch (error) {
+      console.error("Erro ao enviar documento via WhatsApp:", error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Erro ao enviar documento via WhatsApp"
+      );
+      setTimeout(() => setError(""), 4000);
     }
   };
 
@@ -788,6 +822,13 @@ const DocumentsPage: React.FC = () => {
                           title="Imprimir"
                         >
                           <Printer className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => sendDocumentViaWhatsApp(document)}
+                          className="text-green-600 hover:text-green-800"
+                          title="Enviar via WhatsApp"
+                        >
+                          <Phone className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => confirmDelete(document)}

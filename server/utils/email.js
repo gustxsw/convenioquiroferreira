@@ -29,7 +29,12 @@ const transporter =
 
 export const sendEmail = async ({ to, subject, html }) => {
   if (!transporter) {
-    console.warn("📧 SMTP transporter not configured. Skipping email send.");
+    console.warn("📧 SMTP transporter not configured. Skipping email send.", {
+      SMTP_HOST,
+      SMTP_PORT,
+      SMTP_USER: SMTP_USER ? "[SET]" : "[MISSING]",
+      SMTP_FROM,
+    });
     return;
   }
 
@@ -40,6 +45,22 @@ export const sendEmail = async ({ to, subject, html }) => {
     html,
   };
 
-  await transporter.sendMail(mailOptions);
+  console.log("📧 Attempting to send email:", {
+    to,
+    subject,
+    from: mailOptions.from,
+  });
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log("✅ Email sent successfully:", {
+      messageId: info.messageId,
+      response: info.response,
+      to,
+    });
+  } catch (error) {
+    console.error("❌ Error sending email via transporter:", error);
+    throw error;
+  }
 };
 

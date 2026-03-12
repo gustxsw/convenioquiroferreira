@@ -131,6 +131,11 @@ const SchedulingPage: React.FC = () => {
     useState<Consultation | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
 
+  // Date picker input state (to avoid updating on every keystroke)
+  const [dateInput, setDateInput] = useState(
+    format(new Date(), "yyyy-MM-dd")
+  );
+
   // Form state
   const [formData, setFormData] = useState({
     patient_type: "private" as "convenio" | "private",
@@ -291,6 +296,11 @@ const SchedulingPage: React.FC = () => {
       recheckAccess();
     }
   }, []);
+
+  // Keep date input in sync when selectedDate changes programaticamente
+  useEffect(() => {
+    setDateInput(format(selectedDate, "yyyy-MM-dd"));
+  }, [selectedDate]);
 
   useEffect(() => {
     checkSchedulingAccess();
@@ -1242,6 +1252,14 @@ const SchedulingPage: React.FC = () => {
             </button>
 
             <button
+              onClick={() => setShowNewModal(true)}
+              className="btn btn-primary flex items-center justify-center text-sm sm:text-base"
+            >
+              <Plus className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+              Agendar Consulta
+            </button>
+
+            <button
               onClick={() => setShowSlotModal(true)}
               className="btn btn-outline flex items-center justify-center text-sm sm:text-base"
               title="Personalizar duração dos slots"
@@ -1269,45 +1287,72 @@ const SchedulingPage: React.FC = () => {
         {/* Date Navigation */}
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-6 mb-4 sm:mb-6">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setSelectedDate(subDays(selectedDate, 1))}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" />
-            </button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center justify-between sm:justify-start sm:space-x-3">
+              <button
+                onClick={() => setSelectedDate(subDays(selectedDate, 1))}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" />
+              </button>
 
-            <div className="text-center px-2">
-              <h2 className="text-base sm:text-xl font-semibold text-gray-900">
-                {format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })}
-                <span className="block sm:inline text-xs sm:text-sm text-gray-500 sm:ml-2 mt-1 sm:mt-0">
-                  (Slots de {slotDuration} min)
-                </span>
-              </h2>
-              <div className="flex items-center justify-center space-x-2 sm:space-x-4 text-xs sm:text-sm text-gray-600 mt-1">
-                <span>{consultations.length} consulta(s)</span>
-                <span>•</span>
-                <span className="hidden sm:inline">
-                  Slots de {getSlotDurationLabel(slotDuration)}
-                </span>
+              <div className="text-center px-2">
+                <h2 className="text-base sm:text-xl font-semibold text-gray-900">
+                  {format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                  <span className="block sm:inline text-xs sm:text-sm text-gray-500 sm:ml-2 mt-1 sm:mt-0">
+                    (Slots de {slotDuration} min)
+                  </span>
+                </h2>
+                <div className="flex items-center justify-center space-x-2 sm:space-x-4 text-xs sm:text-sm text-gray-600 mt-1">
+                  <span>{consultations.length} consulta(s)</span>
+                  <span>•</span>
+                  <span className="hidden sm:inline">
+                    Slots de {getSlotDurationLabel(slotDuration)}
+                  </span>
+                </div>
               </div>
+
+              <button
+                onClick={() => setSelectedDate(addDays(selectedDate, 1))}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" />
+              </button>
             </div>
 
-            <button
-              onClick={() => setSelectedDate(addDays(selectedDate, 1))}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" />
-            </button>
-          </div>
-
-          <div className="flex justify-center mt-4">
-            <button
-              onClick={() => setSelectedDate(new Date())}
-              className="btn btn-secondary text-sm sm:text-base"
-            >
-              Hoje
-            </button>
+            <div className="flex items-center justify-between sm:justify-end gap-2">
+              <button
+                onClick={() => setSelectedDate(new Date())}
+                className="px-3 py-2 text-xs sm:text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Hoje
+              </button>
+              <input
+                type="date"
+                className="px-3 py-2 text-xs sm:text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                value={dateInput}
+                onChange={(e) => {
+                  setDateInput(e.target.value);
+                }}
+                onBlur={() => {
+                  if (!dateInput) return;
+                  const [year, month, day] = dateInput.split("-").map((v) => Number(v));
+                  if (!year || !month || !day) return;
+                  setSelectedDate(new Date(year, month - 1, day));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (!dateInput) return;
+                    const [year, month, day] = dateInput
+                      .split("-")
+                      .map((v) => Number(v));
+                    if (!year || !month || !day) return;
+                    setSelectedDate(new Date(year, month - 1, day));
+                  }
+                }}
+              />
+            </div>
           </div>
         </div>
 
@@ -1830,15 +1875,7 @@ const SchedulingPage: React.FC = () => {
                     );
                   })}
 
-                  {consultations.length > 0 && (
-                    <button
-                      onClick={() => setShowNewModal(true)}
-                      className="w-full py-3 px-4 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
-                    >
-                      <Plus className="h-5 w-5" />
-                      Agendar Nova Consulta
-                    </button>
-                  )}
+                  {consultations.length > 0 && null}
                 </div>
               </div>
             </>
@@ -1855,13 +1892,7 @@ const SchedulingPage: React.FC = () => {
                 Sua agenda está livre para{" "}
                 {format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}
               </p>
-              <button
-                onClick={() => setShowNewModal(true)}
-                className="btn btn-primary inline-flex items-center text-sm sm:text-base"
-              >
-                <Plus className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                Agendar Consulta
-              </button>
+              {/* Botão principal de agendamento movido para o topo da página */}
             </div>
           )}
         </div>

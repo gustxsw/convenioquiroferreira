@@ -138,10 +138,7 @@ function App() {
         <Route path="/professional/services" element={<ManageServicesPage />} />
         <Route path="/professional/reports" element={<ProfessionalReportsPage />} />
         <Route path="/professional/profile" element={<ProfessionalProfilePage />} />
-        <Route
-          path="/professional/register-consultation"
-          element={<RegisterConsultationPage />}
-        />
+        {/* Rota de registrar consulta removida do painel profissional */}
       </Route>
 
       {/* Admin routes */}

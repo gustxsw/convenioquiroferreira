@@ -606,13 +606,6 @@ const ProfessionalHomePage: React.FC = () => {
                 <p className="text-gray-600 mb-4">
                   Você ainda não registrou nenhuma consulta este mês.
                 </p>
-                <Link
-                  to="/professional/register-consultation"
-                  className="btn btn-primary inline-flex items-center"
-                >
-                  <PlusCircle className="h-5 w-5 mr-2" />
-                  Registrar Primeira Consulta
-                </Link>
               </div>
             ) : (
               <ConsultationsTable

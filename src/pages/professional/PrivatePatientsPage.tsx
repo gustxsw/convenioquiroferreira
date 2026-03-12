@@ -32,6 +32,7 @@ type PrivatePatient = {
   city: string;
   state: string;
   zip_code: string;
+  is_active?: boolean;
   created_at: string;
 };
 
@@ -855,9 +856,14 @@ const PrivatePatientsPage: React.FC = () => {
                             </div>
                           </div>
                           <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900">
-                              {patient.name}
-                            </div>
+                          <div className="text-sm font-medium text-gray-900 flex items-center space-x-2">
+                            <span>{patient.name}</span>
+                            {patient.is_active === false && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                                Inativo
+                              </span>
+                            )}
+                          </div>
                             {patient.cpf && (
                               <div className="text-sm text-gray-500">
                                 CPF: {formatCpfDisplay(patient.cpf)}

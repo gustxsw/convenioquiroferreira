@@ -422,12 +422,16 @@ const ManageServicesPage: React.FC = () => {
                       <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
                         Nome
                       </th>
-                      <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
-                        Categoria
-                      </th>
-                      <th className="hidden lg:table-cell px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
-                        Descrição
-                      </th>
+                      {!isProfessional && (
+                        <>
+                          <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
+                            Categoria
+                          </th>
+                          <th className="hidden lg:table-cell px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
+                            Descrição
+                          </th>
+                        </>
+                      )}
                       <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
                         Preço Base
                       </th>
@@ -472,12 +476,16 @@ const ManageServicesPage: React.FC = () => {
                             </div>
                           </div>
                         </td>
-                        <td className="hidden md:table-cell px-6 py-4 text-sm">
-                          {service.category_name || "Sem categoria"}
-                        </td>
-                        <td className="hidden lg:table-cell px-6 py-4 text-sm">
-                          {service.description}
-                        </td>
+                        {!isProfessional && (
+                          <>
+                            <td className="hidden md:table-cell px-6 py-4 text-sm">
+                              {service.category_name || "Sem categoria"}
+                            </td>
+                            <td className="hidden lg:table-cell px-6 py-4 text-sm">
+                              {service.description}
+                            </td>
+                          </>
+                        )}
                         <td className="px-3 sm:px-6 py-4 text-xs sm:text-sm font-medium">
                           {formatCurrency(service.base_price)}
                         </td>
@@ -570,43 +578,47 @@ const ManageServicesPage: React.FC = () => {
                 />
               </div>
 
-              <div className="mb-4">
-                <label
-                  htmlFor="category"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Categoria
-                </label>
-                <select
-                  id="category"
-                  value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
-                  className="input"
-                >
-                  <option value="">Selecione uma categoria</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {!isProfessional && (
+                <>
+                  <div className="mb-4">
+                    <label
+                      htmlFor="category"
+                      className="block text-sm font-medium text-gray-700 mb-1"
+                    >
+                      Categoria
+                    </label>
+                    <select
+                      id="category"
+                      value={categoryId}
+                      onChange={(e) => setCategoryId(e.target.value)}
+                      className="input"
+                    >
+                      <option value="">Selecione uma categoria</option>
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div className="mb-4">
-                <label
-                  htmlFor="description"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Descrição
-                </label>
-                <textarea
-                  id="description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="input min-h-[100px]"
-                  required
-                />
-              </div>
+                  <div className="mb-4">
+                    <label
+                      htmlFor="description"
+                      className="block text-sm font-medium text-gray-700 mb-1"
+                    >
+                      Descrição
+                    </label>
+                    <textarea
+                      id="description"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      className="input min-h-[100px]"
+                      required
+                    />
+                  </div>
+                </>
+              )}
 
               <div className="mb-4">
                 <label

@@ -16,6 +16,7 @@ import {
   Check,
   Download,
   Printer,
+  Phone,
 } from "lucide-react";
 
 type MedicalRecord = {
@@ -183,6 +184,39 @@ const MedicalRecordsPage: React.FC = () => {
       setError("Não foi possível carregar os dados");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const sendRecordViaWhatsApp = async (record: MedicalRecord) => {
+    try {
+      setError("");
+
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/medical-records/${record.id}/whatsapp`
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.message || "Não foi possível gerar o link do WhatsApp"
+        );
+      }
+
+      const data = await response.json();
+      if (data.whatsapp_url) {
+        window.open(data.whatsapp_url, "_blank");
+      } else {
+        throw new Error("Link do WhatsApp não recebido do servidor");
+      }
+    } catch (error) {
+      console.error("Erro ao enviar prontuário via WhatsApp:", error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Erro ao enviar prontuário via WhatsApp"
+      );
+      setTimeout(() => setError(""), 4000);
     }
   };
 
@@ -923,6 +957,13 @@ const MedicalRecordsPage: React.FC = () => {
                           title="Imprimir Direto"
                         >
                           <Download className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => sendRecordViaWhatsApp(record)}
+                          className="text-green-600 hover:text-green-800"
+                          title="Enviar via WhatsApp"
+                        >
+                          <Phone className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => openEditModal(record)}
