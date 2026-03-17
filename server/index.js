@@ -31,6 +31,7 @@ import {
   checkExpiredSubscriptionsNow,
 } from "./jobs/checkExpiredSubscriptions.js";
 import { scheduleAffiliateInactivityCheck } from "./jobs/checkInactiveAffiliates.js";
+import { scheduleMonthlyAgendaRevenueReport } from "./jobs/monthlyAgendaRevenueReport.js";
 
 // ES6 module compatibility
 const __filename = fileURLToPath(import.meta.url);
@@ -294,6 +295,7 @@ const initializeDatabase = async () => {
         city VARCHAR(100),
         state VARCHAR(2),
         zip_code VARCHAR(8),
+        convenio VARCHAR(255),
         is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -333,6 +335,8 @@ const initializeDatabase = async () => {
         date TIMESTAMP NOT NULL,
         status VARCHAR(20) DEFAULT 'scheduled',
         notes TEXT,
+        payment_method VARCHAR(50),
+        convenio VARCHAR(255),
         cancelled_at TIMESTAMP,
         cancelled_by INTEGER REFERENCES users(id),
         cancellation_reason TEXT,
@@ -360,7 +364,7 @@ const initializeDatabase = async () => {
       )
     `);
 
-    // Add missing columns to existing consultations table if they don't exist
+    // Add missing columns to existing consultations/private patients tables if they don't exist
     await pool.query(`
       DO $$
       BEGIN
@@ -418,6 +422,27 @@ const initializeDatabase = async () => {
           WHERE table_name = 'consultations' AND column_name = 'settled_at'
         ) THEN
           ALTER TABLE consultations ADD COLUMN settled_at TIMESTAMP;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'consultations' AND column_name = 'payment_method'
+        ) THEN
+          ALTER TABLE consultations ADD COLUMN payment_method VARCHAR(50);
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'consultations' AND column_name = 'convenio'
+        ) THEN
+          ALTER TABLE consultations ADD COLUMN convenio VARCHAR(255);
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'private_patients' AND column_name = 'convenio'
+        ) THEN
+          ALTER TABLE private_patients ADD COLUMN convenio VARCHAR(255);
         END IF;
       END $$;
     `);
@@ -3024,6 +3049,119 @@ app.get(
   }
 );
 
+// ===== PROFESSIONAL ANALYTICS REPORT (DETAILED BREAKDOWN) =====
+app.get(
+  "/api/reports/professional-analytics",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const professionalId = req.user.id;
+      const { start_date, end_date } = req.query;
+
+      console.log("📊 Generating analytics report for:", professionalId);
+      console.log("📅 Date range:", start_date, end_date);
+
+      if (!start_date || !end_date) {
+        return res
+          .status(400)
+          .json({ message: "Datas inicial e final são obrigatórias" });
+      }
+
+      // All consultations (including cancelled) with rich detail
+      const consultationsResult = await pool.query(
+        `
+        SELECT
+          c.id,
+          c.date,
+          c.value,
+          c.status,
+          c.payment_method,
+          c.user_id,
+          c.dependent_id,
+          c.private_patient_id,
+          s.name AS service_name,
+          CASE
+            WHEN c.user_id IS NOT NULL THEN u.name
+            WHEN c.dependent_id IS NOT NULL THEN d.name
+            WHEN c.private_patient_id IS NOT NULL THEN pp.name
+            ELSE 'Desconhecido'
+          END AS client_name,
+          CASE
+            WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN 'convenio'
+            WHEN c.private_patient_id IS NOT NULL THEN 'private'
+            ELSE 'unknown'
+          END AS patient_type
+        FROM consultations c
+        LEFT JOIN services s ON c.service_id = s.id
+        LEFT JOIN users u ON c.user_id = u.id
+        LEFT JOIN dependents d ON c.dependent_id = d.id
+        LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
+        WHERE c.professional_id = $1
+          AND c.date BETWEEN $2::timestamptz AND $3::timestamptz
+        ORDER BY c.date DESC
+      `,
+        [professionalId, `${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
+      );
+
+      // Inactive clients (convênio: subscription_status != active; particulares: is_active = false)
+      const inactiveConvenioResult = await pool.query(
+        `
+        SELECT DISTINCT
+          u.id,
+          u.name,
+          u.subscription_status,
+          'titular' AS client_type
+        FROM consultations c
+        JOIN users u ON c.user_id = u.id
+        WHERE c.professional_id = $1
+          AND u.subscription_status IS NOT NULL
+          AND u.subscription_status != 'active'
+
+        UNION
+
+        SELECT DISTINCT
+          d.id,
+          d.name,
+          d.subscription_status,
+          'dependente' AS client_type
+        FROM consultations c
+        JOIN dependents d ON c.dependent_id = d.id
+        WHERE c.professional_id = $1
+          AND d.subscription_status IS NOT NULL
+          AND d.subscription_status != 'active'
+      `,
+        [professionalId]
+      );
+
+      const inactivePrivateResult = await pool.query(
+        `
+        SELECT DISTINCT
+          pp.id,
+          pp.name,
+          pp.is_active
+        FROM consultations c
+        JOIN private_patients pp ON c.private_patient_id = pp.id
+        WHERE c.professional_id = $1
+          AND pp.is_active = false
+      `,
+        [professionalId]
+      );
+
+      res.json({
+        consultations: consultationsResult.rows,
+        inactive_clients: {
+          convenio: inactiveConvenioResult.rows,
+          private: inactivePrivateResult.rows,
+        },
+      });
+    } catch (error) {
+      console.error("❌ Error generating analytics report:", error);
+      res.status(500).json({ message: "Erro ao gerar relatório analítico" });
+    }
+  }
+);
+
 // Create new consultation (RegisterConsultationPage - no scheduling access required)
 app.post(
   "/api/consultations",
@@ -3042,6 +3180,8 @@ app.post(
         date,
         notes,
         status = "scheduled",
+        payment_method,
+        convenio,
       } = req.body;
 
       console.log("🔄 Creating consultation:", req.body);
@@ -3193,9 +3333,9 @@ app.post(
         `
       INSERT INTO consultations (
         user_id, dependent_id, private_patient_id, professional_id, 
-        service_id, location_id, value, date, status, notes
+        service_id, location_id, value, date, status, notes, payment_method, convenio
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING *
     `,
         [
@@ -3209,6 +3349,8 @@ app.post(
           dateTimeForStorage,
           status,
           notes?.trim() || null,
+          payment_method || null,
+          convenio?.trim() || null,
         ]
       );
 
@@ -3252,6 +3394,8 @@ app.post(
         selected_weekdays = [],
         occurrences = 10,
         notes,
+        payment_method,
+        convenio,
       } = req.body;
 
       console.log("🔄 [RECURRING] Creating recurring consultations:", req.body);
@@ -3423,9 +3567,9 @@ app.post(
           `
           INSERT INTO consultations (
             user_id, dependent_id, private_patient_id, professional_id,
-            service_id, location_id, value, date, status, notes
+            service_id, location_id, value, date, status, notes, payment_method, convenio
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
           RETURNING *
         `,
           [
@@ -3439,6 +3583,8 @@ app.post(
             dateTimeUTC,
             "scheduled",
             notes?.trim() || null,
+            payment_method || null,
+            convenio?.trim() || null,
           ]
         );
 
@@ -3528,7 +3674,16 @@ app.put(
   async (req, res) => {
     try {
       const { id } = req.params;
-      const { service_id, location_id, value, date, status, notes } = req.body;
+      const {
+        service_id,
+        location_id,
+        value,
+        date,
+        status,
+        notes,
+        payment_method,
+        convenio,
+      } = req.body;
 
       console.log("🔄 Updating consultation:", id);
 
@@ -3604,6 +3759,16 @@ app.put(
       if (notes !== undefined) {
         updateFields.push(`notes = $${paramCount++}`);
         updateValues.push(notes?.trim() || null);
+      }
+
+      if (payment_method !== undefined) {
+        updateFields.push(`payment_method = $${paramCount++}`);
+        updateValues.push(payment_method || null);
+      }
+
+      if (convenio !== undefined) {
+        updateFields.push(`convenio = $${paramCount++}`);
+        updateValues.push(convenio?.trim() || null);
       }
 
       // Always update updated_at
@@ -5053,6 +5218,7 @@ app.get(
         let query = `
           SELECT * FROM private_patients
           WHERE professional_id = $1
+            AND is_active = true
             AND (name ILIKE $2
         `;
 
@@ -5111,6 +5277,7 @@ app.post(
         city,
         state,
         zip_code,
+        convenio,
       } = req.body;
 
       if (!name) {
@@ -5149,9 +5316,9 @@ app.post(
         `
       INSERT INTO private_patients (
         professional_id, name, cpf, email, phone, birth_date, address,
-        address_number, address_complement, neighborhood, city, state, zip_code
+        address_number, address_complement, neighborhood, city, state, zip_code, convenio
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *
     `,
         [
@@ -5168,6 +5335,7 @@ app.post(
           city?.trim() || null,
           state || null,
           zip_code?.replace(/\D/g, "") || null,
+          convenio?.trim() || null,
         ]
       );
 
@@ -5205,6 +5373,7 @@ app.put(
         city,
         state,
         zip_code,
+        convenio,
       } = req.body;
 
       // Get current patient data
@@ -5234,8 +5403,8 @@ app.put(
       SET 
         name = $1, email = $2, phone = $3, birth_date = $4, address = $5,
         address_number = $6, address_complement = $7, neighborhood = $8,
-        city = $9, state = $10, zip_code = $11, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $12 AND professional_id = $13
+        city = $9, state = $10, zip_code = $11, convenio = $12, is_active = COALESCE($13, is_active), updated_at = CURRENT_TIMESTAMP
+      WHERE id = $14 AND professional_id = $15
       RETURNING *
     `,
         [
@@ -5250,6 +5419,8 @@ app.put(
           city?.trim() || null,
           state || null,
           zip_code?.replace(/\D/g, "") || null,
+          convenio?.trim() || null,
+          typeof req.body.is_active === "boolean" ? req.body.is_active : null,
           id,
           req.user.id,
         ]
@@ -8671,6 +8842,10 @@ const startServer = async () => {
     console.log("⏰ Setting up affiliate inactivity check job...");
     scheduleAffiliateInactivityCheck();
     console.log("✅ Affiliate inactivity check job initialized");
+
+    console.log("⏰ Setting up monthly agenda revenue report job...");
+    scheduleMonthlyAgendaRevenueReport();
+    console.log("✅ Monthly agenda revenue report job initialized");
 
     console.log(`🌐 Starting HTTP server on port ${PORT}...`);
     const server = app.listen(PORT, "0.0.0.0", () => {

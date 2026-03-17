@@ -34,6 +34,7 @@ type PrivatePatient = {
   zip_code: string;
   is_active?: boolean;
   created_at: string;
+  convenio?: string;
 };
 
 const PrivatePatientsPage: React.FC = () => {
@@ -75,6 +76,7 @@ const PrivatePatientsPage: React.FC = () => {
     city: "",
     state: "",
     zip_code: "",
+    convenio: "",
   });
 
   // Delete confirmation state
@@ -93,7 +95,6 @@ const PrivatePatientsPage: React.FC = () => {
     city: "",
     state: "",
   });
-
 
   useEffect(() => {
     fetchPatients();
@@ -139,6 +140,7 @@ const PrivatePatientsPage: React.FC = () => {
       });
     }
 
+    // Agora SEM esconder pacientes inativos; toggle só serve para destacar/filtrar visualmente no futuro
     setFilteredPatients(filtered);
   };
 
@@ -257,6 +259,7 @@ const PrivatePatientsPage: React.FC = () => {
       city: "",
       state: "",
       zip_code: "",
+      convenio: "",
     });
     setSelectedPatient(null);
     setIsModalOpen(true);
@@ -277,6 +280,7 @@ const PrivatePatientsPage: React.FC = () => {
       city: patient.city || "",
       state: patient.state || "",
       zip_code: patient.zip_code || "",
+      convenio: patient.convenio || "",
     });
     setSelectedPatient(patient);
     setIsModalOpen(true);
@@ -354,6 +358,7 @@ const PrivatePatientsPage: React.FC = () => {
         city: (formData.city || "").trim() || null,
         state: formData.state || null,
         zip_code: formData.zip_code.replace(/\D/g, "") || null,
+        convenio: (formData.convenio || "").trim() || null,
       };
 
       const response = await fetchWithAuth(url, {
@@ -402,10 +407,30 @@ const PrivatePatientsPage: React.FC = () => {
     try {
       const apiUrl = getApiUrl();
 
+      const isCurrentlyActive = patientToDelete.is_active !== false;
+
       const response = await fetchWithAuth(
         `${apiUrl}/api/private-patients/${patientToDelete.id}`,
         {
-          method: "DELETE",
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: patientToDelete.name,
+            email: patientToDelete.email,
+            phone: patientToDelete.phone,
+            birth_date: patientToDelete.birth_date,
+            address: patientToDelete.address,
+            address_number: patientToDelete.address_number,
+            address_complement: patientToDelete.address_complement,
+            neighborhood: patientToDelete.neighborhood,
+            city: patientToDelete.city,
+            state: patientToDelete.state,
+            zip_code: patientToDelete.zip_code,
+            convenio: patientToDelete.convenio,
+            is_active: !isCurrentlyActive,
+          }),
         }
       );
 
@@ -415,7 +440,11 @@ const PrivatePatientsPage: React.FC = () => {
       }
 
       await fetchPatients();
-      setSuccess("Paciente excluído com sucesso!");
+      setSuccess(
+        isCurrentlyActive
+          ? "Paciente desativado com sucesso!"
+          : "Paciente reativado com sucesso!"
+      );
     } catch (error) {
       setError(
         error instanceof Error ? error.message : "Erro ao excluir paciente"
@@ -845,7 +874,11 @@ const PrivatePatientsPage: React.FC = () => {
                   {filteredPatients.map((patient) => (
                     <tr
                       key={patient.id}
-                      className="hover:bg-gray-50 cursor-pointer"
+                      className={`cursor-pointer ${
+                        patient.is_active === false
+                          ? "bg-gray-50 hover:bg-gray-100"
+                          : "hover:bg-gray-50"
+                      }`}
                       onClick={() => openViewModal(patient)}
                     >
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -1028,6 +1061,20 @@ const PrivatePatientsPage: React.FC = () => {
                     onChange={(e) => formatZipCode(e.target.value)}
                     className="input"
                     placeholder="00000-000"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Convênio (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    name="convenio"
+                    value={formData.convenio}
+                    onChange={handleInputChange}
+                    className="input"
+                    placeholder="Nome do convênio"
                   />
                 </div>
 
@@ -1250,25 +1297,35 @@ const PrivatePatientsPage: React.FC = () => {
                   closeViewModal();
                   confirmDelete(viewingPatient);
                 }}
-                className="btn bg-red-600 text-white hover:bg-red-700"
+                className={`btn ${
+                  viewingPatient.is_active === false
+                    ? "bg-green-600 text-white hover:bg-green-700"
+                    : "bg-red-600 text-white hover:bg-red-700"
+                }`}
               >
-                Excluir
+                {viewingPatient.is_active === false ? "Reativar" : "Desativar"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Delete confirmation modal */}
+      {/* Activate/Deactivate confirmation modal */}
       {showDeleteConfirm && patientToDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-md p-6">
-            <h2 className="text-xl font-bold mb-4">Confirmar Exclusão</h2>
+            <h2 className="text-xl font-bold mb-4">
+              {patientToDelete.is_active === false
+                ? "Confirmar Reativação"
+                : "Confirmar Desativação"}
+            </h2>
 
             <p className="mb-6">
-              Tem certeza que deseja excluir o paciente{" "}
-              <strong>{patientToDelete.name}</strong>? Esta ação não pode ser
-              desfeita.
+              Tem certeza que deseja{" "}
+              {patientToDelete.is_active === false ? "reativar" : "desativar"} o
+              paciente <strong>{patientToDelete.name}</strong>?
+              {patientToDelete.is_active !== false &&
+                " Ele não aparecerá mais para agendamentos."}
             </p>
 
             <div className="flex justify-end space-x-3">

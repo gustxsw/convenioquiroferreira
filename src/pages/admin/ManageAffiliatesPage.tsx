@@ -638,36 +638,30 @@ const ManageAffiliatesPage: React.FC = () => {
         ))}
       </div>
 
-      {/* Desktop View - Table */}
-      <div className="hidden lg:block bg-white rounded-lg shadow overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
+      {/* Desktop View - Compact Table */}
+      <div className="hidden lg:block bg-white rounded-lg shadow">
+        <table className="min-w-full table-fixed divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+              <th className="w-1/4 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                 Nome
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                Líder
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                Link
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+              <th className="w-16 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                 Clientes
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+              <th className="w-24 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                 Comissão
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+              <th className="w-28 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                 Total Pendente
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+              <th className="w-28 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                 Total Pago
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+              <th className="w-24 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                 Status
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+              <th className="w-40 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                 Ações
               </th>
             </tr>
@@ -676,39 +670,21 @@ const ManageAffiliatesPage: React.FC = () => {
             {filteredAffiliates.map((affiliate) => (
               <tr key={affiliate.id}>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {affiliate.name}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {affiliate.leadership_enabled ? (
-                    <span className="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">
-                      Líder ({affiliate.downline_count || 0})
+                  <div className="flex flex-col">
+                    <span className="font-medium">{affiliate.name}</span>
+                    <span className="text-xs text-gray-500">
+                      Código: {affiliate.code}
                     </span>
-                  ) : affiliate.leader_name ? (
-                    <span className="text-xs text-gray-700">
-                      {affiliate.leader_name}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-gray-400">Sem líder</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                  <button
-                    onClick={() => copyAffiliateLink(affiliate.id, affiliate.code)}
-                    className="flex items-center space-x-2 text-blue-600 hover:text-blue-700"
-                    title="Copiar link de cadastro"
-                  >
-                    {copiedCode === affiliate.code ? (
-                      <>
-                        <Check className="w-4 h-4 text-green-600" />
-                        <span className="text-green-600">Copiado!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-4 h-4" />
-                        <span>Copiar Link</span>
-                      </>
-                    )}
-                  </button>
+                    {affiliate.leadership_enabled ? (
+                      <span className="mt-1 inline-flex items-center px-2 py-0.5 text-[11px] rounded-full bg-purple-100 text-purple-800">
+                        Líder ({affiliate.downline_count || 0})
+                      </span>
+                    ) : affiliate.leader_name ? (
+                      <span className="mt-1 text-[11px] text-gray-500">
+                        Liderado por {affiliate.leader_name}
+                      </span>
+                    ) : null}
+                  </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {affiliate.clients_count}
@@ -751,32 +727,42 @@ const ManageAffiliatesPage: React.FC = () => {
                     {affiliate.status === "active" ? "Ativo" : "Inativo"}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
+                <td className="px-6 py-4 whitespace-nowrap text-xs space-x-3">
+                  <button
+                    onClick={() => copyAffiliateLink(affiliate.id, affiliate.code)}
+                    className="inline-flex items-center text-blue-600 hover:text-blue-700"
+                    title="Copiar link de cadastro"
+                  >
+                    {copiedCode === affiliate.code ? (
+                      <Check className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </button>
                   <button
                     onClick={() => viewCommissions(affiliate)}
-                    className="text-blue-600 hover:text-blue-700"
+                    className="inline-flex items-center text-blue-600 hover:text-blue-700"
+                    title="Ver comissões"
                   >
-                    Ver Comissões
+                    <DollarSign className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => openLeadershipModal(affiliate)}
-                    className="text-purple-600 hover:text-purple-700"
+                    className="inline-flex items-center text-purple-600 hover:text-purple-700"
+                    title="Configurar liderança"
                   >
-                    Liderança
+                    <Users className="w-4 h-4" />
                   </button>
-                  {affiliate.leader_affiliate_id && (
-                    <button
-                      onClick={() => unlinkLeader(affiliate)}
-                      className="text-yellow-600 hover:text-yellow-700"
-                    >
-                      Desvincular
-                    </button>
-                  )}
                   <button
                     onClick={() => toggleStatus(affiliate.id, affiliate.status)}
-                    className="text-gray-600 hover:text-gray-700"
+                    className="inline-flex items-center text-gray-600 hover:text-gray-700"
+                    title={affiliate.status === "active" ? "Desativar" : "Ativar"}
                   >
-                    {affiliate.status === "active" ? "Desativar" : "Ativar"}
+                    {affiliate.status === "active" ? (
+                      <XCircle className="w-4 h-4" />
+                    ) : (
+                      <CheckCircle className="w-4 h-4" />
+                    )}
                   </button>
                 </td>
               </tr>

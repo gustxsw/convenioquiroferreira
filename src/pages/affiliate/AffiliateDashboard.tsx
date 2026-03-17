@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
-import { Copy, CreditCard, Users, Clock, DollarSign } from "lucide-react";
-import PieChart from "../../components/PieChart";
+import { Copy, CreditCard, Users, Clock, DollarSign, Activity } from "lucide-react";
+import BarChart from "../../components/BarChart";
 
 interface AffiliateData {
   affiliate: {
@@ -176,7 +176,10 @@ const AffiliateDashboard: React.FC = () => {
     );
   }
 
-  const totalRegistrations = parseInt(referralStats?.total_registrations || "0");
+  const totalClicks = parseInt(referralStats?.total_clicks || "0");
+  const rawRegistrations = parseInt(referralStats?.total_registrations || "0");
+  // Se ainda não há cadastros, usa pelo menos os cliques para não ficar zerado
+  const totalRegistrations = rawRegistrations > 0 ? rawRegistrations : totalClicks;
   const totalConversions = parseInt(referralStats?.total_conversions || "0");
   const activeClients = data.clients.filter(
     (client) => client.subscription_status === "active"
@@ -185,10 +188,10 @@ const AffiliateDashboard: React.FC = () => {
     (client) => client.subscription_status !== "active"
   ).length;
 
-  const pieChartData = [
-    { label: "Cadastros", value: totalRegistrations, color: "#F59E0B" },
-    { label: "Pagamentos", value: totalConversions, color: "#10B981" },
-  ];
+  const conversionRate =
+    totalRegistrations > 0
+      ? Math.round((totalConversions / totalRegistrations) * 100)
+      : 0;
 
   const filteredClients = data.clients.filter((client) => {
     const term = clientSearch.trim().toLowerCase();
@@ -232,7 +235,7 @@ const AffiliateDashboard: React.FC = () => {
         </p>
       </div>
 
-      {/* Resumo Rápido */}
+      {/* Resumo Rápido + KPI de Conversão */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <div className="flex items-center gap-3 mb-2">
@@ -244,6 +247,23 @@ const AffiliateDashboard: React.FC = () => {
               <p className="text-2xl font-bold text-gray-900">{activeClients}</p>
             </div>
           </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="bg-indigo-100 p-3 rounded-lg">
+              <Activity className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Taxa de Conversão</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {conversionRate}%
+              </p>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            {totalRegistrations} cadastros • {totalConversions} clientes
+          </p>
         </div>
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -366,10 +386,41 @@ const AffiliateDashboard: React.FC = () => {
       {/* Gráfico de Conversão */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          Cadastros vs Pagamentos
+          Taxa de Conversão
         </h2>
-        <div className="flex justify-center">
-          <PieChart data={pieChartData} size={240} />
+        <div className="flex flex-col lg:flex-row items-center lg:items-start gap-6">
+          <div className="flex-1">
+            <BarChart
+              data={[
+                {
+                  label: "Cadastros",
+                  value: totalRegistrations,
+                  color: "#F59E0B",
+                },
+                {
+                  label: "Clientes",
+                  value: totalConversions,
+                  color: "#10B981",
+                },
+              ]}
+            />
+          </div>
+          <div className="w-full lg:w-64 space-y-2 text-sm">
+            <p className="text-gray-600">
+              <span className="font-semibold text-gray-900">
+                Taxa de conversão:
+              </span>{" "}
+              {conversionRate}% dos cadastros viraram clientes pagantes.
+            </p>
+            <p className="text-gray-600">
+              <span className="font-semibold text-gray-900">Cadastros:</span>{" "}
+              {totalRegistrations}
+            </p>
+            <p className="text-gray-600">
+              <span className="font-semibold text-gray-900">Clientes:</span>{" "}
+              {totalConversions}
+            </p>
+          </div>
         </div>
       </div>
 

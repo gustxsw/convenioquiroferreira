@@ -147,6 +147,8 @@ const SchedulingPage: React.FC = () => {
     value: "",
     location_id: "",
     notes: "",
+    payment_method: "",
+    convenio: "",
   });
 
   // Client search state
@@ -809,6 +811,8 @@ const SchedulingPage: React.FC = () => {
         date: `${formData.date}T${formData.time}`,
         status: "scheduled",
         notes: formData.notes || null,
+        payment_method: formData.payment_method || null,
+        convenio: formData.convenio.trim() || null,
       };
 
       // Set patient based on type
@@ -879,6 +883,8 @@ const SchedulingPage: React.FC = () => {
       value: "",
       location_id: "",
       notes: "",
+      payment_method: "",
+      convenio: "",
     });
     setClientSearchResult(null);
     setDependents([]);
@@ -2257,6 +2263,49 @@ const SchedulingPage: React.FC = () => {
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  {/* Payment & Convenio */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Forma de Pagamento
+                    </label>
+                    <select
+                      value={formData.payment_method}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          payment_method: e.target.value,
+                        }))
+                      }
+                      className="input text-sm sm:text-base"
+                    >
+                      <option value="">Selecione uma forma</option>
+                      <option value="dinheiro">Dinheiro</option>
+                      <option value="cartao_credito">Cartão de crédito</option>
+                      <option value="cartao_debito">Cartão de débito</option>
+                      <option value="pix">Pix</option>
+                      <option value="boleto">Boleto</option>
+                      <option value="outro">Outro</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Convênio
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.convenio}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          convenio: e.target.value,
+                        }))
+                      }
+                      className="input text-sm sm:text-base"
+                      placeholder="Nome do convênio (se houver)"
+                    />
                   </div>
 
                   {/* Notes */}

@@ -212,11 +212,14 @@ const RegisterPage: React.FC = () => {
       console.log("Registration successful:", data);
 
       // Link user to affiliate if they came from a referral link
-      try {
-        await linkUserToAffiliate(data.user.id);
-      } catch (affiliateError) {
-        console.error("Error linking to affiliate:", affiliateError);
-        // Don't block registration if affiliate linking fails
+      // Somente para cadastros de CLIENTE (não profissionais)
+      if (registrationRole === "client") {
+        try {
+          await linkUserToAffiliate(data.user.id);
+        } catch (affiliateError) {
+          console.error("Error linking to affiliate:", affiliateError);
+          // Don't block registration if affiliate linking fails
+        }
       }
 
       // Auto-select role based on registration

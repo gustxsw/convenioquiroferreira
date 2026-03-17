@@ -24,6 +24,8 @@ type Consultation = {
   is_dependent: boolean;
   patient_type: "convenio" | "private";
   location_name?: string;
+  payment_method?: string;
+  convenio?: string;
 };
 
 type AttendanceLocation = {
@@ -65,6 +67,8 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
       | "confirmed"
       | "completed"
       | "cancelled",
+    payment_method: "",
+    convenio: "",
   });
 
   useEffect(() => {
@@ -76,6 +80,8 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
         location_id: "", // Will be set after locations are loaded
         notes: consultation.notes || "",
         status: consultation.status,
+        payment_method: consultation.payment_method || "",
+        convenio: consultation.convenio || "",
       });
 
       fetchLocations();
@@ -140,6 +146,8 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
             ? formData.notes.trim()
             : null,
         status: formData.status,
+        payment_method: formData.payment_method || null,
+        convenio: formData.convenio.trim() || null,
       };
 
       const response = await fetchWithAuth(
@@ -356,8 +364,52 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
               </select>
             </div>
 
-            {/* Notes */}
-            <div>
+            {/* Payment and Notes */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Forma de Pagamento
+                </label>
+                <select
+                  value={formData.payment_method}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      payment_method: e.target.value,
+                    }))
+                  }
+                  className="input"
+                >
+                  <option value="">Selecione uma forma</option>
+                  <option value="dinheiro">Dinheiro</option>
+                  <option value="cartao_credito">Cartão de crédito</option>
+                  <option value="cartao_debito">Cartão de débito</option>
+                  <option value="pix">Pix</option>
+                  <option value="boleto">Boleto</option>
+                  <option value="outro">Outro</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Convênio
+                </label>
+                <input
+                  type="text"
+                  value={formData.convenio}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      convenio: e.target.value,
+                    }))
+                  }
+                  className="input"
+                  placeholder="Nome do convênio (se houver)"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Observações
               </label>

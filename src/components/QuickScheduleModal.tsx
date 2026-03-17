@@ -48,6 +48,7 @@ type PrivatePatient = {
   id: number;
   name: string;
   cpf: string;
+  convenio?: string;
 };
 
 type QuickScheduleModalProps = {
@@ -118,6 +119,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
     city: "",
     state: "",
     zip_code: "",
+    convenio: "",
   });
 
   const [formData, setFormData] = useState({
@@ -126,6 +128,8 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
     location_id: "",
     notes: "",
     private_patient_id: "",
+    payment_method: "",
+    convenio: "",
   });
 
   useEffect(() => {
@@ -186,6 +190,8 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
       location_id: "",
       notes: "",
       private_patient_id: "",
+      payment_method: "",
+      convenio: "",
     });
     setError("");
     setConflictData([]);
@@ -310,6 +316,8 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
         date: dateTimeUTC,
         status: "scheduled",
         notes: formData.notes.trim() || null,
+        payment_method: formData.payment_method || null,
+        convenio: formData.convenio.trim() || null,
       };
 
       if (patientType === "private") {
@@ -436,6 +444,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
       city: "",
       state: "",
       zip_code: "",
+      convenio: "",
     });
     setShowQuickPrivatePatientModal(true);
   };
@@ -803,6 +812,50 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
                 </div>
               </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Forma de Pagamento
+          </label>
+          <select
+            value={formData.payment_method}
+            onChange={(e) =>
+              setFormData((prev) => ({
+                ...prev,
+                payment_method: e.target.value,
+              }))
+            }
+            className="input"
+          >
+            <option value="">Selecione uma forma</option>
+            <option value="dinheiro">Dinheiro</option>
+            <option value="cartao_credito">Cartão de crédito</option>
+            <option value="cartao_debito">Cartão de débito</option>
+            <option value="pix">Pix</option>
+            <option value="boleto">Boleto</option>
+            <option value="outro">Outro</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Convênio
+          </label>
+          <input
+            type="text"
+            value={formData.convenio}
+            onChange={(e) =>
+              setFormData((prev) => ({
+                ...prev,
+                convenio: e.target.value,
+              }))
+            }
+            className="input"
+            placeholder="Nome do convênio (se houver)"
+          />
+        </div>
+      </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Observações
@@ -971,6 +1024,23 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
                       }))
                     }
                     className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Convênio
+                  </label>
+                  <input
+                    type="text"
+                    value={quickPatientForm.convenio}
+                    onChange={(e) =>
+                      setQuickPatientForm((prev) => ({
+                        ...prev,
+                        convenio: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                    placeholder="Nome do convênio (se houver)"
                   />
                 </div>
                 <div className="md:col-span-2">

@@ -122,6 +122,27 @@ router.post("/link-user", async (req, res) => {
 
     const referral = referralResult.rows[0];
 
+    // Ensure this user is a CLIENT (do not link professionals)
+    const userResult = await pool.query(
+      `SELECT roles FROM users WHERE id = $1`,
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({
+        error: "User not found",
+      });
+    }
+
+    const roles = userResult.rows[0].roles || [];
+    if (!roles.includes("client")) {
+      return res.json({
+        success: true,
+        message:
+          "User is not a client (professional registration). Skipping affiliate link.",
+      });
+    }
+
     // Update referral with user_id
     await pool.query(
       `UPDATE affiliate_referrals

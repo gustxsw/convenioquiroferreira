@@ -79,6 +79,8 @@ const RegisterConsultationPage: React.FC = () => {
   const [value, setValue] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [convenio, setConvenio] = useState("");
 
   // UI state
   const [categories, setCategories] = useState<Category[]>([]);
@@ -386,6 +388,8 @@ const RegisterConsultationPage: React.FC = () => {
         date: utcDateTime, // Send UTC ISO string instead of local datetime
         status: "scheduled",
         notes: null,
+        payment_method: paymentMethod || null,
+        convenio: convenio.trim() || null,
       };
 
       // Set patient based on what was found
@@ -446,6 +450,8 @@ const RegisterConsultationPage: React.FC = () => {
       setValue("");
       setDate("");
       setTime("");
+      setPaymentMethod("");
+      setConvenio("");
 
       setSuccess("Consulta registrada com sucesso!");
 
@@ -765,6 +771,48 @@ const RegisterConsultationPage: React.FC = () => {
                     className="input"
                     disabled={isLoading}
                     required
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="payment_method"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
+                    Forma de Pagamento
+                  </label>
+                  <select
+                    id="payment_method"
+                    value={paymentMethod}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                    className="input"
+                    disabled={isLoading}
+                  >
+                    <option value="">Selecione uma forma</option>
+                    <option value="dinheiro">Dinheiro</option>
+                    <option value="cartao_credito">Cartão de crédito</option>
+                    <option value="cartao_debito">Cartão de débito</option>
+                    <option value="pix">Pix</option>
+                    <option value="boleto">Boleto</option>
+                    <option value="outro">Outro</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="convenio"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
+                    Convênio
+                  </label>
+                  <input
+                    id="convenio"
+                    type="text"
+                    value={convenio}
+                    onChange={(e) => setConvenio(e.target.value)}
+                    className="input"
+                    disabled={isLoading}
+                    placeholder="Nome do convênio (se houver)"
                   />
                 </div>
 

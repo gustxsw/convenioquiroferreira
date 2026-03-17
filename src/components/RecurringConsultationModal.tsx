@@ -110,6 +110,8 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
   const [occurrences, setOccurrences] = useState(10);
   const [endDate, setEndDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [convenio, setConvenio] = useState("");
 
   // Client search state
   const [clientSearchResult, setClientSearchResult] = useState<Client | null>(
@@ -239,6 +241,8 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
     setOccurrences(10);
     setEndDate("");
     setNotes("");
+    setPaymentMethod("");
+    setConvenio("");
     setClientSearchResult(null);
     setDependents([]);
     setSelectedDependentId(null);
@@ -445,6 +449,8 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
         selected_weekdays: recurrenceType === "daily" ? selectedWeekdays : [],
         occurrences: occurrences,
         notes: notes.trim() || null,
+        payment_method: paymentMethod || null,
+        convenio: convenio.trim() || null,
       };
 
       if (patientType === "private") {
@@ -1073,8 +1079,42 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
                 </div>
               </div>
 
-              {/* Notes */}
-              <div>
+              {/* Payment and Notes */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Forma de Pagamento
+                  </label>
+                  <select
+                    value={paymentMethod}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                    className="input"
+                  >
+                    <option value="">Selecione uma forma</option>
+                    <option value="dinheiro">Dinheiro</option>
+                    <option value="cartao_credito">Cartão de crédito</option>
+                    <option value="cartao_debito">Cartão de débito</option>
+                    <option value="pix">Pix</option>
+                    <option value="boleto">Boleto</option>
+                    <option value="outro">Outro</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Convênio
+                  </label>
+                  <input
+                    type="text"
+                    value={convenio}
+                    onChange={(e) => setConvenio(e.target.value)}
+                    className="input"
+                    placeholder="Nome do convênio (se houver)"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Observações
                 </label>

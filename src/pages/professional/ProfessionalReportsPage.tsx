@@ -1,6 +1,13 @@
 import type React from "react";
 import { useState, useEffect } from "react";
-import { BarChart2, Calendar, TrendingUp, Users, FileText } from "lucide-react";
+import {
+  BarChart2,
+  Calendar,
+  TrendingUp,
+  Users,
+  FileText,
+  Activity,
+} from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type DetailedReport = {
@@ -13,6 +20,35 @@ type DetailedReport = {
     private_revenue: number;
     professional_percentage: number;
     amount_to_pay: number;
+    total_paid: number;
+  };
+};
+
+type AnalyticsConsultation = {
+  id: number;
+  date: string;
+  value: number;
+  status: "scheduled" | "confirmed" | "completed" | "cancelled";
+  payment_method: string | null;
+  service_name: string;
+  client_name: string;
+  patient_type: "convenio" | "private" | "unknown";
+};
+
+type AnalyticsReport = {
+  consultations: AnalyticsConsultation[];
+  inactive_clients: {
+    convenio: Array<{
+      id: number;
+      name: string;
+      subscription_status: string | null;
+      client_type: "titular" | "dependente";
+    }>;
+    private: Array<{
+      id: number;
+      name: string;
+      is_active: boolean;
+    }>;
   };
 };
 
@@ -20,8 +56,14 @@ const ProfessionalReportsPage: React.FC = () => {
   const [startDate, setStartDate] = useState(getDefaultStartDate());
   const [endDate, setEndDate] = useState(getDefaultEndDate());
   const [report, setReport] = useState<DetailedReport | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsReport | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [selectedReports, setSelectedReports] = useState<string[]>([
+    "faturamento-periodo",
+    "consultas-por-servico",
+    "ranking-servicos",
+  ]);
 
   // Get default date range (current month)
   function getDefaultStartDate() {
@@ -92,6 +134,26 @@ const ProfessionalReportsPage: React.FC = () => {
       const data = await response.json();
       console.log("✅ Detailed report data received:", data);
       setReport(data);
+
+      // Fetch analytics (consultations breakdown, inactive clients)
+      const analyticsResponse = await fetchWithAuth(
+        `${apiUrl}/api/reports/professional-analytics?start_date=${startDate}&end_date=${endDate}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!analyticsResponse.ok) {
+        const analyticsError = await analyticsResponse.json();
+        console.error("❌ Analytics report error:", analyticsError);
+      } else {
+        const analyticsData = await analyticsResponse.json();
+        console.log("✅ Analytics report data received:", analyticsData);
+        setAnalytics(analyticsData);
+      }
     } catch (error) {
       console.error("Error fetching report:", error);
       if (error instanceof Error) {
@@ -102,6 +164,7 @@ const ProfessionalReportsPage: React.FC = () => {
         );
       }
       setReport(null);
+      setAnalytics(null);
     } finally {
       setIsLoading(false);
     }
@@ -136,6 +199,30 @@ const ProfessionalReportsPage: React.FC = () => {
     });
   };
 
+  const nonCancelledConsultations =
+    analytics?.consultations.filter((c) => c.status !== "cancelled") || [];
+
+  const totalConsultationsAll = analytics?.consultations.length || 0;
+  const cancelledCount =
+    analytics?.consultations.filter((c) => c.status === "cancelled").length ||
+    0;
+  const cancellationRate =
+    totalConsultationsAll > 0
+      ? Math.round((cancelledCount / totalConsultationsAll) * 100)
+      : 0;
+
+  const groupBy = <T, K extends string | number>(
+    items: T[],
+    keyFn: (item: T) => K
+  ): Record<K, T[]> => {
+    return items.reduce((acc, item) => {
+      const key = keyFn(item);
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(item);
+      return acc;
+    }, {} as Record<K, T[]>);
+  };
+
   return (
     <div>
       <div className="mb-6">
@@ -147,14 +234,14 @@ const ProfessionalReportsPage: React.FC = () => {
         </p>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-        <div className="flex items-center mb-4">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6 space-y-4">
+        <div className="flex items-center mb-2">
           <Calendar className="h-6 w-6 text-red-600 mr-2" />
-          <h2 className="text-xl font-semibold">Selecione o Período</h2>
+          <h2 className="text-xl font-semibold">Período & Relatórios</h2>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label
                 htmlFor="startDate"
@@ -199,6 +286,44 @@ const ProfessionalReportsPage: React.FC = () => {
               >
                 {isLoading ? "Carregando..." : "Gerar Relatório"}
               </button>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-sm font-semibold text-gray-700 mb-2">
+              Escolha quais relatórios deseja gerar:
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
+              {[
+                { id: "faturamento-periodo", label: "1️⃣ Faturamento por período / 10️⃣ Resumo" },
+                { id: "consultas-por-servico", label: "2️⃣ Consultas por serviço" },
+                { id: "consultas-por-cliente", label: "3️⃣ Consultas por cliente" },
+                { id: "ranking-servicos", label: "4️⃣ Ranking de serviços" },
+                { id: "ranking-clientes", label: "5️⃣ Ranking de clientes" },
+                { id: "taxa-cancelados", label: "6️⃣ Taxa de cancelados" },
+                { id: "horarios-movimentados", label: "7️⃣ Horários mais movimentados" },
+                { id: "receita-forma-pagamento", label: "8️⃣ Receita por forma de pagamento" },
+                { id: "clientes-inativos", label: "9️⃣ Clientes inativos" },
+              ].map((opt) => (
+                <label
+                  key={opt.id}
+                  className="flex items-center space-x-2 text-gray-700"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedReports.includes(opt.id)}
+                    onChange={(e) => {
+                      setSelectedReports((prev) =>
+                        e.target.checked
+                          ? [...prev, opt.id]
+                          : prev.filter((id) => id !== opt.id)
+                      );
+                    }}
+                    className="h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                  />
+                  <span>{opt.label}</span>
+                </label>
+              ))}
             </div>
           </div>
         </form>
@@ -275,11 +400,14 @@ const ProfessionalReportsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Revenue Breakdown */}
+          {/* 1️⃣ Faturamento por período / 10️⃣ Resumo do período */}
+          {selectedReports.includes("faturamento-periodo") && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
             <div className="flex items-center mb-6">
               <BarChart2 className="h-6 w-6 text-red-600 mr-2" />
-              <h2 className="text-xl font-semibold">Detalhamento Financeiro</h2>
+              <h2 className="text-xl font-semibold">
+                1️⃣ Faturamento por Período & 🔟 Resumo do Período
+              </h2>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -380,61 +508,355 @@ const ProfessionalReportsPage: React.FC = () => {
               </div>
             </div>
           </div>
+          )}
 
-          {/* Charts placeholder */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-            <h3 className="text-lg font-semibold mb-4">
-              Distribuição de Consultas
-            </h3>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="text-center">
-                <div className="w-32 h-32 mx-auto mb-4 relative">
-                  <div className="w-full h-full rounded-full border-8 border-green-200 border-t-green-600 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-green-600">
-                        {report.summary.convenio_consultations}
-                      </div>
-                      <div className="text-xs text-gray-500">Convênio</div>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-sm text-gray-600">
-                  {report.summary.total_consultations > 0
-                    ? Math.round(
-                        (report.summary.convenio_consultations /
-                          report.summary.total_consultations) *
-                          100
-                      )
-                    : 0}
-                  % do total
-                </p>
+          {/* 2️⃣ Consultas por serviço & 4️⃣ Ranking de serviços */}
+          {analytics &&
+            analytics.consultations.length > 0 &&
+            selectedReports.includes("consultas-por-servico") &&
+            selectedReports.includes("ranking-servicos") && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center mb-4">
+                <FileText className="h-5 w-5 text-red-600 mr-2" />
+                <h3 className="text-lg font-semibold">
+                  2️⃣ Consultas por Serviço & 4️⃣ Ranking de Serviços
+                </h3>
               </div>
-
-              <div className="text-center">
-                <div className="w-32 h-32 mx-auto mb-4 relative">
-                  <div className="w-full h-full rounded-full border-8 border-purple-200 border-t-purple-600 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-purple-600">
-                        {report.summary.private_consultations}
-                      </div>
-                      <div className="text-xs text-gray-500">Particular</div>
+              {(() => {
+                const byService = groupBy(nonCancelledConsultations, (c) =>
+                  c.service_name || "Sem serviço"
+                );
+                const rows = Object.entries(byService).map(
+                  ([serviceName, list]) => ({
+                    serviceName,
+                    consultations: list.length,
+                    revenue: list.reduce(
+                      (sum, item) => sum + Number(item.value || 0),
+                      0
+                    ),
+                  })
+                );
+                const sorted = rows.sort(
+                  (a, b) => b.consultations - a.consultations
+                );
+                const top5 = sorted.slice(0, 5);
+                return (
+                  <div className="space-y-4">
+                    <p className="text-sm text-gray-600">
+                      Top 5 serviços mais realizados no período.
+                    </p>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-2 text-left font-medium text-gray-500">
+                              Serviço
+                            </th>
+                            <th className="px-4 py-2 text-right font-medium text-gray-500">
+                              Consultas
+                            </th>
+                            <th className="px-4 py-2 text-right font-medium text-gray-500">
+                              Faturamento
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {top5.map((row) => (
+                            <tr key={row.serviceName}>
+                              <td className="px-4 py-2 text-gray-900">
+                                {row.serviceName}
+                              </td>
+                              <td className="px-4 py-2 text-right">
+                                {row.consultations}
+                              </td>
+                              <td className="px-4 py-2 text-right">
+                                {formatCurrency(row.revenue)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* 3️⃣ Consultas por cliente & 5️⃣ Ranking de clientes */}
+          {analytics &&
+            analytics.consultations.length > 0 &&
+            selectedReports.includes("consultas-por-cliente") &&
+            selectedReports.includes("ranking-clientes") && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center mb-4">
+                <Users className="h-5 w-5 text-blue-600 mr-2" />
+                <h3 className="text-lg font-semibold">
+                  3️⃣ Consultas por Cliente & 5️⃣ Ranking de Clientes
+                </h3>
+              </div>
+              {(() => {
+                const byClient = groupBy(nonCancelledConsultations, (c) =>
+                  c.client_name || "Desconhecido"
+                );
+                const rows = Object.entries(byClient).map(
+                  ([clientName, list]) => ({
+                    clientName,
+                    consultations: list.length,
+                    revenue: list.reduce(
+                      (sum, item) => sum + Number(item.value || 0),
+                      0
+                    ),
+                  })
+                );
+                const sorted = rows.sort(
+                  (a, b) => b.consultations - a.consultations
+                );
+                const top5 = sorted.slice(0, 5);
+                return (
+                  <div className="space-y-4">
+                    <p className="text-sm text-gray-600">
+                      Top 5 clientes com mais consultas no período.
+                    </p>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-2 text-left font-medium text-gray-500">
+                              Cliente
+                            </th>
+                            <th className="px-4 py-2 text-right font-medium text-gray-500">
+                              Consultas
+                            </th>
+                            <th className="px-4 py-2 text-right font-medium text-gray-500">
+                              Faturamento
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {top5.map((row) => (
+                            <tr key={row.clientName}>
+                              <td className="px-4 py-2 text-gray-900">
+                                {row.clientName}
+                              </td>
+                              <td className="px-4 py-2 text-right">
+                                {row.consultations}
+                              </td>
+                              <td className="px-4 py-2 text-right">
+                                {formatCurrency(row.revenue)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* 6️⃣ Taxa de cancelados */}
+          {analytics &&
+            totalConsultationsAll > 0 &&
+            selectedReports.includes("taxa-cancelados") && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center mb-4">
+                <Activity className="h-5 w-5 text-yellow-600 mr-2" />
+                <h3 className="text-lg font-semibold">6️⃣ Taxa de Cancelados</h3>
+              </div>
+              <p className="text-sm text-gray-600 mb-2">
+                Consultas canceladas em relação ao total no período.
+              </p>
+              <div className="flex items-center space-x-6">
+                <div>
+                  <p className="text-3xl font-bold text-red-600">
+                    {cancellationRate}%
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    {cancelledCount} de {totalConsultationsAll} consultas
+                  </p>
                 </div>
-                <p className="text-sm text-gray-600">
-                  {report.summary.total_consultations > 0
-                    ? Math.round(
-                        (report.summary.private_consultations /
-                          report.summary.total_consultations) *
-                          100
-                      )
-                    : 0}
-                  % do total
-                </p>
               </div>
             </div>
-          </div>
+          )}
+
+          {/* 7️⃣ Horários mais movimentados */}
+          {analytics &&
+            analytics.consultations.length > 0 &&
+            selectedReports.includes("horarios-movimentados") && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center mb-4">
+                <Clock className="h-5 w-5 text-indigo-600 mr-2" />
+                <h3 className="text-lg font-semibold">
+                  7️⃣ Horários mais movimentados
+                </h3>
+              </div>
+              {(() => {
+                const byHour = groupBy(nonCancelledConsultations, (c) => {
+                  const d = new Date(c.date);
+                  return d.getHours();
+                });
+                const rows = Object.entries(byHour).map(([hour, list]) => ({
+                  hour: Number(hour),
+                  consultations: list.length,
+                }));
+                const sorted = rows.sort(
+                  (a, b) => b.consultations - a.consultations
+                );
+                const top5 = sorted.slice(0, 5);
+                return (
+                  <div className="space-y-4">
+                    <p className="text-sm text-gray-600">
+                      Faixas de horário com maior volume de consultas.
+                    </p>
+                    <div className="flex flex-wrap gap-3">
+                      {top5.map((row) => (
+                        <div
+                          key={row.hour}
+                          className="px-4 py-2 bg-indigo-50 rounded-full text-sm text-indigo-800 flex items-center space-x-2"
+                        >
+                          <span>
+                            {String(row.hour).padStart(2, "0")}:00 -
+                            {String(row.hour + 1).padStart(2, "0")}:00
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            ({row.consultations} consultas)
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* 8️⃣ Receita por forma de pagamento */}
+          {analytics &&
+            analytics.consultations.length > 0 &&
+            selectedReports.includes("receita-forma-pagamento") && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center mb-4">
+                <TrendingUp className="h-5 w-5 text-emerald-600 mr-2" />
+                <h3 className="text-lg font-semibold">
+                  8️⃣ Receita por Forma de Pagamento
+                </h3>
+              </div>
+              {(() => {
+                const byPayment = groupBy(nonCancelledConsultations, (c) =>
+                  c.payment_method || "Não informado"
+                );
+                const rows = Object.entries(byPayment).map(
+                  ([method, list]) => ({
+                    method,
+                    consultations: list.length,
+                    revenue: list.reduce(
+                      (sum, item) => sum + Number(item.value || 0),
+                      0
+                    ),
+                  })
+                );
+                const sorted = rows.sort((a, b) => b.revenue - a.revenue);
+                return (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left font-medium text-gray-500">
+                            Forma de Pagamento
+                          </th>
+                          <th className="px-4 py-2 text-right font-medium text-gray-500">
+                            Consultas
+                          </th>
+                          <th className="px-4 py-2 text-right font-medium text-gray-500">
+                            Receita
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {sorted.map((row) => (
+                          <tr key={row.method}>
+                            <td className="px-4 py-2 text-gray-900">
+                              {row.method}
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              {row.consultations}
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              {formatCurrency(row.revenue)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* 9️⃣ Clientes inativos */}
+          {analytics &&
+            selectedReports.includes("clientes-inativos") &&
+            (analytics.inactive_clients.convenio.length > 0 ||
+              analytics.inactive_clients.private.length > 0) && (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <div className="flex items-center mb-4">
+                  <Users className="h-5 w-5 text-gray-600 mr-2" />
+                  <h3 className="text-lg font-semibold">9️⃣ Clientes Inativos</h3>
+                </div>
+                <p className="text-sm text-gray-600 mb-4">
+                  Clientes vinculados ao profissional que estão com status
+                  inativo (convênio) ou desativados (particulares).
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-800 mb-2">
+                      Convênio
+                    </h4>
+                    {analytics.inactive_clients.convenio.length === 0 ? (
+                      <p className="text-sm text-gray-500">
+                        Nenhum cliente convênio inativo encontrado.
+                      </p>
+                    ) : (
+                      <ul className="space-y-1 text-sm text-gray-700">
+                        {analytics.inactive_clients.convenio.map((c) => (
+                          <li key={`${c.client_type}-${c.id}`}>
+                            <span className="font-medium">{c.name}</span>{" "}
+                            <span className="text-xs text-gray-500">
+                              ({c.client_type}) -{" "}
+                              {c.subscription_status || "status desconhecido"}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-800 mb-2">
+                      Pacientes Particulares
+                    </h4>
+                    {analytics.inactive_clients.private.length === 0 ? (
+                      <p className="text-sm text-gray-500">
+                        Nenhum paciente particular inativo encontrado.
+                      </p>
+                    ) : (
+                      <ul className="space-y-1 text-sm text-gray-700">
+                        {analytics.inactive_clients.private.map((p) => (
+                          <li key={p.id}>
+                            <span className="font-medium">{p.name}</span>{" "}
+                            <span className="text-xs text-gray-500">
+                              (desativado)
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
         </div>
       )}
     </div>

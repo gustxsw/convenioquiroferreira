@@ -4,49 +4,44 @@ interface BarChartProps {
   data: Array<{
     label: string;
     value: number;
-    color: string;
-    percentage?: string;
+    color?: string;
   }>;
-  height?: number;
 }
 
-const BarChart: React.FC<BarChartProps> = ({ data, height = 300 }) => {
-  const maxValue = Math.max(...data.map((item) => item.value), 1);
+const BarChart: React.FC<BarChartProps> = ({ data }) => {
+  const maxValue = data.reduce((max, item) => Math.max(max, item.value), 0);
+
+  if (maxValue === 0) {
+    return (
+      <div className="flex items-center justify-center h-40">
+        <p className="text-gray-400 text-sm">Sem dados</p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full">
-      <div className="space-y-6">
+      <div className="flex items-end gap-4 h-40">
         {data.map((item, index) => {
-          const barHeight = (item.value / maxValue) * 100;
-
+          const heightPercent = (item.value / maxValue) * 100;
+          const color = item.color || (index === 0 ? "#F59E0B" : "#10B981");
           return (
-            <div key={index} className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium text-gray-700">{item.label}</span>
-                <span className="font-bold text-gray-900">
-                  {item.value}
-                  {item.percentage && (
-                    <span className="text-xs text-gray-500 ml-2">
-                      ({item.percentage}%)
-                    </span>
-                  )}
-                </span>
-              </div>
-              <div className="relative w-full bg-gray-100 rounded-full h-8 overflow-hidden">
-                <div
-                  className="absolute inset-y-0 left-0 rounded-full flex items-center justify-end px-3 transition-all duration-500 ease-out"
-                  style={{
-                    width: `${barHeight}%`,
-                    backgroundColor: item.color,
-                  }}
-                >
-                  {barHeight > 15 && (
-                    <span className="text-xs font-semibold text-white">
-                      {item.value}
-                    </span>
-                  )}
-                </div>
-              </div>
+            <div
+              key={item.label}
+              className="flex-1 flex flex-col items-center h-full"
+            >
+              <div
+                className="w-6 sm:w-8 rounded-t-md"
+                style={{
+                  height: `${heightPercent}%`,
+                  backgroundColor: color,
+                  transition: "height 0.3s ease",
+                }}
+                title={`${item.label}: ${item.value}`}
+              />
+              <span className="mt-2 text-xs text-gray-600 text-center">
+                {item.label}
+              </span>
             </div>
           );
         })}
