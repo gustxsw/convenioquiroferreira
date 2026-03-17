@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import {
   BarChart2,
   Calendar,
+  Clock,
   TrendingUp,
   Users,
   FileText,
@@ -295,15 +296,15 @@ const ProfessionalReportsPage: React.FC = () => {
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
               {[
-                { id: "faturamento-periodo", label: "1️⃣ Faturamento por período / 10️⃣ Resumo" },
-                { id: "consultas-por-servico", label: "2️⃣ Consultas por serviço" },
-                { id: "consultas-por-cliente", label: "3️⃣ Consultas por cliente" },
-                { id: "ranking-servicos", label: "4️⃣ Ranking de serviços" },
-                { id: "ranking-clientes", label: "5️⃣ Ranking de clientes" },
-                { id: "taxa-cancelados", label: "6️⃣ Taxa de cancelados" },
-                { id: "horarios-movimentados", label: "7️⃣ Horários mais movimentados" },
-                { id: "receita-forma-pagamento", label: "8️⃣ Receita por forma de pagamento" },
-                { id: "clientes-inativos", label: "9️⃣ Clientes inativos" },
+                { id: "faturamento-periodo", label: "Faturamento por período / Resumo do mês" },
+                { id: "consultas-por-servico", label: "Consultas por serviço" },
+                { id: "consultas-por-cliente", label: "Consultas por cliente" },
+                { id: "ranking-servicos", label: "Ranking de serviços" },
+                { id: "ranking-clientes", label: "Ranking de clientes" },
+                { id: "taxa-cancelados", label: "Taxa de cancelados" },
+                { id: "horarios-movimentados", label: "Horários mais movimentados" },
+                { id: "receita-forma-pagamento", label: "Receita por forma de pagamento" },
+                { id: "clientes-inativos", label: "Clientes inativos" },
               ].map((opt) => (
                 <label
                   key={opt.id}
@@ -400,13 +401,13 @@ const ProfessionalReportsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* 1️⃣ Faturamento por período / 10️⃣ Resumo do período */}
+          {/* Faturamento por período / Resumo do período */}
           {selectedReports.includes("faturamento-periodo") && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
             <div className="flex items-center mb-6">
               <BarChart2 className="h-6 w-6 text-red-600 mr-2" />
               <h2 className="text-xl font-semibold">
-                1️⃣ Faturamento por Período & 🔟 Resumo do Período
+                Faturamento por período e resumo do período
               </h2>
             </div>
 
@@ -510,18 +511,86 @@ const ProfessionalReportsPage: React.FC = () => {
           </div>
           )}
 
-          {/* 2️⃣ Consultas por serviço & 4️⃣ Ranking de serviços */}
+          {/* 2 – Consultas por serviço: listar todas as consultas agrupadas por serviço */}
           {analytics &&
-            analytics.consultations.length > 0 &&
-            selectedReports.includes("consultas-por-servico") &&
+            selectedReports.includes("consultas-por-servico") && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center mb-4">
+                <FileText className="h-5 w-5 text-red-600 mr-2" />
+                <h3 className="text-lg font-semibold">
+                  Consultas por serviço
+                </h3>
+              </div>
+              <p className="text-sm text-gray-600 mb-4">
+                Todas as consultas do período, agrupadas por serviço.
+              </p>
+              {(() => {
+                const byService = groupBy(nonCancelledConsultations, (c) =>
+                  c.service_name || "Sem serviço"
+                );
+                const serviceNames = Object.keys(byService).sort();
+                if (serviceNames.length === 0) {
+                  return (
+                    <p className="text-sm text-gray-500">
+                      Nenhuma consulta no período.
+                    </p>
+                  );
+                }
+                return (
+                  <div className="space-y-6">
+                    {serviceNames.map((serviceName) => {
+                      const list = byService[serviceName];
+                      return (
+                        <div key={serviceName}>
+                          <h4 className="text-sm font-semibold text-gray-800 mb-2">
+                            {serviceName} ({list.length} consulta{list.length !== 1 ? "s" : ""})
+                          </h4>
+                          <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                            <table className="min-w-full divide-y divide-gray-200 text-sm">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-4 py-2 text-left font-medium text-gray-500">Data</th>
+                                  <th className="px-4 py-2 text-left font-medium text-gray-500">Cliente</th>
+                                  <th className="px-4 py-2 text-right font-medium text-gray-500">Valor</th>
+                                  <th className="px-4 py-2 text-left font-medium text-gray-500">Forma de pagamento</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {list.map((c) => (
+                                  <tr key={c.id}>
+                                    <td className="px-4 py-2 text-gray-700">
+                                      {formatDateTimeFromUTC(c.date)}
+                                    </td>
+                                    <td className="px-4 py-2 text-gray-900">{c.client_name || "—"}</td>
+                                    <td className="px-4 py-2 text-right">{formatCurrency(Number(c.value || 0))}</td>
+                                    <td className="px-4 py-2 text-gray-600">{c.payment_method || "—"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* 4 – Ranking de serviços: apenas contagem por serviço */}
+          {analytics &&
             selectedReports.includes("ranking-servicos") && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               <div className="flex items-center mb-4">
                 <FileText className="h-5 w-5 text-red-600 mr-2" />
                 <h3 className="text-lg font-semibold">
-                  2️⃣ Consultas por Serviço & 4️⃣ Ranking de Serviços
+                  Ranking de serviços
                 </h3>
               </div>
+              <p className="text-sm text-gray-600 mb-4">
+                Quantidade de vezes que cada serviço foi realizado no período.
+              </p>
               {(() => {
                 const byService = groupBy(nonCancelledConsultations, (c) =>
                   c.service_name || "Sem serviço"
@@ -539,62 +608,119 @@ const ProfessionalReportsPage: React.FC = () => {
                 const sorted = rows.sort(
                   (a, b) => b.consultations - a.consultations
                 );
-                const top5 = sorted.slice(0, 5);
-                return (
-                  <div className="space-y-4">
-                    <p className="text-sm text-gray-600">
-                      Top 5 serviços mais realizados no período.
+                if (sorted.length === 0) {
+                  return (
+                    <p className="text-sm text-gray-500">
+                      Nenhuma consulta no período.
                     </p>
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200 text-sm">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-4 py-2 text-left font-medium text-gray-500">
-                              Serviço
-                            </th>
-                            <th className="px-4 py-2 text-right font-medium text-gray-500">
-                              Consultas
-                            </th>
-                            <th className="px-4 py-2 text-right font-medium text-gray-500">
-                              Faturamento
-                            </th>
+                  );
+                }
+                return (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left font-medium text-gray-500">Serviço</th>
+                          <th className="px-4 py-2 text-right font-medium text-gray-500">Consultas</th>
+                          <th className="px-4 py-2 text-right font-medium text-gray-500">Faturamento</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {sorted.map((row) => (
+                          <tr key={row.serviceName}>
+                            <td className="px-4 py-2 text-gray-900">{row.serviceName}</td>
+                            <td className="px-4 py-2 text-right">{row.consultations}</td>
+                            <td className="px-4 py-2 text-right">{formatCurrency(row.revenue)}</td>
                           </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {top5.map((row) => (
-                            <tr key={row.serviceName}>
-                              <td className="px-4 py-2 text-gray-900">
-                                {row.serviceName}
-                              </td>
-                              <td className="px-4 py-2 text-right">
-                                {row.consultations}
-                              </td>
-                              <td className="px-4 py-2 text-right">
-                                {formatCurrency(row.revenue)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 );
               })()}
             </div>
           )}
 
-          {/* 3️⃣ Consultas por cliente & 5️⃣ Ranking de clientes */}
+          {/* 3 – Consultas por cliente: listar todas as consultas agrupadas por cliente */}
           {analytics &&
-            analytics.consultations.length > 0 &&
-            selectedReports.includes("consultas-por-cliente") &&
+            selectedReports.includes("consultas-por-cliente") && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center mb-4">
+                <Users className="h-5 w-5 text-blue-600 mr-2" />
+                <h3 className="text-lg font-semibold">
+                  Consultas por cliente
+                </h3>
+              </div>
+              <p className="text-sm text-gray-600 mb-4">
+                Todas as consultas do período, agrupadas por cliente.
+              </p>
+              {(() => {
+                const byClient = groupBy(nonCancelledConsultations, (c) =>
+                  c.client_name || "Desconhecido"
+                );
+                const clientNames = Object.keys(byClient).sort();
+                if (clientNames.length === 0) {
+                  return (
+                    <p className="text-sm text-gray-500">
+                      Nenhuma consulta no período.
+                    </p>
+                  );
+                }
+                return (
+                  <div className="space-y-6">
+                    {clientNames.map((clientName) => {
+                      const list = byClient[clientName];
+                      return (
+                        <div key={clientName}>
+                          <h4 className="text-sm font-semibold text-gray-800 mb-2">
+                            {clientName} ({list.length} consulta{list.length !== 1 ? "s" : ""})
+                          </h4>
+                          <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                            <table className="min-w-full divide-y divide-gray-200 text-sm">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-4 py-2 text-left font-medium text-gray-500">Data</th>
+                                  <th className="px-4 py-2 text-left font-medium text-gray-500">Serviço</th>
+                                  <th className="px-4 py-2 text-right font-medium text-gray-500">Valor</th>
+                                  <th className="px-4 py-2 text-left font-medium text-gray-500">Forma de pagamento</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {list.map((c) => (
+                                  <tr key={c.id}>
+                                    <td className="px-4 py-2 text-gray-700">
+                                      {formatDateTimeFromUTC(c.date)}
+                                    </td>
+                                    <td className="px-4 py-2 text-gray-900">{c.service_name || "—"}</td>
+                                    <td className="px-4 py-2 text-right">{formatCurrency(Number(c.value || 0))}</td>
+                                    <td className="px-4 py-2 text-gray-600">{c.payment_method || "—"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* 5 – Ranking de clientes: apenas contagem por cliente */}
+          {analytics &&
             selectedReports.includes("ranking-clientes") && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               <div className="flex items-center mb-4">
                 <Users className="h-5 w-5 text-blue-600 mr-2" />
                 <h3 className="text-lg font-semibold">
-                  3️⃣ Consultas por Cliente & 5️⃣ Ranking de Clientes
+                  Ranking de clientes
                 </h3>
               </div>
+              <p className="text-sm text-gray-600 mb-4">
+                Quantidade de vezes que cada cliente foi atendido no período.
+              </p>
               {(() => {
                 const byClient = groupBy(nonCancelledConsultations, (c) =>
                   c.client_name || "Desconhecido"
@@ -612,58 +738,47 @@ const ProfessionalReportsPage: React.FC = () => {
                 const sorted = rows.sort(
                   (a, b) => b.consultations - a.consultations
                 );
-                const top5 = sorted.slice(0, 5);
-                return (
-                  <div className="space-y-4">
-                    <p className="text-sm text-gray-600">
-                      Top 5 clientes com mais consultas no período.
+                if (sorted.length === 0) {
+                  return (
+                    <p className="text-sm text-gray-500">
+                      Nenhuma consulta no período.
                     </p>
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200 text-sm">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-4 py-2 text-left font-medium text-gray-500">
-                              Cliente
-                            </th>
-                            <th className="px-4 py-2 text-right font-medium text-gray-500">
-                              Consultas
-                            </th>
-                            <th className="px-4 py-2 text-right font-medium text-gray-500">
-                              Faturamento
-                            </th>
+                  );
+                }
+                return (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left font-medium text-gray-500">Cliente</th>
+                          <th className="px-4 py-2 text-right font-medium text-gray-500">Consultas</th>
+                          <th className="px-4 py-2 text-right font-medium text-gray-500">Faturamento</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {sorted.map((row) => (
+                          <tr key={row.clientName}>
+                            <td className="px-4 py-2 text-gray-900">{row.clientName}</td>
+                            <td className="px-4 py-2 text-right">{row.consultations}</td>
+                            <td className="px-4 py-2 text-right">{formatCurrency(row.revenue)}</td>
                           </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {top5.map((row) => (
-                            <tr key={row.clientName}>
-                              <td className="px-4 py-2 text-gray-900">
-                                {row.clientName}
-                              </td>
-                              <td className="px-4 py-2 text-right">
-                                {row.consultations}
-                              </td>
-                              <td className="px-4 py-2 text-right">
-                                {formatCurrency(row.revenue)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 );
               })()}
             </div>
           )}
 
-          {/* 6️⃣ Taxa de cancelados */}
+          {/* Taxa de cancelados */}
           {analytics &&
             totalConsultationsAll > 0 &&
             selectedReports.includes("taxa-cancelados") && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               <div className="flex items-center mb-4">
                 <Activity className="h-5 w-5 text-yellow-600 mr-2" />
-                <h3 className="text-lg font-semibold">6️⃣ Taxa de Cancelados</h3>
+                <h3 className="text-lg font-semibold">Taxa de cancelados</h3>
               </div>
               <p className="text-sm text-gray-600 mb-2">
                 Consultas canceladas em relação ao total no período.
@@ -681,21 +796,20 @@ const ProfessionalReportsPage: React.FC = () => {
             </div>
           )}
 
-          {/* 7️⃣ Horários mais movimentados */}
-          {analytics &&
-            analytics.consultations.length > 0 &&
-            selectedReports.includes("horarios-movimentados") && (
+          {/* Horários mais movimentados */}
+          {analytics && selectedReports.includes("horarios-movimentados") && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               <div className="flex items-center mb-4">
                 <Clock className="h-5 w-5 text-indigo-600 mr-2" />
                 <h3 className="text-lg font-semibold">
-                  7️⃣ Horários mais movimentados
+                  Horários mais movimentados
                 </h3>
               </div>
               {(() => {
                 const byHour = groupBy(nonCancelledConsultations, (c) => {
                   const d = new Date(c.date);
-                  return d.getHours();
+                  const h = d.getHours();
+                  return Number.isFinite(h) ? h : 0;
                 });
                 const rows = Object.entries(byHour).map(([hour, list]) => ({
                   hour: Number(hour),
@@ -705,6 +819,13 @@ const ProfessionalReportsPage: React.FC = () => {
                   (a, b) => b.consultations - a.consultations
                 );
                 const top5 = sorted.slice(0, 5);
+                if (top5.length === 0) {
+                  return (
+                    <p className="text-sm text-gray-500">
+                      Nenhuma consulta no período para exibir horários.
+                    </p>
+                  );
+                }
                 return (
                   <div className="space-y-4">
                     <p className="text-sm text-gray-600">
@@ -732,7 +853,7 @@ const ProfessionalReportsPage: React.FC = () => {
             </div>
           )}
 
-          {/* 8️⃣ Receita por forma de pagamento */}
+          {/* Receita por forma de pagamento */}
           {analytics &&
             analytics.consultations.length > 0 &&
             selectedReports.includes("receita-forma-pagamento") && (
@@ -740,7 +861,7 @@ const ProfessionalReportsPage: React.FC = () => {
               <div className="flex items-center mb-4">
                 <TrendingUp className="h-5 w-5 text-emerald-600 mr-2" />
                 <h3 className="text-lg font-semibold">
-                  8️⃣ Receita por Forma de Pagamento
+                  Receita por forma de pagamento
                 </h3>
               </div>
               {(() => {
@@ -796,7 +917,7 @@ const ProfessionalReportsPage: React.FC = () => {
             </div>
           )}
 
-          {/* 9️⃣ Clientes inativos */}
+          {/* Clientes inativos */}
           {analytics &&
             selectedReports.includes("clientes-inativos") &&
             (analytics.inactive_clients.convenio.length > 0 ||
@@ -804,7 +925,7 @@ const ProfessionalReportsPage: React.FC = () => {
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                 <div className="flex items-center mb-4">
                   <Users className="h-5 w-5 text-gray-600 mr-2" />
-                  <h3 className="text-lg font-semibold">9️⃣ Clientes Inativos</h3>
+                  <h3 className="text-lg font-semibold">Clientes inativos</h3>
                 </div>
                 <p className="text-sm text-gray-600 mb-4">
                   Clientes vinculados ao profissional que estão com status
