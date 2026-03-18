@@ -232,7 +232,7 @@ const LoginPage: React.FC = () => {
                 className="inline-flex items-center justify-center w-full py-3 px-4 border border-red-600 text-red-600 rounded-lg hover:bg-red-50 transition-colors font-medium"
               >
                 <UserPlus className="h-5 w-5 mr-2" />
-                Criar conta de cliente
+                Criar conta
               </Link>
             </div>
           </div>

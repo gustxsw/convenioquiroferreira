@@ -10,6 +10,7 @@ import { pool } from "./db.js";
 import { authenticate, authorize } from "./middleware/auth.js";
 import createUpload, { createReceiptUpload } from "./middleware/upload.js";
 import { generateDocumentPDF } from "./utils/documentGenerator.js";
+import { generateDocumentFromHTML } from "./utils/pdfGenerator.js";
 import { MercadoPagoConfig, Preference } from "mercadopago";
 import documentsRoutes from "./routes/documents.js";
 import pdfRoutes from "./routes/pdf.js";
@@ -3935,11 +3936,188 @@ app.get(
         ? cleanPhone
         : `55${cleanPhone}`;
 
-      const message = `Olá ${
+      // Try to find or generate a HTML document for this medical record,
+      // saved in the generic saved_documents table, so we can send a link.
+      let recordDocumentUrl = null;
+      try {
+        const existingDocResult = await pool.query(
+          `
+          SELECT document_url
+          FROM saved_documents
+          WHERE professional_id = $1
+            AND document_type = 'medical_record'
+            AND document_metadata->>'medical_record_id' = $2
+          ORDER BY created_at DESC
+          LIMIT 1
+        `,
+          [req.user.id, recordId]
+        );
+
+        if (existingDocResult.rows.length > 0) {
+          recordDocumentUrl = existingDocResult.rows[0].document_url;
+        } else {
+          // Build HTML content similar to the frontend print template
+          const vitalSigns = record.vital_signs || {};
+          const vitalValues = Object.values(vitalSigns || {});
+          const hasVitalSigns = vitalValues.some(
+            (value) => value && value.toString().trim()
+          );
+
+          let vitalSignsHTML = "";
+          if (hasVitalSigns) {
+            const vitalSignItems = [
+              { label: "Pressão Arterial", value: vitalSigns.blood_pressure },
+              { label: "Freq. Cardíaca", value: vitalSigns.heart_rate },
+              { label: "Temperatura", value: vitalSigns.temperature },
+              { label: "Freq. Respiratória", value: vitalSigns.respiratory_rate },
+              { label: "Sat. O₂", value: vitalSigns.oxygen_saturation },
+              { label: "Peso", value: vitalSigns.weight },
+              { label: "Altura", value: vitalSigns.height },
+            ].filter((item) => item.value && item.value.toString().trim());
+
+            if (vitalSignItems.length > 0) {
+              vitalSignsHTML = `
+                <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: #ffffff;">
+                  <h3 style="margin: 0 0 10px 0; color: #c11c22; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 5px; font-weight: bold;">Sinais Vitais</h3>
+                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 15px 0;">
+                    ${vitalSignItems
+                      .map(
+                        (item) => `
+                      <div style="text-align: center; padding: 10px; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px;">
+                        <div style="font-size: 11px; color: #666666; margin-bottom: 5px;">${item.label}</div>
+                        <div style="font-weight: bold; color: #c11c22;">${item.value}</div>
+                      </div>
+                    `
+                      )
+                      .join("")}
+                  </div>
+                </div>
+              `;
+            }
+          }
+
+          const medicalSections = [
+            { title: "Queixa Principal", content: record.chief_complaint },
+            {
+              title: "História da Doença Atual",
+              content: record.history_present_illness,
+            },
+            {
+              title: "História Médica Pregressa",
+              content: record.past_medical_history,
+            },
+            { title: "Medicamentos em Uso", content: record.medications },
+            { title: "Alergias", content: record.allergies },
+            { title: "Exame Físico", content: record.physical_examination },
+            { title: "Diagnóstico", content: record.diagnosis },
+            { title: "Plano de Tratamento", content: record.treatment_plan },
+            { title: "Observações Gerais", content: record.notes },
+          ].filter((section) => section.content && section.content.trim());
+
+          const medicalSectionsHTML = medicalSections
+            .map(
+              (section) => `
+            <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; page-break-inside: avoid; background: #ffffff;">
+              <h3 style="margin: 0 0 10px 0; color: #c11c22; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 5px; font-weight: bold;">${section.title}</h3>
+              <p style="color: #000000; margin: 10px 0; text-align: justify;">${section.content}</p>
+            </div>
+          `
+            )
+            .join("");
+
+          const createdAt = record.created_at
+            ? new Date(record.created_at)
+            : new Date();
+
+          const htmlContent = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prontuário Médico - ${record.patient_name || ""}</title>
+</head>
+<body>
+  <div style="text-align: center; margin-bottom: 30px;">
+    <h1 style="margin: 0; font-size: 22px;">Prontuário Médico</h1>
+  </div>
+
+  <div style="background: #f9f9f9; padding: 15px; border-left: 4px solid #333; margin: 20px 0; border-radius: 4px;">
+    <strong>Paciente:</strong> ${record.patient_name || ""}<br>
+    <strong>Data do Atendimento:</strong> ${createdAt.toLocaleDateString(
+      "pt-BR"
+    )}<br>
+    <strong>Data de Emissão:</strong> ${new Date().toLocaleDateString(
+      "pt-BR"
+    )}
+  </div>
+
+  ${vitalSignsHTML}
+
+  ${medicalSectionsHTML}
+
+  ${
+    medicalSections.length === 0
+      ? `
+  <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: #ffffff;">
+    <p style="color: #000000; margin: 10px 0; text-align: justify;"><em>Prontuário médico sem informações clínicas detalhadas registradas.</em></p>
+  </div>
+  `
+      : ""
+  }
+</body>
+</html>`;
+
+          const generated = await generateDocumentFromHTML(
+            htmlContent,
+            `prontuario_${record.id}`
+          );
+
+          const title = `Prontuário Médico - ${record.patient_name || ""}`;
+
+          const insertResult = await pool.query(
+            `
+            INSERT INTO saved_documents (
+              title,
+              document_type,
+              patient_name,
+              patient_cpf,
+              professional_id,
+              document_url,
+              document_metadata,
+              created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            RETURNING document_url
+          `,
+            [
+              title,
+              "medical_record",
+              record.patient_name || "",
+              record.patient_cpf || null,
+              record.professional_id,
+              generated.url,
+              JSON.stringify({ medical_record_id: record.id }),
+            ]
+          );
+
+          recordDocumentUrl = insertResult.rows[0].document_url;
+        }
+      } catch (docError) {
+        console.error(
+          "❌ Error generating or fetching medical record document:",
+          docError
+        );
+        recordDocumentUrl = null;
+      }
+
+      let message = `Olá ${
         record.patient_name || ""
       }, envio aqui informações do seu prontuário referente ao atendimento com ${
         record.professional_name || "seu profissional de saúde"
       }.`;
+
+      if (recordDocumentUrl) {
+        message += `\n\nAcesse seu prontuário pelo link abaixo:\n${recordDocumentUrl}`;
+      }
 
       const encodedMessage = encodeURIComponent(message);
       const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
@@ -3997,13 +4175,19 @@ app.get(
         ? cleanPhone
         : `55${cleanPhone}`;
 
-      const message = `Olá ${
+      // Sempre que possível incluímos o link direto do documento gerado (PDF/HTML)
+      // para que o paciente abra pelo WhatsApp.
+      let message = `Olá ${
         document.patient_name || ""
       }, envio aqui o documento "${
         document.title
       }" referente ao seu atendimento com ${
         document.professional_name || "seu profissional de saúde"
       }.`;
+
+      if (document.document_url) {
+        message += `\n\nAcesse seu documento pelo link abaixo:\n${document.document_url}`;
+      }
 
       const encodedMessage = encodeURIComponent(message);
       const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;

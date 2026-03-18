@@ -1,5 +1,5 @@
 import type React from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 import MedicalRecordPreviewModal from "../../components/MedicalRecordPreviewModal";
@@ -96,6 +96,15 @@ const MedicalRecordsPage: React.FC = () => {
   );
   const [isSearching, setIsSearching] = useState(false);
 
+  // Private patient search state (for scheduling-style search in records form)
+  const [privatePatientSearch, setPrivatePatientSearch] = useState("");
+  const [showPrivatePatientDropdown, setShowPrivatePatientDropdown] =
+    useState(false);
+  const [isLoadingPatients, setIsLoadingPatients] = useState(false);
+  const [selectedPrivatePatient, setSelectedPrivatePatient] =
+    useState<PrivatePatient | null>(null);
+  const privatePatientDropdownRef = useRef<HTMLDivElement>(null);
+
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [recordToDelete, setRecordToDelete] = useState<MedicalRecord | null>(
@@ -112,8 +121,6 @@ const MedicalRecordsPage: React.FC = () => {
     specialty: "",
     crm: "",
   });
-
-
   useEffect(() => {
     fetchData();
   }, []);
@@ -135,8 +142,6 @@ const MedicalRecordsPage: React.FC = () => {
     }
 
     if (selectedPatient) {
-      // This would need to be implemented based on patient ID
-      // For now, we'll filter by patient name
       filtered = filtered.filter(
         (record) =>
           record.patient_name ===
@@ -185,6 +190,77 @@ const MedicalRecordsPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Load private patients on demand when searching in the form (similar to SchedulingPage)
+  useEffect(() => {
+    if (!privatePatientSearch.trim() || formData.patient_type !== "private") {
+      setPatients([]);
+      setIsLoadingPatients(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsLoadingPatients(true);
+        const apiUrl = getApiUrl();
+        const response = await fetchWithAuth(
+          `${apiUrl}/api/private-patients?q=${encodeURIComponent(
+            privatePatientSearch
+          )}&limit=50`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (response.ok) {
+          const patientsData = await response.json();
+          setPatients(Array.isArray(patientsData) ? patientsData : []);
+        } else {
+          setPatients([]);
+        }
+      } catch (err) {
+        setPatients([]);
+      } finally {
+        setIsLoadingPatients(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [privatePatientSearch, formData.patient_type]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        privatePatientDropdownRef.current &&
+        !privatePatientDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowPrivatePatientDropdown(false);
+      }
+    };
+
+    if (showPrivatePatientDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showPrivatePatientDropdown]);
+
+  const handlePrivatePatientSelect = (patient: PrivatePatient) => {
+    setSelectedPrivatePatient(patient);
+    setFormData((prev) => ({
+      ...prev,
+      private_patient_id: patient.id.toString(),
+      patient_name: patient.name,
+      patient_cpf: patient.cpf,
+    }));
+    setPrivatePatientSearch(patient.name);
+    setShowPrivatePatientDropdown(false);
   };
 
   const sendRecordViaWhatsApp = async (record: MedicalRecord) => {
@@ -1133,26 +1209,102 @@ const MedicalRecordsPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* Private Patient Selection */}
+                {/* Private Patient Selection - search style (same experience as scheduling) */}
                 {formData.patient_type === "private" && (
-                  <div>
+                  <div className="relative" ref={privatePatientDropdownRef}>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Paciente Particular *
                     </label>
-                    <select
-                      name="private_patient_id"
-                      value={formData.private_patient_id}
-                      onChange={handleInputChange}
-                      className="input"
-                      required
-                    >
-                      <option value="">Selecione um paciente</option>
-                      {patients.map((patient) => (
-                        <option key={patient.id} value={patient.id}>
-                          {patient.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                        <input
+                          type="text"
+                          value={privatePatientSearch}
+                          onChange={(e) => {
+                            setPrivatePatientSearch(e.target.value);
+                            setShowPrivatePatientDropdown(true);
+                          }}
+                          onFocus={() => setShowPrivatePatientDropdown(true)}
+                          className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                          placeholder="Digite o nome ou CPF do paciente..."
+                          required={!formData.private_patient_id}
+                        />
+                      </div>
+
+                      {showPrivatePatientDropdown && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                          {isLoadingPatients ? (
+                            <div className="p-4 text-center">
+                              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-red-600 mx-auto mb-2"></div>
+                              <p className="text-xs text-gray-500">
+                                Carregando pacientes...
+                              </p>
+                            </div>
+                          ) : privatePatientSearch.trim() === "" ? (
+                            <div className="p-4 text-center">
+                              <p className="text-xs text-gray-500">
+                                Digite para buscar pacientes
+                              </p>
+                            </div>
+                          ) : patients.length > 0 ? (
+                            patients.map((patient) => (
+                              <button
+                                key={patient.id}
+                                type="button"
+                                onClick={() => handlePrivatePatientSelect(patient)}
+                                className={`w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors border-b border-gray-100 last:border-b-0 ${
+                                  formData.private_patient_id ===
+                                  patient.id.toString()
+                                    ? "bg-blue-50"
+                                    : ""
+                                }`}
+                              >
+                                <div className="font-medium text-gray-900 text-sm">
+                                  {patient.name}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {patient.cpf ? formatCpf(patient.cpf) : "CPF não informado"}
+                                </div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="p-4 text-center">
+                              <p className="text-xs text-gray-500">
+                                Nenhum paciente encontrado com esse termo
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {formData.private_patient_id && (
+                      <div className="mt-2 p-3 bg-green-50 rounded-lg border border-green-200 flex items-center justify-between">
+                        <div className="flex items-center">
+                          <User className="h-4 w-4 text-green-600 mr-2" />
+                          <span className="text-xs font-medium text-green-800">
+                            {selectedPrivatePatient?.name || privatePatientSearch}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormData((prev) => ({
+                              ...prev,
+                              private_patient_id: "",
+                              patient_name: "",
+                              patient_cpf: "",
+                            }));
+                            setPrivatePatientSearch("");
+                            setSelectedPrivatePatient(null);
+                          }}
+                          className="text-green-600 hover:text-green-800"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
