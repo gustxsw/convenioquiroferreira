@@ -18,7 +18,10 @@ function normalizeTokenFromUrl(raw: string | null): string | null {
       break;
     }
   }
-  const out = t.trim();
+  let out = t.trim();
+  if (/^[a-fA-F0-9]{64}$/.test(out)) {
+    out = out.toLowerCase();
+  }
   return out.length > 0 ? out : null;
 }
 

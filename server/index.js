@@ -46,12 +46,14 @@ dotenv.config();
  * Tokens antigos gerados com bcrypt ainda são aceitos no reset (fallback).
  */
 function hashPasswordResetToken(plainToken) {
-  const t = String(plainToken).trim();
-  return crypto.createHash("sha256").update(t, "utf8").digest("hex");
+  const normalized = normalizeResetToken(plainToken);
+  return crypto.createHash("sha256").update(normalized, "utf8").digest("hex");
 }
 
 /**
  * Remove espaços, caracteres invisíveis e decodifica % do token vindo da URL/e-mail.
+ * Tokens hex de 64 chars (32 bytes) são forçados para minúsculas — SHA-256 e a URL
+ * são sensíveis a maiúsculas/minúsculas; o Node gera hex em minúsculas.
  */
 function normalizeResetToken(raw) {
   let t = String(raw ?? "")
@@ -66,7 +68,11 @@ function normalizeResetToken(raw) {
       break;
     }
   }
-  return t.trim();
+  t = t.trim();
+  if (/^[a-fA-F0-9]{64}$/.test(t)) {
+    t = t.toLowerCase();
+  }
+  return t;
 }
 
 const app = express();
@@ -1750,6 +1756,7 @@ app.post("/api/auth/reset-password", async (req, res) => {
       console.warn("⚠️ Reset password: token não encontrou usuário (expirado, hash diferente ou API/banco errado).", {
         tokenLength: rawToken.length,
         tokenPrefix: rawToken.slice(0, 8),
+        sha256Prefix: tokenHash.slice(0, 8),
       });
       return res
         .status(400)
