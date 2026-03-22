@@ -457,10 +457,16 @@ const ProfessionalProfilePage: React.FC = () => {
                       />
                       <button
                         type="button"
+                        title={
+                          showCurrentPassword ? "Ocultar senha" : "Mostrar senha"
+                        }
+                        aria-label={
+                          showCurrentPassword ? "Ocultar senha" : "Mostrar senha"
+                        }
                         onClick={() =>
                           setShowCurrentPassword(!showCurrentPassword)
                         }
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 z-10 cursor-pointer"
                       >
                         {showCurrentPassword ? (
                           <EyeOff className="h-5 w-5" />
@@ -490,8 +496,12 @@ const ProfessionalProfilePage: React.FC = () => {
                       />
                       <button
                         type="button"
+                        title={showNewPassword ? "Ocultar senha" : "Mostrar senha"}
+                        aria-label={
+                          showNewPassword ? "Ocultar senha" : "Mostrar senha"
+                        }
                         onClick={() => setShowNewPassword(!showNewPassword)}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 z-10 cursor-pointer"
                       >
                         {showNewPassword ? (
                           <EyeOff className="h-5 w-5" />
@@ -521,10 +531,16 @@ const ProfessionalProfilePage: React.FC = () => {
                       />
                       <button
                         type="button"
+                        title={
+                          showConfirmPassword ? "Ocultar senha" : "Mostrar senha"
+                        }
+                        aria-label={
+                          showConfirmPassword ? "Ocultar senha" : "Mostrar senha"
+                        }
                         onClick={() =>
                           setShowConfirmPassword(!showConfirmPassword)
                         }
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 z-10 cursor-pointer"
                       >
                         {showConfirmPassword ? (
                           <EyeOff className="h-5 w-5" />

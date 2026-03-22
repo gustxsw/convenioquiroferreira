@@ -1,11 +1,20 @@
 import React, { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { Link, useNavigate } from "react-router-dom";
-import { Users, Award, Calendar, Activity, UserPlus } from "lucide-react";
+import {
+  Users,
+  Award,
+  Calendar,
+  Activity,
+  UserPlus,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 
 const LoginPage: React.FC = () => {
   const [cpf, setCpf] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -190,16 +199,33 @@ const LoginPage: React.FC = () => {
                 >
                   Senha
                 </label>
-                <input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all"
-                  placeholder="Digite sua senha"
-                  disabled={isLoading}
-                  required
-                />
+                <div className="relative">
+                  <input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-4 pr-12 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all"
+                    placeholder="Digite sua senha"
+                    disabled={isLoading}
+                    required
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    aria-label={
+                      showPassword ? "Ocultar senha" : "Mostrar senha"
+                    }
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer"
+                    onClick={() => setShowPassword((s) => !s)}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div className="flex justify-end">

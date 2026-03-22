@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Lock, ArrowLeft, Activity } from "lucide-react";
+import { Lock, ArrowLeft, Activity, Eye, EyeOff } from "lucide-react";
 import { getApiUrl } from "../utils/apiHelpers";
 
 const ResetPasswordPage: React.FC = () => {
@@ -12,12 +12,21 @@ const ResetPasswordPage: React.FC = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const t = params.get("token");
-    setToken(t);
-  }, [location.search]);
+    let t = params.get("token");
+    // Alguns links / clientes de e-mail colocam a query após o # (SPA)
+    if (!t && typeof window !== "undefined" && window.location.hash) {
+      const q = window.location.hash.indexOf("?");
+      if (q !== -1) {
+        t = new URLSearchParams(window.location.hash.slice(q)).get("token");
+      }
+    }
+    setToken(t ? t.trim() : null);
+  }, [location.search, location.hash]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,7 +62,7 @@ const ResetPasswordPage: React.FC = () => {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ token, password }),
+        body: JSON.stringify({ token: token.trim(), password }),
       });
 
       const data = await response.json();
@@ -146,14 +155,29 @@ const ResetPasswordPage: React.FC = () => {
                   </div>
                   <input
                     id="password"
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 px-4 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all"
+                    className="w-full pl-10 pr-12 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all"
                     placeholder="Digite a nova senha"
                     disabled={isLoading}
                     required
+                    autoComplete="new-password"
                   />
+                  <button
+                    type="button"
+                    aria-label={
+                      showPassword ? "Ocultar senha" : "Mostrar senha"
+                    }
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer"
+                    onClick={() => setShowPassword((s) => !s)}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
+                  </button>
                 </div>
                 <p className="mt-1 text-xs text-gray-500">
                   Use pelo menos 6 caracteres. Prefira combinações de letras,
@@ -174,14 +198,29 @@ const ResetPasswordPage: React.FC = () => {
                   </div>
                   <input
                     id="confirmPassword"
-                    type="password"
+                    type={showConfirmPassword ? "text" : "password"}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full pl-10 px-4 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all"
+                    className="w-full pl-10 pr-12 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all"
                     placeholder="Repita a nova senha"
                     disabled={isLoading}
                     required
+                    autoComplete="new-password"
                   />
+                  <button
+                    type="button"
+                    aria-label={
+                      showConfirmPassword ? "Ocultar senha" : "Mostrar senha"
+                    }
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer"
+                    onClick={() => setShowConfirmPassword((s) => !s)}
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
+                  </button>
                 </div>
               </div>
 

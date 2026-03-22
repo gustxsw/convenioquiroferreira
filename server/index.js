@@ -40,6 +40,16 @@ const __dirname = path.dirname(__filename);
 // Load environment variables
 dotenv.config();
 
+/**
+ * Hash SHA-256 do token em texto plano (armazenado em users.reset_password_token).
+ * Permite busca direta no banco e evita falhas por espaços/encoding no link do e-mail.
+ * Tokens antigos gerados com bcrypt ainda são aceitos no reset (fallback).
+ */
+function hashPasswordResetToken(plainToken) {
+  const t = String(plainToken).trim();
+  return crypto.createHash("sha256").update(t, "utf8").digest("hex");
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -1530,7 +1540,7 @@ app.post("/api/auth/forgot-password", async (req, res) => {
     }
 
     const token = crypto.randomBytes(32).toString("hex");
-    const hashedToken = await bcrypt.hash(token, 10);
+    const tokenHash = hashPasswordResetToken(token);
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
 
     await pool.query(
@@ -1540,13 +1550,15 @@ app.post("/api/auth/forgot-password", async (req, res) => {
           reset_password_expires_at = $2
       WHERE id = $3
     `,
-      [hashedToken, expiresAt, user.id]
+      [tokenHash, expiresAt, user.id]
     );
 
     const isProduction = process.env.NODE_ENV === "production";
-    const frontendBaseUrl = isProduction
-      ? "https://www.cartaoquiroferreira.com.br"
-      : "http://localhost:5173";
+    const frontendBaseUrl =
+      process.env.FRONTEND_URL ||
+      (isProduction
+        ? "https://www.cartaoquiroferreira.com.br"
+        : "http://localhost:5173");
 
     const resetLink = `${frontendBaseUrl}/reset-password?token=${encodeURIComponent(
       token
@@ -1624,7 +1636,10 @@ app.post("/api/auth/reset-password", async (req, res) => {
   try {
     const { token, password } = req.body;
 
-    if (!token || !password) {
+    const rawToken =
+      typeof token === "string" ? token.trim() : String(token || "").trim();
+
+    if (!rawToken || !password) {
       return res
         .status(400)
         .json({ message: "Token e nova senha são obrigatórios" });
@@ -1636,23 +1651,45 @@ app.post("/api/auth/reset-password", async (req, res) => {
       });
     }
 
-    const candidatesResult = await pool.query(
-      `
-      SELECT id, reset_password_token, reset_password_expires_at
-      FROM users
-      WHERE reset_password_token IS NOT NULL
-        AND reset_password_expires_at IS NOT NULL
-        AND reset_password_expires_at > NOW()
-    `
-    );
+    const tokenHash = hashPasswordResetToken(rawToken);
 
     let matchedUserId = null;
 
-    for (const user of candidatesResult.rows) {
-      const isMatch = await bcrypt.compare(token, user.reset_password_token);
-      if (isMatch) {
-        matchedUserId = user.id;
-        break;
+    const directResult = await pool.query(
+      `
+      SELECT id
+      FROM users
+      WHERE reset_password_token = $1
+        AND reset_password_expires_at IS NOT NULL
+        AND reset_password_expires_at > NOW()
+    `,
+      [tokenHash]
+    );
+
+    if (directResult.rows.length > 0) {
+      matchedUserId = directResult.rows[0].id;
+    } else {
+      // Compatibilidade: tokens antigos armazenados com bcrypt ($2a/$2b...)
+      const legacyResult = await pool.query(
+        `
+        SELECT id, reset_password_token
+        FROM users
+        WHERE reset_password_token IS NOT NULL
+          AND reset_password_expires_at IS NOT NULL
+          AND reset_password_expires_at > NOW()
+          AND reset_password_token LIKE '$2%'
+      `
+      );
+
+      for (const row of legacyResult.rows) {
+        const isMatch = await bcrypt.compare(
+          rawToken,
+          row.reset_password_token
+        );
+        if (isMatch) {
+          matchedUserId = row.id;
+          break;
+        }
       }
     }
 
