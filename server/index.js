@@ -50,6 +50,25 @@ function hashPasswordResetToken(plainToken) {
   return crypto.createHash("sha256").update(t, "utf8").digest("hex");
 }
 
+/**
+ * Remove espaços, caracteres invisíveis e decodifica % do token vindo da URL/e-mail.
+ */
+function normalizeResetToken(raw) {
+  let t = String(raw ?? "")
+    .trim()
+    .replace(/[\u200B-\u200D\uFEFF]/g, "");
+  for (let i = 0; i < 3; i++) {
+    try {
+      const d = decodeURIComponent(t);
+      if (d === t) break;
+      t = d;
+    } catch {
+      break;
+    }
+  }
+  return t.trim();
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -206,6 +225,19 @@ const initializeDatabase = async () => {
           WHERE table_name = 'users' AND column_name = 'reset_password_expires_at'
         ) THEN
           ALTER TABLE users ADD COLUMN reset_password_expires_at TIMESTAMP;
+        END IF;
+
+        -- Hash SHA-256 do token tem 64 caracteres; VARCHAR curto quebra a redefinição de senha
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'users'
+            AND column_name = 'reset_password_token'
+            AND data_type = 'character varying'
+            AND character_maximum_length IS NOT NULL
+            AND character_maximum_length < 128
+        ) THEN
+          ALTER TABLE users ALTER COLUMN reset_password_token TYPE TEXT;
         END IF;
       END $$;
     `);
@@ -1636,8 +1668,9 @@ app.post("/api/auth/reset-password", async (req, res) => {
   try {
     const { token, password } = req.body;
 
-    const rawToken =
-      typeof token === "string" ? token.trim() : String(token || "").trim();
+    const rawToken = normalizeResetToken(
+      typeof token === "string" ? token : String(token || "")
+    );
 
     if (!rawToken || !password) {
       return res
@@ -1668,7 +1701,27 @@ app.post("/api/auth/reset-password", async (req, res) => {
 
     if (directResult.rows.length > 0) {
       matchedUserId = directResult.rows[0].id;
-    } else {
+    }
+
+    // Hash SHA-256 truncado (ex.: coluna VARCHAR(60) no banco legado)
+    if (!matchedUserId && tokenHash.length === 64) {
+      const shortHash = tokenHash.slice(0, 60);
+      const truncResult = await pool.query(
+        `
+        SELECT id
+        FROM users
+        WHERE reset_password_token = $1
+          AND reset_password_expires_at IS NOT NULL
+          AND reset_password_expires_at > NOW()
+      `,
+        [shortHash]
+      );
+      if (truncResult.rows.length > 0) {
+        matchedUserId = truncResult.rows[0].id;
+      }
+    }
+
+    if (!matchedUserId) {
       // Compatibilidade: tokens antigos armazenados com bcrypt ($2a/$2b...)
       const legacyResult = await pool.query(
         `
@@ -1694,6 +1747,10 @@ app.post("/api/auth/reset-password", async (req, res) => {
     }
 
     if (!matchedUserId) {
+      console.warn("⚠️ Reset password: token não encontrou usuário (expirado, hash diferente ou API/banco errado).", {
+        tokenLength: rawToken.length,
+        tokenPrefix: rawToken.slice(0, 8),
+      });
       return res
         .status(400)
         .json({ message: "Token inválido ou expirado. Solicite um novo link." });

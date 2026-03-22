@@ -1,4 +1,12 @@
+/**
+ * URL base da API. Em produção, defina VITE_API_URL no build se o front e o back
+ * estiverem em domínios diferentes (evita chamar localhost ou outro host errado).
+ */
 export const getApiUrl = (): string => {
+  const fromEnv = import.meta.env.VITE_API_URL as string | undefined;
+  if (fromEnv && String(fromEnv).trim()) {
+    return String(fromEnv).trim().replace(/\/$/, "");
+  }
   if (
     window.location.hostname === "cartaoquiroferreira.com.br" ||
     window.location.hostname === "www.cartaoquiroferreira.com.br"

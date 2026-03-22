@@ -3,6 +3,25 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Lock, ArrowLeft, Activity, Eye, EyeOff } from "lucide-react";
 import { getApiUrl } from "../utils/apiHelpers";
 
+/** Mesma ideia do servidor: token da URL pode vir com encoding/espacos invisíveis. */
+function normalizeTokenFromUrl(raw: string | null): string | null {
+  if (!raw) return null;
+  let t = raw
+    .trim()
+    .replace(/[\u200B-\u200D\uFEFF]/g, "");
+  for (let i = 0; i < 3; i++) {
+    try {
+      const d = decodeURIComponent(t);
+      if (d === t) break;
+      t = d;
+    } catch {
+      break;
+    }
+  }
+  const out = t.trim();
+  return out.length > 0 ? out : null;
+}
+
 const ResetPasswordPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -25,7 +44,7 @@ const ResetPasswordPage: React.FC = () => {
         t = new URLSearchParams(window.location.hash.slice(q)).get("token");
       }
     }
-    setToken(t ? t.trim() : null);
+    setToken(normalizeTokenFromUrl(t));
   }, [location.search, location.hash]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -62,7 +81,10 @@ const ResetPasswordPage: React.FC = () => {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ token: token.trim(), password }),
+        body: JSON.stringify({
+          token: normalizeTokenFromUrl(token) ?? "",
+          password,
+        }),
       });
 
       const data = await response.json();
