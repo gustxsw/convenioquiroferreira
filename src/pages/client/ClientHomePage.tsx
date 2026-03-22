@@ -460,42 +460,86 @@ const ClientHomePage: React.FC = () => {
             </p>
           </div>
         ) : (
-          <div className="table-container">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Data</th>
-                  <th>Paciente</th>
-                  <th>Serviço</th>
-                  <th>Profissional</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredConsultations.map((consultation) => (
-                  <tr key={consultation.id}>
-                    <td>{formatDate(consultation.date)}</td>
-                    <td>
-                      <div className="flex items-center">
-                        {consultation.client_name === user?.name ? (
+          <>
+            {/* Mobile-first cards */}
+            <div className="md:hidden space-y-3">
+              {filteredConsultations.map((consultation) => {
+                const isTitular = consultation.client_name === user?.name;
+                return (
+                  <div
+                    key={consultation.id}
+                    className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <p className="text-sm font-semibold text-gray-900">
+                        {consultation.service_name}
+                      </p>
+                      <span className="text-xs text-gray-500">
+                        {formatDate(consultation.date)}
+                      </span>
+                    </div>
+                    <div className="space-y-1 text-sm">
+                      <div className="flex items-center text-gray-700">
+                        {isTitular ? (
                           <User className="h-4 w-4 text-green-600 mr-2" />
                         ) : (
                           <Users className="h-4 w-4 text-blue-600 mr-2" />
                         )}
-                        {consultation.client_name}
-                        {consultation.client_name === user?.name && (
-                          <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
+                        <span>{consultation.client_name}</span>
+                        {isTitular && (
+                          <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs">
                             Titular
                           </span>
                         )}
                       </div>
-                    </td>
-                    <td>{consultation.service_name}</td>
-                    <td>{consultation.professional_name}</td>
+                      <p className="text-gray-600">
+                        <span className="font-medium text-gray-700">Profissional:</span>{" "}
+                        {consultation.professional_name}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop table */}
+            <div className="hidden md:block table-container">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Paciente</th>
+                    <th>Serviço</th>
+                    <th>Profissional</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filteredConsultations.map((consultation) => (
+                    <tr key={consultation.id}>
+                      <td>{formatDate(consultation.date)}</td>
+                      <td>
+                        <div className="flex items-center">
+                          {consultation.client_name === user?.name ? (
+                            <User className="h-4 w-4 text-green-600 mr-2" />
+                          ) : (
+                            <Users className="h-4 w-4 text-blue-600 mr-2" />
+                          )}
+                          {consultation.client_name}
+                          {consultation.client_name === user?.name && (
+                            <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
+                              Titular
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td>{consultation.service_name}</td>
+                      <td>{consultation.professional_name}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         {/* Summary */}

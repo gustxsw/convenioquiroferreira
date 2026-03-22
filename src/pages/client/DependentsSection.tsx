@@ -291,12 +291,12 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
 
       const data = await response.json();
 
+      // Hybrid redirect: iOS same tab, desktop new tab with fallback
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       if (isIOS) {
         window.location.href = data.init_point;
         return;
       }
-
       const newWindow = window.open(data.init_point, "_blank");
       if (!newWindow) {
         window.location.href = data.init_point;
@@ -423,7 +423,7 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
 
   return (
     <div className="card mb-6">
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4">
         <div className="flex items-center">
           <User className="h-6 w-6 text-red-600 mr-2" />
           <h2 className="text-xl font-semibold">Dependentes</h2>
@@ -432,9 +432,9 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
         {dependents.length < 10 && (
           <button
             onClick={openCreateModal}
-            className="btn btn-primary flex items-center"
+            className="btn btn-primary flex items-center justify-center w-full sm:w-auto text-sm sm:text-base px-3 py-2 sm:px-4"
           >
-            <UserPlus className="h-5 w-5 mr-2" />
+            <UserPlus className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
             Adicionar Dependente
           </button>
         )}
@@ -520,105 +520,208 @@ const DependentsSection: React.FC<DependentsSectionProps> = ({ clientId }) => {
               </div>
             )}
           </div>
-          <div className="table-container">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Nome</th>
-                <th>CPF</th>
-                <th>Status</th>
-                <th>Valor</th>
-                <th>Data de Nascimento</th>
-                <th>Data de Cadastro</th>
-                <th>Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dependents.map((dependent) => {
-                const statusInfo = getStatusDisplay(dependent);
-                return (
-                  <React.Fragment key={dependent.id}>
-                    <tr>
-                      <td className="flex items-center">
-                        <User className="h-5 w-5 mr-2 text-gray-500" />
+          {/* Mobile-first cards */}
+          <div className="md:hidden space-y-3">
+            {dependents.map((dependent) => {
+              const statusInfo = getStatusDisplay(dependent);
+              return (
+                <div
+                  key={dependent.id}
+                  className="border border-gray-200 rounded-xl p-4 shadow-sm bg-white"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center">
+                      <User className="h-5 w-5 mr-2 text-gray-500" />
+                      <p className="text-sm font-semibold text-gray-900">
                         {dependent.name}
-                      </td>
-                      <td>{formattedCpf(dependent.cpf)}</td>
-                      <td>
-                        <span
-                          className={`px-2 py-1 text-xs font-medium rounded-full ${statusInfo.className}`}
-                        >
-                          {statusInfo.text}
+                      </p>
+                    </div>
+                    <span
+                      className={`px-2 py-1 text-xs font-medium rounded-full ${statusInfo.className}`}
+                    >
+                      {statusInfo.text}
+                    </span>
+                  </div>
+
+                  <div className="mt-2 space-y-1 text-xs text-gray-600">
+                    <p>
+                      <span className="font-medium text-gray-700">CPF:</span>{" "}
+                      {formattedCpf(dependent.cpf)}
+                    </p>
+                    <p>
+                      <span className="font-medium text-gray-700">Nascimento:</span>{" "}
+                      {formatDate(dependent.birth_date)}
+                    </p>
+                    <p>
+                      <span className="font-medium text-gray-700">Cadastro:</span>{" "}
+                      {formatDate(dependent.created_at)}
+                    </p>
+                    {dependent.subscription_expiry &&
+                      dependent.subscription_status === "active" && (
+                        <p>
+                          <span className="font-medium text-gray-700">
+                            Expira em:
+                          </span>{" "}
+                          {formatDate(dependent.subscription_expiry)}
+                        </p>
+                      )}
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span
+                        className={`text-sm ${
+                          appliedCoupon ? "line-through text-gray-400" : "text-gray-700"
+                        }`}
+                      >
+                        {formatCurrency(baseAmount)}
+                      </span>
+                      {appliedCoupon && (
+                        <span className="text-sm font-semibold text-green-600">
+                          {formatCurrency(totalAmount)}
                         </span>
-                        {dependent.subscription_expiry &&
-                          dependent.subscription_status === "active" && (
-                            <div className="text-xs text-gray-500 mt-1">
-                              Expira em:{" "}
-                              {formatDate(dependent.subscription_expiry)}
-                            </div>
+                      )}
+                    </div>
+                    <div className="flex space-x-2">
+                      {statusInfo.showPayButton && (
+                        <button
+                          onClick={() => createDependentPayment(dependent.id)}
+                          className={`p-1 text-green-600 hover:text-green-800 ${
+                            isCreatingPayment === dependent.id
+                              ? "opacity-50 cursor-not-allowed"
+                              : ""
+                          }`}
+                          title="Realizar Pagamento"
+                          disabled={isCreatingPayment === dependent.id}
+                        >
+                          {isCreatingPayment === dependent.id ? (
+                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-600"></div>
+                          ) : (
+                            <CreditCard className="h-5 w-5" />
                           )}
-                      </td>
-                      <td>
-                        <div className="flex flex-col">
+                        </button>
+                      )}
+                      <button
+                        onClick={() => openEditModal(dependent)}
+                        className="p-1 text-blue-600 hover:text-blue-800"
+                        title="Editar"
+                      >
+                        <Edit className="h-5 w-5" />
+                      </button>
+                      <button
+                        onClick={() => confirmDelete(dependent)}
+                        className="p-1 text-red-600 hover:text-red-800"
+                        title="Excluir"
+                      >
+                        <Trash2 className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden md:block table-container">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>CPF</th>
+                  <th>Status</th>
+                  <th>Valor</th>
+                  <th>Data de Nascimento</th>
+                  <th>Data de Cadastro</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dependents.map((dependent) => {
+                  const statusInfo = getStatusDisplay(dependent);
+                  return (
+                    <React.Fragment key={dependent.id}>
+                      <tr>
+                        <td className="flex items-center">
+                          <User className="h-5 w-5 mr-2 text-gray-500" />
+                          {dependent.name}
+                        </td>
+                        <td>{formattedCpf(dependent.cpf)}</td>
+                        <td>
                           <span
-                            className={`${
-                              appliedCoupon ? "line-through text-gray-400 text-sm" : ""
-                            }`}
+                            className={`px-2 py-1 text-xs font-medium rounded-full ${statusInfo.className}`}
                           >
-                            {formatCurrency(baseAmount)}
+                            {statusInfo.text}
                           </span>
-                          {appliedCoupon && (
-                            <span className="text-sm font-semibold text-green-600">
-                              {formatCurrency(totalAmount)}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td>{formatDate(dependent.birth_date)}</td>
-                      <td>{formatDate(dependent.created_at)}</td>
-                      <td>
-                        <div className="flex space-x-2">
-                          {statusInfo.showPayButton && (
-                            <button
-                              onClick={() => createDependentPayment(dependent.id)}
-                              className={`p-1 text-green-600 hover:text-green-800 ${
-                                isCreatingPayment === dependent.id
-                                  ? "opacity-50 cursor-not-allowed"
-                                  : ""
+                          {dependent.subscription_expiry &&
+                            dependent.subscription_status === "active" && (
+                              <div className="text-xs text-gray-500 mt-1">
+                                Expira em:{" "}
+                                {formatDate(dependent.subscription_expiry)}
+                              </div>
+                            )}
+                        </td>
+                        <td>
+                          <div className="flex flex-col">
+                            <span
+                              className={`${
+                                appliedCoupon ? "line-through text-gray-400 text-sm" : ""
                               }`}
-                              title="Realizar Pagamento"
-                              disabled={isCreatingPayment === dependent.id}
                             >
-                              {isCreatingPayment === dependent.id ? (
-                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-600"></div>
-                              ) : (
-                                <CreditCard className="h-5 w-5" />
-                              )}
+                              {formatCurrency(baseAmount)}
+                            </span>
+                            {appliedCoupon && (
+                              <span className="text-sm font-semibold text-green-600">
+                                {formatCurrency(totalAmount)}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td>{formatDate(dependent.birth_date)}</td>
+                        <td>{formatDate(dependent.created_at)}</td>
+                        <td>
+                          <div className="flex space-x-2">
+                            {statusInfo.showPayButton && (
+                              <button
+                                onClick={() => createDependentPayment(dependent.id)}
+                                className={`p-1 text-green-600 hover:text-green-800 ${
+                                  isCreatingPayment === dependent.id
+                                    ? "opacity-50 cursor-not-allowed"
+                                    : ""
+                                }`}
+                                title="Realizar Pagamento"
+                                disabled={isCreatingPayment === dependent.id}
+                              >
+                                {isCreatingPayment === dependent.id ? (
+                                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-600"></div>
+                                ) : (
+                                  <CreditCard className="h-5 w-5" />
+                                )}
+                              </button>
+                            )}
+                            <button
+                              onClick={() => openEditModal(dependent)}
+                              className="p-1 text-blue-600 hover:text-blue-800"
+                              title="Editar"
+                            >
+                              <Edit className="h-5 w-5" />
                             </button>
-                          )}
-                          <button
-                            onClick={() => openEditModal(dependent)}
-                            className="p-1 text-blue-600 hover:text-blue-800"
-                            title="Editar"
-                          >
-                            <Edit className="h-5 w-5" />
-                          </button>
-                          <button
-                            onClick={() => confirmDelete(dependent)}
-                            className="p-1 text-red-600 hover:text-red-800"
-                            title="Excluir"
-                          >
-                            <Trash2 className="h-5 w-5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                            <button
+                              onClick={() => confirmDelete(dependent)}
+                              className="p-1 text-red-600 hover:text-red-800"
+                              title="Excluir"
+                            >
+                              <Trash2 className="h-5 w-5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 

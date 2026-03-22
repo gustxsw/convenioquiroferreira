@@ -1,5 +1,5 @@
 import type React from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import DocumentViewModal from "../../components/DocumentViewModal";
 import {
@@ -57,7 +57,7 @@ const DocumentsPage: React.FC = () => {
   const [isLoadingPatients, setIsLoadingPatients] = useState(false);
   const [selectedPrivatePatient, setSelectedPrivatePatient] =
     useState<PrivatePatient | null>(null);
-  const privatePatientDropdownRef = React.useRef<HTMLDivElement>(null);
+  const privatePatientDropdownRef = useRef<HTMLDivElement>(null);
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -614,28 +614,24 @@ const DocumentsPage: React.FC = () => {
     }
   };
 
-  // Função de impressão direta para documentos (igual aos prontuários)
+  // Impressão direta: HTML busca e imprime na janela; PDF abre na mesma janela (download/visualizar como antes)
   const printDocumentDirect = (document: SavedDocument) => {
     try {
       console.log("🔄 Starting direct document print for:", document.title);
 
-      // Create a new window for printing
       const printWindow = window.open("", "_blank", "width=800,height=600");
 
       if (!printWindow) {
         throw new Error("Popup foi bloqueado. Permita popups para imprimir.");
       }
 
-      // If it's an HTML document, fetch and print it
       if (document.document_url.includes(".html")) {
         fetch(document.document_url)
           .then((response) => response.text())
           .then((htmlContent) => {
-            // Write the HTML content directly
             printWindow.document.write(htmlContent);
             printWindow.document.close();
 
-            // Auto-print when loaded
             printWindow.onload = () => {
               setTimeout(() => {
                 printWindow.print();
@@ -651,7 +647,6 @@ const DocumentsPage: React.FC = () => {
             setError("Erro ao carregar documento para impressão");
           });
       } else {
-        // For PDF documents, just open in new window
         printWindow.location.href = document.document_url;
       }
 

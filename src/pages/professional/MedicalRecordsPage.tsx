@@ -638,12 +638,12 @@ const MedicalRecordsPage: React.FC = () => {
     setRecordToPreview(null);
   };
 
-  // Função de impressão direta para prontuários
+  // Impressão direta no navegador (HTML), como antes — sem depender do backend/PDF
   const printMedicalRecordDirect = (record: MedicalRecord) => {
     try {
+      setError("");
       console.log("🔄 Starting direct medical record print");
 
-      // Gerar HTML do prontuário
       const vitalSigns = record.vital_signs || {};
       const hasVitalSigns = Object.values(vitalSigns).some(
         (value) => value && value.toString().trim()
@@ -841,17 +841,16 @@ const MedicalRecordsPage: React.FC = () => {
         const blob = new Blob([htmlContent], { type: "text/html;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         window.location.href = url;
+        setSuccess("Documento aberto. Use a opção de imprimir do seu dispositivo.");
         return;
       }
 
-      // Criar nova janela
       const printWindow = window.open("", "_blank", "width=800,height=600");
 
       if (!printWindow) {
         throw new Error("Popup foi bloqueado. Permita popups para imprimir.");
       }
 
-      // Escrever e fechar documento
       printWindow.document.write(htmlContent);
       printWindow.document.close();
 

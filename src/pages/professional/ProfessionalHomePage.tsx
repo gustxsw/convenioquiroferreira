@@ -2,10 +2,8 @@ import type React from "react";
 import { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
-import { Link } from "react-router-dom";
 import {
   CalendarClock,
-  PlusCircle,
   DollarSign,
   TrendingUp,
   Users,
@@ -443,14 +441,6 @@ const ProfessionalHomePage: React.FC = () => {
               Tentar Novamente
             </button>
           )}
-
-          <Link
-            to="/professional/register-consultation"
-            className="btn btn-primary flex items-center"
-          >
-            <PlusCircle className="h-5 w-5 mr-2" />
-            Nova Consulta
-          </Link>
         </div>
       </div>
 

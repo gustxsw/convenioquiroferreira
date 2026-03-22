@@ -93,9 +93,17 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({ amount }) => {
 
       setSuccess("Redirecionando para o pagamento...");
 
-      // Redirect to MercadoPago
+      // Hybrid redirect: iOS uses same tab, desktop tries new tab
       setTimeout(() => {
-        window.open(data.init_point, "_blank");
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        if (isIOS) {
+          window.location.href = data.init_point;
+          return;
+        }
+        const newWindow = window.open(data.init_point, "_blank");
+        if (!newWindow) {
+          window.location.href = data.init_point;
+        }
       }, 1000);
     } catch (error) {
       console.error("Payment error:", error);

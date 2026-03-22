@@ -439,7 +439,55 @@ const AffiliateDashboard: React.FC = () => {
               className="w-full sm:w-64 px-3 py-2 border rounded-lg text-sm"
             />
           </div>
-          <div className="overflow-x-auto">
+          {/* Mobile: cards without horizontal scroll */}
+          <div className="md:hidden divide-y divide-gray-200">
+            {filteredClients.map((client, index) => (
+              <div key={index} className="p-4 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-semibold text-gray-900">{client.name}</p>
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      client.subscription_status === "active"
+                        ? "bg-green-100 text-green-800"
+                        : "bg-yellow-100 text-yellow-800"
+                    }`}
+                  >
+                    {client.subscription_status === "active" ? "Ativo" : "Pendente"}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-600">
+                  <span className="font-medium text-gray-700">CPF:</span> {client.cpf || "-"}
+                </p>
+                <p className="text-xs text-gray-600">
+                  <span className="font-medium text-gray-700">Cadastro:</span>{" "}
+                  {new Date(client.created_at).toLocaleDateString("pt-BR")}
+                </p>
+                <div className="pt-1">
+                  {client.commission_amount ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-semibold text-green-600">
+                        R$ {Number.parseFloat(client.commission_amount).toFixed(2)}
+                      </span>
+                      <span
+                        className={`text-xs ${
+                          client.commission_status === "paid"
+                            ? "text-green-600"
+                            : "text-yellow-600"
+                        }`}
+                      >
+                        {client.commission_status === "paid" ? "Pago" : "Pendente"}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-sm text-gray-400">Sem comissão</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop: table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="min-w-full">
               <thead className="bg-gray-50">
                 <tr>

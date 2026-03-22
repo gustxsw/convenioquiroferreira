@@ -1,5 +1,6 @@
 // Document Generator - Production Ready
 import { v2 as cloudinary } from 'cloudinary';
+import puppeteer from 'puppeteer';
 
 /**
  * Validates and sanitizes template data to prevent injection attacks
@@ -898,10 +899,40 @@ const templates = {
 };
 
 /**
- * Upload HTML document to Cloudinary
+ * Render HTML document into PDF buffer
+ */
+const renderHTMLToPDFBuffer = async (htmlContent) => {
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    timeout: 120000,
+    protocolTimeout: 120000
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: {
+        top: '15mm',
+        right: '10mm',
+        bottom: '15mm',
+        left: '10mm'
+      }
+    });
+    return pdfBuffer;
+  } finally {
+    await browser.close();
+  }
+};
+
+/**
+ * Upload PDF document to Cloudinary
  */
 const uploadHTMLToCloudinary = async (htmlContent, fileName) => {
-  console.log('🔄 Uploading HTML to Cloudinary');
+  console.log('🔄 Uploading PDF to Cloudinary');
   
   try {
     if (!htmlContent || typeof htmlContent !== 'string') {
@@ -914,26 +945,38 @@ const uploadHTMLToCloudinary = async (htmlContent, fileName) => {
     
     // Create optimized HTML for better PDF rendering
     const optimizedHTML = createOptimizedHTMLForPDF(htmlContent);
+    let uploadPayload;
+    let uploadFormat = 'pdf';
+
+    try {
+      const pdfBuffer = await renderHTMLToPDFBuffer(optimizedHTML);
+      uploadPayload = `data:application/pdf;base64,${Buffer.from(pdfBuffer).toString('base64')}`;
+      uploadFormat = 'pdf';
+    } catch (pdfError) {
+      console.warn('⚠️ PDF rendering failed, falling back to HTML:', pdfError.message);
+      uploadPayload = `data:text/html;base64,${Buffer.from(optimizedHTML).toString('base64')}`;
+      uploadFormat = 'html';
+    }
     
     // Generate unique filename
     const timestamp = Date.now();
     const randomString = Math.random().toString(36).substr(2, 9);
     const uniqueFileName = `${fileName}_${timestamp}_${randomString}`;
     
-    // Upload HTML to Cloudinary as raw file
+    // Upload PDF to Cloudinary as raw file
     const uploadResult = await cloudinary.uploader.upload(
-      `data:text/html;base64,${Buffer.from(optimizedHTML).toString('base64')}`,
+      uploadPayload,
       {
         folder: 'quiro-ferreira/documents',
         resource_type: 'raw',
-        format: 'html',
+        format: uploadFormat,
         public_id: uniqueFileName,
         use_filename: false,
         unique_filename: true
       }
     );
     
-    console.log('✅ HTML uploaded to Cloudinary:', uploadResult.secure_url);
+    console.log(`✅ ${uploadFormat.toUpperCase()} uploaded to Cloudinary:`, uploadResult.secure_url);
     return uploadResult;
   } catch (error) {
     console.error('❌ Cloudinary upload failed:', error.message);
@@ -960,7 +1003,7 @@ export const generateDocumentPDF = async (documentType, templateData) => {
     }
     
     // Get template function
-    const templateFunction = templates[documentType];
+    let templateFunction = templates[documentType];
     if (!templateFunction) {
       console.log('⚠️ Unknown document type, using generic template');
       templateFunction = templates.other;

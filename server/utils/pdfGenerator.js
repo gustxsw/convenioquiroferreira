@@ -1,5 +1,6 @@
 // PDF generation using html2pdf.js approach for better compatibility
 import { v2 as cloudinary } from 'cloudinary';
+import puppeteer from 'puppeteer';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -98,21 +99,63 @@ const ensureTempDirectory = () => {
 };
 
 /**
- * Simplified approach: Convert HTML to base64 and upload directly to Cloudinary
+ * Render HTML to PDF using Puppeteer
+ */
+const renderHTMLToPDFBuffer = async (htmlContent) => {
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    timeout: 120000,
+    protocolTimeout: 120000
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: {
+        top: '15mm',
+        right: '10mm',
+        bottom: '15mm',
+        left: '10mm'
+      }
+    });
+    return pdfBuffer;
+  } finally {
+    await browser.close();
+  }
+};
+
+/**
+ * Convert HTML to PDF and upload to Cloudinary
  */
 const uploadHTMLToCloudinary = async (htmlContent, fileName) => {
-  console.log('DEBUG Uploading HTML to Cloudinary as document');
+  console.log('DEBUG Uploading PDF to Cloudinary as document');
   
   try {
     const optimizedHTML = createOptimizedHTML(htmlContent);
+    let uploadPayload;
+    let uploadFormat = 'pdf';
+
+    try {
+      const pdfBuffer = await renderHTMLToPDFBuffer(optimizedHTML);
+      uploadPayload = `data:application/pdf;base64,${Buffer.from(pdfBuffer).toString('base64')}`;
+      uploadFormat = 'pdf';
+    } catch (pdfError) {
+      console.warn('WARN PDF rendering failed, falling back to HTML:', pdfError.message);
+      uploadPayload = `data:text/html;base64,${Buffer.from(optimizedHTML).toString('base64')}`;
+      uploadFormat = 'html';
+    }
     
-    // Upload HTML to Cloudinary as raw file
+    // Upload PDF to Cloudinary as raw file
     const uploadResult = await cloudinary.uploader.upload(
-      `data:text/html;base64,${Buffer.from(optimizedHTML).toString('base64')}`,
+      uploadPayload,
       {
         folder: 'quiro-ferreira/documents',
         resource_type: 'raw',
-        format: 'html',
+        format: uploadFormat,
         public_id: `${fileName}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         use_filename: false,
         unique_filename: true
@@ -163,6 +206,7 @@ export const generateDocumentFromHTML = async (htmlContent, fileName = 'document
       url: uploadResult.secure_url,
       public_id: uploadResult.public_id,
       bytes: uploadResult.bytes,
+      format: 'pdf',
       validation: validationReport
     };
   } catch (error) {
