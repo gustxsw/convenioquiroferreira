@@ -189,3 +189,20 @@ export function utcToLocalTimeInput(utcDateString: string): string {
     hour12: false,
   });
 }
+
+/**
+ * Mask a Brazilian date input to DD/MM/YYYY.
+ * - Keeps only digits
+ * - Auto-inserts slashes as user types/pastes
+ * - Limits to 8 digits (DDMMYYYY)
+ */
+export function maskDateBR(value: string): string {
+  const digits = (value || "").replace(/\D/g, "").slice(0, 8);
+  const dd = digits.slice(0, 2);
+  const mm = digits.slice(2, 4);
+  const yyyy = digits.slice(4, 8);
+
+  if (digits.length <= 2) return dd;
+  if (digits.length <= 4) return `${dd}/${mm}`;
+  return `${dd}/${mm}/${yyyy}`;
+}

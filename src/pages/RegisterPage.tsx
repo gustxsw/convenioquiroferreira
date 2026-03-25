@@ -3,6 +3,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { Link, useSearchParams } from "react-router-dom";
 import { UserPlus, ArrowLeft, Eye, EyeOff, FileText, X, Check } from "lucide-react";
 import { linkUserToAffiliate } from "../hooks/useAffiliateTracking";
+import { maskDateBR } from "../utils/dateHelpers";
 
 const RegisterPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -77,6 +78,11 @@ const RegisterPage: React.FC = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    if (name === "birth_date") {
+      setFormData((prev) => ({ ...prev, birth_date: maskDateBR(value) }));
+      return;
+    }
+
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
@@ -297,17 +303,46 @@ const RegisterPage: React.FC = () => {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            <div
+              className={`rounded-xl border-2 p-4 ${
+                registrationRole === "professional"
+                  ? "border-blue-500 bg-blue-50"
+                  : "border-green-500 bg-green-50"
+              }`}
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-700 mb-1">
+                Você está se cadastrando como
+              </p>
+              <p
+                className={`text-lg font-bold ${
+                  registrationRole === "professional" ? "text-blue-800" : "text-green-800"
+                }`}
+              >
+                {registrationRole === "professional" ? "PROFISSIONAL" : "CLIENTE"}
+              </p>
+              <p className="text-xs text-gray-600 mt-1">
+                Confira antes de continuar para evitar criar a conta no perfil errado.
+              </p>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => setRegistrationRole("client")}
                 className={`p-4 rounded-lg border text-left transition-colors ${
                   registrationRole === "client"
-                    ? "border-red-500 bg-red-50"
+                    ? "border-green-500 bg-green-50 ring-2 ring-green-200"
                     : "border-gray-200 hover:bg-gray-50"
                 }`}
               >
-                <p className="text-sm font-semibold text-gray-900">Cliente</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-gray-900">Cliente</p>
+                  {registrationRole === "client" && (
+                    <span className="text-[11px] font-semibold text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full">
+                      Selecionado
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-gray-500">
                   Acesso ao convênio e consultas
                 </p>
@@ -317,13 +352,18 @@ const RegisterPage: React.FC = () => {
                 onClick={() => setRegistrationRole("professional")}
                 className={`p-4 rounded-lg border text-left transition-colors ${
                   registrationRole === "professional"
-                    ? "border-red-500 bg-red-50"
+                    ? "border-blue-500 bg-blue-50 ring-2 ring-blue-200"
                     : "border-gray-200 hover:bg-gray-50"
                 }`}
               >
-                <p className="text-sm font-semibold text-gray-900">
-                  Profissional
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-gray-900">Profissional</p>
+                  {registrationRole === "professional" && (
+                    <span className="text-[11px] font-semibold text-blue-700 bg-blue-100 border border-blue-200 px-2 py-0.5 rounded-full">
+                      Selecionado
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-gray-500">
                   30 dias grátis de agenda
                 </p>
@@ -408,6 +448,8 @@ const RegisterPage: React.FC = () => {
                     onChange={handleInputChange}
                     className="input"
                     placeholder="DD/MM/AAAA"
+                    inputMode="numeric"
+                    maxLength={10}
                     disabled={isLoading}
                   />
                 </div>
