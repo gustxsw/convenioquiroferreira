@@ -417,6 +417,44 @@ const SchedulingPage: React.FC = () => {
       setIsCheckingAccess(false);
     }
   };
+
+  const handleEarlyRenewalPayment = async () => {
+    try {
+      setError("");
+      setSuccess("");
+      setPaymentCheckMessage("");
+      setIsCheckingPayment(true);
+
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/professional/create-agenda-payment`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ duration_days: 30 }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          errorData.message || "Erro ao criar pagamento de renovação"
+        );
+      }
+
+      const data = await response.json();
+      setPaymentCheckMessage("Redirecionando para o pagamento...");
+
+      // Redirect to MercadoPago
+      window.location.href = data.init_point;
+    } catch (err) {
+      setIsCheckingPayment(false);
+      setPaymentCheckMessage("");
+      setError(err instanceof Error ? err.message : "Erro ao processar pagamento");
+    }
+  };
   // Handle slot duration change
   const handleSlotDurationChange = (duration: SlotDuration) => {
     setSlotDuration(duration);
@@ -1213,6 +1251,17 @@ const SchedulingPage: React.FC = () => {
 
   // Main agenda interface (only shown when access is confirmed)
   if (hasSchedulingAccess === true) {
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const daysUntilExpiry =
+      accessExpiresAt != null
+        ? Math.ceil(
+            (new Date(accessExpiresAt).getTime() - new Date().getTime()) /
+              msPerDay
+          )
+        : null;
+    const canRenewEarly =
+      daysUntilExpiry != null && daysUntilExpiry > 0 && daysUntilExpiry <= 7;
+
     return (
       <div className="px-2 sm:px-4 lg:px-0">
         {/* Access Status Banner */}
@@ -1232,6 +1281,22 @@ const SchedulingPage: React.FC = () => {
                     year: "numeric",
                   })}
                 </p>
+                {canRenewEarly && (
+                  <div className="mt-2">
+                    <button
+                      onClick={handleEarlyRenewalPayment}
+                      className="btn btn-outline btn-sm"
+                      disabled={isCheckingPayment}
+                    >
+                      {isCheckingPayment ? "Processando..." : "Renovar agora"}
+                    </button>
+                    <p className="text-[11px] sm:text-xs text-green-700 mt-1">
+                      Renovação antecipada disponível (faltam {daysUntilExpiry}{" "}
+                      dia(s) para vencer). O novo ciclo começa após o vencimento
+                      atual.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>

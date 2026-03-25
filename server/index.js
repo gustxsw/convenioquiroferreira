@@ -7154,6 +7154,40 @@ app.post(
 
       console.log("🔄 Creating agenda payment for 1 MONTH (30 days)");
 
+      // Enforce early renewal window: allow paying early only from 7 days before expiry.
+      // If access is already expired, payment is allowed immediately (agenda stays blocked until paid).
+      const earlyRenewalWindowDays = 7;
+      const now = new Date();
+      const existingAccessForPaymentResult = await pool.query(
+        `SELECT expires_at
+         FROM scheduling_access
+         WHERE professional_id = $1 AND is_active = true
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [req.user.id]
+      );
+
+      const currentExpiresAtRaw =
+        existingAccessForPaymentResult.rows[0]?.expires_at ?? null;
+
+      if (currentExpiresAtRaw) {
+        const currentExpiresAt = new Date(currentExpiresAtRaw);
+        const msUntilExpiry = currentExpiresAt.getTime() - now.getTime();
+        const msPerDay = 24 * 60 * 60 * 1000;
+
+        // If still active and more than 7 days to expire, don't allow early payment yet.
+        if (msUntilExpiry > 0 && msUntilExpiry > earlyRenewalWindowDays * msPerDay) {
+          return res.status(400).json({
+            message:
+              "Renovação antecipada disponível apenas a partir de 7 dias antes do vencimento.",
+            code: "EARLY_RENEWAL_NOT_ALLOWED",
+            details: {
+              expiresAt: currentExpiresAt,
+            },
+          });
+        }
+      }
+
       const preference = new Preference(client);
       const urls = getProductionUrls();
 
@@ -7640,15 +7674,33 @@ async function processAgendaPayment(professionalId, payment) {
     );
     console.log(`✅ [PAGAMENTO] Pagamento marcado como aprovado no banco`);
 
-    // 2. Calcular data de expiração (30 dias a partir de agora)
-    const expirationDate = new Date();
-    expirationDate.setDate(expirationDate.getDate() + 30);
-
-    // 3. Verificar se já existe registro de acesso
+    // 2. Verificar se já existe registro de acesso
     const existingAccessResult = await pool.query(
       `SELECT id, expires_at FROM scheduling_access WHERE professional_id = $1`,
       [professionalId]
     );
+
+    // 3. Calcular data de expiração (30 dias) respeitando pagamento antecipado:
+    // - Se ainda está ativo e faltam até 7 dias para vencer, estende a partir do vencimento atual.
+    // - Se já venceu (ou não existe), renova a partir de agora.
+    const earlyRenewalWindowDays = 7;
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const now = new Date();
+
+    let baseDate = now;
+    const existingExpiresAtRaw = existingAccessResult.rows[0]?.expires_at ?? null;
+
+    if (existingExpiresAtRaw) {
+      const existingExpiresAt = new Date(existingExpiresAtRaw);
+      const msUntilExpiry = existingExpiresAt.getTime() - now.getTime();
+
+      if (msUntilExpiry > 0 && msUntilExpiry <= earlyRenewalWindowDays * msPerDay) {
+        baseDate = existingExpiresAt;
+      }
+    }
+
+    const expirationDate = new Date(baseDate);
+    expirationDate.setDate(expirationDate.getDate() + 30);
 
     if (existingAccessResult.rows.length > 0) {
       // Atualizar registro existente, sempre renovando para 30 dias a partir de agora
