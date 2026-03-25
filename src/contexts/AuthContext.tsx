@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { refreshAccessToken } from "../utils/apiHelpers";
+import { logger } from "../utils/logger";
 
 type User = {
   id: number;
@@ -46,13 +47,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     const checkAuthStatus = async () => {
       try {
-        console.log("🔄 Initializing authentication check...");
-
         const token = localStorage.getItem("token");
         const refreshToken = localStorage.getItem("refreshToken");
 
         if (!token || !refreshToken) {
-          console.log("❌ No tokens found - cleaning localStorage");
           localStorage.removeItem("user");
           localStorage.removeItem("tempUser");
           localStorage.removeItem("role");
@@ -61,7 +59,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           return;
         }
 
-        console.log("🔄 Validating session with backend...");
         const apiUrl = getApiUrl();
 
         let response = await fetch(`${apiUrl}/api/auth/me`, {
@@ -77,11 +74,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           const errorData = await response.json();
 
           if (errorData.code === "TOKEN_EXPIRED" && refreshToken) {
-            console.log("🔄 Token expired during auth check - attempting refresh...");
+            logger.debug("Token expired during auth check - attempting refresh");
             const newToken = await refreshAccessToken();
 
             if (newToken) {
-              console.log("✅ Token refreshed - retrying session validation");
               response = await fetch(`${apiUrl}/api/auth/me`, {
                 method: "GET",
                 headers: {
@@ -92,7 +88,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
               });
 
               if (!response.ok) {
-                console.log("❌ Session validation failed after refresh - cleaning localStorage");
                 localStorage.removeItem("token");
                 localStorage.removeItem("refreshToken");
                 localStorage.removeItem("user");
@@ -104,7 +99,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
                 return;
               }
             } else {
-              console.log("❌ Failed to refresh token - cleaning localStorage");
               localStorage.removeItem("token");
               localStorage.removeItem("refreshToken");
               localStorage.removeItem("user");
@@ -116,7 +110,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
               return;
             }
           } else {
-            console.log("❌ Session validation failed - cleaning localStorage");
             localStorage.removeItem("token");
             localStorage.removeItem("refreshToken");
             localStorage.removeItem("user");
@@ -130,7 +123,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         const data = await response.json();
-        console.log("✅ Session validated successfully:", data.user);
 
         localStorage.setItem("user", JSON.stringify(data.user));
         localStorage.removeItem("tempUser");
@@ -138,8 +130,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         localStorage.removeItem("userType");
 
         setUser(data.user);
-      } catch (error) {
-        console.error("❌ Auth check error:", error);
+      } catch {
+        logger.error("Auth check error");
         localStorage.removeItem("token");
         localStorage.removeItem("refreshToken");
         localStorage.removeItem("user");
@@ -175,7 +167,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsLoading(true);
 
       const apiUrl = getApiUrl();
-      console.log("🔄 Making login request to:", `${apiUrl}/api/auth/login`);
+      logger.debug("Making login request", { endpoint: "/api/auth/login" });
 
       const response = await fetch(`${apiUrl}/api/auth/login`, {
         method: "POST",
@@ -186,32 +178,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         credentials: "include",
       });
 
-      console.log("📡 Login response status:", response.status);
-
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("Login error details:", errorText);
         let errorData;
         try {
           errorData = JSON.parse(errorText);
-        } catch (e) {
+        } catch {
           throw new Error("Erro de conexão com o servidor");
         }
         throw new Error(errorData.message || "Credenciais inválidas");
       }
 
       const data = await response.json();
-      console.log("✅ Login successful:", data);
 
       const userData = data.user;
       const needsRoleSelection = userData.roles && userData.roles.length > 1;
 
-      console.log("🎯 User roles:", userData.roles);
-      console.log("🎯 Needs role selection:", needsRoleSelection);
-
       return { user: userData, needsRoleSelection };
     } catch (error) {
-      console.error("❌ Login error:", error);
+      logger.error("Login error");
       throw error;
     } finally {
       setIsLoading(false);
@@ -223,7 +208,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsLoading(true);
 
       const apiUrl = getApiUrl();
-      console.log("🎯 Selecting role:", { userId, role });
+      logger.debug("Selecting role");
 
       const response = await fetch(`${apiUrl}/api/auth/select-role`, {
         method: "POST",
@@ -240,7 +225,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       const data = await response.json();
-      console.log("✅ Role selected:", data);
 
       localStorage.removeItem("tempUser");
       localStorage.removeItem("role");
@@ -253,7 +237,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setUser(data.user);
 
       const selectedRole = data.user.currentRole;
-      console.log("🚀 Navigating to role:", selectedRole);
 
       if (selectedRole === "client") {
         navigate("/client", { replace: true });
@@ -265,7 +248,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         navigate("/affiliate", { replace: true });
       }
     } catch (error) {
-      console.error("❌ Role selection error:", error);
+      logger.error("Role selection error");
       localStorage.removeItem("tempUser");
       throw error;
     } finally {
@@ -296,7 +279,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       const data = await response.json();
-      console.log("✅ Role switched:", data);
 
       localStorage.setItem("token", data.accessToken || data.token);
       if (data.refreshToken) {
@@ -307,7 +289,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setUser(data.user);
 
       const switchedRole = data.user.currentRole;
-      console.log("🚀 Navigating to switched role:", switchedRole);
 
       if (switchedRole === "client") {
         navigate("/client", { replace: true });
@@ -319,7 +300,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         navigate("/affiliate", { replace: true });
       }
     } catch (error) {
-      console.error("❌ Role switch error:", error);
+      logger.error("Role switch error");
       throw error;
     } finally {
       setIsLoading(false);
@@ -357,7 +338,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setUser(null);
       navigate("/");
     } catch (error) {
-      console.error("❌ Logout error:", error);
+      logger.error("Logout error");
       localStorage.removeItem("token");
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");

@@ -70,7 +70,7 @@ export const refreshAccessToken = async (): Promise<string | null> => {
 
     return data.accessToken;
   } catch (error) {
-    console.error("Error refreshing token:", error);
+    // Intentionally silent in UI console to avoid leaking sensitive auth context.
     localStorage.removeItem("token");
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");

@@ -40,6 +40,16 @@ const __dirname = path.dirname(__filename);
 // Load environment variables
 dotenv.config();
 
+// Prevent leaking sensitive data via server logs in production.
+if (process.env.NODE_ENV === "production") {
+  const noop = () => {};
+  console.log = noop;
+  console.debug = noop;
+  console.info = noop;
+  console.warn = noop;
+  console.error = noop;
+}
+
 /**
  * Hash SHA-256 do token em texto plano (armazenado em users.reset_password_token).
  * Permite busca direta no banco e evita falhas por espaços/encoding no link do e-mail.
