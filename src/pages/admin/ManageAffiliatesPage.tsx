@@ -49,6 +49,9 @@ const ManageAffiliatesPage: React.FC = () => {
   const navigate = useNavigate();
   const [affiliates, setAffiliates] = useState<Affiliate[]>([]);
   const [selectedAffiliate, setSelectedAffiliate] = useState<Affiliate | null>(null);
+  const [expandedAffiliateId, setExpandedAffiliateId] = useState<number | null>(
+    null
+  );
   const [commissions, setCommissions] = useState<Commission[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -661,15 +664,26 @@ const ManageAffiliatesPage: React.FC = () => {
               <th className="w-24 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                 Status
               </th>
-              <th className="w-40 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                Ações
+              <th className="w-28 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Detalhes
               </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {filteredAffiliates.map((affiliate) => (
-              <tr key={affiliate.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+            {filteredAffiliates.map((affiliate) => {
+              const isExpanded = expandedAffiliateId === affiliate.id;
+
+              return (
+                <React.Fragment key={affiliate.id}>
+                  <tr
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() =>
+                      setExpandedAffiliateId((prev) =>
+                        prev === affiliate.id ? null : affiliate.id
+                      )
+                    }
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <div className="flex flex-col">
                     <span className="font-medium">{affiliate.name}</span>
                     <span className="text-xs text-gray-500">
@@ -694,20 +708,6 @@ const ManageAffiliatesPage: React.FC = () => {
                     <span className="font-semibold text-green-600">
                       R$ {Number.parseFloat(affiliate.commission_amount).toFixed(2)}
                     </span>
-                    <button
-                      onClick={() => openEditCommissionModal(affiliate)}
-                      className="text-blue-600 hover:text-blue-700 text-xs underline"
-                      title="Editar comissão"
-                    >
-                      Editar
-                    </button>
-                    <button
-                      onClick={() => openEditPixModal(affiliate)}
-                      className="text-purple-600 hover:text-purple-700 text-xs underline"
-                      title="Editar chave Pix"
-                    >
-                      Pix
-                    </button>
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -727,46 +727,182 @@ const ManageAffiliatesPage: React.FC = () => {
                     {affiliate.status === "active" ? "Ativo" : "Inativo"}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-xs space-x-3">
+                <td className="px-6 py-4 whitespace-nowrap text-sm">
                   <button
-                    onClick={() => copyAffiliateLink(affiliate.id, affiliate.code)}
-                    className="inline-flex items-center text-blue-600 hover:text-blue-700"
-                    title="Copiar link de cadastro"
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedAffiliateId((prev) =>
+                        prev === affiliate.id ? null : affiliate.id
+                      );
+                    }}
+                    className="text-blue-600 hover:text-blue-700 underline text-sm"
                   >
-                    {copiedCode === affiliate.code ? (
-                      <Check className="w-4 h-4 text-green-600" />
-                    ) : (
-                      <Copy className="w-4 h-4" />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => viewCommissions(affiliate)}
-                    className="inline-flex items-center text-blue-600 hover:text-blue-700"
-                    title="Ver comissões"
-                  >
-                    <DollarSign className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => openLeadershipModal(affiliate)}
-                    className="inline-flex items-center text-purple-600 hover:text-purple-700"
-                    title="Configurar liderança"
-                  >
-                    <Users className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => toggleStatus(affiliate.id, affiliate.status)}
-                    className="inline-flex items-center text-gray-600 hover:text-gray-700"
-                    title={affiliate.status === "active" ? "Desativar" : "Ativar"}
-                  >
-                    {affiliate.status === "active" ? (
-                      <XCircle className="w-4 h-4" />
-                    ) : (
-                      <CheckCircle className="w-4 h-4" />
-                    )}
+                    {isExpanded ? "Fechar" : "Ver"}
                   </button>
                 </td>
-              </tr>
-            ))}
+                  </tr>
+
+                  {isExpanded && (
+                    <tr className="bg-gray-50">
+                      <td colSpan={7} className="px-6 py-4">
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="col-span-1">
+                            <p className="text-xs font-semibold text-gray-600 uppercase mb-2">
+                              Informações
+                            </p>
+                            <div className="text-sm text-gray-800 space-y-1">
+                              <div>
+                                <span className="text-gray-600">Comissão:</span>{" "}
+                                <span className="font-semibold text-green-700">
+                                  R${" "}
+                                  {Number.parseFloat(
+                                    affiliate.commission_amount
+                                  ).toFixed(2)}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-600">Pix:</span>{" "}
+                                <span className="font-mono text-xs">
+                                  {affiliate.pix_key || "-"}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-600">Liderança:</span>{" "}
+                                {affiliate.leadership_enabled ? (
+                                  <span className="text-purple-700 font-semibold">
+                                    Líder (limite{" "}
+                                    {affiliate.leader_limit || 0}, override R${" "}
+                                    {Number.parseFloat(
+                                      affiliate.override_amount || "0"
+                                    ).toFixed(2)}
+                                    )
+                                  </span>
+                                ) : affiliate.leader_name ? (
+                                  <span className="text-gray-800">
+                                    Vinculado a {affiliate.leader_name}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-800">Sem líder</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="col-span-2">
+                            <p className="text-xs font-semibold text-gray-600 uppercase mb-2">
+                              Ações
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  copyAffiliateLink(affiliate.id, affiliate.code);
+                                }}
+                                className="px-3 py-2 text-sm text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 inline-flex items-center"
+                              >
+                                {copiedCode === affiliate.code ? (
+                                  <>
+                                    <Check className="w-4 h-4 mr-2 text-green-600" />
+                                    Link copiado
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-4 h-4 mr-2" />
+                                    Copiar link
+                                  </>
+                                )}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  viewCommissions(affiliate);
+                                }}
+                                className="px-3 py-2 text-sm text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 inline-flex items-center"
+                              >
+                                <DollarSign className="w-4 h-4 mr-2" />
+                                Ver comissões
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEditCommissionModal(affiliate);
+                                }}
+                                className="px-3 py-2 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-white inline-flex items-center"
+                              >
+                                Editar comissão
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEditPixModal(affiliate);
+                                }}
+                                className="px-3 py-2 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-white inline-flex items-center"
+                              >
+                                Editar Pix
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openLeadershipModal(affiliate);
+                                }}
+                                className="px-3 py-2 text-sm text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-50 inline-flex items-center"
+                              >
+                                <Users className="w-4 h-4 mr-2" />
+                                Liderança
+                              </button>
+
+                              {affiliate.leader_affiliate_id && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    unlinkLeader(affiliate);
+                                  }}
+                                  className="px-3 py-2 text-sm text-yellow-800 border border-yellow-200 rounded-lg hover:bg-yellow-50 inline-flex items-center"
+                                >
+                                  Desvincular líder
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleStatus(affiliate.id, affiliate.status);
+                                }}
+                                className="px-3 py-2 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-white inline-flex items-center"
+                              >
+                                {affiliate.status === "active" ? (
+                                  <>
+                                    <XCircle className="w-4 h-4 mr-2" />
+                                    Desativar
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircle className="w-4 h-4 mr-2" />
+                                    Ativar
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
