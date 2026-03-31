@@ -1412,6 +1412,8 @@ app.post("/api/auth/register", async (req, res) => {
 
     const roleToRegister =
       registration_role === "professional" ? "professional" : "client";
+    const professionalTypeToRegister =
+      roleToRegister === "professional" ? "agenda_only" : "convenio";
 
     let professionalRegistrationNumber = null;
     if (roleToRegister === "professional") {
@@ -1431,8 +1433,8 @@ app.post("/api/auth/register", async (req, res) => {
       INSERT INTO users (
         name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, password, roles,
-        affiliate_code, referred_by_affiliate_id, professional_registration_number
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        affiliate_code, referred_by_affiliate_id, professional_registration_number, professional_type
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING id, name, cpf, email, roles, subscription_status
     `,
       [
@@ -1452,6 +1454,7 @@ app.post("/api/auth/register", async (req, res) => {
         affiliate_code || null,
         referredByAffiliateId,
         professionalRegistrationNumber,
+        professionalTypeToRegister,
       ]
     );
 
