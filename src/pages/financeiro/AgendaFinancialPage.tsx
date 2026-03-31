@@ -1,0 +1,173 @@
+import React, { useState } from "react";
+import { Calendar, DollarSign, Users } from "lucide-react";
+import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
+
+type AgendaFinancialResponse = {
+  period: {
+    start_date: string;
+    end_date: string;
+  };
+  summary: {
+    total_payments: number;
+    total_amount: number;
+  };
+  by_professional: Array<{
+    professional_id: number;
+    professional_name: string;
+    payments_count: number;
+    total_amount: number;
+  }>;
+};
+
+const AgendaFinancialPage: React.FC = () => {
+  const getDefaultStartDate = () => {
+    const date = new Date();
+    date.setDate(1);
+    return date.toISOString().split("T")[0];
+  };
+
+  const getDefaultEndDate = () => new Date().toISOString().split("T")[0];
+
+  const [startDate, setStartDate] = useState(getDefaultStartDate());
+  const [endDate, setEndDate] = useState(getDefaultEndDate());
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [data, setData] = useState<AgendaFinancialResponse | null>(null);
+
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }).format(value || 0);
+
+  const fetchSummary = async () => {
+    try {
+      setIsLoading(true);
+      setError("");
+
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/agenda-financial/summary?start_date=${startDate}&end_date=${endDate}`,
+        { method: "GET" }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Erro ao carregar resumo financeiro");
+      }
+
+      const responseData = await response.json();
+      setData(responseData);
+    } catch (err) {
+      setData(null);
+      setError(err instanceof Error ? err.message : "Erro ao carregar dados");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    fetchSummary();
+  };
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Financeiro da Agenda</h1>
+        <p className="text-gray-600">
+          Acompanhe os pagamentos de agenda dos profissionais
+        </p>
+      </div>
+
+      <div className="card mb-6">
+        <div className="flex items-center mb-4">
+          <Calendar className="h-5 w-5 text-red-600 mr-2" />
+          <h2 className="text-lg font-semibold">Período</h2>
+        </div>
+
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="input"
+            required
+          />
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="input"
+            required
+          />
+          <button
+            type="submit"
+            className={`btn btn-primary ${isLoading ? "opacity-70 cursor-not-allowed" : ""}`}
+            disabled={isLoading}
+          >
+            {isLoading ? "Carregando..." : "Consultar"}
+          </button>
+        </form>
+      </div>
+
+      {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6">{error}</div>}
+
+      {data && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="card">
+              <div className="flex items-center text-gray-600 mb-2">
+                <DollarSign className="h-5 w-5 mr-2 text-green-600" />
+                <span>Total Recebido</span>
+              </div>
+              <p className="text-3xl font-bold text-green-600">
+                {formatCurrency(data.summary.total_amount)}
+              </p>
+            </div>
+
+            <div className="card">
+              <div className="flex items-center text-gray-600 mb-2">
+                <Users className="h-5 w-5 mr-2 text-blue-600" />
+                <span>Total de Pagamentos</span>
+              </div>
+              <p className="text-3xl font-bold text-blue-600">
+                {data.summary.total_payments}
+              </p>
+            </div>
+          </div>
+
+          <div className="card">
+            <h3 className="text-lg font-semibold mb-4">Por Profissional</h3>
+            {data.by_professional.length === 0 ? (
+              <p className="text-gray-600">Nenhum pagamento aprovado no período.</p>
+            ) : (
+              <div className="table-container">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Profissional</th>
+                      <th>Qtd. Pagamentos</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.by_professional.map((item) => (
+                      <tr key={item.professional_id}>
+                        <td>{item.professional_name}</td>
+                        <td>{item.payments_count}</td>
+                        <td>{formatCurrency(item.total_amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default AgendaFinancialPage;

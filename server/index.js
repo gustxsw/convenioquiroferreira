@@ -1915,7 +1915,7 @@ app.post("/api/auth/select-role", async (req, res) => {
 app.post(
   "/api/auth/switch-role",
   authenticate,
-  authorize(["professional", "admin", "client", "vendedor"]),
+  authorize(["professional", "admin", "client", "vendedor", "financeiro_agenda"]),
   async (req, res) => {
     try {
       const { role } = req.body;
@@ -2829,6 +2829,75 @@ app.get(
     } catch (error) {
       console.error("❌ Error generating admin revenue report:", error);
       res.status(500).json({ message: "Erro ao gerar relatório de receitas" });
+    }
+  }
+);
+
+// Get agenda financial summary (admin + financeiro_agenda)
+app.get(
+  "/api/agenda-financial/summary",
+  authenticate,
+  authorize(["admin", "financeiro_agenda"]),
+  async (req, res) => {
+    try {
+      const { start_date, end_date } = req.query;
+
+      if (!start_date || !end_date) {
+        return res
+          .status(400)
+          .json({ message: "Datas inicial e final são obrigatórias" });
+      }
+
+      const summaryResult = await pool.query(
+        `
+        SELECT
+          COUNT(*)::int AS total_payments,
+          COALESCE(SUM(ap.amount), 0) AS total_amount
+        FROM agenda_payments ap
+        WHERE ap.status = 'approved'
+          AND ap.created_at BETWEEN $1::timestamptz AND $2::timestamptz
+      `,
+        [`${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
+      );
+
+      const byProfessionalResult = await pool.query(
+        `
+        SELECT
+          u.id AS professional_id,
+          u.name AS professional_name,
+          COUNT(ap.id)::int AS payments_count,
+          COALESCE(SUM(ap.amount), 0) AS total_amount
+        FROM agenda_payments ap
+        JOIN users u ON u.id = ap.professional_id
+        WHERE ap.status = 'approved'
+          AND ap.created_at BETWEEN $1::timestamptz AND $2::timestamptz
+        GROUP BY u.id, u.name
+        ORDER BY total_amount DESC, payments_count DESC, u.name ASC
+      `,
+        [`${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
+      );
+
+      res.json({
+        period: {
+          start_date,
+          end_date,
+        },
+        summary: {
+          total_payments: Number(summaryResult.rows[0]?.total_payments || 0),
+          total_amount: Number(summaryResult.rows[0]?.total_amount || 0),
+        },
+        by_professional: byProfessionalResult.rows.map((row) => ({
+          professional_id: Number(row.professional_id),
+          professional_name: row.professional_name,
+          payments_count: Number(row.payments_count || 0),
+          total_amount: Number(row.total_amount || 0),
+        })),
+      });
+    } catch (error) {
+      console.error("❌ Error generating agenda financial summary:", error);
+      res
+        .status(500)
+        .json({ message: "Erro ao gerar resumo financeiro da agenda" });
     }
   }
 );

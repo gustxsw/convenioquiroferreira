@@ -41,6 +41,10 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
       return [
         { to: '/affiliate', icon: <Home size={20} />, label: 'Painel' },
       ];
+    } else if (user?.currentRole === 'financeiro_agenda') {
+      return [
+        { to: '/financeiro/agenda', icon: <DollarSign size={20} />, label: 'Financeiro Agenda' },
+      ];
     }
     
     return [];

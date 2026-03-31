@@ -33,6 +33,7 @@ import ManageAffiliatesPage from "./pages/admin/ManageAffiliatesPage";
 import ManageCouponsPage from "./pages/admin/ManageCouponsPage";
 import AffiliateFinancialReport from "./pages/admin/AffiliateFinancialReport";
 import AffiliateDashboard from "./pages/affiliate/AffiliateDashboard";
+import AgendaFinancialPage from "./pages/financeiro/AgendaFinancialPage";
 
 // Route guards
 const ProtectedRoute = ({
@@ -67,6 +68,8 @@ const ProtectedRoute = ({
       return <Navigate to="/admin" replace />;
     } else if (user.currentRole === "vendedor") {
       return <Navigate to="/affiliate" replace />;
+    } else if (user.currentRole === "financeiro_agenda") {
+      return <Navigate to="/financeiro/agenda" replace />;
     }
 
     return <Navigate to="/" replace />;
@@ -167,6 +170,17 @@ function App() {
         }
       >
         <Route path="/affiliate" element={<AffiliateDashboard />} />
+      </Route>
+
+      {/* Financeiro agenda routes */}
+      <Route
+        element={
+          <ProtectedRoute allowedRoles={["financeiro_agenda"]}>
+            <MainLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="/financeiro/agenda" element={<AgendaFinancialPage />} />
       </Route>
 
       {/* 🔥 CATCH-ALL - QUALQUER ROTA DESCONHECIDA VAI PARA LOGIN */}

@@ -49,9 +49,26 @@ type ProfessionalCityReport = {
   }[];
 };
 
+type AgendaFinancialReport = {
+  period: {
+    start_date: string;
+    end_date: string;
+  };
+  summary: {
+    total_payments: number;
+    total_amount: number;
+  };
+  by_professional: Array<{
+    professional_id: number;
+    professional_name: string;
+    payments_count: number;
+    total_amount: number;
+  }>;
+};
+
 const ReportsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
-    "revenue" | "clients" | "professionals"
+    "revenue" | "clients" | "professionals" | "agenda_financial"
   >("revenue");
   const [startDate, setStartDate] = useState(getDefaultStartDate());
   const [endDate, setEndDate] = useState(getDefaultEndDate());
@@ -63,6 +80,8 @@ const ReportsPage: React.FC = () => {
   const [professionalsReport, setProfessionalsReport] = useState<
     ProfessionalCityReport[]
   >([]);
+  const [agendaFinancialReport, setAgendaFinancialReport] =
+    useState<AgendaFinancialReport | null>(null);
 
   // Get default date range (current month)
   function getDefaultStartDate() {
@@ -209,10 +228,52 @@ const ReportsPage: React.FC = () => {
     }
   };
 
-  const handleTabChange = (tab: "revenue" | "clients" | "professionals") => {
+  const handleTabChange = (
+    tab: "revenue" | "clients" | "professionals" | "agenda_financial"
+  ) => {
     setActiveTab(tab);
     if (tab === "clients" || tab === "professionals") {
       fetchCityReports();
+    }
+    if (tab === "agenda_financial") {
+      fetchAgendaFinancialReport();
+    }
+  };
+
+  const fetchAgendaFinancialReport = async () => {
+    try {
+      setIsLoading(true);
+      setError("");
+
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/agenda-financial/summary?start_date=${startDate}&end_date=${endDate}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.message || "Falha ao carregar relatório financeiro da agenda"
+        );
+      }
+
+      const data = await response.json();
+      setAgendaFinancialReport(data);
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível carregar o relatório da agenda"
+      );
+      setAgendaFinancialReport(null);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -318,6 +379,17 @@ const ReportsPage: React.FC = () => {
           >
             <Building className="h-5 w-5 inline mr-2" />
             Profissionais por Cidade
+          </button>
+          <button
+            onClick={() => setActiveTab("agenda_financial")}
+            className={`px-6 py-4 font-medium text-sm border-b-2 transition-colors ${
+              activeTab === "agenda_financial"
+                ? "border-red-600 text-red-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <BarChart2 className="h-5 w-5 inline mr-2" />
+            Financeiro da Agenda
           </button>
         </div>
       </div>
@@ -812,6 +884,135 @@ const ReportsPage: React.FC = () => {
             </>
           )}
         </div>
+      )}
+
+      {/* Agenda Financial Tab */}
+      {activeTab === "agenda_financial" && (
+        <>
+          <div className="card mb-6">
+            <div className="flex items-center mb-4">
+              <Calendar className="h-6 w-6 text-red-600 mr-2" />
+              <h2 className="text-xl font-semibold">Selecione o Período</h2>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                fetchAgendaFinancialReport();
+              }}
+            >
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                  <label
+                    htmlFor="agendaStartDate"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
+                    Data Inicial
+                  </label>
+                  <input
+                    id="agendaStartDate"
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="input"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="agendaEndDate"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
+                    Data Final
+                  </label>
+                  <input
+                    id="agendaEndDate"
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="input"
+                    required
+                  />
+                </div>
+
+                <div className="flex items-end">
+                  <button
+                    type="submit"
+                    className={`btn btn-primary w-full ${
+                      isLoading ? "opacity-70 cursor-not-allowed" : ""
+                    }`}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "Carregando..." : "Gerar Relatório"}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          {error && (
+            <div className="bg-red-50 text-red-600 p-4 rounded-md mb-6">
+              {error}
+            </div>
+          )}
+
+          {agendaFinancialReport && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="card">
+                  <p className="text-gray-600 mb-1">Total Recebido (Agenda)</p>
+                  <p className="text-3xl font-bold text-green-600">
+                    {formatCurrency(
+                      Number(agendaFinancialReport.summary.total_amount) || 0
+                    )}
+                  </p>
+                </div>
+                <div className="card">
+                  <p className="text-gray-600 mb-1">Total de Pagamentos</p>
+                  <p className="text-3xl font-bold text-blue-600">
+                    {Number(agendaFinancialReport.summary.total_payments) || 0}
+                  </p>
+                </div>
+              </div>
+
+              <div className="card">
+                <h3 className="text-lg font-semibold mb-4">
+                  Pagamentos por Profissional
+                </h3>
+
+                {agendaFinancialReport.by_professional.length === 0 ? (
+                  <div className="text-center py-4 bg-gray-50 rounded-lg">
+                    <p className="text-gray-600">
+                      Nenhum pagamento aprovado no período.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="table-container">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Profissional</th>
+                          <th>Qtd. Pagamentos</th>
+                          <th>Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {agendaFinancialReport.by_professional.map((item) => (
+                          <tr key={item.professional_id}>
+                            <td>{item.professional_name}</td>
+                            <td>{item.payments_count}</td>
+                            <td>{formatCurrency(Number(item.total_amount) || 0)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

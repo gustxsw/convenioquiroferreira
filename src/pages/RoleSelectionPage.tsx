@@ -97,6 +97,15 @@ const RoleSelectionPage: React.FC = () => {
           bgColor: 'bg-gradient-to-br from-orange-50 to-red-50',
           textColor: 'text-orange-700'
         };
+      case 'financeiro_agenda':
+        return {
+          title: 'Financeiro Agenda',
+          description: 'Visualize pagamentos de agenda dos profissionais',
+          icon: <Briefcase className="h-8 w-8" />,
+          color: 'bg-amber-500 hover:bg-amber-600',
+          bgColor: 'bg-amber-50',
+          textColor: 'text-amber-700'
+        };
       default:
         return {
           title: role,

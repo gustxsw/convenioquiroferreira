@@ -60,6 +60,13 @@ const RoleSwitcher: React.FC = () => {
           color: 'text-purple-600',
           bgColor: 'bg-purple-50'
         };
+      case 'financeiro_agenda':
+        return {
+          title: 'Financeiro Agenda',
+          icon: <Shield className="h-4 w-4" />,
+          color: 'text-amber-600',
+          bgColor: 'bg-amber-50'
+        };
       default:
         return {
           title: role,

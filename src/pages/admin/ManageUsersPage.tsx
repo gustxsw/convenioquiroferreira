@@ -511,6 +511,12 @@ const ManageUsersPage: React.FC = () => {
             color: "bg-red-100 text-red-800",
             icon: <Shield className="h-3 w-3" />,
           };
+        case "financeiro_agenda":
+          return {
+            text: "Financeiro Agenda",
+            color: "bg-amber-100 text-amber-800",
+            icon: <DollarSign className="h-3 w-3" />,
+          };
         default:
           return {
             text: role,
@@ -640,6 +646,7 @@ const ManageUsersPage: React.FC = () => {
             <option value="client">Clientes</option>
             <option value="professional">Profissionais</option>
             <option value="admin">Administradores</option>
+            <option value="financeiro_agenda">Financeiro Agenda</option>
           </select>
 
           <select
@@ -1046,6 +1053,23 @@ const ManageUsersPage: React.FC = () => {
                         <span className="font-medium">Administrador</span>
                         <span className="ml-2 text-sm text-gray-500">
                           - Acesso total ao sistema
+                        </span>
+                      </span>
+                    </label>
+
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        value="financeiro_agenda"
+                        checked={formData.roles.includes("financeiro_agenda")}
+                        onChange={handleInputChange}
+                        className="rounded border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50"
+                      />
+                      <span className="ml-3 flex items-center">
+                        <DollarSign className="h-4 w-4 text-amber-600 mr-2" />
+                        <span className="font-medium">Financeiro Agenda</span>
+                        <span className="ml-2 text-sm text-gray-500">
+                          - Acesso apenas ao financeiro da agenda
                         </span>
                       </span>
                     </label>
