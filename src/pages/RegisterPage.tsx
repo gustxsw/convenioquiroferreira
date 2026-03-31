@@ -161,6 +161,34 @@ const RegisterPage: React.FC = () => {
     return true;
   };
 
+  const toISODateFromBR = (value: string): string | null => {
+    if (!value) return null;
+
+    const normalized = value.trim();
+
+    // Accept already normalized dates and keep compatibility with old values.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
+
+    const match = normalized.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!match) return null;
+
+    const [, day, month, year] = match;
+    const isoDate = `${year}-${month}-${day}`;
+    const parsedDate = new Date(`${isoDate}T00:00:00`);
+
+    // Prevent impossible dates like 31/02/2024.
+    if (
+      Number.isNaN(parsedDate.getTime()) ||
+      parsedDate.getUTCFullYear() !== Number(year) ||
+      parsedDate.getUTCMonth() + 1 !== Number(month) ||
+      parsedDate.getUTCDate() !== Number(day)
+    ) {
+      return null;
+    }
+
+    return isoDate;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -174,6 +202,11 @@ const RegisterPage: React.FC = () => {
 
       const apiUrl = getApiUrl();
       const registerUrl = `${apiUrl}/api/auth/register`;
+      const normalizedBirthDate = toISODateFromBR(formData.birth_date);
+
+      if (formData.birth_date && !normalizedBirthDate) {
+        throw new Error("Data de nascimento inválida");
+      }
 
       console.log("Making registration request to:", registerUrl);
 
@@ -187,7 +220,7 @@ const RegisterPage: React.FC = () => {
           cpf: formData.cpf,
           email: formData.email.trim() || null,
           phone: formData.phone.replace(/\D/g, "") || null,
-          birth_date: formData.birth_date || null,
+          birth_date: normalizedBirthDate,
           address: formData.address.trim() || null,
           address_number: formData.address_number.trim() || null,
           address_complement: formData.address_complement.trim() || null,

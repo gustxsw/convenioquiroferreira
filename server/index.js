@@ -1257,6 +1257,55 @@ const validateEmail = (email) => {
   return emailRegex.test(email);
 };
 
+const normalizeBirthDateInput = (value) => {
+  if (value === undefined) {
+    return { valid: true, value: undefined };
+  }
+
+  if (value === null) {
+    return { valid: true, value: null };
+  }
+
+  if (typeof value !== "string") {
+    return { valid: false, value: null };
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return { valid: true, value: null };
+  }
+
+  let year;
+  let month;
+  let day;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    [year, month, day] = normalized.split("-");
+  } else {
+    const brMatch = normalized.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!brMatch) {
+      return { valid: false, value: null };
+    }
+    [, day, month, year] = brMatch;
+  }
+
+  const y = Number(year);
+  const m = Number(month);
+  const d = Number(day);
+  const parsed = new Date(Date.UTC(y, m - 1, d));
+
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getUTCFullYear() !== y ||
+    parsed.getUTCMonth() + 1 !== m ||
+    parsed.getUTCDate() !== d
+  ) {
+    return { valid: false, value: null };
+  }
+
+  return { valid: true, value: `${year}-${month}-${day}` };
+};
+
 const logAudit = async (
   userId,
   action,
@@ -1374,6 +1423,11 @@ app.post("/api/auth/register", async (req, res) => {
         .json({ message: "Senha deve ter pelo menos 6 caracteres" });
     }
 
+    const normalizedBirthDate = normalizeBirthDateInput(birth_date);
+    if (!normalizedBirthDate.valid) {
+      return res.status(400).json({ message: "Data de nascimento inválida" });
+    }
+
     const cleanCPF = cpf.replace(/\D/g, "");
 
     // Check if user already exists
@@ -1442,7 +1496,7 @@ app.post("/api/auth/register", async (req, res) => {
         cleanCPF,
         email?.trim() || null,
         phone?.replace(/\D/g, "") || null,
-        birth_date || null,
+        normalizedBirthDate.value,
         address?.trim() || null,
         address_number?.trim() || null,
         address_complement?.trim() || null,
@@ -2257,6 +2311,11 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
         .json({ message: "Senha deve ter pelo menos 6 caracteres" });
     }
 
+    const normalizedBirthDate = normalizeBirthDateInput(birth_date);
+    if (!normalizedBirthDate.valid) {
+      return res.status(400).json({ message: "Data de nascimento inválida" });
+    }
+
     const hashedPassword = await bcrypt.hash(finalPassword, 12);
 
     // Clean phone
@@ -2278,7 +2337,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
         cleanCpf,
         email?.trim() || null,
         cleanPhone,
-        birth_date || null,
+        normalizedBirthDate.value,
         address?.trim() || null,
         address_number?.trim() || null,
         address_complement?.trim() || null,
@@ -2363,6 +2422,11 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
 
     const currentUser = currentUserResult.rows[0];
     const updateData = { ...currentUser };
+    const normalizedBirthDate = normalizeBirthDateInput(birth_date);
+
+    if (!normalizedBirthDate.valid) {
+      return res.status(400).json({ message: "Data de nascimento inválida" });
+    }
 
     // Handle password change
     if (newPassword) {
@@ -2395,8 +2459,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
     if (phone !== undefined)
       updateData.phone = phone?.replace(/\D/g, "") || null;
     if (birth_date !== undefined)
-      updateData.birth_date =
-        birth_date && birth_date.trim() !== "" ? birth_date : null;
+      updateData.birth_date = normalizedBirthDate.value;
     if (address !== undefined) updateData.address = address?.trim() || null;
     if (address_number !== undefined)
       updateData.address_number = address_number?.trim() || null;
@@ -4654,6 +4717,7 @@ app.get(
 app.post("/api/dependents", authenticate, async (req, res) => {
   try {
     const { client_id, name, cpf, birth_date, phone } = req.body;
+    const normalizedBirthDate = normalizeBirthDateInput(birth_date);
 
     console.log("🔄 Creating dependent:", {
       client_id,
@@ -4687,6 +4751,10 @@ app.post("/api/dependents", authenticate, async (req, res) => {
       return res.status(400).json({ message: "CPF inválido" });
     }
 
+    if (!normalizedBirthDate.valid) {
+      return res.status(400).json({ message: "Data de nascimento inválida" });
+    }
+
     const cleanCPF = cpf.replace(/\D/g, "");
 
     // Check if CPF already exists
@@ -4718,7 +4786,13 @@ app.post("/api/dependents", authenticate, async (req, res) => {
       `INSERT INTO dependents (user_id, name, cpf, birth_date, phone)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [client_id, name.trim(), cleanCPF, birth_date || null, phone?.trim() || null]
+      [
+        client_id,
+        name.trim(),
+        cleanCPF,
+        normalizedBirthDate.value,
+        phone?.trim() || null,
+      ]
     );
 
     const dependent = dependentResult.rows[0];
@@ -4743,6 +4817,7 @@ app.put(
     try {
       const { id } = req.params;
       const { name, birth_date, phone } = req.body;
+      const normalizedBirthDate = normalizeBirthDateInput(birth_date);
 
       // Get current dependent data
       const currentDependentResult = await pool.query(
@@ -4760,6 +4835,10 @@ app.put(
         return res.status(400).json({ message: "Nome é obrigatório" });
       }
 
+      if (!normalizedBirthDate.valid) {
+        return res.status(400).json({ message: "Data de nascimento inválida" });
+      }
+
       const updatedDependentResult = await pool.query(
         `
       UPDATE dependents 
@@ -4767,7 +4846,13 @@ app.put(
       WHERE id = $4 AND user_id = $5
       RETURNING *
     `,
-        [name.trim(), birth_date || null, phone?.trim() || null, id, req.user.id]
+        [
+          name.trim(),
+          normalizedBirthDate.value,
+          phone?.trim() || null,
+          id,
+          req.user.id,
+        ]
       );
 
       const updatedDependent = updatedDependentResult.rows[0];
@@ -5480,6 +5565,7 @@ app.post(
         zip_code,
         convenio,
       } = req.body;
+      const normalizedBirthDate = normalizeBirthDateInput(birth_date);
 
       if (!name) {
         return res.status(400).json({ message: "Nome é obrigatório" });
@@ -5493,6 +5579,10 @@ app.post(
       // Validate email if provided
       if (email && !validateEmail(email)) {
         return res.status(400).json({ message: "Email inválido" });
+      }
+
+      if (!normalizedBirthDate.valid) {
+        return res.status(400).json({ message: "Data de nascimento inválida" });
       }
 
       const cleanCPF = cpf ? cpf.replace(/\D/g, "") : null;
@@ -5528,7 +5618,7 @@ app.post(
           cleanCPF,
           email?.trim() || null,
           phone?.replace(/\D/g, "") || null,
-          birth_date || null,
+          normalizedBirthDate.value,
           address?.trim() || null,
           address_number?.trim() || null,
           address_complement?.trim() || null,
@@ -5576,6 +5666,7 @@ app.put(
         zip_code,
         convenio,
       } = req.body;
+      const normalizedBirthDate = normalizeBirthDateInput(birth_date);
 
       // Get current patient data
       const currentPatientResult = await pool.query(
@@ -5598,6 +5689,10 @@ app.put(
         return res.status(400).json({ message: "Email inválido" });
       }
 
+      if (!normalizedBirthDate.valid) {
+        return res.status(400).json({ message: "Data de nascimento inválida" });
+      }
+
       const updatedPatientResult = await pool.query(
         `
       UPDATE private_patients 
@@ -5612,7 +5707,7 @@ app.put(
           name.trim(),
           email?.trim() || null,
           phone?.replace(/\D/g, "") || null,
-          birth_date || null,
+          normalizedBirthDate.value,
           address?.trim() || null,
           address_number?.trim() || null,
           address_complement?.trim() || null,
