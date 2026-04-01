@@ -17,6 +17,7 @@ import {
   Users,
   Briefcase,
   Shield,
+  DollarSign,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
