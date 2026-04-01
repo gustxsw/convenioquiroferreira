@@ -9,6 +9,7 @@ interface Affiliate {
   code: string;
   status: string;
   commission_amount: string;
+  leader_downline_commission_amount?: string | null;
   created_at: string;
   total_commissions_count: number;
   pending_total: string;
@@ -589,6 +590,9 @@ const AffiliateFinancialReport: React.FC = () => {
                   Comissões
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Comissão de Liderado
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Pendente
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -605,7 +609,7 @@ const AffiliateFinancialReport: React.FC = () => {
             <tbody className="divide-y divide-gray-200">
               {data.affiliates.length === 0 ? (
                 <tr>
-                  <td className="px-6 py-8 text-center text-sm text-gray-500" colSpan={7}>
+                  <td className="px-6 py-8 text-center text-sm text-gray-500" colSpan={8}>
                     Nenhum afiliado encontrado.
                   </td>
                 </tr>
@@ -639,6 +643,14 @@ const AffiliateFinancialReport: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {summary.total_commissions_count}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-indigo-600">
+                        R${" "}
+                        {Number.parseFloat(
+                          affiliate.leader_downline_commission_amount ||
+                            affiliate.commission_amount ||
+                            "0"
+                        ).toFixed(2)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-yellow-600">
                         R$ {summary.pending_total.toFixed(2)}

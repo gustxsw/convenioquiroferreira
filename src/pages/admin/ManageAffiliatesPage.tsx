@@ -15,6 +15,7 @@ interface Affiliate {
   leadership_enabled?: boolean;
   leader_limit?: number | null;
   override_amount?: string | null;
+  leader_downline_commission_amount?: string | null;
   downline_count?: number | null;
   clients_count: number;
   pending_total: string;
@@ -71,6 +72,7 @@ const ManageAffiliatesPage: React.FC = () => {
     leadership_enabled: false,
     leader_limit: "",
     override_amount: "",
+    leader_downline_commission_amount: "",
   });
   const [paymentMethod, setPaymentMethod] = useState("");
   const [paymentReceipt, setPaymentReceipt] = useState<File | null>(null);
@@ -325,6 +327,10 @@ const ManageAffiliatesPage: React.FC = () => {
       leadership_enabled: Boolean(affiliate.leadership_enabled),
       leader_limit: affiliate.leader_limit ? String(affiliate.leader_limit) : "",
       override_amount: affiliate.override_amount || "",
+      leader_downline_commission_amount:
+        affiliate.leader_downline_commission_amount ||
+        affiliate.commission_amount ||
+        "",
     });
     setShowLeadershipModal(true);
   };
@@ -350,6 +356,9 @@ const ManageAffiliatesPage: React.FC = () => {
             override_amount: leadershipForm.leadership_enabled
               ? leadershipForm.override_amount
               : 0,
+            leader_downline_commission_amount: leadershipForm.leadership_enabled
+              ? leadershipForm.leader_downline_commission_amount
+              : undefined,
           }),
         }
       );
@@ -775,6 +784,12 @@ const ManageAffiliatesPage: React.FC = () => {
                                     {affiliate.leader_limit || 0}, override R${" "}
                                     {Number.parseFloat(
                                       affiliate.override_amount || "0"
+                                    ).toFixed(2)}
+                                    , afiliado R${" "}
+                                    {Number.parseFloat(
+                                      affiliate.leader_downline_commission_amount ||
+                                        affiliate.commission_amount ||
+                                        "0"
                                     ).toFixed(2)}
                                     )
                                   </span>
@@ -1405,6 +1420,25 @@ const ManageAffiliatesPage: React.FC = () => {
                     }
                     className="w-full px-3 py-2 border rounded-lg"
                     placeholder="Ex: 10"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Comissão de cada afiliado do líder (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={leadershipForm.leader_downline_commission_amount}
+                    onChange={(e) =>
+                      setLeadershipForm((prev) => ({
+                        ...prev,
+                        leader_downline_commission_amount: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                    placeholder="10.00"
                   />
                 </div>
                 <div>

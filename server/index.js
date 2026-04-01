@@ -971,7 +971,8 @@ const initializeDatabase = async () => {
         leader_affiliate_id INTEGER REFERENCES affiliates(id) ON DELETE SET NULL,
         leadership_enabled BOOLEAN DEFAULT false,
         leader_limit INTEGER DEFAULT 0,
-        override_amount DECIMAL(10,2) DEFAULT 0
+        override_amount DECIMAL(10,2) DEFAULT 0,
+        leader_downline_commission_amount DECIMAL(10,2) DEFAULT 10.00
       )
     `);
 
@@ -1007,6 +1008,12 @@ const initializeDatabase = async () => {
           WHERE table_name = 'affiliates' AND column_name = 'override_amount'
         ) THEN
           ALTER TABLE affiliates ADD COLUMN override_amount DECIMAL(10,2) DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'affiliates' AND column_name = 'leader_downline_commission_amount'
+        ) THEN
+          ALTER TABLE affiliates ADD COLUMN leader_downline_commission_amount DECIMAL(10,2) DEFAULT 10.00;
         END IF;
       END $$;
     `);
@@ -8139,6 +8146,7 @@ app.get(
         a.leadership_enabled,
         a.leader_limit,
         a.override_amount,
+        a.leader_downline_commission_amount,
         leader.name as leader_name,
         COUNT(DISTINCT u.id) as clients_count,
         COALESCE(ac.pending_total, 0) as pending_total,
@@ -8286,6 +8294,7 @@ app.put(
         leadership_enabled,
         leader_limit,
         override_amount,
+        leader_downline_commission_amount,
         leader_affiliate_id,
       } = req.body;
 
@@ -8377,6 +8386,23 @@ app.put(
         }
         updates.push(`override_amount = $${paramCounter}`);
         values.push(overrideValue);
+        paramCounter++;
+      }
+
+      if (leader_downline_commission_amount !== undefined) {
+        const downlineCommissionValue = parseFloat(
+          leader_downline_commission_amount
+        );
+        if (
+          Number.isNaN(downlineCommissionValue) ||
+          downlineCommissionValue < 0
+        ) {
+          return res
+            .status(400)
+            .json({ error: "Comissão dos afiliados inválida" });
+        }
+        updates.push(`leader_downline_commission_amount = $${paramCounter}`);
+        values.push(downlineCommissionValue);
         paramCounter++;
       }
 
@@ -8638,6 +8664,7 @@ app.get(
         a.code,
         a.status,
         a.commission_amount,
+        a.leader_downline_commission_amount,
         a.created_at,
         COUNT(DISTINCT ac.id) as total_commissions_count,
         COALESCE(SUM(CASE WHEN ac.status = 'pending' THEN ac.amount ELSE 0 END), 0) as pending_total,
@@ -8725,7 +8752,7 @@ app.post("/api/affiliate/affiliates", authenticate, async (req, res) => {
     }
 
     const leaderResult = await pool.query(
-      `SELECT id, leadership_enabled, status, leader_limit, leader_affiliate_id, commission_amount
+      `SELECT id, leadership_enabled, status, leader_limit, leader_affiliate_id, commission_amount, leader_downline_commission_amount
        FROM affiliates
        WHERE user_id = $1`,
       [req.user.id]
@@ -8802,7 +8829,8 @@ app.post("/api/affiliate/affiliates", authenticate, async (req, res) => {
     let code = generateCode(name);
     let attempts = 0;
     const maxAttempts = 10;
-    const finalCommissionAmount = leader.commission_amount || 10.0;
+    const finalCommissionAmount =
+      leader.leader_downline_commission_amount || 10.0;
 
     while (attempts < maxAttempts) {
       try {
