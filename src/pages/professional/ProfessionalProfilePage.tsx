@@ -13,6 +13,7 @@ import {
   Check,
   FileImage,
   Upload,
+  MessageCircle,
 } from "lucide-react";
 import UploadSignatureModal from "../../components/UploadSignatureModal";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
@@ -33,10 +34,26 @@ type AttendanceLocation = {
 
 const ProfessionalProfilePage: React.FC = () => {
   const { user } = useAuth();
+  const [profileTab, setProfileTab] = useState<"dados" | "convenio">("dados");
   const [locations, setLocations] = useState<AttendanceLocation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  const convenioWhatsappHref = (() => {
+    const raw = import.meta.env.VITE_WHATSAPP_CONVENIO_OWNER as
+      | string
+      | undefined;
+    const digits = raw?.replace(/\D/g, "") ?? "";
+    if (!digits) return null;
+    const text = encodeURIComponent(
+      "Olá! Sou profissional da agenda e tenho interesse em fazer parte do Convênio Quiro Ferreira."
+    );
+    return `https://wa.me/${digits}?text=${text}`;
+  })();
+
+  const isAgendaOnlyProfile = user?.professionalType === "agenda_only";
+  const showDadosSection = !isAgendaOnlyProfile || profileTab === "dados";
 
   // Profile form state
   const [profileData, setProfileData] = useState({
@@ -358,6 +375,33 @@ const ProfessionalProfilePage: React.FC = () => {
         </p>
       </div>
 
+      {isAgendaOnlyProfile && (
+        <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-200 pb-1">
+          <button
+            type="button"
+            onClick={() => setProfileTab("dados")}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition-colors ${
+              profileTab === "dados"
+                ? "border-red-600 text-red-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            Dados e locais
+          </button>
+          <button
+            type="button"
+            onClick={() => setProfileTab("convenio")}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition-colors ${
+              profileTab === "convenio"
+                ? "border-red-600 text-red-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            Convênio Quiro Ferreira
+          </button>
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6">
           {error}
@@ -370,6 +414,46 @@ const ProfessionalProfilePage: React.FC = () => {
         </div>
       )}
 
+      {isAgendaOnlyProfile && profileTab === "convenio" && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 md:p-8 max-w-3xl">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">
+            Faça parte da rede Convênio Quiro Ferreira
+          </h2>
+          <p className="text-gray-600 mb-4">
+            Você já utiliza a agenda digital para organizar seus atendimentos
+            particulares. Ao integrar-se ao convênio, seu perfil passa a ser
+            visto por milhares de titulares e dependentes, com visibilidade na
+            plataforma e fluxo de agendamento alinhado à rede Quiro Ferreira.
+          </p>
+          <ul className="list-disc list-inside text-gray-700 space-y-2 mb-6">
+            <li>Mais visibilidade para a sua especialidade</li>
+            <li>Processo claro de repasses e acompanhamento pelo convênio</li>
+            <li>Suporte da equipe para sua entrada na rede</li>
+          </ul>
+          <p className="text-gray-600 mb-6">
+            Fale com a equipe pelo WhatsApp para conhecer os próximos passos e
+            avaliar se o convênio faz sentido para o seu consultório.
+          </p>
+          {convenioWhatsappHref ? (
+            <a
+              href={convenioWhatsappHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-5 py-3 text-white font-medium hover:bg-green-700 transition-colors"
+            >
+              <MessageCircle className="h-5 w-5" />
+              Falar no WhatsApp
+            </a>
+          ) : (
+            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+              O contato via WhatsApp será configurado em breve pelo
+              administrador do sistema.
+            </p>
+          )}
+        </div>
+      )}
+
+      {showDadosSection && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Profile Information */}
         <div className="space-y-6">
@@ -747,6 +831,7 @@ const ProfessionalProfilePage: React.FC = () => {
           )}
         </div>
       </div>
+      )}
 
       {/* Location form modal */}
       {isLocationModalOpen && (

@@ -1,6 +1,10 @@
 import express from 'express';
 import { pool } from '../db.js';
 import { authenticate } from '../middleware/auth.js';
+import {
+  isAgendaOnlyProfessional,
+  respondAgendaOnlyConvenioForbidden,
+} from '../middleware/professionalConvenioAccess.js';
 import { generateDocumentPDF } from '../utils/documentGenerator.js';
 import { v2 as cloudinary } from 'cloudinary';
 
@@ -10,6 +14,10 @@ const router = express.Router();
 router.get('/medical', authenticate, async (req, res) => {
   try {
     console.log('🔄 [DOCUMENTS] Fetching medical documents for professional:', req.user.id);
+
+    const agendaOnlyDocFilter = isAgendaOnlyProfessional(req)
+      ? ' AND md.private_patient_id IS NOT NULL'
+      : '';
 
     // First try medical_documents table
     // First try medical_documents table
@@ -21,6 +29,7 @@ router.get('/medical', authenticate, async (req, res) => {
       FROM medical_documents md
       LEFT JOIN private_patients pp ON md.private_patient_id = pp.id
       WHERE md.professional_id = $1
+      ${agendaOnlyDocFilter}
       ORDER BY md.created_at DESC
     `, [req.user.id]);
 
@@ -104,6 +113,10 @@ router.post('/medical', authenticate, async (req, res) => {
       });
     }
 
+    if (isAgendaOnlyProfessional(req) && !private_patient_id) {
+      return respondAgendaOnlyConvenioForbidden(res);
+    }
+
     // Generate document using existing generator
     const documentResult = await generateDocumentPDF(document_type, template_data);
     
@@ -161,6 +174,10 @@ router.delete('/medical/:id', authenticate, async (req, res) => {
     }
 
     const document = documentResult.rows[0];
+
+    if (isAgendaOnlyProfessional(req) && document.private_patient_id == null) {
+      return respondAgendaOnlyConvenioForbidden(res);
+    }
 
     // Delete from database
     await pool.query(

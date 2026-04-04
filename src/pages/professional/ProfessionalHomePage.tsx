@@ -183,6 +183,7 @@ type RevenueReport = {
 
 const ProfessionalHomePage: React.FC = () => {
   const { user } = useAuth();
+  const isAgendaOnly = user?.professionalType === "agenda_only";
   const [revenueReport, setRevenueReport] = useState<RevenueReport | null>(
     null
   );
@@ -425,6 +426,12 @@ const ProfessionalHomePage: React.FC = () => {
             <p className="text-gray-600">
               Bem-vindo ao seu painel de profissional.
             </p>
+            {isAgendaOnly && (
+              <p className="text-sm text-gray-500 mt-1">
+                Sua visão aqui é de atendimentos particulares; dados de clientes
+                do convênio não são exibidos neste perfil.
+              </p>
+            )}
           </div>
         </div>
 
@@ -553,8 +560,9 @@ const ProfessionalHomePage: React.FC = () => {
                 {formatCurrency(revenueReport.summary.total_revenue || 0)}
               </p>
               <p className="text-sm text-gray-500 mt-1">
-                {revenueReport.summary.professional_percentage || 50}% é sua
-                porcentagem
+                {isAgendaOnly
+                  ? "Receita de atendimentos particulares no período"
+                  : `${revenueReport.summary.professional_percentage || 50}% é sua porcentagem`}
               </p>
             </div>
 
@@ -569,13 +577,15 @@ const ProfessionalHomePage: React.FC = () => {
                 {formatCurrency(revenueReport.summary.amount_to_pay || 0)}
               </p>
               <p className="text-sm text-gray-500 mt-1">
-                Valor a ser repassado ao convênio
+                {isAgendaOnly
+                  ? "Repasse ao convênio aplica-se a atendimentos pelo cartão"
+                  : "Valor a ser repassado ao convênio"}
               </p>
             </div>
           </div>
 
           {/* Payment Section */}
-          {revenueReport.summary.amount_to_pay > 0 && (
+          {!isAgendaOnly && revenueReport.summary.amount_to_pay > 0 && (
             <PaymentSection amount={revenueReport.summary.amount_to_pay} />
           )}
 

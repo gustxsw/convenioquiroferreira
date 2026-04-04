@@ -3,11 +3,15 @@ import { useNavigate } from "react-router-dom";
 import { refreshAccessToken } from "../utils/apiHelpers";
 import { logger } from "../utils/logger";
 
+export type ProfessionalType = "agenda_only" | "convenio";
+
 type User = {
   id: number;
   name: string;
   roles: string[];
   currentRole?: string;
+  /** Present for users with role professional; set by API */
+  professionalType?: ProfessionalType;
 };
 
 type AuthContextType = {

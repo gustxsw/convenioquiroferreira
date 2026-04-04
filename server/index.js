@@ -32,6 +32,12 @@ import {
 } from "./jobs/checkExpiredSubscriptions.js";
 import { scheduleAffiliateInactivityCheck } from "./jobs/checkInactiveAffiliates.js";
 import { scheduleMonthlyAgendaRevenueReport } from "./jobs/monthlyAgendaRevenueReport.js";
+import {
+  normalizeProfessionalType,
+  isAgendaOnlyProfessional,
+  respondAgendaOnlyConvenioForbidden,
+  isConvenioMedicalRecordRow,
+} from "./middleware/professionalConvenioAccess.js";
 
 // ES6 module compatibility
 const __filename = fileURLToPath(import.meta.url);
@@ -1567,7 +1573,7 @@ app.post("/api/auth/login", async (req, res) => {
     // Find user by CPF
     const userResult = await pool.query(
       `
-      SELECT id, name, cpf, email, password, roles, subscription_status, subscription_expiry
+      SELECT id, name, cpf, email, password, roles, subscription_status, subscription_expiry, professional_type
       FROM users 
       WHERE cpf = $1
     `,
@@ -1598,6 +1604,7 @@ app.post("/api/auth/login", async (req, res) => {
       roles: user.roles,
       subscription_status: user.subscription_status,
       subscription_expiry: user.subscription_expiry,
+      professionalType: normalizeProfessionalType(user.professional_type),
     };
 
     res.json({
@@ -1865,7 +1872,7 @@ app.get("/api/auth/me", authenticate, async (req, res) => {
     console.log("🔄 Session validation for user:", req.user.id);
 
     const userResult = await pool.query(
-      `SELECT id, name, cpf, email, roles, subscription_status, subscription_expiry
+      `SELECT id, name, cpf, email, roles, subscription_status, subscription_expiry, professional_type
        FROM users
        WHERE id = $1`,
       [req.user.id]
@@ -1886,6 +1893,7 @@ app.get("/api/auth/me", authenticate, async (req, res) => {
       currentRole: req.user.currentRole || user.roles[0],
       subscriptionStatus: user.subscription_status,
       subscriptionExpiry: user.subscription_expiry,
+      professionalType: normalizeProfessionalType(user.professional_type),
     };
 
     console.log(
@@ -1917,7 +1925,7 @@ app.post("/api/auth/select-role", async (req, res) => {
     // Get user data
     const userResult = await pool.query(
       `
-      SELECT id, name, roles, subscription_status, subscription_expiry
+      SELECT id, name, roles, subscription_status, subscription_expiry, professional_type
       FROM users 
       WHERE id = $1
     `,
@@ -1945,6 +1953,7 @@ app.post("/api/auth/select-role", async (req, res) => {
       currentRole: role,
       subscription_status: user.subscription_status,
       subscription_expiry: user.subscription_expiry,
+      professionalType: normalizeProfessionalType(user.professional_type),
     };
 
     const accessToken = generateAccessToken(userData);
@@ -2010,10 +2019,14 @@ app.post(
 
       console.log("✅ Role switched successfully to:", role);
 
+      const { professional_type, ...rest } = userData;
       res.json({
         message: "Role alterada com sucesso",
         token,
-        user: userData,
+        user: {
+          ...rest,
+          professionalType: normalizeProfessionalType(professional_type),
+        },
       });
     } catch (error) {
       console.error("❌ Role switch error:", error);
@@ -2067,7 +2080,7 @@ app.post("/api/auth/refresh", async (req, res) => {
     }
 
     const userResult = await pool.query(
-      `SELECT id, name, roles, subscription_status, subscription_expiry
+      `SELECT id, name, roles, subscription_status, subscription_expiry, professional_type
        FROM users WHERE id = $1`,
       [matchedToken.user_id]
     );
@@ -2095,6 +2108,7 @@ app.post("/api/auth/refresh", async (req, res) => {
       currentRole: currentRole,
       subscription_status: user.subscription_status,
       subscription_expiry: user.subscription_expiry,
+      professionalType: normalizeProfessionalType(user.professional_type),
     };
 
     const newAccessToken = generateAccessToken(userData);
@@ -2698,6 +2712,10 @@ app.get(
 
       const params = [professionalId];
 
+      if (isAgendaOnlyProfessional(req)) {
+        query += " AND c.private_patient_id IS NOT NULL";
+      }
+
       if (date) {
         console.log("🔍 [AGENDA-QUERY] Filtering by date:", date);
 
@@ -3086,6 +3104,10 @@ app.get(
           .json({ message: "Datas inicial e final são obrigatórias" });
       }
 
+      const onlyPrivateAgenda = isAgendaOnlyProfessional(req)
+        ? " AND c.private_patient_id IS NOT NULL"
+        : "";
+
       // Get consultations with details
       const consultationsResult = await pool.query(
         `
@@ -3112,6 +3134,7 @@ app.get(
         WHERE c.professional_id = $1
           AND c.date BETWEEN $2::timestamptz AND $3::timestamptz
           AND c.status != 'cancelled'
+          ${onlyPrivateAgenda}
         ORDER BY c.date DESC
       `,
         [professionalId, `${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
@@ -3225,6 +3248,10 @@ app.get(
           .json({ message: "Datas inicial e final são obrigatórias" });
       }
 
+      const onlyPrivateAgenda = isAgendaOnlyProfessional(req)
+        ? " AND private_patient_id IS NOT NULL"
+        : "";
+
       const result = await pool.query(
         `
         SELECT
@@ -3238,6 +3265,7 @@ app.get(
         WHERE professional_id = $1
           AND date BETWEEN $2::timestamptz AND $3::timestamptz
           AND status != 'cancelled'
+          ${onlyPrivateAgenda}
       `,
         [professionalId, `${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
       );
@@ -3321,6 +3349,10 @@ app.get(
           .json({ message: "Datas inicial e final são obrigatórias" });
       }
 
+      const onlyPrivateAgenda = isAgendaOnlyProfessional(req)
+        ? " AND c.private_patient_id IS NOT NULL"
+        : "";
+
       // All consultations (including cancelled) with rich detail
       const consultationsResult = await pool.query(
         `
@@ -3352,14 +3384,17 @@ app.get(
         LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
         WHERE c.professional_id = $1
           AND c.date BETWEEN $2::timestamptz AND $3::timestamptz
+          ${onlyPrivateAgenda}
         ORDER BY c.date DESC
       `,
         [professionalId, `${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
       );
 
       // Inactive clients (convênio: subscription_status != active; particulares: is_active = false)
-      const inactiveConvenioResult = await pool.query(
-        `
+      const inactiveConvenioResult = isAgendaOnlyProfessional(req)
+        ? { rows: [] }
+        : await pool.query(
+            `
         SELECT DISTINCT
           u.id,
           u.name,
@@ -3384,8 +3419,8 @@ app.get(
           AND d.subscription_status IS NOT NULL
           AND d.subscription_status != 'active'
       `,
-        [professionalId]
-      );
+            [professionalId]
+          );
 
       const inactivePrivateResult = await pool.query(
         `
@@ -3467,6 +3502,10 @@ app.post(
           message: "Exatamente um tipo de paciente deve ser especificado",
           debug: { user_id, dependent_id, private_patient_id, patientCount },
         });
+      }
+
+      if (isAgendaOnlyProfessional(req) && (user_id || dependent_id)) {
+        return respondAgendaOnlyConvenioForbidden(res);
       }
 
       // Validate service exists and belongs to professional
@@ -3681,6 +3720,10 @@ app.post(
         });
       }
 
+      if (isAgendaOnlyProfessional(req) && (user_id || dependent_id)) {
+        return respondAgendaOnlyConvenioForbidden(res);
+      }
+
       // Validate recurrence type
       if (!["daily", "weekly", "monthly"].includes(recurrence_type)) {
         return res.status(400).json({
@@ -3891,14 +3934,21 @@ app.put(
         return res.status(400).json({ message: "Status inválido" });
       }
 
+      let statusWhere =
+        "id = $2 AND professional_id = $3";
+      const statusParams = [status, id, req.user.id];
+      if (isAgendaOnlyProfessional(req)) {
+        statusWhere += " AND private_patient_id IS NOT NULL";
+      }
+
       const result = await pool.query(
         `
       UPDATE consultations 
       SET status = $1, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2 AND professional_id = $3
+      WHERE ${statusWhere}
       RETURNING *
     `,
-        [status, id, req.user.id]
+        statusParams
       );
 
       if (result.rows.length === 0) {
@@ -3948,6 +3998,13 @@ app.put(
 
       if (currentResult.rows.length === 0) {
         return res.status(404).json({ message: "Consulta não encontrada" });
+      }
+
+      if (
+        isAgendaOnlyProfessional(req) &&
+        !currentResult.rows[0].private_patient_id
+      ) {
+        return respondAgendaOnlyConvenioForbidden(res);
       }
 
       // Build update query dynamically
@@ -4098,6 +4155,13 @@ app.get(
 
       const consultation = consultationResult.rows[0];
 
+      if (
+        isAgendaOnlyProfessional(req) &&
+        !consultation.private_patient_id
+      ) {
+        return respondAgendaOnlyConvenioForbidden(res);
+      }
+
       if (!consultation.patient_phone) {
         return res
           .status(400)
@@ -4175,6 +4239,14 @@ app.get(
       }
 
       const record = recordResult.rows[0];
+
+      if (
+        req.user.currentRole === "professional" &&
+        isAgendaOnlyProfessional(req) &&
+        isConvenioMedicalRecordRow(record)
+      ) {
+        return respondAgendaOnlyConvenioForbidden(res);
+      }
 
       if (!record.patient_phone) {
         return res.status(400).json({
@@ -4255,6 +4327,15 @@ app.get(
 
       const document = documentResult.rows[0];
 
+      if (
+        req.user.currentRole === "professional" &&
+        isAgendaOnlyProfessional(req) &&
+        Object.prototype.hasOwnProperty.call(document, "private_patient_id") &&
+        document.private_patient_id == null
+      ) {
+        return respondAgendaOnlyConvenioForbidden(res);
+      }
+
       if (!document.patient_phone) {
         return res.status(400).json({
           message:
@@ -4303,6 +4384,12 @@ app.put(
 
       console.log("🔄 Cancelling consultation:", id);
 
+      let cancelWhere =
+        "id = $3 AND professional_id = $1";
+      if (isAgendaOnlyProfessional(req)) {
+        cancelWhere += " AND private_patient_id IS NOT NULL";
+      }
+
       const result = await pool.query(
         `
       UPDATE consultations 
@@ -4312,7 +4399,7 @@ app.put(
         cancelled_by = $1,
         cancellation_reason = $2,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3 AND professional_id = $1
+      WHERE ${cancelWhere}
       RETURNING *
     `,
         [req.user.id, cancellation_reason?.trim() || null, id]
@@ -4347,10 +4434,15 @@ app.delete(
 
       console.log("🔄 Deleting consultation:", id);
 
-      const result = await pool.query(
-        "DELETE FROM consultations WHERE id = $1 AND professional_id = $2 RETURNING *",
-        [id, req.user.id]
-      );
+      let delSql =
+        "DELETE FROM consultations WHERE id = $1 AND professional_id = $2";
+      const delParams = [id, req.user.id];
+      if (isAgendaOnlyProfessional(req)) {
+        delSql += " AND private_patient_id IS NOT NULL";
+      }
+      delSql += " RETURNING *";
+
+      const result = await pool.query(delSql, delParams);
 
       if (result.rows.length === 0) {
         return res.status(404).json({ message: "Consulta não encontrada" });
@@ -4480,6 +4572,13 @@ app.get(
   authorize(["professional", "admin"]),
   async (req, res) => {
     try {
+      if (
+        req.user.currentRole === "professional" &&
+        isAgendaOnlyProfessional(req)
+      ) {
+        return respondAgendaOnlyConvenioForbidden(res);
+      }
+
       const { cpf } = req.query;
 
       if (!cpf) {
@@ -4524,6 +4623,13 @@ app.get(
   authorize(["professional", "admin", "client"]),
   async (req, res) => {
     try {
+      if (
+        req.user.currentRole === "professional" &&
+        isAgendaOnlyProfessional(req)
+      ) {
+        return respondAgendaOnlyConvenioForbidden(res);
+      }
+
       const { client_id, status } = req.query;
 
       console.log("🔄 Fetching dependents with filters:", {
@@ -4584,6 +4690,13 @@ app.get(
   authorize(["professional", "admin"]),
   async (req, res) => {
     try {
+      if (
+        req.user.currentRole === "professional" &&
+        isAgendaOnlyProfessional(req)
+      ) {
+        return respondAgendaOnlyConvenioForbidden(res);
+      }
+
       const { cpf } = req.query;
 
       if (!cpf) {
@@ -4634,6 +4747,13 @@ app.get("/api/dependents/:clientId", authenticate, async (req, res) => {
   try {
     const { clientId } = req.params;
 
+    if (
+      req.user.currentRole === "professional" &&
+      isAgendaOnlyProfessional(req)
+    ) {
+      return respondAgendaOnlyConvenioForbidden(res);
+    }
+
     // Clients can only access their own dependents
     if (
       req.user.currentRole === "client" &&
@@ -4675,6 +4795,13 @@ app.get(
   authorize(["professional", "admin"]),
   async (req, res) => {
     try {
+      if (
+        req.user.currentRole === "professional" &&
+        isAgendaOnlyProfessional(req)
+      ) {
+        return respondAgendaOnlyConvenioForbidden(res);
+      }
+
       const { cpf } = req.query;
 
       if (!cpf) {
@@ -6034,6 +6161,10 @@ app.get(
   authorize(["professional"]),
   async (req, res) => {
     try {
+      const agendaOnlyFilter = isAgendaOnlyProfessional(req)
+        ? " AND (mr.private_patient_id IS NOT NULL OR mr.patient_type = 'private')"
+        : "";
+
       const recordsResult = await pool.query(
         `
       SELECT 
@@ -6043,6 +6174,7 @@ app.get(
       FROM medical_records mr
       LEFT JOIN private_patients pp ON mr.private_patient_id = pp.id
       WHERE mr.professional_id = $1
+      ${agendaOnlyFilter}
       ORDER BY mr.created_at DESC
     `,
         [req.user.id]
@@ -6078,6 +6210,10 @@ app.post(
         notes,
         vital_signs,
       } = req.body;
+
+      if (isAgendaOnlyProfessional(req) && patient_type !== "private") {
+        return respondAgendaOnlyConvenioForbidden(res);
+      }
 
       // Validate patient data based on type
       if (patient_type === "private") {
@@ -6185,6 +6321,21 @@ app.put(
         return res.status(404).json({ message: "Prontuário não encontrado" });
       }
 
+      if (
+        isAgendaOnlyProfessional(req) &&
+        isConvenioMedicalRecordRow(currentRecordResult.rows[0])
+      ) {
+        return respondAgendaOnlyConvenioForbidden(res);
+      }
+
+      if (
+        isAgendaOnlyProfessional(req) &&
+        patient_type &&
+        patient_type !== "private"
+      ) {
+        return respondAgendaOnlyConvenioForbidden(res);
+      }
+
       const updatedRecordResult = await pool.query(
         `
       UPDATE medical_records 
@@ -6260,6 +6411,13 @@ app.delete(
 
       if (recordResult.rows.length === 0) {
         return res.status(404).json({ message: "Prontuário não encontrado" });
+      }
+
+      if (
+        isAgendaOnlyProfessional(req) &&
+        isConvenioMedicalRecordRow(recordResult.rows[0])
+      ) {
+        return respondAgendaOnlyConvenioForbidden(res);
       }
 
       await pool.query(
@@ -7223,6 +7381,10 @@ app.post(
   authorize(["professional"]),
   async (req, res) => {
     try {
+      if (isAgendaOnlyProfessional(req)) {
+        return respondAgendaOnlyConvenioForbidden(res);
+      }
+
       const { amount } = req.body;
 
       if (!amount || amount <= 0) {

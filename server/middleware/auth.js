@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { pool } from '../db.js';
+import { normalizeProfessionalType } from './professionalConvenioAccess.js';
 
 export const authenticate = async (req, res, next) => {
   try {
@@ -22,7 +23,7 @@ export const authenticate = async (req, res, next) => {
     }
 
     const result = await pool.query(
-      'SELECT id, name, cpf, roles FROM users WHERE id = $1',
+      'SELECT id, name, cpf, roles, professional_type FROM users WHERE id = $1',
       [decoded.id]
     );
 
@@ -37,7 +38,8 @@ export const authenticate = async (req, res, next) => {
       name: user.name,
       cpf: user.cpf,
       roles: user.roles || [],
-      currentRole: decoded.currentRole || (user.roles && user.roles[0])
+      currentRole: decoded.currentRole || (user.roles && user.roles[0]),
+      professional_type: normalizeProfessionalType(user.professional_type),
     };
 
     next();

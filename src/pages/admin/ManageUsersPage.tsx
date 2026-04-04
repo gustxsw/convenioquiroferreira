@@ -1106,7 +1106,7 @@ const ManageUsersPage: React.FC = () => {
                         <p className="text-xs text-gray-500 mt-1">
                           {formData.professional_type === "convenio"
                             ? "Aparece na lista de profissionais para clientes e pode atender pelo convênio"
-                            : "Não aparece para clientes, apenas usa o sistema de agenda para pacientes particulares"}
+                            : "Não aparece na lista pública; usa a agenda para particulares e não acessa dados de titulares/dependentes do convênio"}
                         </p>
                       </div>
 
