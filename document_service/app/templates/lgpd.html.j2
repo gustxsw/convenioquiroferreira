@@ -1,0 +1,62 @@
+{% extends "base.html.j2" %}
+{% block body %}
+<div class="document-title">Termo de Consentimento para Tratamento de Dados Pessoais (LGPD)</div>
+<div class="patient-info">
+  <strong>Paciente:</strong> {{ patient_name | e }}<br />
+  {% if patient_cpf %}<strong>CPF:</strong> {{ patient_cpf | e }}<br />{% endif %}
+  <strong>Data:</strong> {{ current_date | e }}
+</div>
+<div class="content-section">
+  <div class="section-title">1. FINALIDADE DO TRATAMENTO DE DADOS</div>
+  <p>Os dados pessoais coletados serão utilizados exclusivamente para:</p>
+  <ul>
+    <li>Prestação de serviços de saúde e acompanhamento médico;</li>
+    <li>Manutenção do histórico médico e prontuário;</li>
+    <li>Comunicação sobre consultas e tratamentos;</li>
+    <li>Cumprimento de obrigações legais e regulamentares.</li>
+  </ul>
+</div>
+<div class="content-section">
+  <div class="section-title">2. DADOS COLETADOS</div>
+  <p>Serão tratados dados pessoais como nome, CPF, endereço, telefone, email, informações de saúde e histórico médico.</p>
+</div>
+<div class="content-section">
+  <div class="section-title">3. COMPARTILHAMENTO</div>
+  <p>Os dados não serão compartilhados com terceiros, exceto quando necessário para a prestação do serviço médico ou por determinação legal.</p>
+</div>
+<div class="content-section">
+  <div class="section-title">4. DIREITOS DO TITULAR</div>
+  <p>Você tem direito a acessar, corrigir, excluir ou solicitar a portabilidade de seus dados, conforme a Lei Geral de Proteção de Dados (LGPD).</p>
+</div>
+<div class="content-section">
+  <div class="section-title">5. CONSENTIMENTO</div>
+  <p>Ao assinar este termo, declaro que:</p>
+  <ul>
+    <li>Fui informado(a) sobre o tratamento dos meus dados pessoais;</li>
+    <li>Compreendo as finalidades do tratamento;</li>
+    <li>Consinto com o tratamento dos meus dados conforme descrito;</li>
+    <li>Posso revogar este consentimento a qualquer momento.</li>
+  </ul>
+</div>
+<div class="dual-signature">
+  <div class="signature-box">
+    <div class="signature-line"></div>
+    <div>
+      <strong>Paciente ou Responsável</strong><br />
+      {{ patient_name | e }}
+    </div>
+  </div>
+  <div class="signature-box">
+    {% if signature_url %}
+    <img src="{{ signature_url | e }}" alt="Assinatura" class="signature-image" />
+    {% else %}
+    <div class="signature-line"></div>
+    {% endif %}
+    <div>
+      <strong>Profissional Responsável</strong><br />
+      {{ professional_name | e }}<br />
+      {% if crm %}Registro Profissional: {{ crm | e }}{% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

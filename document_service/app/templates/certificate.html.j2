@@ -1,0 +1,28 @@
+{% extends "base.html.j2" %}
+{% block body %}
+<div class="document-title">Atestado Médico</div>
+<div class="patient-info">
+  <strong>Paciente:</strong> {{ patient_name | e }}<br />
+  {% if patient_cpf %}<strong>CPF:</strong> {{ patient_cpf | e }}<br />{% endif %}
+  <strong>Data de Emissão:</strong> {{ current_date | e }}
+</div>
+<div class="content-section">
+  <p>Atesto para os devidos fins que o(a) paciente acima identificado(a) esteve sob meus cuidados médicos e apresenta quadro clínico que o(a) impossibilita de exercer suas atividades habituais.</p>
+  <p><strong>Descrição:</strong> {{ description | e }}</p>
+  {% if cid %}<p><strong>CID:</strong> {{ cid | e }}</p>{% endif %}
+  <p><strong>Período de afastamento:</strong> {{ days | e }} dia(s) a partir de {{ current_date | e }}.</p>
+  <p>Este atestado é válido para todos os fins legais e administrativos.</p>
+</div>
+<div class="signature-area">
+  {% if signature_url %}
+  <img src="{{ signature_url | e }}" alt="Assinatura" class="signature-image" />
+  {% else %}
+  <div class="signature-line"></div>
+  {% endif %}
+  <div>
+    <strong>{{ professional_name | e }}</strong><br />
+    {{ professional_specialty | e }}<br />
+    {% if crm %}Registro Profissional: {{ crm | e }}{% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -17,6 +17,7 @@ import {
   Download,
   Printer,
   Phone,
+  Send,
 } from "lucide-react";
 
 type MedicalRecord = {
@@ -34,6 +35,8 @@ type MedicalRecord = {
   vital_signs: any;
   created_at: string;
   updated_at: string;
+  pdf_url?: string | null;
+  pdf_generated_at?: string | null;
 };
 
 type PrivatePatient = {
@@ -55,7 +58,6 @@ const MedicalRecordsPage: React.FC = () => {
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [selectedRecord, setSelectedRecord] = useState<MedicalRecord | null>(
     null
@@ -111,11 +113,13 @@ const MedicalRecordsPage: React.FC = () => {
     null
   );
 
-  // Preview state
-  const [showPreviewModal, setShowPreviewModal] = useState(false);
-  const [recordToPreview, setRecordToPreview] = useState<MedicalRecord | null>(
+  const [previewRecord, setPreviewRecord] = useState<MedicalRecord | null>(
     null
   );
+  const [features, setFeatures] = useState<{
+    whatsappBusinessDocumentSend: boolean;
+    documentServiceConfigured: boolean;
+  } | null>(null);
   const [professionalData, setProfessionalData] = useState({
     name: "",
     specialty: "",
@@ -123,6 +127,21 @@ const MedicalRecordsPage: React.FC = () => {
   });
   useEffect(() => {
     fetchData();
+  }, []);
+
+  useEffect(() => {
+    const loadFeatures = async () => {
+      try {
+        const apiUrl = getApiUrl();
+        const res = await fetchWithAuth(`${apiUrl}/api/professional/features`);
+        if (res.ok) {
+          setFeatures(await res.json());
+        }
+      } catch {
+        setFeatures(null);
+      }
+    };
+    loadFeatures();
   }, []);
 
   useEffect(() => {
@@ -296,6 +315,33 @@ const MedicalRecordsPage: React.FC = () => {
     }
   };
 
+  const sendRecordViaWhatsAppBusiness = async (record: MedicalRecord) => {
+    try {
+      setError("");
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/medical-records/${record.id}/whatsapp/send-document`,
+        { method: "POST" }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          data.message || "Não foi possível enviar o arquivo pelo WhatsApp API"
+        );
+      }
+      setSuccess("Documento enviado pelo WhatsApp Business API.");
+      setTimeout(() => setSuccess(""), 5000);
+    } catch (error) {
+      console.error("Erro WhatsApp Business (prontuário):", error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Erro ao enviar pelo WhatsApp Business API"
+      );
+      setTimeout(() => setError(""), 5000);
+    }
+  };
+
   const openCreateModal = () => {
     setModalMode("create");
     setFormData({
@@ -367,18 +413,20 @@ const MedicalRecordsPage: React.FC = () => {
   };
 
   const openViewModal = (record: MedicalRecord) => {
-    setSelectedRecord(record);
-    setIsViewModalOpen(true);
+    setPreviewRecord(record);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setIsViewModalOpen(false);
     setClientSearchResult(null);
     setDependents([]);
     setSelectedDependentId(null);
     setError("");
     setSuccess("");
+  };
+
+  const closePreviewModal = () => {
+    setPreviewRecord(null);
   };
 
   const handleInputChange = (
@@ -628,21 +676,14 @@ const MedicalRecordsPage: React.FC = () => {
     }
   };
 
-  const openPreviewModal = (record: MedicalRecord) => {
-    setRecordToPreview(record);
-    setShowPreviewModal(true);
-  };
-
-  const closePreviewModal = () => {
-    setShowPreviewModal(false);
-    setRecordToPreview(null);
-  };
-
-  // Impressão direta no navegador (HTML), como antes — sem depender do backend/PDF
+  // Abre PDF do servidor ou gera HTML local para impressão
   const printMedicalRecordDirect = (record: MedicalRecord) => {
     try {
       setError("");
-      console.log("🔄 Starting direct medical record print");
+      if (record.pdf_url) {
+        window.open(record.pdf_url, "_blank", "noopener,noreferrer");
+        return;
+      }
 
       const vitalSigns = record.vital_signs || {};
       const hasVitalSigns = Object.values(vitalSigns).some(
@@ -1036,10 +1077,22 @@ const MedicalRecordsPage: React.FC = () => {
                         <button
                           onClick={() => sendRecordViaWhatsApp(record)}
                           className="text-green-600 hover:text-green-800"
-                          title="Enviar via WhatsApp"
+                          title="WhatsApp (mensagem com link)"
                         >
                           <Phone className="h-4 w-4" />
                         </button>
+                        {features?.whatsappBusinessDocumentSend &&
+                          record.pdf_url && (
+                            <button
+                              onClick={() =>
+                                sendRecordViaWhatsAppBusiness(record)
+                              }
+                              className="text-emerald-700 hover:text-emerald-900"
+                              title="WhatsApp Business API — enviar PDF"
+                            >
+                              <Send className="h-4 w-4" />
+                            </button>
+                          )}
                         <button
                           onClick={() => openEditModal(record)}
                           className="text-blue-600 hover:text-blue-900"
@@ -1508,167 +1561,6 @@ const MedicalRecordsPage: React.FC = () => {
         </div>
       )}
 
-      {/* View modal */}
-      {isViewModalOpen && selectedRecord && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
-              <h2 className="text-xl font-bold">Visualizar Prontuário</h2>
-              <button
-                onClick={closeModal}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <X className="h-6 w-6" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-6">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-2">
-                  Informações do Paciente
-                </h3>
-                <p>
-                  <strong>Nome:</strong> {selectedRecord.patient_name}
-                </p>
-                <p>
-                  <strong>Data do Atendimento:</strong>{" "}
-                  {formatDate(selectedRecord.created_at)}
-                </p>
-              </div>
-
-              {selectedRecord.vital_signs && (
-                <div>
-                  <h3 className="font-semibold text-gray-900 mb-2">
-                    Sinais Vitais
-                  </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    {selectedRecord.vital_signs.blood_pressure && (
-                      <div>
-                        <strong>PA:</strong>{" "}
-                        {selectedRecord.vital_signs.blood_pressure}
-                      </div>
-                    )}
-                    {selectedRecord.vital_signs.heart_rate && (
-                      <div>
-                        <strong>FC:</strong>{" "}
-                        {selectedRecord.vital_signs.heart_rate}
-                      </div>
-                    )}
-                    {selectedRecord.vital_signs.temperature && (
-                      <div>
-                        <strong>Temp:</strong>{" "}
-                        {selectedRecord.vital_signs.temperature}
-                      </div>
-                    )}
-                    {selectedRecord.vital_signs.respiratory_rate && (
-                      <div>
-                        <strong>FR:</strong>{" "}
-                        {selectedRecord.vital_signs.respiratory_rate}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {selectedRecord.chief_complaint && (
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-2">
-                      Queixa Principal
-                    </h4>
-                    <p className="text-gray-700">
-                      {selectedRecord.chief_complaint}
-                    </p>
-                  </div>
-                )}
-
-                {selectedRecord.history_present_illness && (
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-2">
-                      História da Doença Atual
-                    </h4>
-                    <p className="text-gray-700">
-                      {selectedRecord.history_present_illness}
-                    </p>
-                  </div>
-                )}
-
-                {selectedRecord.past_medical_history && (
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-2">
-                      História Médica Pregressa
-                    </h4>
-                    <p className="text-gray-700">
-                      {selectedRecord.past_medical_history}
-                    </p>
-                  </div>
-                )}
-
-                {selectedRecord.medications && (
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-2">
-                      Medicamentos
-                    </h4>
-                    <p className="text-gray-700">
-                      {selectedRecord.medications}
-                    </p>
-                  </div>
-                )}
-
-                {selectedRecord.allergies && (
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-2">
-                      Alergias
-                    </h4>
-                    <p className="text-gray-700">{selectedRecord.allergies}</p>
-                  </div>
-                )}
-
-                {selectedRecord.physical_examination && (
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-2">
-                      Exame Físico
-                    </h4>
-                    <p className="text-gray-700">
-                      {selectedRecord.physical_examination}
-                    </p>
-                  </div>
-                )}
-
-                {selectedRecord.diagnosis && (
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-2">
-                      Diagnóstico
-                    </h4>
-                    <p className="text-gray-700">{selectedRecord.diagnosis}</p>
-                  </div>
-                )}
-
-                {selectedRecord.treatment_plan && (
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-2">
-                      Plano de Tratamento
-                    </h4>
-                    <p className="text-gray-700">
-                      {selectedRecord.treatment_plan}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {selectedRecord.notes && (
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-2">
-                    Observações
-                  </h4>
-                  <p className="text-gray-700">{selectedRecord.notes}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Delete confirmation modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1700,12 +1592,17 @@ const MedicalRecordsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Preview Modal */}
-      {showPreviewModal && recordToPreview && (
+      {previewRecord && (
         <MedicalRecordPreviewModal
-          record={recordToPreview}
-          professionalData={professionalData}
+          isOpen={true}
           onClose={closePreviewModal}
+          recordData={previewRecord}
+          professionalData={professionalData}
+          documentServiceConfigured={features?.documentServiceConfigured ?? false}
+          onRecordPdfUpdated={(updated) => {
+            setPreviewRecord(updated);
+            void fetchData();
+          }}
         />
       )}
     </div>

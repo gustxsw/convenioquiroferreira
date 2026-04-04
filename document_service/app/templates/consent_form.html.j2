@@ -1,0 +1,45 @@
+{% extends "base.html.j2" %}
+{% block body %}
+<div class="document-title">Termo de Consentimento Livre e Esclarecido</div>
+<div class="patient-info">
+  <strong>Paciente:</strong> {{ patient_name | e }}<br />
+  {% if patient_cpf %}<strong>CPF:</strong> {{ patient_cpf | e }}<br />{% endif %}
+  <strong>Data:</strong> {{ current_date | e }}
+</div>
+<div class="content-section">
+  <div class="section-title">Procedimento a ser realizado:</div>
+  <p><strong>{{ procedure | e }}</strong></p>
+  <p>{{ procedure_description | e }}</p>
+</div>
+<div class="content-section">
+  <div class="section-title">Riscos e Benefícios:</div>
+  <p>{{ risks | e }}</p>
+</div>
+<div class="content-section">
+  <div class="section-title">Declaração de Consentimento:</div>
+  <p>Declaro que fui devidamente informado(a) sobre o procedimento acima descrito, seus riscos, benefícios e alternativas. Todas as minhas dúvidas foram esclarecidas e consinto com a realização do procedimento.</p>
+  <p>Estou ciente de que nenhum procedimento médico é 100% isento de riscos e que complicações podem ocorrer, mesmo com todos os cuidados técnicos adequados.</p>
+  <p>Autorizo o profissional de saúde a realizar o procedimento proposto e declaro que este consentimento é dado de forma livre e esclarecida.</p>
+</div>
+<div class="dual-signature">
+  <div class="signature-box">
+    <div class="signature-line"></div>
+    <div>
+      <strong>Paciente ou Responsável</strong><br />
+      {{ patient_name | e }}
+    </div>
+  </div>
+  <div class="signature-box">
+    {% if signature_url %}
+    <img src="{{ signature_url | e }}" alt="Assinatura" class="signature-image" />
+    {% else %}
+    <div class="signature-line"></div>
+    {% endif %}
+    <div>
+      <strong>Profissional Responsável</strong><br />
+      {{ professional_name | e }}<br />
+      {% if crm %}Registro Profissional: {{ crm | e }}{% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

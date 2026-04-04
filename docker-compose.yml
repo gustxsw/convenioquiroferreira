@@ -1,0 +1,9 @@
+services:
+  document-service:
+    build:
+      context: ./document_service
+      dockerfile: Dockerfile
+    ports:
+      - "8090:8090"
+    environment:
+      SERVICE_API_KEY: ${DOCUMENT_SERVICE_KEY:-}

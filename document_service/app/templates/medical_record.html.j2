@@ -1,0 +1,24 @@
+{% extends "base.html.j2" %}
+{% block body %}
+<div class="document-title">{{ title | e }}</div>
+<div class="patient-info">
+  <strong>Paciente:</strong> {{ patient_name | e }}<br />
+  {% if patient_cpf %}<strong>CPF:</strong> {{ patient_cpf | e }}<br />{% endif %}
+  <strong>Data de referência:</strong> {{ current_date | e }}
+</div>
+<div class="content-section">
+  <div class="prescription-content">{{ content | e }}</div>
+</div>
+<div class="signature-area">
+  {% if signature_url %}
+  <img src="{{ signature_url | e }}" alt="Assinatura" class="signature-image" />
+  {% else %}
+  <div class="signature-line"></div>
+  {% endif %}
+  <div>
+    <strong>{{ professional_name | e }}</strong><br />
+    {{ professional_specialty | e }}<br />
+    {% if crm %}Registro Profissional: {{ crm | e }}{% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -16,6 +16,7 @@ import {
   Printer,
   AlertCircle,
   Phone,
+  Send,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
@@ -47,6 +48,10 @@ const DocumentsPage: React.FC = () => {
   const [selectedPatient, setSelectedPatient] = useState<string>("");
   const [selectedDocumentType, setSelectedDocumentType] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
+  const [features, setFeatures] = useState<{
+    whatsappBusinessDocumentSend: boolean;
+    documentServiceConfigured: boolean;
+  } | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -113,6 +118,22 @@ const DocumentsPage: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    const loadFeatures = async () => {
+      try {
+        const apiUrl = getApiUrl();
+        const res = await fetchWithAuth(`${apiUrl}/api/professional/features`);
+        if (res.ok) setFeatures(await res.json());
+      } catch {
+        setFeatures(null);
+      }
+    };
+    loadFeatures();
+  }, []);
+
+  const documentUrlIsPdf = (url: string) =>
+    /\.pdf(\?|#|$)/i.test(url) || /\/raw\/upload\//i.test(url);
 
   useEffect(() => {
     let filtered = documents;
@@ -380,6 +401,33 @@ const DocumentsPage: React.FC = () => {
     }
   };
 
+  const sendDocumentViaWhatsAppBusiness = async (document: SavedDocument) => {
+    try {
+      setError("");
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/documents/${document.id}/whatsapp/send-document`,
+        { method: "POST" }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          data.message || "Não foi possível enviar pelo WhatsApp API"
+        );
+      }
+      setSuccess("Documento enviado pelo WhatsApp Business API.");
+      setTimeout(() => setSuccess(""), 5000);
+    } catch (error) {
+      console.error("Erro WhatsApp Business (documento):", error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Erro ao enviar pelo WhatsApp Business API"
+      );
+      setTimeout(() => setError(""), 5000);
+    }
+  };
+
   const formatCpf = (value: string) => {
     if (!value) return "";
     const numericValue = value.replace(/\D/g, "");
@@ -614,13 +662,19 @@ const DocumentsPage: React.FC = () => {
     }
   };
 
-  // Impressão direta: HTML busca e imprime na janela; PDF abre na mesma janela (download/visualizar como antes)
   const printDocumentDirect = (document: SavedDocument) => {
     try {
-      console.log("🔄 Starting direct document print for:", document.title);
+      if (documentUrlIsPdf(document.document_url)) {
+        window.open(
+          document.document_url,
+          "_blank",
+          "noopener,noreferrer"
+        );
+        setSuccess("PDF aberto em nova aba.");
+        return;
+      }
 
       const printWindow = window.open("", "_blank", "width=800,height=600");
-
       if (!printWindow) {
         throw new Error("Popup foi bloqueado. Permita popups para imprimir.");
       }
@@ -631,18 +685,14 @@ const DocumentsPage: React.FC = () => {
           .then((htmlContent) => {
             printWindow.document.write(htmlContent);
             printWindow.document.close();
-
             printWindow.onload = () => {
               setTimeout(() => {
                 printWindow.print();
-                setTimeout(() => {
-                  printWindow.close();
-                }, 1000);
+                setTimeout(() => printWindow.close(), 1000);
               }, 500);
             };
           })
-          .catch((error) => {
-            console.error("Error fetching document:", error);
+          .catch(() => {
             printWindow.close();
             setError("Erro ao carregar documento para impressão");
           });
@@ -682,6 +732,7 @@ const DocumentsPage: React.FC = () => {
       exam_request: "Solicitação de Exames",
       declaration: "Declaração",
       lgpd: "Termo LGPD",
+      medical_record: "Prontuário",
       other: "Outro",
     };
     return types[type as keyof typeof types] || type;
@@ -695,6 +746,7 @@ const DocumentsPage: React.FC = () => {
       exam_request: "bg-yellow-100 text-yellow-800",
       declaration: "bg-orange-100 text-orange-800",
       lgpd: "bg-red-100 text-red-800",
+      medical_record: "bg-teal-100 text-teal-800",
       other: "bg-gray-100 text-gray-800",
     };
     return colors[type as keyof typeof colors] || "bg-gray-100 text-gray-800";
@@ -900,10 +952,22 @@ const DocumentsPage: React.FC = () => {
                         <button
                           onClick={() => sendDocumentViaWhatsApp(document)}
                           className="text-green-600 hover:text-green-800"
-                          title="Enviar via WhatsApp"
+                          title="WhatsApp (mensagem com link)"
                         >
                           <Phone className="h-4 w-4" />
                         </button>
+                        {features?.whatsappBusinessDocumentSend &&
+                          documentUrlIsPdf(document.document_url) && (
+                            <button
+                              onClick={() =>
+                                sendDocumentViaWhatsAppBusiness(document)
+                              }
+                              className="text-emerald-700 hover:text-emerald-900"
+                              title="WhatsApp Business API — enviar arquivo"
+                            >
+                              <Send className="h-4 w-4" />
+                            </button>
+                          )}
                         <button
                           onClick={() => confirmDelete(document)}
                           className="text-red-600 hover:text-red-900"

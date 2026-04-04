@@ -10,6 +10,11 @@ import { pool } from "./db.js";
 import { authenticate, authorize } from "./middleware/auth.js";
 import createUpload, { createReceiptUpload } from "./middleware/upload.js";
 import { generateDocumentPDF } from "./utils/documentGenerator.js";
+import { regenerateMedicalRecordPdf } from "./utils/medicalRecordPdf.js";
+import {
+  isWhatsappCloudConfigured,
+  sendWhatsappDocumentMessage,
+} from "./utils/whatsappCloud.js";
 import { MercadoPagoConfig, Preference } from "mercadopago";
 import documentsRoutes from "./routes/documents.js";
 import pdfRoutes from "./routes/pdf.js";
@@ -643,6 +648,20 @@ const initializeDatabase = async () => {
           WHERE table_name = 'medical_records' AND column_name = 'patient_type'
         ) THEN
           ALTER TABLE medical_records ADD COLUMN patient_type VARCHAR(20) DEFAULT 'private';
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'medical_records' AND column_name = 'pdf_url'
+        ) THEN
+          ALTER TABLE medical_records ADD COLUMN pdf_url TEXT;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'medical_records' AND column_name = 'pdf_generated_at'
+        ) THEN
+          ALTER TABLE medical_records ADD COLUMN pdf_generated_at TIMESTAMP;
         END IF;
       END $$;
     `);
@@ -4260,12 +4279,14 @@ app.get(
         ? cleanPhone
         : `55${cleanPhone}`;
 
-      // Mensagem apenas em texto (sem link do prontuário por enquanto)
-      const message = `Olá ${
+      let message = `Olá ${
         record.patient_name || ""
       }, envio aqui informações do seu prontuário referente ao atendimento com ${
         record.professional_name || "seu profissional de saúde"
       }.`;
+      if (record.pdf_url) {
+        message += `\n\nLink para baixar o PDF: ${record.pdf_url}`;
+      }
 
       const encodedMessage = encodeURIComponent(message);
       const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
@@ -4348,14 +4369,16 @@ app.get(
         ? cleanPhone
         : `55${cleanPhone}`;
 
-      // Mensagem apenas em texto (sem link do documento por enquanto)
-      const message = `Olá ${
+      let message = `Olá ${
         document.patient_name || ""
       }, envio aqui o documento "${
         document.title
       }" referente ao seu atendimento com ${
         document.professional_name || "seu profissional de saúde"
       }.`;
+      if (document.document_url) {
+        message += `\n\nLink para baixar o arquivo: ${document.document_url}`;
+      }
 
       const encodedMessage = encodeURIComponent(message);
       const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
@@ -4367,6 +4390,182 @@ app.get(
       res
         .status(500)
         .json({ message: "Erro interno do servidor ao gerar link do WhatsApp" });
+    }
+  }
+);
+
+// POST /api/medical-records/:id/whatsapp/send-document — Meta Cloud API (document by link)
+app.post(
+  "/api/medical-records/:id/whatsapp/send-document",
+  authenticate,
+  authorize(["professional", "admin"]),
+  async (req, res) => {
+    try {
+      if (!isWhatsappCloudConfigured()) {
+        return res.status(503).json({
+          message:
+            "Envio direto pelo WhatsApp Business API não está configurado no servidor.",
+        });
+      }
+
+      const recordId = req.params.id;
+      const recordResult = await pool.query(
+        `SELECT 
+          mr.*,
+          COALESCE(pp.name, mr.patient_name) AS patient_name,
+          COALESCE(pp.phone, u.phone) AS patient_phone
+        FROM medical_records mr
+        LEFT JOIN private_patients pp ON mr.private_patient_id = pp.id
+        LEFT JOIN users u ON mr.professional_id = u.id
+        WHERE mr.id = $1 AND mr.professional_id = $2`,
+        [recordId, req.user.id]
+      );
+
+      if (recordResult.rows.length === 0) {
+        return res.status(404).json({ message: "Prontuário não encontrado" });
+      }
+
+      const record = recordResult.rows[0];
+
+      if (
+        req.user.currentRole === "professional" &&
+        isAgendaOnlyProfessional(req) &&
+        isConvenioMedicalRecordRow(record)
+      ) {
+        return respondAgendaOnlyConvenioForbidden(res);
+      }
+
+      if (!record.pdf_url) {
+        return res.status(400).json({
+          message:
+            "Não há PDF deste prontuário. Salve ou atualize o prontuário para gerar o arquivo.",
+        });
+      }
+
+      if (!record.patient_phone) {
+        return res.status(400).json({
+          message:
+            "Não há telefone cadastrado para este paciente. Atualize o cadastro antes de enviar.",
+        });
+      }
+
+      const cleanPhone = record.patient_phone.replace(/\D/g, "");
+      const formattedPhone = cleanPhone.startsWith("55")
+        ? cleanPhone
+        : `55${cleanPhone}`;
+
+      await sendWhatsappDocumentMessage({
+        toDigits: formattedPhone,
+        documentUrl: record.pdf_url,
+        filename: `Prontuario_${record.patient_name || "paciente"}.pdf`
+          .replace(/[^\w.\-]+/g, "_")
+          .slice(0, 200),
+        caption: `Prontuário — ${record.patient_name || ""}`,
+      });
+
+      res.json({ message: "Documento enviado pelo WhatsApp." });
+    } catch (error) {
+      console.error("❌ WhatsApp Cloud send (medical record):", error);
+      res.status(500).json({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Erro ao enviar documento pelo WhatsApp",
+      });
+    }
+  }
+);
+
+// POST /api/documents/:id/whatsapp/send-document
+app.post(
+  "/api/documents/:id/whatsapp/send-document",
+  authenticate,
+  authorize(["professional", "admin"]),
+  async (req, res) => {
+    try {
+      if (!isWhatsappCloudConfigured()) {
+        return res.status(503).json({
+          message:
+            "Envio direto pelo WhatsApp Business API não está configurado no servidor.",
+        });
+      }
+
+      const documentId = req.params.id;
+
+      let documentResult = await pool.query(
+        `SELECT 
+          md.*,
+          COALESCE(pp.name, md.patient_name) AS patient_name,
+          COALESCE(pp.phone, u.phone) AS patient_phone
+        FROM medical_documents md
+        LEFT JOIN private_patients pp ON md.private_patient_id = pp.id
+        LEFT JOIN users u ON md.professional_id = u.id
+        WHERE md.id = $1 AND md.professional_id = $2`,
+        [documentId, req.user.id]
+      );
+
+      if (documentResult.rows.length === 0) {
+        documentResult = await pool.query(
+          `SELECT
+            sd.*,
+            sd.patient_name AS patient_name,
+            u.phone AS patient_phone
+          FROM saved_documents sd
+          LEFT JOIN users u ON sd.professional_id = u.id
+          WHERE sd.id = $1 AND sd.professional_id = $2`,
+          [documentId, req.user.id]
+        );
+      }
+
+      if (documentResult.rows.length === 0) {
+        return res.status(404).json({ message: "Documento não encontrado" });
+      }
+
+      const document = documentResult.rows[0];
+
+      if (
+        req.user.currentRole === "professional" &&
+        isAgendaOnlyProfessional(req) &&
+        Object.prototype.hasOwnProperty.call(document, "private_patient_id") &&
+        document.private_patient_id == null
+      ) {
+        return respondAgendaOnlyConvenioForbidden(res);
+      }
+
+      if (!document.document_url) {
+        return res.status(400).json({ message: "Documento sem URL de arquivo." });
+      }
+
+      if (!document.patient_phone) {
+        return res.status(400).json({
+          message:
+            "Não há telefone cadastrado para este paciente. Atualize o cadastro antes de enviar.",
+        });
+      }
+
+      const cleanPhone = document.patient_phone.replace(/\D/g, "");
+      const formattedPhone = cleanPhone.startsWith("55")
+        ? cleanPhone
+        : `55${cleanPhone}`;
+
+      await sendWhatsappDocumentMessage({
+        toDigits: formattedPhone,
+        documentUrl: document.document_url,
+        filename: `${document.title || "documento"}.pdf`
+          .replace(/[^\w.\-]+/g, "_")
+          .slice(0, 200),
+        caption: document.title || "Documento médico",
+      });
+
+      res.json({ message: "Documento enviado pelo WhatsApp." });
+    } catch (error) {
+      console.error("❌ WhatsApp Cloud send (document):", error);
+      res.status(500).json({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Erro ao enviar documento pelo WhatsApp",
+      });
     }
   }
 );
@@ -5529,6 +5728,20 @@ app.get("/api/professionals/:id/signature", authenticate, async (req, res) => {
   }
 });
 
+app.get(
+  "/api/professional/features",
+  authenticate,
+  authorize(["professional", "admin"]),
+  async (req, res) => {
+    res.json({
+      whatsappBusinessDocumentSend: isWhatsappCloudConfigured(),
+      documentServiceConfigured: !!(
+        process.env.DOCUMENT_SERVICE_URL || ""
+      ).trim(),
+    });
+  }
+);
+
 app.delete(
   "/api/professionals/:id/signature",
   authenticate,
@@ -6274,6 +6487,16 @@ app.post(
 
       console.log("✅ Medical record created:", record.id);
 
+      try {
+        const pdfUrl = await regenerateMedicalRecordPdf(record.id, req.user.id);
+        record.pdf_url = pdfUrl;
+      } catch (pdfErr) {
+        console.warn(
+          "⚠️ PDF do prontuário não gerado (serviço de documentos ou Cloudinary):",
+          pdfErr?.message || pdfErr
+        );
+      }
+
       res.status(201).json({
         message: "Prontuário criado com sucesso",
         record,
@@ -6382,6 +6605,19 @@ app.put(
 
       console.log("✅ Medical record updated:", id);
 
+      try {
+        const pdfUrl = await regenerateMedicalRecordPdf(
+          Number.parseInt(id, 10),
+          req.user.id
+        );
+        updatedRecord.pdf_url = pdfUrl;
+      } catch (pdfErr) {
+        console.warn(
+          "⚠️ PDF do prontuário não atualizado:",
+          pdfErr?.message || pdfErr
+        );
+      }
+
       res.json({
         message: "Prontuário atualizado com sucesso",
         record: updatedRecord,
@@ -6389,6 +6625,62 @@ app.put(
     } catch (error) {
       console.error("❌ Error updating medical record:", error);
       res.status(500).json({ message: "Erro ao atualizar prontuário" });
+    }
+  }
+);
+
+app.post(
+  "/api/medical-records/:id/regenerate-pdf",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const recordResult = await pool.query(
+        `SELECT * FROM medical_records WHERE id = $1 AND professional_id = $2`,
+        [id, req.user.id]
+      );
+
+      if (recordResult.rows.length === 0) {
+        return res.status(404).json({ message: "Prontuário não encontrado" });
+      }
+
+      if (
+        isAgendaOnlyProfessional(req) &&
+        isConvenioMedicalRecordRow(recordResult.rows[0])
+      ) {
+        return respondAgendaOnlyConvenioForbidden(res);
+      }
+
+      const pdfUrl = await regenerateMedicalRecordPdf(
+        Number.parseInt(id, 10),
+        req.user.id
+      );
+
+      const fresh = await pool.query(
+        `SELECT mr.*,
+                COALESCE(pp.name, mr.patient_name) AS patient_name,
+                COALESCE(pp.cpf, mr.patient_cpf) AS patient_cpf
+         FROM medical_records mr
+         LEFT JOIN private_patients pp ON mr.private_patient_id = pp.id
+         WHERE mr.id = $1 AND mr.professional_id = $2`,
+        [id, req.user.id]
+      );
+
+      res.json({
+        message: "PDF do prontuário gerado com sucesso",
+        pdf_url: pdfUrl,
+        record: fresh.rows[0],
+      });
+    } catch (error) {
+      console.error("❌ Error regenerating medical record PDF:", error);
+      res.status(500).json({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Erro ao gerar PDF do prontuário",
+      });
     }
   }
 );
@@ -6505,7 +6797,7 @@ app.post(
         .join("\n\n");
 
       // Generate document (using generic template with explicit content)
-      const documentData = await generateDocumentPDF("other", {
+      const documentData = await generateDocumentPDF("medical_record", {
         ...template_data,
         title: `Prontuário Médico - ${record.patient_name}`,
         content:
@@ -6539,6 +6831,13 @@ app.post(
       console.log(
         "✅ Medical record document generated:",
         documentResult.rows[0].id
+      );
+
+      await pool.query(
+        `UPDATE medical_records
+         SET pdf_url = $1, pdf_generated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2 AND professional_id = $3`,
+        [documentData.url, record_id, req.user.id]
       );
 
       res.json({
