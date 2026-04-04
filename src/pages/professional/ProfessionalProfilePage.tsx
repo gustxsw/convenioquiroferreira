@@ -16,6 +16,10 @@ import {
   MessageCircle,
 } from "lucide-react";
 import UploadSignatureModal from "../../components/UploadSignatureModal";
+import {
+  SIGNATURE_PREVIEW_MAX_HEIGHT_CLASS,
+  SIGNATURE_PREVIEW_MAX_WIDTH_CLASS,
+} from "../../constants/signatureDisplay";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type AttendanceLocation = {
@@ -668,12 +672,11 @@ const ProfessionalProfilePage: React.FC = () => {
 
             {signatureUrl ? (
               <div className="text-center">
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+                <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4 inline-block w-full max-w-md mx-auto">
                   <img
                     src={signatureUrl}
                     alt="Sua assinatura digital"
-                    className="max-w-full max-h-24 mx-auto border border-gray-300 rounded bg-white"
-                    style={{ maxHeight: "96px" }}
+                    className={`mx-auto block object-contain bg-white ${SIGNATURE_PREVIEW_MAX_WIDTH_CLASS} ${SIGNATURE_PREVIEW_MAX_HEIGHT_CLASS}`}
                   />
                 </div>
                 <p className="text-sm text-gray-600">
@@ -706,7 +709,10 @@ const ProfessionalProfilePage: React.FC = () => {
                 💡 Como funciona:
               </h4>
               <ul className="text-sm text-blue-700 space-y-1">
-                <li>• Faça upload de uma imagem da sua assinatura</li>
+                <li>
+                  • Envie uma foto e recorte só a área da assinatura; o sistema
+                  gera um PNG padronizado com fundo branco
+                </li>
                 <li>
                   • A assinatura será incluída automaticamente em atestados,
                   receitas e outros documentos
@@ -714,7 +720,6 @@ const ProfessionalProfilePage: React.FC = () => {
                 <li>
                   • Você pode alterar ou remover a assinatura a qualquer momento
                 </li>
-                <li>• Use uma imagem com fundo branco para melhor resultado</li>
               </ul>
             </div>
           </div>

@@ -77,12 +77,13 @@ const createStorage = () => {
       transformation: (req, file) => {
         // Different transformations based on field name
         if (file.fieldname === 'signature') {
+          // Client uploads 600×200 PNG (3:1, white bg). Limit avoids extra scaling/distortion.
           return [
             {
-              width: 300,
-              height: 100,
-              crop: "fit",
-              background: "white",
+              width: 600,
+              height: 200,
+              crop: "limit",
+              format: "png",
               quality: "auto:good",
             },
           ];

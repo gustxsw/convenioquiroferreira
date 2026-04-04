@@ -135,10 +135,12 @@ const SimplePDFGenerator: React.FC<SimplePDFGeneratorProps> = ({
           }
           
           .signature-image {
-            max-width: 200px !important;
-            max-height: 60px !important;
+            max-width: 280px !important;
+            max-height: 94px !important;
             margin: 20px auto 10px !important;
             display: block !important;
+            object-fit: contain !important;
+            background: #fff !important;
           }
           
           .dual-signature {

@@ -1,4 +1,5 @@
 // Document templates for HTML generation - Clean professional templates
+// Signature image CSS: keep in sync with src/constants/signatureDisplay.ts (max 280×94).
 const templates = {
   certificate: (data: any) => `
 <!DOCTYPE html>
@@ -44,14 +45,12 @@ const templates = {
             margin: 40px auto 10px;
         }
         .signature-image {
-            max-width: 300px;
-            max-height: 100px;
+            max-width: 280px;
+            max-height: 94px;
             margin: 20px auto 10px;
             display: block;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            padding: 5px;
-            background: white;
+            object-fit: contain;
+            background: #fff;
         }
         @media print {
             body { margin: 0; padding: 20px; }
@@ -146,14 +145,12 @@ const templates = {
             margin: 40px auto 10px;
         }
         .signature-image {
-            max-width: 300px;
-            max-height: 100px;
+            max-width: 280px;
+            max-height: 94px;
             margin: 20px auto 10px;
             display: block;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            padding: 5px;
-            background: white;
+            object-fit: contain;
+            background: #fff;
         }
         @media print {
             body { margin: 0; padding: 20px; }
@@ -240,14 +237,12 @@ const templates = {
             margin: 40px 0 10px;
         }
         .signature-image {
-            max-width: 300px;
-            max-height: 100px;
+            max-width: 280px;
+            max-height: 94px;
             margin: 20px auto 10px;
             display: block;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            padding: 5px;
-            background: white;
+            object-fit: contain;
+            background: #fff;
         }
         @media print {
             body { margin: 0; padding: 20px; }
@@ -297,7 +292,7 @@ const templates = {
         
         <div class="signature-box">
             ${data.signatureUrl ? 
-              `<img src="${data.signatureUrl}" alt="Assinatura" style="max-width: 150px; max-height: 50px; margin: 20px auto 10px; display: block;" />` : 
+              `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
               '<div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>'
             }
             <div>
@@ -357,14 +352,12 @@ const templates = {
             margin: 40px auto 10px;
         }
         .signature-image {
-            max-width: 300px;
-            max-height: 100px;
+            max-width: 280px;
+            max-height: 94px;
             margin: 20px auto 10px;
             display: block;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            padding: 5px;
-            background: white;
+            object-fit: contain;
+            background: #fff;
         }
         @media print {
             body { margin: 0; padding: 20px; }
@@ -448,14 +441,12 @@ ${data.content}
             margin: 40px auto 10px;
         }
         .signature-image {
-            max-width: 300px;
-            max-height: 100px;
+            max-width: 280px;
+            max-height: 94px;
             margin: 20px auto 10px;
             display: block;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            padding: 5px;
-            background: white;
+            object-fit: contain;
+            background: #fff;
         }
         @media print {
             body { margin: 0; padding: 20px; }
@@ -541,14 +532,12 @@ ${data.content}
             margin: 40px 0 10px;
         }
         .signature-image {
-            max-width: 300px;
-            max-height: 100px;
+            max-width: 280px;
+            max-height: 94px;
             margin: 20px auto 10px;
             display: block;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            padding: 5px;
-            background: white;
+            object-fit: contain;
+            background: #fff;
         }
         @media print {
             body { margin: 0; padding: 20px; }
@@ -615,7 +604,7 @@ ${data.content}
         
         <div class="signature-box">
             ${data.signatureUrl ? 
-              `<img src="${data.signatureUrl}" alt="Assinatura" style="max-width: 150px; max-height: 50px; margin: 20px auto 10px; display: block;" />` : 
+              `<img src="${data.signatureUrl}" alt="Assinatura" class="signature-image" />` : 
               '<div style="border-top: 1px solid #000; margin: 40px 0 10px;"></div>'
             }
             <div>
@@ -674,14 +663,12 @@ ${data.content}
             margin: 40px auto 10px;
         }
         .signature-image {
-            max-width: 300px;
-            max-height: 100px;
+            max-width: 280px;
+            max-height: 94px;
             margin: 20px auto 10px;
             display: block;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            padding: 5px;
-            background: white;
+            object-fit: contain;
+            background: #fff;
         }
         @media print {
             body { margin: 0; padding: 20px; }

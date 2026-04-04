@@ -167,10 +167,12 @@ const getBaseHTML = (title, content) => {
         }
 
         .signature-image {
-            max-width: 400px;
-            max-height: 150px;
+            max-width: 280px;
+            max-height: 94px;
             margin: 20px auto 10px;
             display: block;
+            object-fit: contain;
+            background: #fff;
         }
 
         .document-footer {

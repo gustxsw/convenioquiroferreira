@@ -195,7 +195,7 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
         .vital-sign-item { text-align: center; padding: 10px !important; background: #f8f9fa !important; border: 1px solid #e9ecef !important; }
         .signature { margin-top: 60px !important; text-align: center; }
         .signature-line { border-top: 1px solid #000; width: 300px; margin: 40px auto 10px !important; }
-        .signature-image { max-width: 200px !important; max-height: 60px !important; margin: 20px auto 10px !important; display: block !important; }
+        .signature-image { max-width: 280px !important; max-height: 94px !important; margin: 20px auto 10px !important; display: block !important; object-fit: contain !important; background: #fff !important; }
     </style>
 </head>
 <body>
