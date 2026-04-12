@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import {
   User,
@@ -15,6 +15,8 @@ import {
   FileImage,
   Upload,
   MessageCircle,
+  Briefcase,
+  Phone,
 } from "lucide-react";
 import UploadSignatureModal from "../../components/UploadSignatureModal";
 import {
@@ -27,6 +29,14 @@ import {
   getSpecialtyLabelPt,
   type SpecialtyCode,
 } from "../../config/specialtyTemplates";
+import {
+  CONVENIO_OWNER_DISPLAY_PHONE,
+  CONVENIO_PROMO_CTA_LINE,
+  CONVENIO_PROMO_SUBTITLE,
+  CONVENIO_PROMO_TITLE,
+  getConvenioTelHref,
+  getConvenioWhatsappHref,
+} from "../../utils/convenioOwnerContact";
 
 type AttendanceLocation = {
   id: number;
@@ -44,25 +54,16 @@ type AttendanceLocation = {
 
 const ProfessionalProfilePage: React.FC = () => {
   const { user, refreshSession } = useAuth();
+  const location = useLocation();
   const [profileTab, setProfileTab] = useState<"dados" | "convenio">("dados");
   const [locations, setLocations] = useState<AttendanceLocation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const convenioWhatsappHref = (() => {
-    const raw = import.meta.env.VITE_WHATSAPP_CONVENIO_OWNER as
-      | string
-      | undefined;
-    const digits = raw?.replace(/\D/g, "") ?? "";
-    if (!digits) return null;
-    const text = encodeURIComponent(
-      "Olá! Sou profissional da agenda e tenho interesse em fazer parte do Convênio Quiro Ferreira."
-    );
-    return `https://wa.me/${digits}?text=${text}`;
-  })();
-
   const isAgendaOnlyProfile = user?.professionalType === "agenda_only";
+  const convenioWhatsappHref = getConvenioWhatsappHref();
+  const convenioTelHref = getConvenioTelHref();
   const showDadosSection = !isAgendaOnlyProfile || profileTab === "dados";
 
   // Profile form state
@@ -143,6 +144,13 @@ const ProfessionalProfilePage: React.FC = () => {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!isAgendaOnlyProfile) return;
+    if (location.hash === "#convenio") {
+      setProfileTab("convenio");
+    }
+  }, [location.hash, isAgendaOnlyProfile]);
 
   const saveSpecialty = async () => {
     if (!specialtyDraft) {
@@ -453,7 +461,10 @@ const ProfessionalProfilePage: React.FC = () => {
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-200 pb-1">
           <button
             type="button"
-            onClick={() => setProfileTab("dados")}
+            onClick={() => {
+              setProfileTab("dados");
+              window.history.replaceState(null, "", location.pathname);
+            }}
             className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition-colors ${
               profileTab === "dados"
                 ? "border-red-600 text-red-600"
@@ -464,14 +475,25 @@ const ProfessionalProfilePage: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={() => setProfileTab("convenio")}
-            className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition-colors ${
+            onClick={() => {
+              setProfileTab("convenio");
+              window.history.replaceState(
+                null,
+                "",
+                `${location.pathname}#convenio`
+              );
+            }}
+            className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition-colors ${
               profileTab === "convenio"
-                ? "border-red-600 text-red-600"
-                : "border-transparent text-gray-500 hover:text-gray-700"
+                ? "border-red-600 text-red-600 bg-red-50/50"
+                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50"
             }`}
           >
-            Convênio Quiro Ferreira
+            <Briefcase className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
+            <span>Convênio Quiro Ferreira</span>
+            <span className="hidden sm:inline rounded px-1.5 py-0 text-[10px] font-medium uppercase tracking-wide bg-gray-100 text-gray-600">
+              Rede
+            </span>
           </button>
         </div>
       )}
@@ -552,24 +574,40 @@ const ProfessionalProfilePage: React.FC = () => {
       {isAgendaOnlyProfile && profileTab === "convenio" && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 md:p-8 max-w-3xl">
           <h2 className="text-xl font-semibold text-gray-900 mb-2">
-            Faça parte da rede Convênio Quiro Ferreira
+            {CONVENIO_PROMO_TITLE}
           </h2>
+          <p className="text-gray-600 mb-4">{CONVENIO_PROMO_SUBTITLE}</p>
           <p className="text-gray-600 mb-4">
-            Você já utiliza a agenda digital para organizar seus atendimentos
-            particulares. Ao integrar-se ao convênio, seu perfil passa a ser
-            visto por milhares de titulares e dependentes, com visibilidade na
-            plataforma e fluxo de agendamento alinhado à rede Quiro Ferreira.
+            Você já usa a agenda digital para organizar atendimentos particulares.
+            Na rede credenciada, o mesmo fluxo ganha visibilidade para quem tem o
+            cartão e busca profissionais pelo sistema.
           </p>
           <ul className="list-disc list-inside text-gray-700 space-y-2 mb-6">
-            <li>Mais visibilidade para a sua especialidade</li>
-            <li>Processo claro de repasses e acompanhamento pelo convênio</li>
-            <li>Suporte da equipe para sua entrada na rede</li>
+            <li>
+              Perfil disponível para titulares e dependentes que agendam pela
+              plataforma
+            </li>
+            <li>
+              Agenda e comunicação alinhadas ao que a rede já utiliza no dia a dia
+            </li>
+            <li>
+              Transparência em repasses e apoio da equipe na entrada e dúvidas
+              operacionais
+            </li>
           </ul>
-          <p className="text-gray-600 mb-6">
-            Fale com a equipe pelo WhatsApp para conhecer os próximos passos e
-            avaliar se o convênio faz sentido para o seu consultório.
+          <p className="text-gray-700 font-medium mb-4">
+            {CONVENIO_PROMO_CTA_LINE}
           </p>
-          {convenioWhatsappHref ? (
+          <p className="text-sm text-gray-600 mb-4">
+            Telefone:{" "}
+            <a
+              href={convenioTelHref}
+              className="font-medium text-red-700 hover:underline"
+            >
+              {CONVENIO_OWNER_DISPLAY_PHONE}
+            </a>
+          </p>
+          <div className="flex flex-wrap gap-3">
             <a
               href={convenioWhatsappHref}
               target="_blank"
@@ -579,12 +617,14 @@ const ProfessionalProfilePage: React.FC = () => {
               <MessageCircle className="h-5 w-5" />
               Falar no WhatsApp
             </a>
-          ) : (
-            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-              O contato via WhatsApp será configurado em breve pelo
-              administrador do sistema.
-            </p>
-          )}
+            <a
+              href={convenioTelHref}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-5 py-3 text-gray-800 font-medium hover:bg-gray-50 transition-colors"
+            >
+              <Phone className="h-5 w-5" />
+              Ligar
+            </a>
+          </div>
         </div>
       )}
 

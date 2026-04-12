@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import ProfessionalOnboardingBanner from '../components/ProfessionalOnboardingBanner';
+import AgendaOnlyConvenioCta from '../components/AgendaOnlyConvenioCta';
 import { useAuth } from '../contexts/AuthContext';
 import { Menu } from 'lucide-react';
 
@@ -37,6 +38,10 @@ const MainLayout: React.FC = () => {
         <main className="flex-1 p-4 md:p-6 w-full overflow-x-hidden">
           <div className="max-w-7xl mx-auto">
             {user?.currentRole === 'professional' && <ProfessionalOnboardingBanner />}
+            {user?.currentRole === 'professional' &&
+              user?.professionalType === 'agenda_only' && (
+                <AgendaOnlyConvenioCta variant="banner" />
+              )}
             <Outlet />
           </div>
         </main>
