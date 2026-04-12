@@ -23,7 +23,9 @@ export const authenticate = async (req, res, next) => {
     }
 
     const result = await pool.query(
-      'SELECT id, name, cpf, roles, professional_type FROM users WHERE id = $1',
+      `SELECT id, name, cpf, roles, professional_type,
+              primary_specialty_code, onboarding_status
+       FROM users WHERE id = $1`,
       [decoded.id]
     );
 
@@ -33,13 +35,24 @@ export const authenticate = async (req, res, next) => {
 
     const user = result.rows[0];
 
+    const roles = user.roles || [];
+    const isProfessional = roles.includes("professional");
+    const hasSpecialty = Boolean(user.primary_specialty_code);
+    const onboardingResolved = !isProfessional
+      ? null
+      : hasSpecialty
+        ? "completed"
+        : "pending";
+
     req.user = {
       id: user.id,
       name: user.name,
       cpf: user.cpf,
-      roles: user.roles || [],
+      roles,
       currentRole: decoded.currentRole || (user.roles && user.roles[0]),
       professional_type: normalizeProfessionalType(user.professional_type),
+      primary_specialty_code: user.primary_specialty_code || null,
+      onboarding_status: onboardingResolved,
     };
 
     next();

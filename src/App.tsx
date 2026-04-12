@@ -24,6 +24,7 @@ import MedicalRecordsPage from "./pages/professional/MedicalRecordsPage";
 import DocumentsPage from "./pages/professional/DocumentsPage";
 import ProfessionalReportsPage from "./pages/professional/ProfessionalReportsPage";
 import ProfessionalProfilePage from "./pages/professional/ProfessionalProfilePage";
+import ProfessionalOnboardingPage from "./pages/professional/ProfessionalOnboardingPage";
 import AdminHomePage from "./pages/admin/AdminHomePage";
 import ManageUsersPage from "./pages/admin/ManageUsersPage";
 import ManageServicesPage from "./pages/admin/ManageServicesPage";
@@ -141,6 +142,7 @@ function App() {
         <Route path="/professional/services" element={<ManageServicesPage />} />
         <Route path="/professional/reports" element={<ProfessionalReportsPage />} />
         <Route path="/professional/profile" element={<ProfessionalProfilePage />} />
+        <Route path="/professional/onboarding" element={<ProfessionalOnboardingPage />} />
         {/* Rota de registrar consulta removida do painel profissional */}
       </Route>
 

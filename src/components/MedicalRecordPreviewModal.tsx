@@ -28,6 +28,8 @@ type RecordData = {
   vital_signs?: Record<string, unknown>;
   created_at: string;
   pdf_url?: string | null;
+  specialty_code?: string | null;
+  specialty_fields?: Record<string, unknown> | null;
 };
 
 type MedicalRecordPreviewModalProps = {
@@ -146,6 +148,29 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
       )
       .join("");
 
+    const sf = recordData.specialty_fields;
+    let specialtyFieldsHTML = "";
+    if (sf && typeof sf === "object" && !Array.isArray(sf)) {
+      const rows = Object.entries(sf).filter(
+        ([, v]) =>
+          v !== null &&
+          v !== undefined &&
+          String(v).trim() !== ""
+      );
+      if (rows.length > 0) {
+        specialtyFieldsHTML = `
+          <div class="section">
+            <h3>Campos específicos da área</h3>
+            ${rows
+              .map(
+                ([k, v]) =>
+                  `<p><strong>${k}:</strong> ${String(v)}</p>`
+              )
+              .join("")}
+          </div>`;
+      }
+    }
+
     return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -207,8 +232,9 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
     </div>
     ${vitalSignsHTML}
     ${medicalSectionsHTML}
+    ${specialtyFieldsHTML}
     ${
-      medicalSections.length === 0
+      medicalSections.length === 0 && !specialtyFieldsHTML
         ? `<div class="section"><p><em>Prontuário médico sem informações clínicas detalhadas registradas.</em></p></div>`
         : ""
     }

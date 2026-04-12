@@ -2,9 +2,12 @@ import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
+import ProfessionalOnboardingBanner from '../components/ProfessionalOnboardingBanner';
+import { useAuth } from '../contexts/AuthContext';
 import { Menu } from 'lucide-react';
 
 const MainLayout: React.FC = () => {
+  const { user } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
@@ -33,6 +36,7 @@ const MainLayout: React.FC = () => {
         {/* Main content */}
         <main className="flex-1 p-4 md:p-6 w-full overflow-x-hidden">
           <div className="max-w-7xl mx-auto">
+            {user?.currentRole === 'professional' && <ProfessionalOnboardingBanner />}
             <Outlet />
           </div>
         </main>

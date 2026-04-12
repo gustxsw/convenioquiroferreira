@@ -2,6 +2,7 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Home, Users, FileText, BarChart2, Calendar, UserPlus, CalendarDays, UserCheck, Stethoscope, FileImage, Settings, Clock, DollarSign, Ticket } from 'lucide-react';
+import { getSpecialtyLabelPt } from '../config/specialtyTemplates';
 
 type SidebarProps = {
   onItemClick?: () => void;
@@ -55,6 +56,21 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
   return (
     <aside className="h-full">
       <div className="p-4">
+        {user?.currentRole === 'professional' &&
+          user.primarySpecialtyCode &&
+          user.onboardingStatus === 'completed' && (
+            <div className="mb-4 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-900">
+              <span className="font-medium text-red-800">Perfil ativo: </span>
+              {getSpecialtyLabelPt(user.primarySpecialtyCode)}
+              <NavLink
+                to="/professional/profile"
+                className="mt-1 block text-red-600 hover:underline"
+                onClick={onItemClick}
+              >
+                Alterar em Perfil
+              </NavLink>
+            </div>
+          )}
         <div className="pt-4">
           {navLinks.map((link) => (
             <NavLink

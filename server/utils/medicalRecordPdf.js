@@ -39,9 +39,23 @@ export function buildMedicalRecordPdfPayload(record, professional) {
     .map(([label, value]) => `${label}: ${value}`)
     .join("\n");
 
+  let specialtyBlock = "";
+  const sf = record.specialty_fields;
+  if (sf && typeof sf === "object" && !Array.isArray(sf)) {
+    const lines = Object.entries(sf)
+      .filter(
+        ([, v]) => v !== null && v !== undefined && String(v).trim() !== ""
+      )
+      .map(([k, v]) => `${k}: ${v}`);
+    if (lines.length) {
+      specialtyBlock = `Campos específicos da área\n${lines.join("\n")}`;
+    }
+  }
+
   const fullContent = [
     vitalSignsText ? `Sinais Vitais\n${vitalSignsText}` : "",
     medicalSections,
+    specialtyBlock,
   ]
     .filter(Boolean)
     .join("\n\n");

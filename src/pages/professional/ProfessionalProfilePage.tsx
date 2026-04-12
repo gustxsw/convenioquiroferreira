@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import {
   User,
@@ -21,6 +22,11 @@ import {
   SIGNATURE_PREVIEW_MAX_WIDTH_CLASS,
 } from "../../constants/signatureDisplay";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
+import {
+  SPECIALTY_CODES,
+  getSpecialtyLabelPt,
+  type SpecialtyCode,
+} from "../../config/specialtyTemplates";
 
 type AttendanceLocation = {
   id: number;
@@ -37,7 +43,7 @@ type AttendanceLocation = {
 };
 
 const ProfessionalProfilePage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, refreshSession } = useAuth();
   const [profileTab, setProfileTab] = useState<"dados" | "convenio">("dados");
   const [locations, setLocations] = useState<AttendanceLocation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -91,6 +97,10 @@ const ProfessionalProfilePage: React.FC = () => {
     is_default: false,
   });
 
+  const [specialtyDraft, setSpecialtyDraft] = useState<SpecialtyCode | "">("");
+  const [specialtySaving, setSpecialtySaving] = useState(false);
+  const [specialtyFeaturesOn, setSpecialtyFeaturesOn] = useState(true);
+
   // Password visibility
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -108,6 +118,66 @@ const ProfessionalProfilePage: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    const code = user?.primarySpecialtyCode;
+    if (code && SPECIALTY_CODES.includes(code as SpecialtyCode)) {
+      setSpecialtyDraft(code as SpecialtyCode);
+    } else {
+      setSpecialtyDraft("");
+    }
+  }, [user?.primarySpecialtyCode]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetchWithAuth(
+          `${getApiUrl()}/api/professional/features`
+        );
+        if (res.ok) {
+          const d = await res.json();
+          setSpecialtyFeaturesOn(d.specialtyMedicalRecords !== false);
+        }
+      } catch {
+        setSpecialtyFeaturesOn(true);
+      }
+    })();
+  }, []);
+
+  const saveSpecialty = async () => {
+    if (!specialtyDraft) {
+      setError("Selecione uma especialidade.");
+      return;
+    }
+    setError("");
+    setSuccess("");
+    setSpecialtySaving(true);
+    try {
+      const res = await fetchWithAuth(
+        `${getApiUrl()}/api/professional/profile/specialty`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ primary_specialty_code: specialtyDraft }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message || "Erro ao atualizar especialidade");
+      }
+      setSuccess(
+        data.message ||
+          "Especialidade atualizada. Novos prontuários usarão este perfil."
+      );
+      await refreshSession();
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Erro ao atualizar especialidade"
+      );
+    } finally {
+      setSpecialtySaving(false);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -415,6 +485,67 @@ const ProfessionalProfilePage: React.FC = () => {
       {success && (
         <div className="bg-green-50 text-green-600 p-4 rounded-lg mb-6">
           {success}
+        </div>
+      )}
+
+      {showDadosSection && specialtyFeaturesOn && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6 max-w-3xl">
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">
+            Área de atuação (prontuários)
+          </h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Define os campos do modelo de prontuário para{" "}
+            <strong>novos</strong> registros. Prontuários já existentes não são
+            alterados.
+          </p>
+          {!user?.primarySpecialtyCode ? (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-900">
+              <p className="mb-2">
+                Você ainda não definiu sua especialidade. Sem isso, não é
+                possível criar novos prontuários no modelo específico.
+              </p>
+              <Link
+                to="/professional/onboarding"
+                className="font-medium text-red-700 hover:underline"
+              >
+                Completar cadastro de especialidade
+              </Link>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Especialidade principal
+                </label>
+                <select
+                  value={specialtyDraft}
+                  onChange={(e) =>
+                    setSpecialtyDraft(e.target.value as SpecialtyCode | "")
+                  }
+                  className="input w-full"
+                >
+                  <option value="">Selecione…</option>
+                  {SPECIALTY_CODES.map((c) => (
+                    <option key={c} value={c}>
+                      {getSpecialtyLabelPt(c)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={() => void saveSpecialty()}
+                disabled={
+                  specialtySaving ||
+                  !specialtyDraft ||
+                  specialtyDraft === user.primarySpecialtyCode
+                }
+                className="btn btn-primary px-6 disabled:opacity-50"
+              >
+                {specialtySaving ? "Salvando…" : "Salvar especialidade"}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

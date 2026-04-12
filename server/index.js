@@ -43,6 +43,10 @@ import {
   respondAgendaOnlyConvenioForbidden,
   isConvenioMedicalRecordRow,
 } from "./middleware/professionalConvenioAccess.js";
+import {
+  isValidSpecialtyCode,
+  sanitizeSpecialtyFields,
+} from "./config/specialtyAllowlists.js";
 
 // ES6 module compatibility
 const __filename = fileURLToPath(import.meta.url);
@@ -663,7 +667,50 @@ const initializeDatabase = async () => {
         ) THEN
           ALTER TABLE medical_records ADD COLUMN pdf_generated_at TIMESTAMP;
         END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'medical_records' AND column_name = 'specialty_code'
+        ) THEN
+          ALTER TABLE medical_records ADD COLUMN specialty_code VARCHAR(50);
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'medical_records' AND column_name = 'specialty_fields'
+        ) THEN
+          ALTER TABLE medical_records ADD COLUMN specialty_fields JSONB;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'primary_specialty_code'
+        ) THEN
+          ALTER TABLE users ADD COLUMN primary_specialty_code VARCHAR(50);
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'onboarding_status'
+        ) THEN
+          ALTER TABLE users ADD COLUMN onboarding_status VARCHAR(20);
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'onboarding_completed_at'
+        ) THEN
+          ALTER TABLE users ADD COLUMN onboarding_completed_at TIMESTAMPTZ;
+        END IF;
       END $$;
+    `);
+
+    await pool.query(`
+      UPDATE users
+      SET onboarding_status = 'pending'
+      WHERE 'professional' = ANY(roles)
+        AND onboarding_status IS NULL
+        AND primary_specialty_code IS NULL
     `);
 
     // Scheduling access table
@@ -814,6 +861,9 @@ const initializeDatabase = async () => {
       CREATE INDEX IF NOT EXISTS idx_medical_documents_patient_cpf ON medical_documents(patient_cpf);
       CREATE INDEX IF NOT EXISTS idx_medical_records_patient_name ON medical_records(patient_name);
       CREATE INDEX IF NOT EXISTS idx_medical_records_patient_cpf ON medical_records(patient_cpf);
+      CREATE INDEX IF NOT EXISTS idx_medical_records_specialty_code ON medical_records(specialty_code);
+      CREATE INDEX IF NOT EXISTS idx_users_professional_onboarding ON users(onboarding_status)
+        WHERE 'professional' = ANY(roles);
     `);
 
     // Insert default service categories if they don't exist
@@ -1230,6 +1280,18 @@ const initializeDatabase = async () => {
   }
 };
 
+function buildProfessionalSpecialtyPayload(userRow) {
+  const roles = userRow.roles || [];
+  if (!roles.includes("professional")) {
+    return { primarySpecialtyCode: null, onboardingStatus: null };
+  }
+  const code = userRow.primary_specialty_code || null;
+  return {
+    primarySpecialtyCode: code,
+    onboardingStatus: code ? "completed" : "pending",
+  };
+}
+
 // Utility functions
 const generateToken = (user) => {
   return jwt.sign(
@@ -1514,13 +1576,17 @@ app.post("/api/auth/register", async (req, res) => {
     }
 
     // Create user
+    const onboardingStatusForInsert =
+      roleToRegister === "professional" ? "pending" : null;
+
     const userResult = await pool.query(
       `
       INSERT INTO users (
         name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, password, roles,
-        affiliate_code, referred_by_affiliate_id, professional_registration_number, professional_type
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        affiliate_code, referred_by_affiliate_id, professional_registration_number, professional_type,
+        onboarding_status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING id, name, cpf, email, roles, subscription_status
     `,
       [
@@ -1541,6 +1607,7 @@ app.post("/api/auth/register", async (req, res) => {
         referredByAffiliateId,
         professionalRegistrationNumber,
         professionalTypeToRegister,
+        onboardingStatusForInsert,
       ]
     );
 
@@ -1891,7 +1958,8 @@ app.get("/api/auth/me", authenticate, async (req, res) => {
     console.log("🔄 Session validation for user:", req.user.id);
 
     const userResult = await pool.query(
-      `SELECT id, name, cpf, email, roles, subscription_status, subscription_expiry, professional_type
+      `SELECT id, name, cpf, email, roles, subscription_status, subscription_expiry, professional_type,
+              primary_specialty_code, onboarding_status, onboarding_completed_at
        FROM users
        WHERE id = $1`,
       [req.user.id]
@@ -1902,6 +1970,7 @@ app.get("/api/auth/me", authenticate, async (req, res) => {
     }
 
     const user = userResult.rows[0];
+    const specialtyPayload = buildProfessionalSpecialtyPayload(user);
 
     const userData = {
       id: user.id,
@@ -1913,6 +1982,8 @@ app.get("/api/auth/me", authenticate, async (req, res) => {
       subscriptionStatus: user.subscription_status,
       subscriptionExpiry: user.subscription_expiry,
       professionalType: normalizeProfessionalType(user.professional_type),
+      primarySpecialtyCode: specialtyPayload.primarySpecialtyCode,
+      onboardingStatus: specialtyPayload.onboardingStatus,
     };
 
     console.log(
@@ -1944,7 +2015,8 @@ app.post("/api/auth/select-role", async (req, res) => {
     // Get user data
     const userResult = await pool.query(
       `
-      SELECT id, name, roles, subscription_status, subscription_expiry, professional_type
+      SELECT id, name, roles, subscription_status, subscription_expiry, professional_type,
+             primary_specialty_code, onboarding_status
       FROM users 
       WHERE id = $1
     `,
@@ -1964,6 +2036,8 @@ app.post("/api/auth/select-role", async (req, res) => {
         .json({ message: "Role não autorizada para este usuário" });
     }
 
+    const specialtyPayload = buildProfessionalSpecialtyPayload(user);
+
     // Generate tokens with selected role
     const userData = {
       id: user.id,
@@ -1973,6 +2047,8 @@ app.post("/api/auth/select-role", async (req, res) => {
       subscription_status: user.subscription_status,
       subscription_expiry: user.subscription_expiry,
       professionalType: normalizeProfessionalType(user.professional_type),
+      primarySpecialtyCode: specialtyPayload.primarySpecialtyCode,
+      onboardingStatus: specialtyPayload.onboardingStatus,
     };
 
     const accessToken = generateAccessToken(userData);
@@ -2038,13 +2114,20 @@ app.post(
 
       console.log("✅ Role switched successfully to:", role);
 
-      const { professional_type, ...rest } = userData;
+      const {
+        professional_type,
+        primary_specialty_code,
+        onboarding_status,
+        ...rest
+      } = userData;
       res.json({
         message: "Role alterada com sucesso",
         token,
         user: {
           ...rest,
           professionalType: normalizeProfessionalType(professional_type),
+          primarySpecialtyCode: primary_specialty_code || null,
+          onboardingStatus: onboarding_status ?? null,
         },
       });
     } catch (error) {
@@ -2099,7 +2182,8 @@ app.post("/api/auth/refresh", async (req, res) => {
     }
 
     const userResult = await pool.query(
-      `SELECT id, name, roles, subscription_status, subscription_expiry, professional_type
+      `SELECT id, name, roles, subscription_status, subscription_expiry, professional_type,
+              primary_specialty_code, onboarding_status
        FROM users WHERE id = $1`,
       [matchedToken.user_id]
     );
@@ -2120,6 +2204,8 @@ app.post("/api/auth/refresh", async (req, res) => {
         ? currentRoleResult.rows[0].current_role
         : user.roles[0];
 
+    const specialtyPayload = buildProfessionalSpecialtyPayload(user);
+
     const userData = {
       id: user.id,
       name: user.name,
@@ -2128,6 +2214,8 @@ app.post("/api/auth/refresh", async (req, res) => {
       subscription_status: user.subscription_status,
       subscription_expiry: user.subscription_expiry,
       professionalType: normalizeProfessionalType(user.professional_type),
+      primarySpecialtyCode: specialtyPayload.primarySpecialtyCode,
+      onboardingStatus: specialtyPayload.onboardingStatus,
     };
 
     const newAccessToken = generateAccessToken(userData);
@@ -5728,6 +5816,9 @@ app.get("/api/professionals/:id/signature", authenticate, async (req, res) => {
   }
 });
 
+const specialtyFeaturesEnabled =
+  String(process.env.DISABLE_SPECIALTY_FEATURES || "").trim() !== "1";
+
 app.get(
   "/api/professional/features",
   authenticate,
@@ -5738,7 +5829,98 @@ app.get(
       documentServiceConfigured: !!(
         process.env.DOCUMENT_SERVICE_URL || ""
       ).trim(),
+      specialtyOnboarding: specialtyFeaturesEnabled,
+      specialtyMedicalRecords: specialtyFeaturesEnabled,
     });
+  }
+);
+
+app.post(
+  "/api/professional/onboarding/complete",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      if (!specialtyFeaturesEnabled) {
+        return res.status(503).json({ message: "Recurso temporariamente indisponível" });
+      }
+      const { primary_specialty_code, confirmProfessionalCapacity } = req.body || {};
+      if (!confirmProfessionalCapacity) {
+        return res.status(400).json({
+          message:
+            "Confirme que atua nesta área como profissional habilitado.",
+        });
+      }
+      if (!isValidSpecialtyCode(primary_specialty_code)) {
+        return res.status(400).json({ message: "Especialidade inválida." });
+      }
+
+      const upd = await pool.query(
+        `UPDATE users SET
+           primary_specialty_code = $1,
+           onboarding_status = 'completed',
+           onboarding_completed_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2
+         RETURNING id, primary_specialty_code, onboarding_status`,
+        [primary_specialty_code, req.user.id]
+      );
+
+      if (upd.rows.length === 0) {
+        return res.status(404).json({ message: "Usuário não encontrado" });
+      }
+
+      const row = upd.rows[0];
+      res.json({
+        message: "Perfil profissional definido com sucesso",
+        primarySpecialtyCode: row.primary_specialty_code,
+        onboardingStatus: row.primary_specialty_code ? "completed" : "pending",
+      });
+    } catch (error) {
+      console.error("❌ onboarding/complete error:", error);
+      res.status(500).json({ message: "Erro ao salvar perfil" });
+    }
+  }
+);
+
+app.patch(
+  "/api/professional/profile/specialty",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      if (!specialtyFeaturesEnabled) {
+        return res.status(503).json({ message: "Recurso temporariamente indisponível" });
+      }
+      const { primary_specialty_code } = req.body || {};
+      if (!isValidSpecialtyCode(primary_specialty_code)) {
+        return res.status(400).json({ message: "Especialidade inválida." });
+      }
+
+      const upd = await pool.query(
+        `UPDATE users SET
+           primary_specialty_code = $1,
+           onboarding_status = 'completed',
+           onboarding_completed_at = COALESCE(onboarding_completed_at, CURRENT_TIMESTAMP),
+           updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2
+         RETURNING id, primary_specialty_code`,
+        [primary_specialty_code, req.user.id]
+      );
+
+      if (upd.rows.length === 0) {
+        return res.status(404).json({ message: "Usuário não encontrado" });
+      }
+
+      res.json({
+        message: "Especialidade atualizada. Novos prontuários usarão este perfil.",
+        primarySpecialtyCode: upd.rows[0].primary_specialty_code,
+        onboardingStatus: "completed",
+      });
+    } catch (error) {
+      console.error("❌ profile/specialty error:", error);
+      res.status(500).json({ message: "Erro ao atualizar especialidade" });
+    }
   }
 );
 
@@ -6422,7 +6604,16 @@ app.post(
         treatment_plan,
         notes,
         vital_signs,
+        specialty_fields: specialtyFieldsBody,
       } = req.body;
+
+      if (specialtyFeaturesEnabled && !req.user.primary_specialty_code) {
+        return res.status(400).json({
+          message:
+            "Conclua a definição da sua especialidade para criar prontuários. Use o aviso no topo da página ou o menu Definir especialidade.",
+          code: "SPECIALTY_REQUIRED",
+        });
+      }
 
       if (isAgendaOnlyProfessional(req) && patient_type !== "private") {
         return respondAgendaOnlyConvenioForbidden(res);
@@ -6454,14 +6645,22 @@ app.post(
         }
       }
 
+      const specCode = specialtyFeaturesEnabled
+        ? req.user.primary_specialty_code
+        : null;
+      const specialty_fields_clean = specialtyFeaturesEnabled && specCode
+        ? sanitizeSpecialtyFields(specCode, specialtyFieldsBody)
+        : null;
+
       const recordResult = await pool.query(
         `
       INSERT INTO medical_records (
         professional_id, private_patient_id, patient_name, patient_cpf, patient_type,
         chief_complaint, history_present_illness, past_medical_history, medications, 
-        allergies, physical_examination, diagnosis, treatment_plan, notes, vital_signs
+        allergies, physical_examination, diagnosis, treatment_plan, notes, vital_signs,
+        specialty_code, specialty_fields
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *
     `,
         [
@@ -6480,6 +6679,10 @@ app.post(
           treatment_plan?.trim() || null,
           notes?.trim() || null,
           vital_signs ? JSON.stringify(vital_signs) : null,
+          specCode,
+          specialty_fields_clean && Object.keys(specialty_fields_clean).length > 0
+            ? JSON.stringify(specialty_fields_clean)
+            : null,
         ]
       );
 
@@ -6530,6 +6733,7 @@ app.put(
         treatment_plan,
         notes,
         vital_signs,
+        specialty_fields: specialtyFieldsBody,
       } = req.body;
 
       // Get current record data
@@ -6559,6 +6763,25 @@ app.put(
         return respondAgendaOnlyConvenioForbidden(res);
       }
 
+      const currentRow = currentRecordResult.rows[0];
+      let nextSpecialtyFields = currentRow.specialty_fields;
+      if (specialtyFeaturesEnabled && currentRow.specialty_code) {
+        if (specialtyFieldsBody !== undefined) {
+          nextSpecialtyFields = sanitizeSpecialtyFields(
+            currentRow.specialty_code,
+            specialtyFieldsBody
+          );
+        }
+      }
+      const specialtyFieldsParam =
+        !specialtyFeaturesEnabled || !currentRow.specialty_code
+          ? currentRow.specialty_fields
+          : nextSpecialtyFields == null
+            ? null
+            : typeof nextSpecialtyFields === "object"
+              ? JSON.stringify(nextSpecialtyFields)
+              : nextSpecialtyFields;
+
       const updatedRecordResult = await pool.query(
         `
       UPDATE medical_records 
@@ -6577,8 +6800,9 @@ app.put(
         treatment_plan = $12, 
         notes = $13, 
         vital_signs = $14,
+        specialty_fields = $15,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $15 AND professional_id = $16
+      WHERE id = $16 AND professional_id = $17
       RETURNING *
     `,
         [
@@ -6596,6 +6820,7 @@ app.put(
           treatment_plan?.trim() || null,
           notes?.trim() || null,
           vital_signs ? JSON.stringify(vital_signs) : null,
+          specialtyFieldsParam,
           id,
           req.user.id,
         ]

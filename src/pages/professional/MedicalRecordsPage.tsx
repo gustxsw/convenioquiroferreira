@@ -1,6 +1,12 @@
 import type React from "react";
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import {
+  getSpecialtyTemplate,
+  getSpecialtyLabelPt,
+  type SpecialtyFieldDef,
+} from "../../config/specialtyTemplates";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 import MedicalRecordPreviewModal from "../../components/MedicalRecordPreviewModal";
 import {
@@ -37,6 +43,8 @@ type MedicalRecord = {
   updated_at: string;
   pdf_url?: string | null;
   pdf_generated_at?: string | null;
+  specialty_code?: string | null;
+  specialty_fields?: Record<string, unknown> | null;
 };
 
 type PrivatePatient = {
@@ -45,8 +53,37 @@ type PrivatePatient = {
   cpf: string;
 };
 
+function buildEmptySpecialtyState(
+  template: ReturnType<typeof getSpecialtyTemplate>
+): Record<string, string> {
+  const o: Record<string, string> = {};
+  if (!template) return o;
+  for (const sec of template.sections) {
+    for (const f of sec.fields) {
+      if (f.storage === "specialty") o[f.key] = "";
+    }
+  }
+  return o;
+}
+
+function loadSpecialtyStateFromRecord(record: MedicalRecord): Record<string, string> {
+  const t = getSpecialtyTemplate(record.specialty_code);
+  const base = buildEmptySpecialtyState(t);
+  const raw = record.specialty_fields;
+  const obj =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+  for (const k of Object.keys(base)) {
+    const v = obj[k];
+    base[k] = v != null && String(v).trim() !== "" ? String(v) : "";
+  }
+  return base;
+}
+
 const MedicalRecordsPage: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [records, setRecords] = useState<MedicalRecord[]>([]);
   const [patients, setPatients] = useState<PrivatePatient[]>([]);
   const [filteredRecords, setFilteredRecords] = useState<MedicalRecord[]>([]);
@@ -116,9 +153,14 @@ const MedicalRecordsPage: React.FC = () => {
   const [previewRecord, setPreviewRecord] = useState<MedicalRecord | null>(
     null
   );
+  const [specialtyFormData, setSpecialtyFormData] = useState<
+    Record<string, string>
+  >({});
+
   const [features, setFeatures] = useState<{
     whatsappBusinessDocumentSend: boolean;
     documentServiceConfigured: boolean;
+    specialtyMedicalRecords?: boolean;
   } | null>(null);
   const [professionalData, setProfessionalData] = useState({
     name: "",
@@ -153,10 +195,12 @@ const MedicalRecordsPage: React.FC = () => {
           record.patient_name
             .toLowerCase()
             .includes(searchTerm.toLowerCase()) ||
-          record.chief_complaint
+          (record.chief_complaint || "")
             .toLowerCase()
             .includes(searchTerm.toLowerCase()) ||
-          record.diagnosis.toLowerCase().includes(searchTerm.toLowerCase())
+          (record.diagnosis || "")
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase())
       );
     }
 
@@ -342,8 +386,16 @@ const MedicalRecordsPage: React.FC = () => {
     }
   };
 
+  const specialtyFeaturesOn = features?.specialtyMedicalRecords !== false;
+
   const openCreateModal = () => {
+    if (specialtyFeaturesOn && !user?.primarySpecialtyCode) {
+      navigate("/professional/onboarding");
+      return;
+    }
     setModalMode("create");
+    const tmpl = getSpecialtyTemplate(user?.primarySpecialtyCode ?? null);
+    setSpecialtyFormData(buildEmptySpecialtyState(tmpl));
     setFormData({
       patient_type: "private",
       client_cpf: "",
@@ -381,6 +433,10 @@ const MedicalRecordsPage: React.FC = () => {
 
     const matchingPatient = patients.find(
       (p) => p.name === record.patient_name || p.cpf === record.patient_cpf
+    );
+
+    setSpecialtyFormData(
+      record.specialty_code ? loadSpecialtyStateFromRecord(record) : {}
     );
 
     setFormData({
@@ -590,12 +646,45 @@ const MedicalRecordsPage: React.FC = () => {
       }
 
       // Add patient info to form data
-      const submitData = {
+      const submitData: Record<string, unknown> = {
         ...formData,
         patient_type: formData.patient_type,
         patient_name: patientName,
         patient_cpf: patientCpf,
       };
+
+      const activeCode =
+        modalMode === "edit" && selectedRecord?.specialty_code
+          ? selectedRecord.specialty_code
+          : user?.primarySpecialtyCode ?? null;
+      const tmpl = activeCode ? getSpecialtyTemplate(activeCode) : null;
+      const useSpecUi =
+        specialtyFeaturesOn &&
+        !!tmpl &&
+        (modalMode === "create" ||
+          Boolean(selectedRecord?.specialty_code));
+
+      if (useSpecUi && tmpl) {
+        const specialty_fields: Record<string, string | number> = {};
+        for (const sec of tmpl.sections) {
+          for (const f of sec.fields) {
+            if (f.storage !== "specialty") continue;
+            const raw = (specialtyFormData[f.key] || "").trim();
+            if (!raw) continue;
+            if (f.type === "number") {
+              const n = Number(raw);
+              if (!Number.isNaN(n)) {
+                if (f.min !== undefined && n < f.min) continue;
+                if (f.max !== undefined && n > f.max) continue;
+                specialty_fields[f.key] = n;
+              }
+            } else {
+              specialty_fields[f.key] = raw;
+            }
+          }
+        }
+        submitData.specialty_fields = specialty_fields;
+      }
 
       console.log("🔄 Medical record submit data:", submitData);
       const url =
@@ -914,6 +1003,108 @@ const MedicalRecordsPage: React.FC = () => {
     });
   };
 
+  const activeTemplateCode =
+    modalMode === "edit" && selectedRecord?.specialty_code
+      ? selectedRecord.specialty_code
+      : user?.primarySpecialtyCode ?? null;
+  const modalSpecialtyTemplate = getSpecialtyTemplate(activeTemplateCode);
+  const useSpecialtyUi =
+    isModalOpen &&
+    specialtyFeaturesOn &&
+    !!modalSpecialtyTemplate &&
+    (modalMode === "create" || Boolean(selectedRecord?.specialty_code));
+
+  const renderTemplateField = (field: SpecialtyFieldDef) => {
+    const key = `tf-${field.storage}-${field.key}`;
+    if (field.storage === "legacy") {
+      const strKey = field.key;
+      if (strKey.startsWith("vital_signs.")) return null;
+      const value = String(
+        (formData as Record<string, unknown>)[strKey] ?? ""
+      );
+      if (field.type === "textarea") {
+        return (
+          <div key={key}>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {field.label}
+            </label>
+            <textarea
+              name={strKey}
+              value={value}
+              onChange={handleInputChange}
+              className="input min-h-[100px]"
+              rows={4}
+            />
+          </div>
+        );
+      }
+      return (
+        <div key={key}>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            {field.label}
+          </label>
+          <input
+            type="text"
+            name={strKey}
+            value={value}
+            onChange={handleInputChange}
+            className="input"
+          />
+        </div>
+      );
+    }
+
+    const value = specialtyFormData[field.key] ?? "";
+    const setSpec = (v: string) =>
+      setSpecialtyFormData((prev) => ({ ...prev, [field.key]: v }));
+
+    if (field.type === "number") {
+      return (
+        <div key={key}>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            {field.label}
+          </label>
+          <input
+            type="number"
+            min={field.min}
+            max={field.max}
+            value={value}
+            onChange={(e) => setSpec(e.target.value)}
+            className="input"
+          />
+        </div>
+      );
+    }
+    if (field.type === "textarea") {
+      return (
+        <div key={key}>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            {field.label}
+          </label>
+          <textarea
+            value={value}
+            onChange={(e) => setSpec(e.target.value)}
+            className="input min-h-[100px]"
+            rows={4}
+          />
+        </div>
+      );
+    }
+    return (
+      <div key={key}>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          {field.label}
+        </label>
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setSpec(e.target.value)}
+          className="input"
+        />
+      </div>
+    );
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -1038,6 +1229,17 @@ const MedicalRecordsPage: React.FC = () => {
                         <div className="ml-4">
                           <div className="text-sm font-medium text-gray-900">
                             {record.patient_name}
+                          </div>
+                          <div className="text-xs mt-0.5">
+                            {record.specialty_code ? (
+                              <span className="text-red-700">
+                                {getSpecialtyLabelPt(record.specialty_code)}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">
+                                Prontuário (modelo anterior)
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1421,125 +1623,141 @@ const MedicalRecordsPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Medical Information */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Queixa Principal
-                    </label>
-                    <textarea
-                      name="chief_complaint"
-                      value={formData.chief_complaint}
-                      onChange={handleInputChange}
-                      className="input min-h-[100px]"
-                      rows={4}
-                    />
-                  </div>
+                {useSpecialtyUi && modalSpecialtyTemplate ? (
+                  <>
+                    {modalSpecialtyTemplate.sections.map((section) => (
+                      <div key={section.id}>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                          {section.title}
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                          {section.fields.map((f) => renderTemplateField(f))}
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Queixa Principal
+                        </label>
+                        <textarea
+                          name="chief_complaint"
+                          value={formData.chief_complaint}
+                          onChange={handleInputChange}
+                          className="input min-h-[100px]"
+                          rows={4}
+                        />
+                      </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      História da Doença Atual
-                    </label>
-                    <textarea
-                      name="history_present_illness"
-                      value={formData.history_present_illness}
-                      onChange={handleInputChange}
-                      className="input min-h-[100px]"
-                      rows={4}
-                    />
-                  </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          História da Doença Atual
+                        </label>
+                        <textarea
+                          name="history_present_illness"
+                          value={formData.history_present_illness}
+                          onChange={handleInputChange}
+                          className="input min-h-[100px]"
+                          rows={4}
+                        />
+                      </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      História Médica Pregressa
-                    </label>
-                    <textarea
-                      name="past_medical_history"
-                      value={formData.past_medical_history}
-                      onChange={handleInputChange}
-                      className="input min-h-[100px]"
-                      rows={4}
-                    />
-                  </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          História Médica Pregressa
+                        </label>
+                        <textarea
+                          name="past_medical_history"
+                          value={formData.past_medical_history}
+                          onChange={handleInputChange}
+                          className="input min-h-[100px]"
+                          rows={4}
+                        />
+                      </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Medicamentos em Uso
-                    </label>
-                    <textarea
-                      name="medications"
-                      value={formData.medications}
-                      onChange={handleInputChange}
-                      className="input min-h-[100px]"
-                      rows={4}
-                    />
-                  </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Medicamentos em Uso
+                        </label>
+                        <textarea
+                          name="medications"
+                          value={formData.medications}
+                          onChange={handleInputChange}
+                          className="input min-h-[100px]"
+                          rows={4}
+                        />
+                      </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Alergias
-                    </label>
-                    <textarea
-                      name="allergies"
-                      value={formData.allergies}
-                      onChange={handleInputChange}
-                      className="input min-h-[100px]"
-                      rows={4}
-                    />
-                  </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Alergias
+                        </label>
+                        <textarea
+                          name="allergies"
+                          value={formData.allergies}
+                          onChange={handleInputChange}
+                          className="input min-h-[100px]"
+                          rows={4}
+                        />
+                      </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Exame Físico
-                    </label>
-                    <textarea
-                      name="physical_examination"
-                      value={formData.physical_examination}
-                      onChange={handleInputChange}
-                      className="input min-h-[100px]"
-                      rows={4}
-                    />
-                  </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Exame Físico
+                        </label>
+                        <textarea
+                          name="physical_examination"
+                          value={formData.physical_examination}
+                          onChange={handleInputChange}
+                          className="input min-h-[100px]"
+                          rows={4}
+                        />
+                      </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Diagnóstico
-                    </label>
-                    <textarea
-                      name="diagnosis"
-                      value={formData.diagnosis}
-                      onChange={handleInputChange}
-                      className="input min-h-[100px]"
-                      rows={4}
-                    />
-                  </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Diagnóstico
+                        </label>
+                        <textarea
+                          name="diagnosis"
+                          value={formData.diagnosis}
+                          onChange={handleInputChange}
+                          className="input min-h-[100px]"
+                          rows={4}
+                        />
+                      </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Plano de Tratamento
-                    </label>
-                    <textarea
-                      name="treatment_plan"
-                      value={formData.treatment_plan}
-                      onChange={handleInputChange}
-                      className="input min-h-[100px]"
-                      rows={4}
-                    />
-                  </div>
-                </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Plano de Tratamento
+                        </label>
+                        <textarea
+                          name="treatment_plan"
+                          value={formData.treatment_plan}
+                          onChange={handleInputChange}
+                          className="input min-h-[100px]"
+                          rows={4}
+                        />
+                      </div>
+                    </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Observações Gerais
-                  </label>
-                  <textarea
-                    name="notes"
-                    value={formData.notes}
-                    onChange={handleInputChange}
-                    className="input min-h-[100px]"
-                    rows={4}
-                  />
-                </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Observações Gerais
+                      </label>
+                      <textarea
+                        name="notes"
+                        value={formData.notes}
+                        onChange={handleInputChange}
+                        className="input min-h-[100px]"
+                        rows={4}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="flex justify-end space-x-3 mt-8 pt-6 border-t border-gray-200">

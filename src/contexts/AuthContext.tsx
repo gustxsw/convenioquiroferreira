@@ -12,6 +12,8 @@ type User = {
   currentRole?: string;
   /** Present for users with role professional; set by API */
   professionalType?: ProfessionalType;
+  primarySpecialtyCode?: string | null;
+  onboardingStatus?: "pending" | "completed" | null;
 };
 
 type AuthContextType = {
@@ -24,6 +26,7 @@ type AuthContextType = {
   ) => Promise<{ user: User; needsRoleSelection: boolean }>;
   selectRole: (userId: number, role: string) => Promise<void>;
   switchRole: (role: string) => Promise<void>;
+  refreshSession: () => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -262,6 +265,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  const refreshSession = async () => {
+    const token = localStorage.getItem("token");
+    const refreshToken = localStorage.getItem("refreshToken");
+    if (!token || !refreshToken) return;
+
+    const apiUrl = getApiUrl();
+    let response = await fetch(`${apiUrl}/api/auth/me`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      if (errorData.code === "TOKEN_EXPIRED" && refreshToken) {
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          response = await fetch(`${apiUrl}/api/auth/me`, {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${newToken}`,
+            },
+            credentials: "include",
+          });
+        }
+      }
+    }
+
+    if (response.ok) {
+      const data = await response.json();
+      localStorage.setItem("user", JSON.stringify(data.user));
+      setUser(data.user);
+    }
+  };
+
   const switchRole = async (role: string) => {
     try {
       setIsLoading(true);
@@ -367,6 +409,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     login,
     selectRole,
     switchRole,
+    refreshSession,
     logout,
   };
 
