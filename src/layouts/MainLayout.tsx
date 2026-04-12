@@ -40,7 +40,7 @@ const MainLayout: React.FC = () => {
             {user?.currentRole === 'professional' && <ProfessionalOnboardingBanner />}
             {user?.currentRole === 'professional' &&
               user?.professionalType === 'agenda_only' && (
-                <AgendaOnlyConvenioCta variant="banner" />
+                <AgendaOnlyConvenioCta />
               )}
             <Outlet />
           </div>

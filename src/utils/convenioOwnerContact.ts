@@ -12,10 +12,6 @@ export const CONVENIO_PROMO_SUBTITLE =
 export const CONVENIO_PROMO_CTA_LINE =
   "Quer fazer parte da rede credenciada? Fale com nossa equipe.";
 
-/** Texto mais curto para o card da home (evita repetir o banner inteiro). */
-export const CONVENIO_PROMO_CARD_LINE =
-  "Amplie sua presença na rede credenciada — detalhes no perfil ou pelo WhatsApp.";
-
 export const AGENDA_ONLY_CONVENIO_SNOOZE_KEY =
   "agenda_only_convenio_banner_snooze_until";
 

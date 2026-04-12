@@ -16,7 +16,6 @@ import {
   Search,
 } from "lucide-react";
 import PaymentSection from "./PaymentSection";
-import AgendaOnlyConvenioCta from "../../components/AgendaOnlyConvenioCta";
 import { formatToBrazilDateTime } from "../../utils/dateHelpers";
 
 // Consultations Table Component with Search
@@ -451,8 +450,6 @@ const ProfessionalHomePage: React.FC = () => {
           )}
         </div>
       </div>
-
-      {isAgendaOnly && <AgendaOnlyConvenioCta variant="card" />}
 
       {/* Upload feedback messages */}
       {uploadError && (
