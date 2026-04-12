@@ -11,7 +11,11 @@ import {
   RefreshCw,
   ExternalLink,
 } from "lucide-react";
-import { fetchWithAuth, getApiUrl } from "../utils/apiHelpers";
+import {
+  fetchMedicalRecordPdf,
+  fetchWithAuth,
+  getApiUrl,
+} from "../utils/apiHelpers";
 
 type RecordData = {
   id: number;
@@ -58,6 +62,8 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
   const [success, setSuccess] = useState("");
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  const [pdfViewerUrl, setPdfViewerUrl] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
   useEffect(() => {
@@ -79,6 +85,50 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
       fetchSignature();
     }
   }, [isOpen, user?.id]);
+
+  useEffect(() => {
+    if (!isOpen || !recordData.pdf_url) {
+      setPdfViewerUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setPdfLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setPdfLoading(true);
+    setError("");
+
+    (async () => {
+      const result = await fetchMedicalRecordPdf(recordData.id);
+      if (cancelled) return;
+      if (!result.ok) {
+        setPdfViewerUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return null;
+        });
+        setError(result.message);
+        setPdfLoading(false);
+        return;
+      }
+      const url = URL.createObjectURL(result.blob);
+      setPdfViewerUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return url;
+      });
+      setPdfLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+      setPdfViewerUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setPdfLoading(false);
+    };
+  }, [isOpen, recordData.id, recordData.pdf_url]);
 
   const generateHTML = () => {
     const vitalSigns = recordData.vital_signs || {};
@@ -254,11 +304,17 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
 </html>`;
   };
 
-  const printMedicalRecord = () => {
+  const printMedicalRecord = async () => {
     try {
       setError("");
       if (recordData.pdf_url) {
-        window.open(recordData.pdf_url, "_blank", "noopener,noreferrer");
+        const result = await fetchMedicalRecordPdf(recordData.id);
+        if (!result.ok) {
+          throw new Error(result.message);
+        }
+        const url = URL.createObjectURL(result.blob);
+        window.open(url, "_blank", "noopener,noreferrer");
+        window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
         return;
       }
       const htmlContent = generateHTML();
@@ -377,11 +433,21 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
 
         <div className="flex-1 overflow-hidden p-6 min-h-[50vh]">
           {hasPdf ? (
-            <iframe
-              title="PDF do prontuário"
-              src={recordData.pdf_url!}
-              className="w-full h-full min-h-[60vh] border border-gray-200 rounded-lg"
-            />
+            pdfLoading ? (
+              <div className="flex items-center justify-center min-h-[60vh] text-gray-600 text-sm border border-gray-200 rounded-lg bg-gray-50">
+                Carregando PDF…
+              </div>
+            ) : pdfViewerUrl ? (
+              <iframe
+                title="PDF do prontuário"
+                src={pdfViewerUrl}
+                className="w-full h-full min-h-[60vh] border border-gray-200 rounded-lg"
+              />
+            ) : (
+              <div className="flex items-center justify-center min-h-[60vh] text-gray-500 text-sm border border-dashed border-gray-200 rounded-lg">
+                PDF indisponível para visualização.
+              </div>
+            )
           ) : (
             <iframe
               title="Preview HTML"
@@ -402,23 +468,40 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
           <div className="flex flex-wrap gap-2 justify-end">
             {hasPdf && (
               <>
-                <a
-                  href={recordData.pdf_url!}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-secondary inline-flex items-center"
+                <button
+                  type="button"
+                  disabled={!pdfViewerUrl || pdfLoading}
+                  onClick={() => {
+                    if (!pdfViewerUrl) return;
+                    window.open(
+                      pdfViewerUrl,
+                      "_blank",
+                      "noopener,noreferrer"
+                    );
+                  }}
+                  className="btn btn-secondary inline-flex items-center disabled:opacity-50"
                 >
                   <ExternalLink className="h-4 w-4 mr-2" />
                   Abrir PDF
-                </a>
-                <a
-                  href={recordData.pdf_url!}
-                  download
-                  className="btn btn-secondary inline-flex items-center"
+                </button>
+                <button
+                  type="button"
+                  disabled={!pdfViewerUrl || pdfLoading}
+                  onClick={() => {
+                    if (!pdfViewerUrl) return;
+                    const safeName = `Prontuario_${recordData.patient_name.replace(/[^a-zA-Z0-9\s]/g, "").replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.pdf`;
+                    const a = document.createElement("a");
+                    a.href = pdfViewerUrl;
+                    a.download = safeName;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                  }}
+                  className="btn btn-secondary inline-flex items-center disabled:opacity-50"
                 >
                   <Download className="h-4 w-4 mr-2" />
                   Baixar PDF
-                </a>
+                </button>
               </>
             )}
             {!hasPdf && (
@@ -446,7 +529,7 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
             )}
             <button
               type="button"
-              onClick={printMedicalRecord}
+              onClick={() => void printMedicalRecord()}
               className="btn btn-primary inline-flex items-center"
             >
               <Printer className="h-4 w-4 mr-2" />

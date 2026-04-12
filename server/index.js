@@ -6583,6 +6583,91 @@ app.get(
   }
 );
 
+// GET /api/medical-records/:id/pdf — PDF com autenticação (evita 401 ao abrir link direto sem Bearer)
+app.get(
+  "/api/medical-records/:id/pdf",
+  authenticate,
+  authorize(["professional"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const recordResult = await pool.query(
+        `SELECT pdf_url, private_patient_id, patient_type
+         FROM medical_records
+         WHERE id = $1 AND professional_id = $2`,
+        [id, req.user.id]
+      );
+
+      if (recordResult.rows.length === 0) {
+        return res.status(404).json({ message: "Prontuário não encontrado" });
+      }
+
+      const record = recordResult.rows[0];
+
+      if (
+        isAgendaOnlyProfessional(req) &&
+        isConvenioMedicalRecordRow(record)
+      ) {
+        return respondAgendaOnlyConvenioForbidden(res);
+      }
+
+      const pdfUrlRaw = (record.pdf_url || "").trim();
+      if (!pdfUrlRaw) {
+        return res.status(404).json({
+          message:
+            "Não há PDF deste prontuário. Salve ou atualize o prontuário para gerar o arquivo.",
+        });
+      }
+
+      let fetchUrl = pdfUrlRaw;
+      if (fetchUrl.startsWith("/")) {
+        const forwardedProto = req.get("x-forwarded-proto");
+        const proto =
+          (forwardedProto && forwardedProto.split(",")[0].trim()) ||
+          req.protocol ||
+          "https";
+        const host = req.get("x-forwarded-host") || req.get("host");
+        if (!host) {
+          return res.status(500).json({ message: "URL do PDF inválida" });
+        }
+        fetchUrl = `${proto}://${host}${fetchUrl}`;
+      } else if (fetchUrl.startsWith("//")) {
+        fetchUrl = `https:${fetchUrl}`;
+      }
+
+      const pdfRes = await fetch(fetchUrl, {
+        redirect: "follow",
+        headers: { Accept: "application/pdf,*/*" },
+      });
+
+      if (!pdfRes.ok) {
+        return res.status(502).json({
+          message:
+            "Não foi possível obter o arquivo do PDF. Tente regenerar o documento.",
+        });
+      }
+
+      const buffer = Buffer.from(await pdfRes.arrayBuffer());
+      const ct =
+        pdfRes.headers.get("content-type") || "application/pdf";
+      res.setHeader("Content-Type", ct.split(";")[0].trim());
+      const disposition =
+        req.query.download === "1" ? "attachment" : "inline";
+      const safeName = `Prontuario_${id}.pdf`;
+      res.setHeader(
+        "Content-Disposition",
+        `${disposition}; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`
+      );
+      res.setHeader("Content-Length", buffer.length);
+      res.send(buffer);
+    } catch (error) {
+      console.error("❌ Error streaming medical record PDF:", error);
+      res.status(500).json({ message: "Erro ao carregar PDF do prontuário" });
+    }
+  }
+);
+
 app.post(
   "/api/medical-records",
   authenticate,
@@ -6660,7 +6745,7 @@ app.post(
         allergies, physical_examination, diagnosis, treatment_plan, notes, vital_signs,
         specialty_code, specialty_fields
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING *
     `,
         [

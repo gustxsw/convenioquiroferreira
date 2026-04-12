@@ -146,3 +146,25 @@ export const fetchWithAuth = async (
 
   return response;
 };
+
+/** PDF do prontuário via API autenticada (o link público em pdf_url pode retornar 401 no navegador). */
+export async function fetchMedicalRecordPdf(
+  recordId: number
+): Promise<{ ok: true; blob: Blob } | { ok: false; message: string }> {
+  const apiUrl = getApiUrl();
+  const res = await fetchWithAuth(
+    `${apiUrl}/api/medical-records/${recordId}/pdf`
+  );
+  if (!res.ok) {
+    let message = "Não foi possível carregar o PDF";
+    try {
+      const j = (await res.json()) as { message?: string };
+      if (j?.message) message = j.message;
+    } catch {
+      /* resposta não JSON */
+    }
+    return { ok: false, message };
+  }
+  const blob = await res.blob();
+  return { ok: true, blob };
+}

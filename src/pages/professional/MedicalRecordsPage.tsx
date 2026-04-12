@@ -7,7 +7,11 @@ import {
   getSpecialtyLabelPt,
   type SpecialtyFieldDef,
 } from "../../config/specialtyTemplates";
-import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
+import {
+  fetchMedicalRecordPdf,
+  fetchWithAuth,
+  getApiUrl,
+} from "../../utils/apiHelpers";
 import MedicalRecordPreviewModal from "../../components/MedicalRecordPreviewModal";
 import {
   Stethoscope,
@@ -766,11 +770,17 @@ const MedicalRecordsPage: React.FC = () => {
   };
 
   // Abre PDF do servidor ou gera HTML local para impressão
-  const printMedicalRecordDirect = (record: MedicalRecord) => {
+  const printMedicalRecordDirect = async (record: MedicalRecord) => {
     try {
       setError("");
       if (record.pdf_url) {
-        window.open(record.pdf_url, "_blank", "noopener,noreferrer");
+        const result = await fetchMedicalRecordPdf(record.id);
+        if (!result.ok) {
+          throw new Error(result.message);
+        }
+        const url = URL.createObjectURL(result.blob);
+        window.open(url, "_blank", "noopener,noreferrer");
+        window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
         return;
       }
 
@@ -1270,7 +1280,7 @@ const MedicalRecordsPage: React.FC = () => {
                           <Eye className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => printMedicalRecordDirect(record)}
+                          onClick={() => void printMedicalRecordDirect(record)}
                           className="text-purple-600 hover:text-purple-900"
                           title="Imprimir Direto"
                         >
