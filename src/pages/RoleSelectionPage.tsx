@@ -5,6 +5,7 @@ import { Users, Award, Briefcase, ArrowLeft, RefreshCw, TrendingUp } from "lucid
 
 const RoleSelectionPage: React.FC = () => {
   const [user, setUser] = useState<any>(null);
+  const [preAuthToken, setPreAuthToken] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   
@@ -12,35 +13,49 @@ const RoleSelectionPage: React.FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // RECUPERAR USUÁRIO DO LOCALSTORAGE
-    const tempUser = localStorage.getItem('tempUser');
-    if (tempUser) {
+    // Read tempUser from sessionStorage first (new format with preAuthToken).
+    // Fall back to localStorage (legacy) only for very short transition; if
+    // legacy entry is found we discard it because it lacks the preAuthToken
+    // required by the new /api/auth/select-role contract.
+    const sessionTempUser = sessionStorage.getItem("tempUser");
+    if (sessionTempUser) {
       try {
-        const userData = JSON.parse(tempUser);
-        console.log('🎯 Usuário recuperado do localStorage:', userData);
-        setUser(userData);
+        const parsed = JSON.parse(sessionTempUser);
+        if (parsed?.user && parsed?.preAuthToken) {
+          setUser(parsed.user);
+          setPreAuthToken(parsed.preAuthToken);
+          return;
+        }
       } catch (error) {
-        console.error('❌ Erro ao recuperar usuário:', error);
-        navigate('/', { replace: true }); // 🔥 VAI PARA A RAIZ (LOGIN)
+        console.error("❌ Erro ao recuperar tempUser da sessionStorage:", error);
       }
-    } else {
-      console.log('❌ Nenhum usuário temporário encontrado');
-      navigate('/', { replace: true }); // 🔥 VAI PARA A RAIZ (LOGIN)
     }
+
+    // No valid pre-auth context — force re-login.
+    sessionStorage.removeItem("tempUser");
+    localStorage.removeItem("tempUser");
+    navigate("/", { replace: true });
   }, [navigate]);
 
   const handleRoleSelect = async (role: string) => {
-    if (!user) return;
+    if (!user || !preAuthToken) {
+      setError("Sessão de login expirada. Faça login novamente.");
+      sessionStorage.removeItem("tempUser");
+      localStorage.removeItem("tempUser");
+      navigate("/", { replace: true });
+      return;
+    }
 
     try {
       setIsLoading(true);
       setError("");
       console.log("🎯 Selecionando role:", role, "para usuário:", user.id);
       
-      await selectRole(user.id, role);
+      await selectRole(user.id, role, preAuthToken);
       
       // LIMPAR DADOS TEMPORÁRIOS
-      localStorage.removeItem('tempUser');
+      sessionStorage.removeItem("tempUser");
+      localStorage.removeItem("tempUser");
       
     } catch (error) {
       console.error("❌ Erro ao selecionar role:", error);
@@ -55,8 +70,9 @@ const RoleSelectionPage: React.FC = () => {
   };
 
   const handleBackToLogin = () => {
-    localStorage.removeItem('tempUser');
-    navigate('/', { replace: true }); // 🔥 VAI PARA A RAIZ (LOGIN)
+    sessionStorage.removeItem("tempUser");
+    localStorage.removeItem("tempUser");
+    navigate("/", { replace: true });
   };
 
   const getRoleInfo = (role: string) => {

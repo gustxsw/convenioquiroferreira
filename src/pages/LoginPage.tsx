@@ -45,15 +45,29 @@ const LoginPage: React.FC = () => {
       if (result.needsRoleSelection) {
         console.log("🎯 Usuário tem múltiplas roles - NOVA ABORDAGEM");
         
-        // SALVAR NO LOCALSTORAGE TEMPORARIAMENTE
-        localStorage.setItem('tempUser', JSON.stringify(result.user));
+        // SALVAR NO SESSIONSTORAGE (limpa ao fechar a aba) JUNTO COM O
+        // preAuthToken que será exigido pelo /api/auth/select-role.
+        sessionStorage.setItem(
+          "tempUser",
+          JSON.stringify({
+            user: result.user,
+            preAuthToken: result.preAuthToken,
+          })
+        );
+        // Limpa qualquer tempUser antigo persistido em localStorage
+        // (garante que ninguém puxe sessão de outro usuário daqui).
+        localStorage.removeItem("tempUser");
         
         // REDIRECIONAR PARA PÁGINA DE SELEÇÃO
         navigate('/select-role', { replace: true });
         
       } else {
         console.log("🎯 Usuário tem role única, selecionando automaticamente");
-        await selectRole(result.user.id, result.user.roles[0]);
+        await selectRole(
+          result.user.id,
+          result.user.roles[0],
+          result.preAuthToken
+        );
       }
     } catch (error) {
       console.error("❌ Erro no login:", error);

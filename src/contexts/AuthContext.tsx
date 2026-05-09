@@ -23,8 +23,16 @@ type AuthContextType = {
   login: (
     cpf: string,
     password: string
-  ) => Promise<{ user: User; needsRoleSelection: boolean }>;
-  selectRole: (userId: number, role: string) => Promise<void>;
+  ) => Promise<{
+    user: User;
+    needsRoleSelection: boolean;
+    preAuthToken: string;
+  }>;
+  selectRole: (
+    userId: number,
+    role: string,
+    preAuthToken: string
+  ) => Promise<void>;
   switchRole: (role: string) => Promise<void>;
   refreshSession: () => Promise<void>;
   logout: () => Promise<void>;
@@ -39,6 +47,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Sequence number incremented on every login/logout/role change.
+  // Late responses from in-flight /api/auth/me must be ignored when the
+  // session "version" no longer matches, otherwise stale responses can
+  // overwrite the freshly-logged-in user with another user's data.
+  const sessionVersionRef = useRef(0);
+  const authCheckAbortRef = useRef<AbortController | null>(null);
+
+  const clearLocalAuthState = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("refreshToken");
+    localStorage.removeItem("user");
+    localStorage.removeItem("tempUser");
+    localStorage.removeItem("role");
+    localStorage.removeItem("userType");
+  };
+
+  const invalidatePendingAuthChecks = () => {
+    sessionVersionRef.current += 1;
+    if (authCheckAbortRef.current) {
+      authCheckAbortRef.current.abort();
+      authCheckAbortRef.current = null;
+    }
+  };
 
   // Get API URL
   const getApiUrl = () => {
@@ -52,16 +83,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   useEffect(() => {
+    const versionAtStart = sessionVersionRef.current;
+    const controller = new AbortController();
+    authCheckAbortRef.current = controller;
+
+    const isStillCurrent = () =>
+      sessionVersionRef.current === versionAtStart && !controller.signal.aborted;
+
     const checkAuthStatus = async () => {
       try {
         const token = localStorage.getItem("token");
         const refreshToken = localStorage.getItem("refreshToken");
 
         if (!token || !refreshToken) {
-          localStorage.removeItem("user");
-          localStorage.removeItem("tempUser");
-          localStorage.removeItem("role");
-          localStorage.removeItem("userType");
+          if (!isStillCurrent()) return;
+          clearLocalAuthState();
           setIsLoading(false);
           return;
         }
@@ -73,16 +109,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
+            "Cache-Control": "no-store",
           },
           credentials: "include",
+          signal: controller.signal,
         });
 
+        if (!isStillCurrent()) return;
+
         if (!response.ok) {
-          const errorData = await response.json();
+          const errorData = await response.json().catch(() => ({}));
+          if (!isStillCurrent()) return;
 
           if (errorData.code === "TOKEN_EXPIRED" && refreshToken) {
             logger.debug("Token expired during auth check - attempting refresh");
             const newToken = await refreshAccessToken();
+            if (!isStillCurrent()) return;
 
             if (newToken) {
               response = await fetch(`${apiUrl}/api/auth/me`, {
@@ -90,39 +132,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
                 headers: {
                   "Content-Type": "application/json",
                   Authorization: `Bearer ${newToken}`,
+                  "Cache-Control": "no-store",
                 },
                 credentials: "include",
+                signal: controller.signal,
               });
 
+              if (!isStillCurrent()) return;
+
               if (!response.ok) {
-                localStorage.removeItem("token");
-                localStorage.removeItem("refreshToken");
-                localStorage.removeItem("user");
-                localStorage.removeItem("tempUser");
-                localStorage.removeItem("role");
-                localStorage.removeItem("userType");
+                clearLocalAuthState();
                 setUser(null);
                 setIsLoading(false);
                 return;
               }
             } else {
-              localStorage.removeItem("token");
-              localStorage.removeItem("refreshToken");
-              localStorage.removeItem("user");
-              localStorage.removeItem("tempUser");
-              localStorage.removeItem("role");
-              localStorage.removeItem("userType");
+              clearLocalAuthState();
               setUser(null);
               setIsLoading(false);
               return;
             }
           } else {
-            localStorage.removeItem("token");
-            localStorage.removeItem("refreshToken");
-            localStorage.removeItem("user");
-            localStorage.removeItem("tempUser");
-            localStorage.removeItem("role");
-            localStorage.removeItem("userType");
+            clearLocalAuthState();
             setUser(null);
             setIsLoading(false);
             return;
@@ -131,27 +162,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
         const data = await response.json();
 
+        if (!isStillCurrent()) return;
+
+        // Sanity check: the token currently in localStorage must still be the
+        // same one we used for this request. If the user logged in/out during
+        // the in-flight request, abort and let the new flow set the state.
+        const currentToken = localStorage.getItem("token");
+        if (currentToken !== token && currentToken !== null) {
+          // A newer login already happened — do NOT overwrite the new state
+          // with the old user's payload.
+          return;
+        }
+
+        // Defensive: ensure the response actually corresponds to the user
+        // whose token we sent. If for any reason (CDN cache, proxy, etc.) the
+        // response belongs to another user, drop it instead of trusting it.
+        if (!data?.user?.id) {
+          clearLocalAuthState();
+          setUser(null);
+          setIsLoading(false);
+          return;
+        }
+
         localStorage.setItem("user", JSON.stringify(data.user));
         localStorage.removeItem("tempUser");
         localStorage.removeItem("role");
         localStorage.removeItem("userType");
 
         setUser(data.user);
-      } catch {
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") {
+          return;
+        }
+        if (!isStillCurrent()) return;
         logger.error("Auth check error");
-        localStorage.removeItem("token");
-        localStorage.removeItem("refreshToken");
-        localStorage.removeItem("user");
-        localStorage.removeItem("tempUser");
-        localStorage.removeItem("role");
-        localStorage.removeItem("userType");
+        clearLocalAuthState();
         setUser(null);
       } finally {
-        setIsLoading(false);
+        if (isStillCurrent()) {
+          setIsLoading(false);
+        }
       }
     };
 
     checkAuthStatus();
+
+    return () => {
+      controller.abort();
+    };
   }, []);
 
   useEffect(() => {
@@ -169,9 +227,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const login = async (
     cpf: string,
     password: string
-  ): Promise<{ user: User; needsRoleSelection: boolean }> => {
+  ): Promise<{
+    user: User;
+    needsRoleSelection: boolean;
+    preAuthToken: string;
+  }> => {
     try {
       setIsLoading(true);
+
+      // Critical: invalidate any in-flight /api/auth/me from a previous
+      // session AND wipe any leftover auth artifacts from a prior user
+      // before starting a new login. Prevents stale data from the old
+      // session being merged into the new one.
+      invalidatePendingAuthChecks();
+      clearLocalAuthState();
+      setUser(null);
 
       const apiUrl = getApiUrl();
       logger.debug("Making login request", { endpoint: "/api/auth/login" });
@@ -180,6 +250,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Cache-Control": "no-store",
         },
         body: JSON.stringify({ cpf, password }),
         credentials: "include",
@@ -200,8 +271,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const userData = data.user;
       const needsRoleSelection = userData.roles && userData.roles.length > 1;
+      const preAuthToken: string = data.preAuthToken || "";
 
-      return { user: userData, needsRoleSelection };
+      if (!preAuthToken) {
+        throw new Error("Erro de autenticação: token ausente");
+      }
+
+      return { user: userData, needsRoleSelection, preAuthToken };
     } catch (error) {
       logger.error("Login error");
       throw error;
@@ -210,9 +286,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const selectRole = async (userId: number, role: string) => {
+  const selectRole = async (
+    userId: number,
+    role: string,
+    preAuthToken: string
+  ) => {
     try {
       setIsLoading(true);
+
+      if (!preAuthToken) {
+        throw new Error("Sessão de login inválida. Faça login novamente.");
+      }
+
+      // Invalidate any pending auth checks BEFORE issuing new tokens, so a
+      // late /api/auth/me from a previous user cannot overwrite the state.
+      invalidatePendingAuthChecks();
 
       const apiUrl = getApiUrl();
       logger.debug("Selecting role");
@@ -221,8 +309,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Cache-Control": "no-store",
         },
-        body: JSON.stringify({ userId, role }),
+        body: JSON.stringify({ userId, role, preAuthToken }),
         credentials: "include",
       });
 
@@ -240,6 +329,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.setItem("token", data.accessToken);
       localStorage.setItem("refreshToken", data.refreshToken);
       localStorage.setItem("user", JSON.stringify(data.user));
+
+      // Bump the session version AGAIN after we've written the new token to
+      // localStorage so any in-flight check that sneaked past the first
+      // invalidation cannot win the race.
+      invalidatePendingAuthChecks();
 
       setUser(data.user);
 
@@ -270,12 +364,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     const refreshToken = localStorage.getItem("refreshToken");
     if (!token || !refreshToken) return;
 
+    const versionAtStart = sessionVersionRef.current;
     const apiUrl = getApiUrl();
     let response = await fetch(`${apiUrl}/api/auth/me`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
+        "Cache-Control": "no-store",
       },
       credentials: "include",
     });
@@ -290,6 +386,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${newToken}`,
+              "Cache-Control": "no-store",
             },
             credentials: "include",
           });
@@ -299,6 +396,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
     if (response.ok) {
       const data = await response.json();
+      // If the user logged in/out while the request was in flight, drop it.
+      if (sessionVersionRef.current !== versionAtStart) return;
+      const currentToken = localStorage.getItem("token");
+      if (currentToken !== token && currentToken !== null) return;
+      if (!data?.user?.id) return;
       localStorage.setItem("user", JSON.stringify(data.user));
       setUser(data.user);
     }
@@ -307,6 +409,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const switchRole = async (role: string) => {
     try {
       setIsLoading(true);
+      invalidatePendingAuthChecks();
 
       const apiUrl = getApiUrl();
       const token = localStorage.getItem("token");
@@ -316,6 +419,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
+          "Cache-Control": "no-store",
         },
         body: JSON.stringify({ role }),
         credentials: "include",
@@ -361,6 +465,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     try {
       setIsLoading(true);
 
+      // Invalidate any pending requests immediately so a late /api/auth/me
+      // cannot resurrect the session after the user has logged out.
+      invalidatePendingAuthChecks();
+
       if (refreshIntervalRef.current) {
         clearInterval(refreshIntervalRef.current);
         refreshIntervalRef.current = null;
@@ -373,28 +481,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Cache-Control": "no-store",
         },
         body: JSON.stringify({ userId }),
         credentials: "include",
       });
 
-      localStorage.removeItem("token");
-      localStorage.removeItem("refreshToken");
-      localStorage.removeItem("user");
-      localStorage.removeItem("tempUser");
-      localStorage.removeItem("role");
-      localStorage.removeItem("userType");
+      clearLocalAuthState();
+      // Belt and suspenders: nuke anything else that might be cached on
+      // this origin (other libs occasionally leave per-user state behind).
+      try {
+        sessionStorage.clear();
+      } catch {
+        /* ignore */
+      }
 
       setUser(null);
       navigate("/");
     } catch (error) {
       logger.error("Logout error");
-      localStorage.removeItem("token");
-      localStorage.removeItem("refreshToken");
-      localStorage.removeItem("user");
-      localStorage.removeItem("tempUser");
-      localStorage.removeItem("role");
-      localStorage.removeItem("userType");
+      clearLocalAuthState();
       setUser(null);
       navigate("/");
     } finally {

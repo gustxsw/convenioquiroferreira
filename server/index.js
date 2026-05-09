@@ -132,6 +132,23 @@ app.use((req, res, next) => {
   res.header("Access-Control-Allow-Credentials", "true");
   next();
 });
+
+// CRITICAL: prevent CDNs / reverse proxies / browsers from caching API
+// responses. Authenticated payloads MUST never be served from a shared
+// cache, otherwise one user can receive another user's data.
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api/")) {
+    res.setHeader(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
+    );
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Vary", "Authorization, Cookie");
+  }
+  next();
+});
+
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -1325,6 +1342,18 @@ const generateRefreshToken = () => {
   );
 };
 
+// Short-lived "pre-auth" token issued by /api/auth/login. It's the only
+// proof of a successful CPF+password verification and is REQUIRED to call
+// /api/auth/select-role. Prevents anyone from minting access tokens for
+// arbitrary userIds via the role-selection endpoint.
+const generatePreAuthToken = (userId) => {
+  return jwt.sign(
+    { type: "preauth", userId },
+    process.env.JWT_SECRET || "your-secret-key",
+    { expiresIn: "5m" }
+  );
+};
+
 const hashRefreshToken = async (token) => {
   return await bcrypt.hash(token, 10);
 };
@@ -1693,9 +1722,17 @@ app.post("/api/auth/login", async (req, res) => {
       professionalType: normalizeProfessionalType(user.professional_type),
     };
 
+    // Pre-auth token proves this CPF+password was just validated. The
+    // /api/auth/select-role endpoint REQUIRES this token and verifies that
+    // the userId in the request body matches the userId baked into the
+    // token. Without this, anyone could request access tokens for any
+    // userId by hitting /api/auth/select-role directly.
+    const preAuthToken = generatePreAuthToken(user.id);
+
     res.json({
       message: "Login realizado com sucesso",
       user: userData,
+      preAuthToken,
     });
   } catch (error) {
     console.error("❌ Login error:", error);
@@ -2002,7 +2039,7 @@ app.get("/api/auth/me", authenticate, async (req, res) => {
 
 app.post("/api/auth/select-role", async (req, res) => {
   try {
-    const { userId, role } = req.body;
+    const { userId, role, preAuthToken } = req.body;
 
     console.log("🎯 Role selection:", { userId, role });
 
@@ -2010,6 +2047,44 @@ app.post("/api/auth/select-role", async (req, res) => {
       return res
         .status(400)
         .json({ message: "ID do usuário e role são obrigatórios" });
+    }
+
+    // SECURITY: require a freshly-issued pre-auth token from /api/auth/login.
+    // This is what proves the caller actually authenticated as `userId` —
+    // without it, this endpoint would mint access tokens for any userId in
+    // the request body.
+    if (!preAuthToken) {
+      return res.status(401).json({
+        message: "Sessão expirada. Faça login novamente.",
+        code: "PREAUTH_REQUIRED",
+      });
+    }
+
+    let preAuthDecoded;
+    try {
+      preAuthDecoded = jwt.verify(
+        preAuthToken,
+        process.env.JWT_SECRET || "your-secret-key"
+      );
+    } catch (err) {
+      return res.status(401).json({
+        message: "Sessão de login expirada. Faça login novamente.",
+        code: "PREAUTH_INVALID",
+      });
+    }
+
+    if (
+      preAuthDecoded.type !== "preauth" ||
+      Number(preAuthDecoded.userId) !== Number(userId)
+    ) {
+      console.warn("🚨 Pre-auth token / userId mismatch", {
+        tokenUserId: preAuthDecoded.userId,
+        bodyUserId: userId,
+      });
+      return res.status(403).json({
+        message: "Sessão de login inválida. Faça login novamente.",
+        code: "PREAUTH_MISMATCH",
+      });
     }
 
     // Get user data
@@ -2060,6 +2135,7 @@ app.post("/api/auth/select-role", async (req, res) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
+      path: "/",
       maxAge: 15 * 60 * 1000,
     });
 
@@ -2109,6 +2185,7 @@ app.post(
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
+        path: "/",
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
       });
 
@@ -2231,6 +2308,7 @@ app.post("/api/auth/refresh", async (req, res) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
+      path: "/",
       maxAge: 15 * 60 * 1000,
     });
 
@@ -2251,7 +2329,16 @@ app.post("/api/auth/logout", async (req, res) => {
   try {
     const userId = req.body.userId;
 
-    res.clearCookie("token");
+    // IMPORTANT: clearCookie must use the SAME options that res.cookie used,
+    // otherwise some browsers (notably Chrome with strict cookie policy)
+    // will not actually remove the cookie, leaving a stale session token
+    // behind that the server might pick up on the next request.
+    res.clearCookie("token", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+    });
 
     if (userId) {
       await pool.query(
