@@ -33,7 +33,8 @@ import {
 
 type MedicalRecord = {
   id: number;
-  patient_name: string;
+  patient_name: string | null;
+  patient_cpf?: string | null;
   chief_complaint: string;
   history_present_illness: string;
   past_medical_history: string;
@@ -147,6 +148,9 @@ const MedicalRecordsPage: React.FC = () => {
   const [isLoadingPatients, setIsLoadingPatients] = useState(false);
   const [selectedPrivatePatient, setSelectedPrivatePatient] =
     useState<PrivatePatient | null>(null);
+  /** Resultados da busca no modal — separado de `patients` (lista completa para o filtro da página) */
+  const [privatePatientSearchResults, setPrivatePatientSearchResults] =
+    useState<PrivatePatient[]>([]);
   const privatePatientDropdownRef = useRef<HTMLDivElement>(null);
 
   // Delete confirmation state
@@ -195,25 +199,21 @@ const MedicalRecordsPage: React.FC = () => {
     let filtered = records;
 
     if (searchTerm) {
+      const q = searchTerm.toLowerCase();
       filtered = filtered.filter(
         (record) =>
-          record.patient_name
-            .toLowerCase()
-            .includes(searchTerm.toLowerCase()) ||
-          (record.chief_complaint || "")
-            .toLowerCase()
-            .includes(searchTerm.toLowerCase()) ||
-          (record.diagnosis || "")
-            .toLowerCase()
-            .includes(searchTerm.toLowerCase())
+          (record.patient_name || "").toLowerCase().includes(q) ||
+          (record.chief_complaint || "").toLowerCase().includes(q) ||
+          (record.diagnosis || "").toLowerCase().includes(q)
       );
     }
 
     if (selectedPatient) {
+      const selectedName = patients.find(
+        (p) => p.id.toString() === selectedPatient
+      )?.name;
       filtered = filtered.filter(
-        (record) =>
-          record.patient_name ===
-          patients.find((p) => p.id.toString() === selectedPatient)?.name
+        (record) => (record.patient_name || "") === (selectedName || "")
       );
     }
 
@@ -263,7 +263,7 @@ const MedicalRecordsPage: React.FC = () => {
   // Load private patients on demand when searching in the form (similar to SchedulingPage)
   useEffect(() => {
     if (!privatePatientSearch.trim() || formData.patient_type !== "private") {
-      setPatients([]);
+      setPrivatePatientSearchResults([]);
       setIsLoadingPatients(false);
       return;
     }
@@ -285,12 +285,14 @@ const MedicalRecordsPage: React.FC = () => {
 
         if (response.ok) {
           const patientsData = await response.json();
-          setPatients(Array.isArray(patientsData) ? patientsData : []);
+          setPrivatePatientSearchResults(
+            Array.isArray(patientsData) ? patientsData : []
+          );
         } else {
-          setPatients([]);
+          setPrivatePatientSearchResults([]);
         }
       } catch (err) {
-        setPatients([]);
+        setPrivatePatientSearchResults([]);
       } finally {
         setIsLoadingPatients(false);
       }
@@ -430,6 +432,9 @@ const MedicalRecordsPage: React.FC = () => {
     setClientSearchResult(null);
     setDependents([]);
     setSelectedDependentId(null);
+    setPrivatePatientSearch("");
+    setPrivatePatientSearchResults([]);
+    setSelectedPrivatePatient(null);
     setIsModalOpen(true);
   };
 
@@ -437,7 +442,9 @@ const MedicalRecordsPage: React.FC = () => {
     setModalMode("edit");
 
     const matchingPatient = patients.find(
-      (p) => p.name === record.patient_name || p.cpf === record.patient_cpf
+      (p) =>
+        p.name === (record.patient_name || "") ||
+        p.cpf === (record.patient_cpf || "")
     );
 
     setSpecialtyFormData(
@@ -470,6 +477,8 @@ const MedicalRecordsPage: React.FC = () => {
       },
     });
     setSelectedRecord(record);
+    setPrivatePatientSearch(record.patient_name || "");
+    setSelectedPrivatePatient(matchingPatient ?? null);
     setIsModalOpen(true);
   };
 
@@ -484,6 +493,9 @@ const MedicalRecordsPage: React.FC = () => {
     setSelectedDependentId(null);
     setError("");
     setSuccess("");
+    setPrivatePatientSearch("");
+    setPrivatePatientSearchResults([]);
+    setSelectedPrivatePatient(null);
   };
 
   const closePreviewModal = () => {
@@ -627,9 +639,12 @@ const MedicalRecordsPage: React.FC = () => {
       let patientName, patientCpf;
 
       if (formData.patient_type === "private") {
-        const patient = patients.find(
-          (p) => p.id.toString() === formData.private_patient_id
-        );
+        const pid = formData.private_patient_id;
+        const patient =
+          selectedPrivatePatient?.id.toString() === pid
+            ? selectedPrivatePatient
+            : patients.find((p) => p.id.toString() === pid) ??
+              privatePatientSearchResults.find((p) => p.id.toString() === pid);
         if (!patient) {
           setError("Paciente particular não encontrado");
           return;
@@ -1512,8 +1527,8 @@ const MedicalRecordsPage: React.FC = () => {
                                 Digite para buscar pacientes
                               </p>
                             </div>
-                          ) : patients.length > 0 ? (
-                            patients.map((patient) => (
+                          ) : privatePatientSearchResults.length > 0 ? (
+                            privatePatientSearchResults.map((patient) => (
                               <button
                                 key={patient.id}
                                 type="button"
