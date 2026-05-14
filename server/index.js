@@ -890,6 +890,24 @@ const initializeDatabase = async () => {
         WHERE 'professional' = ANY(roles);
     `);
 
+    // Legacy fix: payment handler used to set is_active=true on every row for a professional_id,
+    // creating multiple "active" rows. Keep a single active row per professional (latest).
+    await pool.query(`
+      WITH ranked AS (
+        SELECT id,
+          ROW_NUMBER() OVER (
+            PARTITION BY professional_id
+            ORDER BY created_at DESC NULLS LAST, id DESC
+          ) AS rn
+        FROM scheduling_access
+        WHERE is_active = true
+      )
+      UPDATE scheduling_access sa
+      SET is_active = false, updated_at = CURRENT_TIMESTAMP
+      FROM ranked r
+      WHERE sa.id = r.id AND r.rn > 1
+    `);
+
     // Insert default service categories if they don't exist
     await pool.query(`
       INSERT INTO service_categories (name, description) 
@@ -7698,7 +7716,17 @@ app.get(
           ELSE false
         END as has_scheduling_access
       FROM users u
-      LEFT JOIN scheduling_access sa ON u.id = sa.professional_id AND sa.is_active = true
+      LEFT JOIN LATERAL (
+        SELECT sa2.*
+        FROM scheduling_access sa2
+        WHERE sa2.professional_id = u.id AND sa2.is_active = true
+        ORDER BY
+          CASE WHEN sa2.expires_at > CURRENT_TIMESTAMP THEN 0 ELSE 1 END,
+          sa2.expires_at DESC NULLS LAST,
+          sa2.created_at DESC NULLS LAST,
+          sa2.id DESC
+        LIMIT 1
+      ) sa ON true
       LEFT JOIN users granted_by_user ON sa.granted_by = granted_by_user.id
       WHERE 'professional' = ANY(u.roles)
       ORDER BY u.name
@@ -8896,9 +8924,16 @@ async function processAgendaPayment(professionalId, payment) {
     );
     console.log(`✅ [PAGAMENTO] Pagamento marcado como aprovado no banco`);
 
-    // 2. Verificar se já existe registro de acesso
-    const existingAccessResult = await pool.query(
-      `SELECT id, expires_at FROM scheduling_access WHERE professional_id = $1`,
+    // 2. Registro usado para calcular renovação (preferir acesso ainda válido; senão o mais recente)
+    const representativeAccess = await pool.query(
+      `SELECT id, expires_at FROM scheduling_access
+       WHERE professional_id = $1
+       ORDER BY
+         CASE WHEN is_active = true AND expires_at > CURRENT_TIMESTAMP THEN 0 ELSE 1 END,
+         expires_at DESC NULLS LAST,
+         created_at DESC NULLS LAST,
+         id DESC
+       LIMIT 1`,
       [professionalId]
     );
 
@@ -8910,7 +8945,8 @@ async function processAgendaPayment(professionalId, payment) {
     const now = new Date();
 
     let baseDate = now;
-    const existingExpiresAtRaw = existingAccessResult.rows[0]?.expires_at ?? null;
+    const existingExpiresAtRaw =
+      representativeAccess.rows[0]?.expires_at ?? null;
 
     if (existingExpiresAtRaw) {
       const existingExpiresAt = new Date(existingExpiresAtRaw);
@@ -8924,22 +8960,28 @@ async function processAgendaPayment(professionalId, payment) {
     const expirationDate = new Date(baseDate);
     expirationDate.setDate(expirationDate.getDate() + 30);
 
-    if (existingAccessResult.rows.length > 0) {
-      // Atualizar registro existente, sempre renovando para 30 dias a partir de agora
+    // Importante: nunca fazer UPDATE só por professional_id — isso reativava TODAS as linhas
+    // históricas e gerava vários acessos "ativos" duplicados na listagem admin.
+    await pool.query(
+      `UPDATE scheduling_access SET is_active = false WHERE professional_id = $1`,
+      [professionalId]
+    );
+
+    if (representativeAccess.rows.length > 0) {
+      const keepRowId = representativeAccess.rows[0].id;
       await pool.query(
         `UPDATE scheduling_access
          SET is_active = true,
              expires_at = $1,
              schedule_balance = 0,
              updated_at = NOW()
-         WHERE professional_id = $2`,
-        [expirationDate, professionalId]
+         WHERE id = $2`,
+        [expirationDate, keepRowId]
       );
       console.log(
         `✅ [PAGAMENTO] Acesso à agenda atualizado (renovado por 30 dias)`
       );
     } else {
-      // Criar novo registro
       await pool.query(
         `INSERT INTO scheduling_access (professional_id, is_active, expires_at, schedule_balance, created_at)
          VALUES ($1, true, $2, 0, NOW())`,
