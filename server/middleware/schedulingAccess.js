@@ -5,12 +5,21 @@ import { pool } from '../db.js';
  */
 export const checkSchedulingAccess = async (req, res, next) => {
   try {
-    // Only check for professionals
-    if (!req.user || !req.user.roles || !req.user.roles.includes('professional')) {
+    const role = req.user?.currentRole;
+    const scopeId = req.user?.professionalScopeId;
+
+    if (role !== "professional" && role !== "secretaria") {
       return next();
     }
 
-    console.log('🔍 [SCHEDULING-ACCESS] Checking access for professional:', req.user.id);
+    if (!scopeId) {
+      return res.status(403).json({
+        message: "Escopo profissional não disponível para este usuário",
+        code: "NO_PROFESSIONAL_SCOPE",
+      });
+    }
+
+    console.log('🔍 [SCHEDULING-ACCESS] Checking access for professional:', scopeId);
 
     // Check if professional has active scheduling access
     const accessResult = await pool.query(
@@ -22,11 +31,11 @@ export const checkSchedulingAccess = async (req, res, next) => {
          AND expires_at > CURRENT_TIMESTAMP
        ORDER BY created_at DESC 
        LIMIT 1`,
-      [req.user.id]
+      [scopeId]
     );
 
     if (accessResult.rows.length === 0) {
-      console.log('❌ [SCHEDULING-ACCESS] No active access found for professional:', req.user.id);
+      console.log('❌ [SCHEDULING-ACCESS] No active access found for professional:', scopeId);
       return res.status(403).json({ 
         message: 'Acesso à agenda não autorizado',
         code: 'NO_SCHEDULING_ACCESS',

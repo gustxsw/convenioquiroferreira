@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { refreshAccessToken } from "../utils/apiHelpers";
+import { getApiUrl, refreshAccessToken } from "../utils/apiHelpers";
 import { logger } from "../utils/logger";
 
 export type ProfessionalType = "agenda_only" | "convenio";
@@ -14,6 +14,8 @@ type User = {
   professionalType?: ProfessionalType;
   primarySpecialtyCode?: string | null;
   onboardingStatus?: "pending" | "completed" | null;
+  /** Profissional vinculado quando currentRole é secretaria */
+  linkedProfessionalId?: number | null;
 };
 
 type AuthContextType = {
@@ -69,17 +71,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       authCheckAbortRef.current.abort();
       authCheckAbortRef.current = null;
     }
-  };
-
-  // Get API URL
-  const getApiUrl = () => {
-    if (
-      window.location.hostname === "cartaoquiroferreira.com.br" ||
-      window.location.hostname === "www.cartaoquiroferreira.com.br"
-    ) {
-      return "https://www.cartaoquiroferreira.com.br";
-    }
-    return "http://localhost:3001";
   };
 
   useEffect(() => {
@@ -343,6 +334,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         navigate("/client", { replace: true });
       } else if (selectedRole === "professional") {
         navigate("/professional", { replace: true });
+      } else if (selectedRole === "secretaria") {
+        navigate("/professional", { replace: true });
       } else if (selectedRole === "admin") {
         navigate("/admin", { replace: true });
       } else if (selectedRole === "vendedor") {
@@ -445,6 +438,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       if (switchedRole === "client") {
         navigate("/client", { replace: true });
       } else if (switchedRole === "professional") {
+        navigate("/professional", { replace: true });
+      } else if (switchedRole === "secretaria") {
         navigate("/professional", { replace: true });
       } else if (switchedRole === "admin") {
         navigate("/admin", { replace: true });

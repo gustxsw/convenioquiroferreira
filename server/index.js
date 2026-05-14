@@ -719,6 +719,13 @@ const initializeDatabase = async () => {
         ) THEN
           ALTER TABLE users ADD COLUMN onboarding_completed_at TIMESTAMPTZ;
         END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'linked_professional_id'
+        ) THEN
+          ALTER TABLE users ADD COLUMN linked_professional_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
       END $$;
     `);
 
@@ -1783,16 +1790,17 @@ app.post("/api/auth/forgot-password", async (req, res) => {
 
     const token = crypto.randomBytes(32).toString("hex");
     const tokenHash = hashPasswordResetToken(token);
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
 
+    // Usar NOW() do PostgreSQL para o prazo — evita falha "token expirado" quando o
+    // relógio/fuso do Node e o do banco divergem do comparador reset_password_expires_at > NOW().
     await pool.query(
       `
       UPDATE users
       SET reset_password_token = $1,
-          reset_password_expires_at = $2
-      WHERE id = $3
+          reset_password_expires_at = NOW() + INTERVAL '1 hour'
+      WHERE id = $2
     `,
-      [tokenHash, expiresAt, user.id]
+      [tokenHash, user.id]
     );
 
     const isProduction = process.env.NODE_ENV === "production";
@@ -1996,7 +2004,8 @@ app.get("/api/auth/me", authenticate, async (req, res) => {
 
     const userResult = await pool.query(
       `SELECT id, name, cpf, email, roles, subscription_status, subscription_expiry, professional_type,
-              primary_specialty_code, onboarding_status, onboarding_completed_at
+              primary_specialty_code, onboarding_status, onboarding_completed_at,
+              linked_professional_id
        FROM users
        WHERE id = $1`,
       [req.user.id]
@@ -2007,7 +2016,13 @@ app.get("/api/auth/me", authenticate, async (req, res) => {
     }
 
     const user = userResult.rows[0];
-    const specialtyPayload = buildProfessionalSpecialtyPayload(user);
+    const specialtyPayload =
+      req.user.currentRole === "secretaria"
+        ? {
+            primarySpecialtyCode: req.user.primary_specialty_code || null,
+            onboardingStatus: req.user.onboarding_status,
+          }
+        : buildProfessionalSpecialtyPayload(user);
 
     const userData = {
       id: user.id,
@@ -2018,9 +2033,10 @@ app.get("/api/auth/me", authenticate, async (req, res) => {
       currentRole: req.user.currentRole || user.roles[0],
       subscriptionStatus: user.subscription_status,
       subscriptionExpiry: user.subscription_expiry,
-      professionalType: normalizeProfessionalType(user.professional_type),
+      professionalType: normalizeProfessionalType(req.user.professional_type),
       primarySpecialtyCode: specialtyPayload.primarySpecialtyCode,
       onboardingStatus: specialtyPayload.onboardingStatus,
+      linkedProfessionalId: user.linked_professional_id || null,
     };
 
     console.log(
@@ -2091,7 +2107,7 @@ app.post("/api/auth/select-role", async (req, res) => {
     const userResult = await pool.query(
       `
       SELECT id, name, roles, subscription_status, subscription_expiry, professional_type,
-             primary_specialty_code, onboarding_status
+             primary_specialty_code, onboarding_status, linked_professional_id
       FROM users 
       WHERE id = $1
     `,
@@ -2111,7 +2127,44 @@ app.post("/api/auth/select-role", async (req, res) => {
         .json({ message: "Role não autorizada para este usuário" });
     }
 
-    const specialtyPayload = buildProfessionalSpecialtyPayload(user);
+    if (role === "secretaria") {
+      const linkId = user.linked_professional_id;
+      if (!linkId) {
+        return res.status(400).json({
+          message:
+            "Usuário secretária precisa de profissional vinculado (linked_professional_id)",
+        });
+      }
+      const proCheck = await pool.query(
+        `SELECT id, roles FROM users WHERE id = $1`,
+        [linkId]
+      );
+      if (
+        proCheck.rows.length === 0 ||
+        !proCheck.rows[0].roles?.includes("professional")
+      ) {
+        return res.status(400).json({
+          message: "Profissional vinculado inválido ou inexistente",
+        });
+      }
+    }
+
+    let specialtyPayload = buildProfessionalSpecialtyPayload(user);
+    let professionalTypeForToken = user.professional_type;
+    if (role === "secretaria" && user.linked_professional_id) {
+      const proRowResult = await pool.query(
+        `SELECT primary_specialty_code, professional_type FROM users WHERE id = $1`,
+        [user.linked_professional_id]
+      );
+      if (proRowResult.rows.length > 0) {
+        const pr = proRowResult.rows[0];
+        professionalTypeForToken = pr.professional_type;
+        specialtyPayload = buildProfessionalSpecialtyPayload({
+          roles: ["professional"],
+          primary_specialty_code: pr.primary_specialty_code,
+        });
+      }
+    }
 
     // Generate tokens with selected role
     const userData = {
@@ -2121,9 +2174,10 @@ app.post("/api/auth/select-role", async (req, res) => {
       currentRole: role,
       subscription_status: user.subscription_status,
       subscription_expiry: user.subscription_expiry,
-      professionalType: normalizeProfessionalType(user.professional_type),
+      professionalType: normalizeProfessionalType(professionalTypeForToken),
       primarySpecialtyCode: specialtyPayload.primarySpecialtyCode,
       onboardingStatus: specialtyPayload.onboardingStatus,
+      linkedProfessionalId: user.linked_professional_id ?? null,
     };
 
     const accessToken = generateAccessToken(userData);
@@ -2156,7 +2210,7 @@ app.post("/api/auth/select-role", async (req, res) => {
 app.post(
   "/api/auth/switch-role",
   authenticate,
-  authorize(["professional", "admin", "client", "vendedor", "financeiro_agenda"]),
+  authorize(["professional", "secretaria", "admin", "client", "vendedor", "financeiro_agenda"]),
   async (req, res) => {
     try {
       const { role } = req.body;
@@ -2195,6 +2249,7 @@ app.post(
         professional_type,
         primary_specialty_code,
         onboarding_status,
+        linked_professional_id,
         ...rest
       } = userData;
       res.json({
@@ -2205,6 +2260,7 @@ app.post(
           professionalType: normalizeProfessionalType(professional_type),
           primarySpecialtyCode: primary_specialty_code || null,
           onboardingStatus: onboarding_status ?? null,
+          linkedProfessionalId: linked_professional_id ?? null,
         },
       });
     } catch (error) {
@@ -2367,7 +2423,8 @@ app.get("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
       SELECT 
         id, name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, roles, subscription_status,
-        subscription_expiry, photo_url, category_name, percentage, crm, professional_type, created_at
+        subscription_expiry, photo_url, category_name, percentage, crm, professional_type, created_at,
+        linked_professional_id
       FROM users 
       ORDER BY created_at DESC
     `);
@@ -2385,10 +2442,16 @@ app.get("/api/users/:id", authenticate, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Users can only access their own data unless they're admin
+    const targetId = Number.parseInt(id, 10);
+    const isSecretaryForLinkedPro =
+      req.user.currentRole === "secretaria" &&
+      req.user.professionalScopeId === targetId;
+
+    // Users can only access their own data unless they're admin or secretary for linked professional
     if (
       req.user.currentRole !== "admin" &&
-      req.user.id !== Number.parseInt(id)
+      req.user.id !== targetId &&
+      !isSecretaryForLinkedPro
     ) {
       return res.status(403).json({ message: "Acesso negado" });
     }
@@ -2398,7 +2461,8 @@ app.get("/api/users/:id", authenticate, async (req, res) => {
       SELECT 
         id, name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, roles, subscription_status,
-        subscription_expiry, photo_url, category_name, percentage, crm, professional_type, created_at
+        subscription_expiry, photo_url, category_name, percentage, crm, professional_type, created_at,
+        linked_professional_id
       FROM users 
       WHERE id = $1
     `,
@@ -2423,10 +2487,16 @@ app.get(
     try {
       const { id } = req.params;
 
-      // Users can only access their own data unless they're admin
+      const targetId = Number.parseInt(id, 10);
+      const isSecretaryForLinkedPro =
+        req.user.currentRole === "secretaria" &&
+        req.user.professionalScopeId === targetId;
+
+      // Users can only access their own data unless they're admin or secretary for linked professional
       if (
         req.user.currentRole !== "admin" &&
-        req.user.id !== Number.parseInt(id)
+        req.user.id !== targetId &&
+        !isSecretaryForLinkedPro
       ) {
         return res.status(403).json({ message: "Acesso negado" });
       }
@@ -2476,6 +2546,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
       percentage,
       crm,
       professional_type,
+      linked_professional_id,
     } = req.body;
 
     // Validate required fields
@@ -2531,6 +2602,41 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
       return res.status(400).json({ message: "Data de nascimento inválida" });
     }
 
+    let finalLinkedProfessionalId = null;
+    if (roles.includes("secretaria")) {
+      const lid =
+        linked_professional_id != null && linked_professional_id !== ""
+          ? Number(linked_professional_id)
+          : null;
+      if (!lid || Number.isNaN(lid)) {
+        return res.status(400).json({
+          message:
+            "Secretária deve ter um profissional vinculado (linked_professional_id)",
+        });
+      }
+      const proCheck = await pool.query(
+        `SELECT id, roles FROM users WHERE id = $1`,
+        [lid]
+      );
+      if (
+        proCheck.rows.length === 0 ||
+        !proCheck.rows[0].roles?.includes("professional")
+      ) {
+        return res.status(400).json({
+          message: "Profissional vinculado inválido ou inexistente",
+        });
+      }
+      finalLinkedProfessionalId = lid;
+    } else if (
+      linked_professional_id != null &&
+      linked_professional_id !== ""
+    ) {
+      return res.status(400).json({
+        message:
+          "linked_professional_id só é permitido para usuários com role secretaria",
+      });
+    }
+
     const hashedPassword = await bcrypt.hash(finalPassword, 12);
 
     // Clean phone
@@ -2543,9 +2649,9 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
         name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, password, roles,
         subscription_status, subscription_expiry, category_name,
-        percentage, crm, professional_type
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-      RETURNING id, name, cpf, email, roles
+        percentage, crm, professional_type, linked_professional_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+      RETURNING id, name, cpf, email, roles, linked_professional_id
     `,
       [
         name.trim(),
@@ -2567,6 +2673,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
         percentage || null,
         crm?.trim() || null,
         professional_type || "convenio",
+        finalLinkedProfessionalId,
       ]
     );
 
@@ -2616,12 +2723,19 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
       currentPassword,
       newPassword,
       professional_type,
+      linked_professional_id,
     } = req.body;
 
-    // Users can only update their own data unless they're admin
+    const targetUserId = Number.parseInt(id, 10);
+    const isSecretaryForLinkedPro =
+      req.user.currentRole === "secretaria" &&
+      req.user.professionalScopeId === targetUserId;
+
+    // Users can update own data, admin any user, or secretary the linked professional's row
     if (
       req.user.currentRole !== "admin" &&
-      req.user.id !== Number.parseInt(id)
+      req.user.id !== targetUserId &&
+      !isSecretaryForLinkedPro
     ) {
       return res.status(403).json({ message: "Acesso negado" });
     }
@@ -2687,7 +2801,49 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
 
     // Admin-only fields
     if (req.user.currentRole === "admin") {
-      if (roles !== undefined) updateData.roles = roles;
+      if (roles !== undefined) {
+        updateData.roles = roles;
+        if (!roles.includes("secretaria")) {
+          updateData.linked_professional_id = null;
+        }
+      }
+      if (linked_professional_id !== undefined) {
+        const effRoles = updateData.roles || [];
+        if (!effRoles.includes("secretaria")) {
+          updateData.linked_professional_id = null;
+        } else {
+          const lid =
+            linked_professional_id != null && linked_professional_id !== ""
+              ? Number(linked_professional_id)
+              : null;
+          if (!lid || Number.isNaN(lid)) {
+            return res.status(400).json({
+              message:
+                "Secretária deve ter um profissional vinculado (linked_professional_id)",
+            });
+          }
+          const proCheck = await pool.query(
+            `SELECT id, roles FROM users WHERE id = $1`,
+            [lid]
+          );
+          if (
+            proCheck.rows.length === 0 ||
+            !proCheck.rows[0].roles?.includes("professional")
+          ) {
+            return res.status(400).json({
+              message: "Profissional vinculado inválido ou inexistente",
+            });
+          }
+          updateData.linked_professional_id = lid;
+        }
+      } else if (roles !== undefined && roles.includes("secretaria")) {
+        if (!updateData.linked_professional_id) {
+          return res.status(400).json({
+            message:
+              "Usuário com role secretaria precisa de linked_professional_id",
+          });
+        }
+      }
       if (subscription_status !== undefined)
         updateData.subscription_status = subscription_status;
       if (subscription_expiry !== undefined)
@@ -2713,11 +2869,11 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
         address_number = $6, address_complement = $7, neighborhood = $8,
         city = $9, state = $10, password = $11, roles = $12, subscription_status = $13,
         subscription_expiry = $14, category_name = $15, percentage = $16, crm = $17, 
-        professional_type = $18, updated_at = $19
-      WHERE id = $20
+        professional_type = $18, linked_professional_id = $19, updated_at = $20
+      WHERE id = $21
       RETURNING id, name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, roles, subscription_status, 
-        subscription_expiry, photo_url, category_name, percentage, crm, professional_type, created_at, updated_at
+        subscription_expiry, photo_url, category_name, percentage, crm, professional_type, linked_professional_id, created_at, updated_at
     `,
       [
         updateData.name,
@@ -2738,6 +2894,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
         updateData.percentage,
         updateData.crm,
         updateData.professional_type,
+        updateData.linked_professional_id,
         updateData.updated_at,
         id,
       ]
@@ -2857,12 +3014,12 @@ app.delete(
 app.get(
   "/api/consultations/agenda",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   checkSchedulingAccess,
   async (req, res) => {
     try {
       const { date } = req.query;
-      const professionalId = req.user.id;
+      const professionalId = req.user.professionalScopeId;
 
       console.log(
         "🔄 [AGENDA-QUERY] Fetching consultations for agenda - Professional:",
@@ -3283,10 +3440,10 @@ app.get(
 app.get(
   "/api/reports/professional-revenue",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
-      const professionalId = req.user.id;
+      const professionalId = req.user.professionalScopeId;
       const { start_date, end_date } = req.query;
 
       console.log("📊 Generating revenue report for:", professionalId);
@@ -3427,10 +3584,10 @@ app.get(
 app.get(
   "/api/reports/professional-detailed",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
-      const professionalId = req.user.id;
+      const professionalId = req.user.professionalScopeId;
       const { start_date, end_date } = req.query;
 
       console.log("📊 Generating detailed report for:", professionalId);
@@ -3528,10 +3685,10 @@ app.get(
 app.get(
   "/api/reports/professional-analytics",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
-      const professionalId = req.user.id;
+      const professionalId = req.user.professionalScopeId;
       const { start_date, end_date } = req.query;
 
       console.log("📊 Generating analytics report for:", professionalId);
@@ -3648,7 +3805,7 @@ app.get(
 app.post(
   "/api/consultations",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   checkSchedulingAccess,
   async (req, res) => {
     try {
@@ -3705,7 +3862,7 @@ app.post(
       // Validate service exists and belongs to professional
       const serviceResult = await pool.query(
         "SELECT * FROM services WHERE id = $1 AND professional_id = $2",
-        [service_id, req.user.id]
+        [service_id, req.user.professionalScopeId]
       );
       if (serviceResult.rows.length === 0) {
         return res
@@ -3783,7 +3940,7 @@ app.post(
         AND c.date = $2::timestamptz
         AND c.status != 'cancelled'
     `,
-        [req.user.id, dateTimeForStorage]
+        [req.user.professionalScopeId, dateTimeForStorage]
       );
 
       if (conflictCheck.rows.length > 0) {
@@ -3828,7 +3985,7 @@ app.post(
           user_id || null,
           dependent_id || null,
           private_patient_id || null,
-          req.user.id,
+          req.user.professionalScopeId,
           service_id,
           location_id || null,
           Number.parseFloat(value),
@@ -3861,7 +4018,7 @@ app.post(
 app.post(
   "/api/consultations/recurring",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   checkSchedulingAccess,
   async (req, res) => {
     try {
@@ -3896,7 +4053,7 @@ app.post(
       // Validate service exists and belongs to professional
       const serviceResult = await pool.query(
         "SELECT * FROM services WHERE id = $1 AND professional_id = $2",
-        [service_id, req.user.id]
+        [service_id, req.user.professionalScopeId]
       );
       if (serviceResult.rows.length === 0) {
         return res
@@ -4008,7 +4165,7 @@ app.post(
             AND c.date = $2::timestamptz
             AND c.status != 'cancelled'
         `,
-          [req.user.id, dateTimeUTC]
+          [req.user.professionalScopeId, dateTimeUTC]
         );
 
         if (conflictCheck.rows.length > 0) {
@@ -4066,7 +4223,7 @@ app.post(
             user_id || null,
             dependent_id || null,
             private_patient_id || null,
-            req.user.id,
+            req.user.professionalScopeId,
             service_id,
             location_id || null,
             Number.parseFloat(value),
@@ -4104,7 +4261,7 @@ app.post(
 app.put(
   "/api/consultations/:id/status",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   checkSchedulingAccess,
   async (req, res) => {
     try {
@@ -4130,7 +4287,7 @@ app.put(
 
       let statusWhere =
         "id = $2 AND professional_id = $3";
-      const statusParams = [status, id, req.user.id];
+      const statusParams = [status, id, req.user.professionalScopeId];
       if (isAgendaOnlyProfessional(req)) {
         statusWhere += " AND private_patient_id IS NOT NULL";
       }
@@ -4166,7 +4323,7 @@ app.put(
 app.put(
   "/api/consultations/:id",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   checkSchedulingAccess,
   async (req, res) => {
     try {
@@ -4187,7 +4344,7 @@ app.put(
       // Get current consultation
       const currentResult = await pool.query(
         "SELECT * FROM consultations WHERE id = $1 AND professional_id = $2",
-        [id, req.user.id]
+        [id, req.user.professionalScopeId]
       );
 
       if (currentResult.rows.length === 0) {
@@ -4209,7 +4366,7 @@ app.put(
       if (service_id !== undefined) {
         const serviceResult = await pool.query(
           "SELECT * FROM services WHERE id = $1 AND professional_id = $2",
-          [service_id, req.user.id]
+          [service_id, req.user.professionalScopeId]
         );
         if (serviceResult.rows.length === 0) {
           return res
@@ -4280,7 +4437,7 @@ app.put(
       updateValues.push(new Date());
 
       // Add consultation ID and professional ID for WHERE clause
-      updateValues.push(id, req.user.id);
+      updateValues.push(id, req.user.professionalScopeId);
 
       const updateQuery = `
       UPDATE consultations 
@@ -4308,7 +4465,7 @@ app.put(
 app.get(
   "/api/consultations/:id/whatsapp",
   authenticate,
-  authorize(["professional", "admin"]),
+  authorize(["professional", "secretaria", "admin"]),
   checkSchedulingAccess,
   async (req, res) => {
     try {
@@ -4340,7 +4497,7 @@ app.get(
        LEFT JOIN services s ON c.service_id = s.id
        LEFT JOIN users prof ON c.professional_id = prof.id
        WHERE c.id = $1 AND c.professional_id = $2`,
-        [consultationId, req.user.id]
+        [consultationId, req.user.professionalScopeId]
       );
 
       if (consultationResult.rows.length === 0) {
@@ -4408,7 +4565,7 @@ app.get(
 app.get(
   "/api/medical-records/:id/whatsapp",
   authenticate,
-  authorize(["professional", "admin"]),
+  authorize(["professional", "secretaria", "admin"]),
   async (req, res) => {
     try {
       const recordId = req.params.id;
@@ -4425,7 +4582,7 @@ app.get(
         LEFT JOIN private_patients pp ON mr.private_patient_id = pp.id
         LEFT JOIN users u ON mr.professional_id = u.id
         WHERE mr.id = $1 AND mr.professional_id = $2`,
-        [recordId, req.user.id]
+        [recordId, req.user.professionalScopeId]
       );
 
       if (recordResult.rows.length === 0) {
@@ -4435,7 +4592,7 @@ app.get(
       const record = recordResult.rows[0];
 
       if (
-        req.user.currentRole === "professional" &&
+        (req.user.currentRole === "professional" || req.user.currentRole === "secretaria") &&
         isAgendaOnlyProfessional(req) &&
         isConvenioMedicalRecordRow(record)
       ) {
@@ -4481,7 +4638,7 @@ app.get(
 app.get(
   "/api/documents/:id/whatsapp",
   authenticate,
-  authorize(["professional", "admin"]),
+  authorize(["professional", "secretaria", "admin"]),
   async (req, res) => {
     try {
       const documentId = req.params.id;
@@ -4499,7 +4656,7 @@ app.get(
         LEFT JOIN private_patients pp ON md.private_patient_id = pp.id
         LEFT JOIN users u ON md.professional_id = u.id
         WHERE md.id = $1 AND md.professional_id = $2`,
-        [documentId, req.user.id]
+        [documentId, req.user.professionalScopeId]
       );
 
       // Fallback for older/newer flows that store files in saved_documents.
@@ -4513,7 +4670,7 @@ app.get(
           FROM saved_documents sd
           LEFT JOIN users u ON sd.professional_id = u.id
           WHERE sd.id = $1 AND sd.professional_id = $2`,
-          [documentId, req.user.id]
+          [documentId, req.user.professionalScopeId]
         );
       }
 
@@ -4524,7 +4681,7 @@ app.get(
       const document = documentResult.rows[0];
 
       if (
-        req.user.currentRole === "professional" &&
+        (req.user.currentRole === "professional" || req.user.currentRole === "secretaria") &&
         isAgendaOnlyProfessional(req) &&
         Object.prototype.hasOwnProperty.call(document, "private_patient_id") &&
         document.private_patient_id == null
@@ -4573,7 +4730,7 @@ app.get(
 app.post(
   "/api/medical-records/:id/whatsapp/send-document",
   authenticate,
-  authorize(["professional", "admin"]),
+  authorize(["professional", "secretaria", "admin"]),
   async (req, res) => {
     try {
       if (!isWhatsappCloudConfigured()) {
@@ -4593,7 +4750,7 @@ app.post(
         LEFT JOIN private_patients pp ON mr.private_patient_id = pp.id
         LEFT JOIN users u ON mr.professional_id = u.id
         WHERE mr.id = $1 AND mr.professional_id = $2`,
-        [recordId, req.user.id]
+        [recordId, req.user.professionalScopeId]
       );
 
       if (recordResult.rows.length === 0) {
@@ -4603,7 +4760,7 @@ app.post(
       const record = recordResult.rows[0];
 
       if (
-        req.user.currentRole === "professional" &&
+        (req.user.currentRole === "professional" || req.user.currentRole === "secretaria") &&
         isAgendaOnlyProfessional(req) &&
         isConvenioMedicalRecordRow(record)
       ) {
@@ -4655,7 +4812,7 @@ app.post(
 app.post(
   "/api/documents/:id/whatsapp/send-document",
   authenticate,
-  authorize(["professional", "admin"]),
+  authorize(["professional", "secretaria", "admin"]),
   async (req, res) => {
     try {
       if (!isWhatsappCloudConfigured()) {
@@ -4676,7 +4833,7 @@ app.post(
         LEFT JOIN private_patients pp ON md.private_patient_id = pp.id
         LEFT JOIN users u ON md.professional_id = u.id
         WHERE md.id = $1 AND md.professional_id = $2`,
-        [documentId, req.user.id]
+        [documentId, req.user.professionalScopeId]
       );
 
       if (documentResult.rows.length === 0) {
@@ -4688,7 +4845,7 @@ app.post(
           FROM saved_documents sd
           LEFT JOIN users u ON sd.professional_id = u.id
           WHERE sd.id = $1 AND sd.professional_id = $2`,
-          [documentId, req.user.id]
+          [documentId, req.user.professionalScopeId]
         );
       }
 
@@ -4699,7 +4856,7 @@ app.post(
       const document = documentResult.rows[0];
 
       if (
-        req.user.currentRole === "professional" &&
+        (req.user.currentRole === "professional" || req.user.currentRole === "secretaria") &&
         isAgendaOnlyProfessional(req) &&
         Object.prototype.hasOwnProperty.call(document, "private_patient_id") &&
         document.private_patient_id == null
@@ -4749,7 +4906,7 @@ app.post(
 app.put(
   "/api/consultations/:id/cancel",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   checkSchedulingAccess,
   async (req, res) => {
     try {
@@ -4776,7 +4933,7 @@ app.put(
       WHERE ${cancelWhere}
       RETURNING *
     `,
-        [req.user.id, cancellation_reason?.trim() || null, id]
+        [req.user.professionalScopeId, cancellation_reason?.trim() || null, id]
       );
 
       if (result.rows.length === 0) {
@@ -4800,7 +4957,7 @@ app.put(
 app.delete(
   "/api/consultations/:id",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   checkSchedulingAccess,
   async (req, res) => {
     try {
@@ -4810,7 +4967,7 @@ app.delete(
 
       let delSql =
         "DELETE FROM consultations WHERE id = $1 AND professional_id = $2";
-      const delParams = [id, req.user.id];
+      const delParams = [id, req.user.professionalScopeId];
       if (isAgendaOnlyProfessional(req)) {
         delSql += " AND private_patient_id IS NOT NULL";
       }
@@ -4943,11 +5100,11 @@ app.get(
 app.get(
   "/api/clients/lookup",
   authenticate,
-  authorize(["professional", "admin"]),
+  authorize(["professional", "secretaria", "admin"]),
   async (req, res) => {
     try {
       if (
-        req.user.currentRole === "professional" &&
+        (req.user.currentRole === "professional" || req.user.currentRole === "secretaria") &&
         isAgendaOnlyProfessional(req)
       ) {
         return respondAgendaOnlyConvenioForbidden(res);
@@ -4994,11 +5151,11 @@ app.get(
 app.get(
   "/api/dependents",
   authenticate,
-  authorize(["professional", "admin", "client"]),
+  authorize(["professional", "secretaria", "admin", "client"]),
   async (req, res) => {
     try {
       if (
-        req.user.currentRole === "professional" &&
+        (req.user.currentRole === "professional" || req.user.currentRole === "secretaria") &&
         isAgendaOnlyProfessional(req)
       ) {
         return respondAgendaOnlyConvenioForbidden(res);
@@ -5061,11 +5218,11 @@ app.get(
 app.get(
   "/api/dependents/search",
   authenticate,
-  authorize(["professional", "admin"]),
+  authorize(["professional", "secretaria", "admin"]),
   async (req, res) => {
     try {
       if (
-        req.user.currentRole === "professional" &&
+        (req.user.currentRole === "professional" || req.user.currentRole === "secretaria") &&
         isAgendaOnlyProfessional(req)
       ) {
         return respondAgendaOnlyConvenioForbidden(res);
@@ -5122,7 +5279,7 @@ app.get("/api/dependents/:clientId", authenticate, async (req, res) => {
     const { clientId } = req.params;
 
     if (
-      req.user.currentRole === "professional" &&
+      (req.user.currentRole === "professional" || req.user.currentRole === "secretaria") &&
       isAgendaOnlyProfessional(req)
     ) {
       return respondAgendaOnlyConvenioForbidden(res);
@@ -5166,11 +5323,11 @@ app.get("/api/dependents/:clientId", authenticate, async (req, res) => {
 app.get(
   "/api/dependents/lookup",
   authenticate,
-  authorize(["professional", "admin"]),
+  authorize(["professional", "secretaria", "admin"]),
   async (req, res) => {
     try {
       if (
-        req.user.currentRole === "professional" &&
+        (req.user.currentRole === "professional" || req.user.currentRole === "secretaria") &&
         isAgendaOnlyProfessional(req)
       ) {
         return respondAgendaOnlyConvenioForbidden(res);
@@ -5417,10 +5574,14 @@ app.delete(
 // ===== BLOCKED SLOTS ROUTES =====
 
 // Get blocked slots for a specific date
-app.get("/api/blocked-slots", authenticate, async (req, res) => {
+app.get(
+  "/api/blocked-slots",
+  authenticate,
+  authorize(["professional", "secretaria"]),
+  async (req, res) => {
   try {
     const { date } = req.query;
-    const professionalId = req.user.id;
+    const professionalId = req.user.professionalScopeId;
 
     if (!date) {
       return res.status(400).json({ error: "Date is required" });
@@ -5441,10 +5602,14 @@ app.get("/api/blocked-slots", authenticate, async (req, res) => {
 });
 
 // Block a time slot
-app.post("/api/blocked-slots", authenticate, async (req, res) => {
+app.post(
+  "/api/blocked-slots",
+  authenticate,
+  authorize(["professional", "secretaria"]),
+  async (req, res) => {
   try {
     const { date, time_slot, reason } = req.body;
-    const professionalId = req.user.id;
+    const professionalId = req.user.professionalScopeId;
 
     if (!date || !time_slot) {
       return res.status(400).json({ error: "Date and time_slot are required" });
@@ -5488,10 +5653,14 @@ app.post("/api/blocked-slots", authenticate, async (req, res) => {
 });
 
 // Unblock a time slot
-app.delete("/api/blocked-slots/:id", authenticate, async (req, res) => {
+app.delete(
+  "/api/blocked-slots/:id",
+  authenticate,
+  authorize(["professional", "secretaria"]),
+  async (req, res) => {
   try {
     const { id } = req.params;
-    const professionalId = req.user.id;
+    const professionalId = req.user.professionalScopeId;
 
     // Verify ownership
     const checkResult = await pool.query(
@@ -5516,9 +5685,13 @@ app.delete("/api/blocked-slots/:id", authenticate, async (req, res) => {
 
 app.get("/api/services", authenticate, async (req, res) => {
   try {
-    const isProfessional =
+    const servicesScopeId =
       req.user?.currentRole === "professional" ||
-      (Array.isArray(req.user?.roles) && req.user.roles.includes("professional"));
+      req.user?.currentRole === "secretaria"
+        ? req.user.professionalScopeId
+        : Array.isArray(req.user?.roles) && req.user.roles.includes("professional")
+          ? req.user.id
+          : null;
 
     const servicesResult = await pool.query(
       `
@@ -5529,7 +5702,7 @@ app.get("/api/services", authenticate, async (req, res) => {
         WHERE ($1::int IS NULL OR s.professional_id = $1)
         ORDER BY sc.name, s.name
       `,
-      [isProfessional ? req.user.id : null]
+      [servicesScopeId]
     );
 
     res.json(servicesResult.rows);
@@ -5593,7 +5766,7 @@ app.post(
 app.post(
   "/api/services",
   authenticate,
-  authorize(["admin", "professional"]),
+  authorize(["admin", "professional", "secretaria"]),
   async (req, res) => {
     try {
       const { name, description, base_price, category_id, is_base_service } =
@@ -5616,6 +5789,7 @@ app.post(
 
       const isProfessional =
         req.user?.currentRole === "professional" ||
+        req.user?.currentRole === "secretaria" ||
         (Array.isArray(req.user?.roles) && req.user.roles.includes("professional"));
 
       const serviceResult = await pool.query(
@@ -5630,7 +5804,7 @@ app.post(
           Number.parseFloat(base_price),
           category_id || null,
           isProfessional ? false : is_base_service || false,
-          isProfessional ? req.user.id : null,
+          isProfessional ? (req.user.professionalScopeId ?? req.user.id) : null,
         ]
       );
 
@@ -5652,7 +5826,7 @@ app.post(
 app.put(
   "/api/services/:id",
   authenticate,
-  authorize(["admin", "professional"]),
+  authorize(["admin", "professional", "secretaria"]),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -5670,11 +5844,13 @@ app.put(
 
       const isProfessional =
         req.user?.currentRole === "professional" ||
+        req.user?.currentRole === "secretaria" ||
         (Array.isArray(req.user?.roles) && req.user.roles.includes("professional"));
 
       if (
         isProfessional &&
-        currentServiceResult.rows[0].professional_id !== req.user.id
+        currentServiceResult.rows[0].professional_id !==
+        (req.user.professionalScopeId ?? req.user.id)
       ) {
         return res.status(403).json({ message: "Acesso negado" });
       }
@@ -5729,7 +5905,7 @@ app.put(
 app.delete(
   "/api/services/:id",
   authenticate,
-  authorize(["admin", "professional"]),
+  authorize(["admin", "professional", "secretaria"]),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -5745,9 +5921,10 @@ app.delete(
 
       const isProfessional =
         req.user?.currentRole === "professional" ||
+        req.user?.currentRole === "secretaria" ||
         (Array.isArray(req.user?.roles) && req.user.roles.includes("professional"));
 
-      if (isProfessional && serviceResult.rows[0].professional_id !== req.user.id) {
+      if (isProfessional && serviceResult.rows[0].professional_id !== (req.user.professionalScopeId ?? req.user.id)) {
         return res.status(403).json({ message: "Acesso negado" });
       }
 
@@ -5805,19 +5982,16 @@ app.post(
   async (req, res) => {
     try {
       const professionalId = Number.parseInt(req.params.id);
-      const userId = req.user.id;
+      const canEditOwn =
+        req.user.roles?.includes("professional") &&
+        professionalId === req.user.id;
+      const canEditAsSecretary =
+        req.user.currentRole === "secretaria" &&
+        professionalId === req.user.professionalScopeId;
 
-      // Verify that the user is updating their own signature
-      if (professionalId !== userId) {
-        return res
-          .status(403)
-          .json({ message: "Você só pode alterar sua própria assinatura" });
-      }
-
-      // Verify that user has professional role
-      if (!req.user.roles || !req.user.roles.includes("professional")) {
+      if (!canEditOwn && !canEditAsSecretary) {
         return res.status(403).json({
-          message: "Apenas profissionais podem ter assinatura digital",
+          message: "Você só pode alterar a assinatura do profissional vinculado.",
         });
       }
 
@@ -5869,10 +6043,18 @@ app.post(
 app.get("/api/professionals/:id/signature", authenticate, async (req, res) => {
   try {
     const professionalId = Number.parseInt(req.params.id);
-    const userId = req.user.id;
+    const canReadOwn =
+      req.user.roles?.includes("professional") &&
+      professionalId === req.user.id;
+    const canReadAsSecretary =
+      req.user.currentRole === "secretaria" &&
+      professionalId === req.user.professionalScopeId;
 
-    // Verify that the user is accessing their own signature or is admin
-    if (professionalId !== userId && !req.user.roles?.includes("admin")) {
+    if (
+      !canReadOwn &&
+      !canReadAsSecretary &&
+      !req.user.roles?.includes("admin")
+    ) {
       return res.status(403).json({ message: "Acesso não autorizado" });
     }
 
@@ -5909,7 +6091,7 @@ const specialtyFeaturesEnabled =
 app.get(
   "/api/professional/features",
   authenticate,
-  authorize(["professional", "admin"]),
+  authorize(["professional", "secretaria", "admin"]),
   async (req, res) => {
     res.json({
       whatsappBusinessDocumentSend: isWhatsappCloudConfigured(),
@@ -5925,7 +6107,7 @@ app.get(
 app.post(
   "/api/professional/onboarding/complete",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       if (!specialtyFeaturesEnabled) {
@@ -5950,7 +6132,7 @@ app.post(
            updated_at = CURRENT_TIMESTAMP
          WHERE id = $2
          RETURNING id, primary_specialty_code, onboarding_status`,
-        [primary_specialty_code, req.user.id]
+        [primary_specialty_code, req.user.professionalScopeId]
       );
 
       if (upd.rows.length === 0) {
@@ -5973,7 +6155,7 @@ app.post(
 app.patch(
   "/api/professional/profile/specialty",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       if (!specialtyFeaturesEnabled) {
@@ -5992,7 +6174,7 @@ app.patch(
            updated_at = CURRENT_TIMESTAMP
          WHERE id = $2
          RETURNING id, primary_specialty_code`,
-        [primary_specialty_code, req.user.id]
+        [primary_specialty_code, req.user.professionalScopeId]
       );
 
       if (upd.rows.length === 0) {
@@ -6017,13 +6199,17 @@ app.delete(
   async (req, res) => {
     try {
       const professionalId = Number.parseInt(req.params.id);
-      const userId = req.user.id;
+      const canEditOwn =
+        req.user.roles?.includes("professional") &&
+        professionalId === req.user.id;
+      const canEditAsSecretary =
+        req.user.currentRole === "secretaria" &&
+        professionalId === req.user.professionalScopeId;
 
-      // Verify that the user is removing their own signature
-      if (professionalId !== userId) {
-        return res
-          .status(403)
-          .json({ message: "Você só pode remover sua própria assinatura" });
+      if (!canEditOwn && !canEditAsSecretary) {
+        return res.status(403).json({
+          message: "Você só pode remover a assinatura do profissional vinculado.",
+        });
       }
 
       console.log(
@@ -6104,7 +6290,7 @@ app.post(
 app.get(
   "/api/private-patients",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const rawQuery = typeof req.query.q === "string" ? req.query.q.trim() : "";
@@ -6116,7 +6302,7 @@ app.get(
 
       if (rawQuery) {
         const cleanCpf = rawQuery.replace(/\D/g, "");
-        const params = [req.user.id, `%${rawQuery}%`];
+        const params = [req.user.professionalScopeId, `%${rawQuery}%`];
         let query = `
           SELECT * FROM private_patients
           WHERE professional_id = $1
@@ -6147,7 +6333,7 @@ app.get(
           WHERE professional_id = $1 
           ORDER BY name
         `,
-        [req.user.id]
+        [req.user.professionalScopeId]
       );
 
       res.json(patientsResult.rows);
@@ -6163,7 +6349,7 @@ app.get(
 app.post(
   "/api/private-patients",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const {
@@ -6209,7 +6395,7 @@ app.post(
           `
         SELECT id FROM private_patients WHERE cpf = $1 AND professional_id = $2
       `,
-          [cleanCPF, req.user.id]
+          [cleanCPF, req.user.professionalScopeId]
         );
 
         if (existingPatient.rows.length > 0) {
@@ -6229,7 +6415,7 @@ app.post(
       RETURNING *
     `,
         [
-          req.user.id,
+          req.user.professionalScopeId,
           name.trim(),
           cleanCPF,
           email?.trim() || null,
@@ -6264,7 +6450,7 @@ app.post(
 app.put(
   "/api/private-patients/:id",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -6289,7 +6475,7 @@ app.put(
         `
       SELECT * FROM private_patients WHERE id = $1 AND professional_id = $2
     `,
-        [id, req.user.id]
+        [id, req.user.professionalScopeId]
       );
 
       if (currentPatientResult.rows.length === 0) {
@@ -6334,7 +6520,7 @@ app.put(
           convenio?.trim() || null,
           typeof req.body.is_active === "boolean" ? req.body.is_active : null,
           id,
-          req.user.id,
+          req.user.professionalScopeId,
         ]
       );
 
@@ -6358,7 +6544,7 @@ app.put(
 app.delete(
   "/api/private-patients/:id",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -6368,7 +6554,7 @@ app.delete(
         `
       SELECT * FROM private_patients WHERE id = $1 AND professional_id = $2
     `,
-        [id, req.user.id]
+        [id, req.user.professionalScopeId]
       );
 
       if (patientResult.rows.length === 0) {
@@ -6396,7 +6582,7 @@ app.delete(
         SET is_active = false, updated_at = CURRENT_TIMESTAMP
         WHERE id = $1 AND professional_id = $2
       `,
-        [id, req.user.id]
+        [id, req.user.professionalScopeId]
       );
 
       console.log("✅ Private patient deactivated:", id);
@@ -6414,7 +6600,7 @@ app.delete(
 app.get(
   "/api/attendance-locations",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const locationsResult = await pool.query(
@@ -6423,7 +6609,7 @@ app.get(
       WHERE professional_id = $1 
       ORDER BY is_default DESC, name
     `,
-        [req.user.id]
+        [req.user.professionalScopeId]
       );
 
       res.json(locationsResult.rows);
@@ -6439,7 +6625,7 @@ app.get(
 app.post(
   "/api/attendance-locations",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const {
@@ -6465,7 +6651,7 @@ app.post(
           `
         UPDATE attendance_locations SET is_default = false WHERE professional_id = $1
       `,
-          [req.user.id]
+          [req.user.professionalScopeId]
         );
       }
 
@@ -6479,7 +6665,7 @@ app.post(
       RETURNING *
     `,
         [
-          req.user.id,
+          req.user.professionalScopeId,
           name.trim(),
           address?.trim() || null,
           address_number?.trim() || null,
@@ -6511,7 +6697,7 @@ app.post(
 app.put(
   "/api/attendance-locations/:id",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -6533,7 +6719,7 @@ app.put(
         `
       SELECT * FROM attendance_locations WHERE id = $1 AND professional_id = $2
     `,
-        [id, req.user.id]
+        [id, req.user.professionalScopeId]
       );
 
       if (currentLocationResult.rows.length === 0) {
@@ -6552,7 +6738,7 @@ app.put(
           `
         UPDATE attendance_locations SET is_default = false WHERE professional_id = $1 AND id != $2
       `,
-          [req.user.id, id]
+          [req.user.professionalScopeId, id]
         );
       }
 
@@ -6577,7 +6763,7 @@ app.put(
           phone?.replace(/\D/g, "") || null,
           is_default || false,
           id,
-          req.user.id,
+          req.user.professionalScopeId,
         ]
       );
 
@@ -6601,7 +6787,7 @@ app.put(
 app.delete(
   "/api/attendance-locations/:id",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -6611,7 +6797,7 @@ app.delete(
         `
       SELECT * FROM attendance_locations WHERE id = $1 AND professional_id = $2
     `,
-        [id, req.user.id]
+        [id, req.user.professionalScopeId]
       );
 
       if (locationResult.rows.length === 0) {
@@ -6622,7 +6808,7 @@ app.delete(
 
       await pool.query(
         "DELETE FROM attendance_locations WHERE id = $1 AND professional_id = $2",
-        [id, req.user.id]
+        [id, req.user.professionalScopeId]
       );
 
       console.log("✅ Attendance location deleted:", id);
@@ -6640,7 +6826,7 @@ app.delete(
 app.get(
   "/api/medical-records",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const agendaOnlyFilter = isAgendaOnlyProfessional(req)
@@ -6659,7 +6845,7 @@ app.get(
       ${agendaOnlyFilter}
       ORDER BY mr.created_at DESC
     `,
-        [req.user.id]
+        [req.user.professionalScopeId]
       );
 
       res.json(recordsResult.rows);
@@ -6674,7 +6860,7 @@ app.get(
 app.get(
   "/api/medical-records/:id/pdf",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -6683,7 +6869,7 @@ app.get(
         `SELECT pdf_url, private_patient_id, patient_type
          FROM medical_records
          WHERE id = $1 AND professional_id = $2`,
-        [id, req.user.id]
+        [id, req.user.professionalScopeId]
       );
 
       if (recordResult.rows.length === 0) {
@@ -6758,7 +6944,7 @@ app.get(
 app.post(
   "/api/medical-records",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const {
@@ -6802,7 +6988,7 @@ app.post(
         // Validate patient belongs to professional
         const patientResult = await pool.query(
           `SELECT id FROM private_patients WHERE id = $1 AND professional_id = $2`,
-          [private_patient_id, req.user.id]
+          [private_patient_id, req.user.professionalScopeId]
         );
 
         if (patientResult.rows.length === 0) {
@@ -6836,7 +7022,7 @@ app.post(
       RETURNING *
     `,
         [
-          req.user.id,
+          req.user.professionalScopeId,
           private_patient_id || null,
           patient_name?.trim() || null,
           patient_cpf?.replace(/\D/g, "") || null,
@@ -6863,7 +7049,7 @@ app.post(
       console.log("✅ Medical record created:", record.id);
 
       try {
-        const pdfUrl = await regenerateMedicalRecordPdf(record.id, req.user.id);
+        const pdfUrl = await regenerateMedicalRecordPdf(record.id, req.user.professionalScopeId);
         record.pdf_url = pdfUrl;
       } catch (pdfErr) {
         console.warn(
@@ -6886,7 +7072,7 @@ app.post(
 app.put(
   "/api/medical-records/:id",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -6913,7 +7099,7 @@ app.put(
         `
       SELECT * FROM medical_records WHERE id = $1 AND professional_id = $2
     `,
-        [id, req.user.id]
+        [id, req.user.professionalScopeId]
       );
 
       if (currentRecordResult.rows.length === 0) {
@@ -6994,7 +7180,7 @@ app.put(
           vital_signs ? JSON.stringify(vital_signs) : null,
           specialtyFieldsParam,
           id,
-          req.user.id,
+          req.user.professionalScopeId,
         ]
       );
 
@@ -7005,7 +7191,7 @@ app.put(
       try {
         const pdfUrl = await regenerateMedicalRecordPdf(
           Number.parseInt(id, 10),
-          req.user.id
+          req.user.professionalScopeId
         );
         updatedRecord.pdf_url = pdfUrl;
       } catch (pdfErr) {
@@ -7029,14 +7215,14 @@ app.put(
 app.post(
   "/api/medical-records/:id/regenerate-pdf",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const { id } = req.params;
 
       const recordResult = await pool.query(
         `SELECT * FROM medical_records WHERE id = $1 AND professional_id = $2`,
-        [id, req.user.id]
+        [id, req.user.professionalScopeId]
       );
 
       if (recordResult.rows.length === 0) {
@@ -7052,7 +7238,7 @@ app.post(
 
       const pdfUrl = await regenerateMedicalRecordPdf(
         Number.parseInt(id, 10),
-        req.user.id
+        req.user.professionalScopeId
       );
 
       const fresh = await pool.query(
@@ -7062,7 +7248,7 @@ app.post(
          FROM medical_records mr
          LEFT JOIN private_patients pp ON mr.private_patient_id = pp.id
          WHERE mr.id = $1 AND mr.professional_id = $2`,
-        [id, req.user.id]
+        [id, req.user.professionalScopeId]
       );
 
       res.json({
@@ -7085,7 +7271,7 @@ app.post(
 app.delete(
   "/api/medical-records/:id",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -7095,7 +7281,7 @@ app.delete(
         `
       SELECT * FROM medical_records WHERE id = $1 AND professional_id = $2
     `,
-        [id, req.user.id]
+        [id, req.user.professionalScopeId]
       );
 
       if (recordResult.rows.length === 0) {
@@ -7111,7 +7297,7 @@ app.delete(
 
       await pool.query(
         "DELETE FROM medical_records WHERE id = $1 AND professional_id = $2",
-        [id, req.user.id]
+        [id, req.user.professionalScopeId]
       );
 
       console.log("✅ Medical record deleted:", id);
@@ -7128,7 +7314,7 @@ app.delete(
 app.post(
   "/api/medical-records/generate-document",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const { record_id, template_data } = req.body;
@@ -7147,7 +7333,7 @@ app.post(
       JOIN private_patients pp ON mr.private_patient_id = pp.id
       WHERE mr.id = $1 AND mr.professional_id = $2
     `,
-        [record_id, req.user.id]
+        [record_id, req.user.professionalScopeId]
       );
 
       if (recordResult.rows.length === 0) {
@@ -7216,7 +7402,7 @@ app.post(
       RETURNING *
     `,
         [
-          req.user.id,
+          req.user.professionalScopeId,
           record.private_patient_id,
           `Prontuário - ${record.patient_name}`,
           "medical_record",
@@ -7234,7 +7420,7 @@ app.post(
         `UPDATE medical_records
          SET pdf_url = $1, pdf_generated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
          WHERE id = $2 AND professional_id = $3`,
-        [documentData.url, record_id, req.user.id]
+        [documentData.url, record_id, req.user.professionalScopeId]
       );
 
       res.json({
@@ -7256,10 +7442,10 @@ app.post(
 app.get(
   "/api/documents/medical",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
-      const professionalId = req.user.id;
+      const professionalId = req.user.professionalScopeId;
 
       console.log(
         "🔄 Fetching medical documents for professional:",
@@ -7297,7 +7483,7 @@ app.get(
 app.post(
   "/api/documents/medical",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const {
@@ -7308,7 +7494,7 @@ app.post(
         patient_cpf,
         template_data,
       } = req.body;
-      const professionalId = req.user.id;
+      const professionalId = req.user.professionalScopeId;
 
       console.log("🔄 Creating medical document:", {
         title,
@@ -7437,11 +7623,11 @@ app.post(
 app.delete(
   "/api/documents/medical/:id",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       const { id } = req.params;
-      const professionalId = req.user.id;
+      const professionalId = req.user.professionalScopeId;
 
       console.log("🔄 Deleting medical document:", id);
 
@@ -7472,10 +7658,10 @@ app.delete(
 app.get(
   "/api/professional/scheduling-access",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
-      const professionalId = req.user.id;
+      const professionalId = req.user.professionalScopeId;
 
       console.log(
         "🔍 [ACCESS-CHECK] Checking scheduling access for professional:",
@@ -8074,7 +8260,7 @@ app.post(
 app.post(
   "/api/professional/create-payment",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       if (isAgendaOnlyProfessional(req)) {
@@ -8110,12 +8296,14 @@ app.post(
           pending: urls.professional.pending,
         },
         notification_url: urls.webhook,
-        external_reference: `professional_${req.user.id}_${Date.now()}`,
+        external_reference: `professional_${req.user.professionalScopeId}_${Date.now()}`,
         statement_descriptor: "QUIRO FERREIRA",
         expires: false,
         payer: {
           name: req.user.name,
-          email: req.user.email || `professional${req.user.id}@temp.com`,
+          email:
+            req.user.email ||
+            `professional${req.user.professionalScopeId}@temp.com`,
         },
       };
 
@@ -8154,11 +8342,11 @@ app.post(
       VALUES ($1, $2, $3, $4, $5)
     `,
         [
-          req.user.id,
+          req.user.professionalScopeId,
           Number.parseFloat(amount),
           "pending",
           preferenceId,
-          `professional_${req.user.id}_${Date.now()}`,
+          `professional_${req.user.professionalScopeId}_${Date.now()}`,
         ]
       );
 
@@ -8178,7 +8366,7 @@ app.post(
 app.post(
   "/api/professional/create-agenda-payment",
   authenticate,
-  authorize(["professional"]),
+  authorize(["professional", "secretaria"]),
   async (req, res) => {
     try {
       // Agenda payment is always for 1 MONTH (30 days)
@@ -8196,7 +8384,7 @@ app.post(
          WHERE professional_id = $1 AND is_active = true
          ORDER BY created_at DESC
          LIMIT 1`,
-        [req.user.id]
+        [req.user.professionalScopeId]
       );
 
       const currentExpiresAtRaw =
@@ -8241,7 +8429,7 @@ app.post(
         },
         notification_url: urls.webhook,
         external_reference: `agenda_${
-          req.user.id
+          req.user.professionalScopeId
         }_${duration_days}_${Date.now()}`,
         statement_descriptor: "QUIRO FERREIRA",
         expires: false,
@@ -8251,7 +8439,9 @@ app.post(
         }),
         payer: {
           name: req.user.name,
-          email: req.user.email || `professional${req.user.id}@temp.com`,
+          email:
+            req.user.email ||
+            `professional${req.user.professionalScopeId}@temp.com`,
         },
       };
 
@@ -8281,12 +8471,12 @@ app.post(
       VALUES ($1, $2, $3, $4, $5, $6)
     `,
         [
-          req.user.id,
+          req.user.professionalScopeId,
           duration_days,
           24.99,
           "pending",
           preferenceId,
-          `agenda_${req.user.id}_${duration_days}_${Date.now()}`,
+          `agenda_${req.user.professionalScopeId}_${duration_days}_${Date.now()}`,
         ]
       );
 

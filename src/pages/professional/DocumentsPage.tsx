@@ -19,6 +19,7 @@ import {
   Send,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
+import { getProfessionalActorId } from "../../utils/professionalActor";
 
 type SavedDocument = {
   id: number;
@@ -170,7 +171,8 @@ const DocumentsPage: React.FC = () => {
       const apiUrl = getApiUrl();
 
       // Fetch professional data
-      const userResponse = await fetchWithAuth(`${apiUrl}/api/users/${user?.id}`);
+      const actorId = getProfessionalActorId(user);
+      const userResponse = await fetchWithAuth(`${apiUrl}/api/users/${actorId}`);
 
       if (userResponse.ok) {
         const userData = await userResponse.json();
@@ -184,7 +186,7 @@ const DocumentsPage: React.FC = () => {
         // Fetch signature separately
         try {
           const signatureResponse = await fetchWithAuth(
-            `${apiUrl}/api/professionals/${user?.id}/signature`
+            `${apiUrl}/api/professionals/${getProfessionalActorId(user)}/signature`
           );
           if (signatureResponse.ok) {
             const signatureData = await signatureResponse.json();

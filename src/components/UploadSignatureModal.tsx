@@ -11,6 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../utils/apiHelpers";
+import { getProfessionalActorId } from "../utils/professionalActor";
 import {
   SIGNATURE_ASPECT,
   SIGNATURE_EXPORT_HEIGHT,
@@ -124,9 +125,9 @@ const UploadSignatureModal: React.FC<UploadSignatureModalProps> = ({
 
       const apiUrl = getApiUrl();
       const userData = JSON.parse(localStorage.getItem("user") || "{}");
-      const userId = userData.id;
+      const targetId = getProfessionalActorId(userData) ?? userData.id;
 
-      if (!userId) {
+      if (!targetId) {
         throw new Error("Usuário não identificado");
       }
 
@@ -134,7 +135,7 @@ const UploadSignatureModal: React.FC<UploadSignatureModalProps> = ({
       formData.append("signature", blob, "assinatura.png");
 
       const response = await fetchWithAuth(
-        `${apiUrl}/api/professionals/${userId}/signature`,
+        `${apiUrl}/api/professionals/${targetId}/signature`,
         {
           method: "POST",
           body: formData,
@@ -177,10 +178,10 @@ const UploadSignatureModal: React.FC<UploadSignatureModalProps> = ({
 
       const apiUrl = getApiUrl();
       const userData = JSON.parse(localStorage.getItem("user") || "{}");
-      const userId = userData.id;
+      const targetId = getProfessionalActorId(userData) ?? userData.id;
 
       const response = await fetchWithAuth(
-        `${apiUrl}/api/professionals/${userId}/signature`,
+        `${apiUrl}/api/professionals/${targetId}/signature`,
         {
           method: "DELETE",
         }

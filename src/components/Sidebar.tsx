@@ -29,6 +29,17 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
         { to: '/professional/reports', icon: <BarChart2 size={20} />, label: 'Relatórios' },
         { to: '/professional/profile', icon: <Settings size={20} />, label: 'Perfil' },
       ];
+    } else if (user?.currentRole === 'secretaria') {
+      return [
+        { to: '/professional', icon: <Home size={20} />, label: 'Início' },
+        { to: '/professional/scheduling', icon: <CalendarDays size={20} />, label: 'Agenda' },
+        { to: '/professional/private-patients', icon: <UserCheck size={20} />, label: 'Pacientes Particulares' },
+        { to: '/professional/services', icon: <FileText size={20} />, label: 'Meus Serviços' },
+        { to: '/professional/medical-records', icon: <Stethoscope size={20} />, label: 'Prontuários' },
+        { to: '/professional/documents', icon: <FileImage size={20} />, label: 'Documentos' },
+        { to: '/professional/reports', icon: <BarChart2 size={20} />, label: 'Relatórios' },
+        { to: '/professional/profile', icon: <Settings size={20} />, label: 'Perfil' },
+      ];
     } else if (user?.currentRole === 'admin') {
       return [
         { to: '/admin', icon: <Home size={20} />, label: 'Início' },
@@ -56,7 +67,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
   return (
     <aside className="h-full">
       <div className="p-4">
-        {user?.currentRole === 'professional' &&
+        {(user?.currentRole === 'professional' || user?.currentRole === 'secretaria') &&
           user.primarySpecialtyCode &&
           user.onboardingStatus === 'completed' && (
             <div className="mb-4 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-900">

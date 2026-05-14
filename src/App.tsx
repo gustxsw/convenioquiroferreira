@@ -69,6 +69,8 @@ const ProtectedRoute = ({
       return <Navigate to="/admin" replace />;
     } else if (user.currentRole === "vendedor") {
       return <Navigate to="/affiliate" replace />;
+    } else if (user.currentRole === "secretaria") {
+      return <Navigate to="/professional" replace />;
     } else if (user.currentRole === "financeiro_agenda") {
       return <Navigate to="/financeiro/agenda" replace />;
     }
@@ -129,7 +131,7 @@ function App() {
       {/* Professional routes */}
       <Route
         element={
-          <ProtectedRoute allowedRoles={["professional"]}>
+          <ProtectedRoute allowedRoles={["professional", "secretaria"]}>
             <MainLayout />
           </ProtectedRoute>
         }

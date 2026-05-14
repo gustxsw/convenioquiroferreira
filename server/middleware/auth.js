@@ -76,7 +76,8 @@ export const authenticate = async (req, res, next) => {
 
     const result = await pool.query(
       `SELECT id, name, cpf, roles, professional_type,
-              primary_specialty_code, onboarding_status
+              primary_specialty_code, onboarding_status,
+              linked_professional_id
        FROM users WHERE id = $1`,
       [decoded.id]
     );
@@ -88,23 +89,69 @@ export const authenticate = async (req, res, next) => {
     const user = result.rows[0];
 
     const roles = user.roles || [];
+    const currentRole = decoded.currentRole || (user.roles && user.roles[0]);
     const isProfessional = roles.includes("professional");
-    const hasSpecialty = Boolean(user.primary_specialty_code);
-    const onboardingResolved = !isProfessional
-      ? null
-      : hasSpecialty
-        ? "completed"
-        : "pending";
+
+    let professionalScopeId = null;
+    let professionalTypeForAccess = normalizeProfessionalType(user.professional_type);
+    let primarySpecialtyForAccess = user.primary_specialty_code || null;
+    let onboardingResolved = null;
+
+    if (currentRole === "secretaria") {
+      if (!roles.includes("secretaria")) {
+        return res.status(403).json({
+          message: "Token com role inválida para este usuário",
+          code: "ROLE_TOKEN_MISMATCH",
+        });
+      }
+      const linkId = user.linked_professional_id;
+      if (!linkId) {
+        return res.status(403).json({
+          message: "Secretária sem profissional vinculado. Contate o administrador.",
+          code: "SECRETARY_NO_LINK",
+        });
+      }
+      const proRes = await pool.query(
+        `SELECT id, professional_type, primary_specialty_code, roles
+         FROM users WHERE id = $1`,
+        [linkId]
+      );
+      if (
+        proRes.rows.length === 0 ||
+        !proRes.rows[0].roles?.includes("professional")
+      ) {
+        return res.status(403).json({
+          message: "Vínculo de secretária inválido. Contate o administrador.",
+          code: "SECRETARY_LINK_INVALID",
+        });
+      }
+      const proRow = proRes.rows[0];
+      professionalScopeId = proRow.id;
+      professionalTypeForAccess = normalizeProfessionalType(proRow.professional_type);
+      primarySpecialtyForAccess = proRow.primary_specialty_code || null;
+      onboardingResolved = primarySpecialtyForAccess ? "completed" : "pending";
+    } else if (currentRole === "professional") {
+      professionalScopeId = user.id;
+      if (isProfessional) {
+        const hasSpecialty = Boolean(user.primary_specialty_code);
+        onboardingResolved = hasSpecialty ? "completed" : "pending";
+      }
+    } else if (isProfessional) {
+      const hasSpecialty = Boolean(user.primary_specialty_code);
+      onboardingResolved = hasSpecialty ? "completed" : "pending";
+    }
 
     req.user = {
       id: user.id,
       name: user.name,
       cpf: user.cpf,
       roles,
-      currentRole: decoded.currentRole || (user.roles && user.roles[0]),
-      professional_type: normalizeProfessionalType(user.professional_type),
-      primary_specialty_code: user.primary_specialty_code || null,
+      currentRole,
+      professional_type: professionalTypeForAccess,
+      primary_specialty_code: primarySpecialtyForAccess,
       onboarding_status: onboardingResolved,
+      professionalScopeId,
+      linked_professional_id: user.linked_professional_id || null,
     };
 
     next();

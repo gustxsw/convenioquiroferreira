@@ -33,6 +33,7 @@ import RecurringConsultationModal from "../../components/RecurringConsultationMo
 import SchedulingAccessPayment from "../../components/SchedulingAccessPayment";
 import QuickScheduleModal from "../../components/QuickScheduleModal";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
+import { getProfessionalActorId } from "../../utils/professionalActor";
 
 type Consultation = {
   id: number;
@@ -840,7 +841,7 @@ const SchedulingPage: React.FC = () => {
 
       // Create single consultation only (recurring moved to separate modal)
       const consultationData: any = {
-        professional_id: user?.id,
+        professional_id: getProfessionalActorId(user),
         service_id: Number.parseInt(formData.service_id),
         location_id: formData.location_id
           ? Number.parseInt(formData.location_id)

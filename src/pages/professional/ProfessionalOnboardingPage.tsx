@@ -19,7 +19,10 @@ const ProfessionalOnboardingPage: React.FC = () => {
   const [featuresOn, setFeaturesOn] = useState(true);
 
   useEffect(() => {
-    if (user?.currentRole !== "professional") {
+    if (
+      user?.currentRole !== "professional" &&
+      user?.currentRole !== "secretaria"
+    ) {
       navigate("/professional", { replace: true });
       return;
     }

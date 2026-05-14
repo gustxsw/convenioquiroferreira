@@ -9,6 +9,7 @@ import {
 } from "../../utils/timeSlotValidation";
 import { Search, Calendar, User, Users, AlertTriangle } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
+import { getProfessionalActorId } from "../../utils/professionalActor";
 
 type Service = {
   id: number;
@@ -381,7 +382,7 @@ const RegisterConsultationPage: React.FC = () => {
 
       // Prepare consultation data with proper patient identification
       const consultationData: any = {
-        professional_id: user?.id,
+        professional_id: getProfessionalActorId(user),
         service_id: serviceId,
         location_id: locationId ? Number.parseInt(locationId) : null,
         value: Number(value),

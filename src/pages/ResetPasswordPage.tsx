@@ -25,6 +25,23 @@ function normalizeTokenFromUrl(raw: string | null): string | null {
   return out.length > 0 ? out : null;
 }
 
+/** Lê o token sempre do endereço real do navegador (evita perder ?token= em cenários de SPA/hash). */
+function readResetTokenFromBrowser(): string | null {
+  if (typeof window === "undefined") return null;
+  let t: string | null = null;
+  const search = window.location.search;
+  if (search && search.length > 1) {
+    t = new URLSearchParams(search).get("token");
+  }
+  if (!t && window.location.hash) {
+    const q = window.location.hash.indexOf("?");
+    if (q !== -1) {
+      t = new URLSearchParams(window.location.hash.slice(q)).get("token");
+    }
+  }
+  return normalizeTokenFromUrl(t);
+}
+
 const ResetPasswordPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -38,9 +55,14 @@ const ResetPasswordPage: React.FC = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
+    // Preferir window.location para refletir o URL real após redirects de e-mail.
+    const fromWindow = readResetTokenFromBrowser();
+    if (fromWindow) {
+      setToken(fromWindow);
+      return;
+    }
     const params = new URLSearchParams(location.search);
     let t = params.get("token");
-    // Alguns links / clientes de e-mail colocam a query após o # (SPA)
     if (!t && typeof window !== "undefined" && window.location.hash) {
       const q = window.location.hash.indexOf("?");
       if (q !== -1) {
@@ -48,14 +70,15 @@ const ResetPasswordPage: React.FC = () => {
       }
     }
     setToken(normalizeTokenFromUrl(t));
-  }, [location.search, location.hash]);
+  }, [location.pathname, location.search, location.hash]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSuccess("");
 
-    if (!token) {
+    const effectiveToken = readResetTokenFromBrowser() ?? token;
+    if (!effectiveToken) {
       setError("Link inválido. Solicite uma nova redefinição de senha.");
       return;
     }
@@ -85,7 +108,7 @@ const ResetPasswordPage: React.FC = () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          token: normalizeTokenFromUrl(token) ?? "",
+          token: normalizeTokenFromUrl(effectiveToken) ?? "",
           password,
         }),
       });

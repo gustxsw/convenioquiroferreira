@@ -2,6 +2,7 @@ import type React from "react";
 import { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
+import { getProfessionalActorId } from "../../utils/professionalActor";
 import {
   CalendarClock,
   DollarSign,
@@ -214,10 +215,11 @@ const ProfessionalHomePage: React.FC = () => {
 
       console.log("🔄 Fetching professional data from:", apiUrl);
       console.log("🔄 Date range:", dateRange);
-      console.log("🔄 User ID:", user?.id);
+      const actorId = getProfessionalActorId(user);
+      console.log("🔄 User ID:", actorId);
 
       // Fetch user data to get photo_url
-      const userResponse = await fetchWithAuth(`${apiUrl}/api/users/${user?.id}`, {
+      const userResponse = await fetchWithAuth(`${apiUrl}/api/users/${actorId}`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -335,10 +337,10 @@ const ProfessionalHomePage: React.FC = () => {
   };
 
   useEffect(() => {
-    if (user?.id) {
+    if (getProfessionalActorId(user)) {
       fetchData();
     }
-  }, [user?.id]);
+  }, [user]);
 
   // ⚠️ Gambiarra provisória — ajusta -3h no frontend apenas para exibição
   const formatDate = (dateString: string) => {

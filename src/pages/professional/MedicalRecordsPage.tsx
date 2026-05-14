@@ -12,6 +12,7 @@ import {
   fetchWithAuth,
   getApiUrl,
 } from "../../utils/apiHelpers";
+import { getProfessionalActorId } from "../../utils/professionalActor";
 import MedicalRecordPreviewModal from "../../components/MedicalRecordPreviewModal";
 import {
   Stethoscope,
@@ -225,7 +226,7 @@ const MedicalRecordsPage: React.FC = () => {
       const apiUrl = getApiUrl();
 
       // Fetch professional data
-      const userResponse = await fetchWithAuth(`${apiUrl}/api/users/${user?.id}`);
+      const userResponse = await fetchWithAuth(`${apiUrl}/api/users/${getProfessionalActorId(user)}`);
 
       if (userResponse.ok) {
         const userData = await userResponse.json();

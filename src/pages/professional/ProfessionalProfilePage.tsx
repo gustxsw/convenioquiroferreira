@@ -24,6 +24,7 @@ import {
   SIGNATURE_PREVIEW_MAX_WIDTH_CLASS,
 } from "../../constants/signatureDisplay";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
+import { getProfessionalActorId } from "../../utils/professionalActor";
 import {
   SPECIALTY_CODES,
   getSpecialtyLabelPt,
@@ -193,7 +194,8 @@ const ProfessionalProfilePage: React.FC = () => {
       const apiUrl = getApiUrl();
 
       // Fetch user profile
-      const userResponse = await fetchWithAuth(`${apiUrl}/api/users/${user?.id}`);
+      const actorId = getProfessionalActorId(user);
+      const userResponse = await fetchWithAuth(`${apiUrl}/api/users/${actorId}`);
 
       if (userResponse.ok) {
         const userData = await userResponse.json();
@@ -217,7 +219,7 @@ const ProfessionalProfilePage: React.FC = () => {
 
       // Fetch signature
       const signatureResponse = await fetchWithAuth(
-        `${apiUrl}/api/professionals/${user?.id}/signature`
+        `${apiUrl}/api/professionals/${actorId}/signature`
       );
 
       if (signatureResponse.ok) {
@@ -255,6 +257,11 @@ const ProfessionalProfilePage: React.FC = () => {
 
     try {
       const apiUrl = getApiUrl();
+      const actorId = getProfessionalActorId(user);
+      if (!actorId) {
+        setError("Não foi possível identificar o profissional.");
+        return;
+      }
 
       const updateData: any = {
         name: profileData.name,
@@ -267,7 +274,7 @@ const ProfessionalProfilePage: React.FC = () => {
         updateData.newPassword = profileData.newPassword;
       }
 
-      const response = await fetchWithAuth(`${apiUrl}/api/users/${user?.id}`, {
+      const response = await fetchWithAuth(`${apiUrl}/api/users/${actorId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

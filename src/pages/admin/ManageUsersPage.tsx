@@ -44,6 +44,7 @@ type UserData = {
   percentage: number;
   crm: string;
   professional_type: string;
+  linked_professional_id?: number | null;
 };
 
 const ManageUsersPage: React.FC = () => {
@@ -81,9 +82,10 @@ const ManageUsersPage: React.FC = () => {
     subscription_status: "pending",
     subscription_expiry: "",
     category_name: "",
-    professional_percentage: 50,
+    percentage: 50,
     crm: "",
     professional_type: "convenio",
+    linked_professional_id: "" as number | "",
   });
 
   // Password visibility
@@ -204,6 +206,7 @@ const ManageUsersPage: React.FC = () => {
       percentage: 50,
       crm: "",
       professional_type: "convenio",
+      linked_professional_id: "",
     });
     setSelectedUser(null);
     setIsModalOpen(true);
@@ -258,6 +261,7 @@ const ManageUsersPage: React.FC = () => {
       percentage: user.percentage || 50,
       crm: user.crm || "",
       professional_type: user.professional_type || "convenio",
+      linked_professional_id: user.linked_professional_id ?? "",
     });
     setSelectedUser(user);
     setIsModalOpen(true);
@@ -298,12 +302,17 @@ const ManageUsersPage: React.FC = () => {
     } else if (type === "checkbox") {
       const target = e.target as HTMLInputElement;
       const role = target.value;
-      setFormData((prev) => ({
-        ...prev,
-        roles: target.checked
+      setFormData((prev) => {
+        const nextRoles = target.checked
           ? [...prev.roles, role]
-          : prev.roles.filter((r) => r !== role),
-      }));
+          : prev.roles.filter((r) => r !== role);
+        return {
+          ...prev,
+          roles: nextRoles,
+          linked_professional_id:
+            role === "secretaria" && !target.checked ? "" : prev.linked_professional_id,
+        };
+      });
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
     }
@@ -354,6 +363,18 @@ const ManageUsersPage: React.FC = () => {
         }
       }
 
+      // Validate secretary link
+      if (formData.roles.includes("secretaria")) {
+        const lid =
+          formData.linked_professional_id === ""
+            ? NaN
+            : Number(formData.linked_professional_id);
+        if (!lid || Number.isNaN(lid)) {
+          setError("Secretária deve ter um profissional vinculado");
+          return;
+        }
+      }
+
       // Validate professional percentage
       if (formData.roles.includes("professional")) {
         if (formData.percentage < 0 || formData.percentage > 100) {
@@ -371,12 +392,19 @@ const ManageUsersPage: React.FC = () => {
 
       console.log("🔄 Submitting user data:", { method, url, formData });
 
+      const payload: Record<string, unknown> = { ...formData };
+      if (formData.roles.includes("secretaria")) {
+        payload.linked_professional_id = Number(formData.linked_professional_id);
+      } else {
+        delete payload.linked_professional_id;
+      }
+
       const response = await fetchWithAuth(url, {
         method,
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       console.log("📡 User submission response status:", response.status);
@@ -518,6 +546,12 @@ const ManageUsersPage: React.FC = () => {
             color: "bg-amber-100 text-amber-800",
             icon: <DollarSign className="h-3 w-3" />,
           };
+        case "secretaria":
+          return {
+            text: "Secretária",
+            color: "bg-indigo-100 text-indigo-800",
+            icon: <Briefcase className="h-3 w-3" />,
+          };
         default:
           return {
             text: role,
@@ -647,6 +681,7 @@ const ManageUsersPage: React.FC = () => {
             <option value="client">Clientes</option>
             <option value="professional">Profissionais</option>
             <option value="admin">Administradores</option>
+            <option value="secretaria">Secretárias</option>
             <option value="financeiro_agenda">Financeiro Agenda</option>
           </select>
 
@@ -1074,6 +1109,51 @@ const ManageUsersPage: React.FC = () => {
                         </span>
                       </span>
                     </label>
+
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        value="secretaria"
+                        checked={formData.roles.includes("secretaria")}
+                        onChange={handleInputChange}
+                        className="rounded border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50"
+                      />
+                      <span className="ml-3 flex items-center">
+                        <Briefcase className="h-4 w-4 text-indigo-600 mr-2" />
+                        <span className="font-medium">Secretária</span>
+                        <span className="ml-2 text-sm text-gray-500">
+                          - Acesso ao painel de um profissional (vínculo único)
+                        </span>
+                      </span>
+                    </label>
+
+                    {formData.roles.includes("secretaria") && (
+                      <div className="ml-8 pl-4 border-l-2 border-indigo-200 py-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Profissional vinculado *
+                        </label>
+                        <select
+                          name="linked_professional_id"
+                          value={
+                            formData.linked_professional_id === ""
+                              ? ""
+                              : String(formData.linked_professional_id)
+                          }
+                          onChange={handleInputChange}
+                          className="input w-full max-w-md"
+                          required
+                        >
+                          <option value="">Selecione o profissional...</option>
+                          {users
+                            .filter((u) => u.roles?.includes("professional"))
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name} (ID {p.id})
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1428,6 +1508,24 @@ const ManageUsersPage: React.FC = () => {
                   ))}
                 </div>
               </div>
+
+              {viewingUser.roles?.includes("secretaria") &&
+                viewingUser.linked_professional_id && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900 mb-2">
+                      Vínculo (secretária)
+                    </h3>
+                    <p className="text-sm text-gray-700">
+                      Profissional ID: {viewingUser.linked_professional_id}
+                      {users.find((u) => u.id === viewingUser.linked_professional_id)
+                        ? ` — ${
+                            users.find((u) => u.id === viewingUser.linked_professional_id)
+                              ?.name
+                          }`
+                        : ""}
+                    </p>
+                  </div>
+                )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>

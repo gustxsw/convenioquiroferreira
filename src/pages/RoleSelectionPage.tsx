@@ -95,6 +95,15 @@ const RoleSelectionPage: React.FC = () => {
           bgColor: 'bg-blue-50',
           textColor: 'text-blue-700'
         };
+      case 'secretaria':
+        return {
+          title: 'Secretária',
+          description: 'Acesse a agenda e o painel do profissional vinculado',
+          icon: <Briefcase className="h-8 w-8" />,
+          color: 'bg-indigo-500 hover:bg-indigo-600',
+          bgColor: 'bg-indigo-50',
+          textColor: 'text-indigo-700'
+        };
       case 'admin':
         return {
           title: 'Administrador',
