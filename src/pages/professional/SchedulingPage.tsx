@@ -20,6 +20,7 @@ import {
   Repeat,
   Gift,
   MapPin,
+  Filter,
   Search,
   Lock,
   Unlock,
@@ -623,6 +624,17 @@ const SchedulingPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  /** Aplica a data do campo nativo e dispara o carregamento da agenda (botão Filtrar, Enter ou blur). */
+  const applyPickedDateFromInput = () => {
+    const raw = dateInput.trim();
+    if (!raw) return;
+    const parts = raw.split("-").map((v) => Number.parseInt(String(v), 10));
+    if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return;
+    const [year, month, day] = parts;
+    if (!year || !month || !day) return;
+    setSelectedDate(new Date(year, month - 1, day));
   };
 
   const toggleBlockSlot = async (timeSlot: string) => {
@@ -1392,38 +1404,65 @@ const SchedulingPage: React.FC = () => {
               </button>
             </div>
 
-            <div className="flex items-center justify-between sm:justify-end gap-2">
+            <div className="flex flex-col gap-2 w-full sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
               <button
+                type="button"
                 onClick={() => setSelectedDate(new Date())}
-                className="px-3 py-2 text-xs sm:text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                className="px-3 py-2 text-xs sm:text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors w-full sm:w-auto"
               >
                 Hoje
               </button>
-              <input
-                type="date"
-                className="px-3 py-2 text-xs sm:text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                value={dateInput}
-                onChange={(e) => {
-                  setDateInput(e.target.value);
-                }}
-                onBlur={() => {
-                  if (!dateInput) return;
-                  const [year, month, day] = dateInput.split("-").map((v) => Number(v));
-                  if (!year || !month || !day) return;
-                  setSelectedDate(new Date(year, month - 1, day));
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    if (!dateInput) return;
-                    const [year, month, day] = dateInput
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2 w-full sm:w-auto">
+                <input
+                  type="date"
+                  className="w-full sm:w-auto min-w-0 px-3 py-2 text-xs sm:text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  value={dateInput}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setDateInput(v);
+                    if (!v) return;
+                    const parsed = v
                       .split("-")
-                      .map((v) => Number(v));
-                    if (!year || !month || !day) return;
-                    setSelectedDate(new Date(year, month - 1, day));
-                  }
-                }}
-              />
+                      .map((x) => Number.parseInt(x, 10));
+                    if (
+                      parsed.length === 3 &&
+                      !parsed.some((n) => Number.isNaN(n)) &&
+                      parsed[0] &&
+                      parsed[1] &&
+                      parsed[2]
+                    ) {
+                      setSelectedDate(
+                        new Date(parsed[0], parsed[1] - 1, parsed[2])
+                      );
+                    }
+                  }}
+                  onBlur={applyPickedDateFromInput}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      applyPickedDateFromInput();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={applyPickedDateFromInput}
+                  className="btn btn-primary flex items-center justify-center gap-2 text-xs sm:text-sm py-2 px-4 w-full sm:w-auto shrink-0"
+                >
+                  <Filter className="h-4 w-4 shrink-0" />
+                  Filtrar
+                </button>
+              </div>
+              <p className="text-[11px] sm:text-xs text-gray-500 w-full sm:text-right order-last">
+                <span className="sm:hidden">
+                  Depois de escolher a data, toque em <strong>Filtrar</strong>{" "}
+                  para carregar o dia.
+                </span>
+                <span className="hidden sm:inline">
+                  Use <strong>Filtrar</strong> ou <kbd className="px-1 py-0.5 rounded border border-gray-300 bg-gray-50 text-[10px] font-sans">Enter</kbd>{" "}
+                  para carregar a data selecionada.
+                </span>
+              </p>
             </div>
           </div>
         </div>
