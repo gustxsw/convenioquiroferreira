@@ -64,6 +64,7 @@ const AffiliateFinancialReport: React.FC = () => {
   });
   const [selectedCommissionIds, setSelectedCommissionIds] = useState<number[]>([]);
   const [batchReceipt, setBatchReceipt] = useState<File | null>(null);
+  const [batchPaymentMethod, setBatchPaymentMethod] = useState("Pix");
   const [isBatchPaying, setIsBatchPaying] = useState(false);
   const [selectedAffiliateId, setSelectedAffiliateId] = useState<number | null>(null);
   const [affiliateSearchTerm, setAffiliateSearchTerm] = useState("");
@@ -130,6 +131,7 @@ const AffiliateFinancialReport: React.FC = () => {
   const clearBatchSelection = () => {
     setSelectedCommissionIds([]);
     setBatchReceipt(null);
+    setBatchPaymentMethod("Pix");
   };
 
   const markAsPaidBatch = async () => {
@@ -147,7 +149,7 @@ const AffiliateFinancialReport: React.FC = () => {
 
       for (const commission of batchCommissions) {
         const formData = new FormData();
-        formData.append("paid_method", "Pix");
+        formData.append("paid_method", batchPaymentMethod.trim() || "Pix");
         if (batchReceipt) {
           formData.append("receipt", batchReceipt);
         }
@@ -468,6 +470,14 @@ const AffiliateFinancialReport: React.FC = () => {
               </button>
             </div>
             <div className="p-4 border rounded-lg">
+              <p className="text-xs text-gray-500 mb-2">Forma de pagamento</p>
+              <input
+                type="text"
+                value={batchPaymentMethod}
+                onChange={(e) => setBatchPaymentMethod(e.target.value)}
+                placeholder="Ex: Pix, Transferência..."
+                className="w-full px-3 py-2 border rounded-lg text-sm mb-3"
+              />
               <p className="text-xs text-gray-500 mb-2">Comprovante (opcional)</p>
               <input
                 type="file"

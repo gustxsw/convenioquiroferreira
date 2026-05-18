@@ -199,7 +199,7 @@ const ClientHomePage: React.FC = () => {
 
     // Filter by selected user (all, titular, or specific dependent)
     if (selectedFilter === "titular") {
-      filtered = filtered.filter((c) => c.client_name === user?.name);
+      filtered = filtered.filter((c) => !c.is_dependent);
     } else if (selectedFilter !== "all") {
       const dependent = dependents.find(
         (d) => d.id.toString() === selectedFilter
@@ -221,7 +221,7 @@ const ClientHomePage: React.FC = () => {
     }
 
     setFilteredConsultations(filtered);
-  }, [consultations, selectedFilter, dependents, user?.name, searchTerm]);
+  }, [consultations, selectedFilter, dependents, searchTerm]);
 
   const formatDate = (dateString: string) => {
     const clientHomeUtcDate = new Date(dateString);

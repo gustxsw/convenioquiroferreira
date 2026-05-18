@@ -7,7 +7,12 @@
       "Bash(npm run *)",
       "Bash(node -e ' *)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Suporte\\\\Desktop\\\\Desenvolvimento\\\\convenioquiroferreira\" -Directory)",
-      "Bash(Select-Object Name)"
+      "Bash(Select-Object Name)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Suporte\\\\Desktop\\\\Desenvolvimento\\\\convenioquiroferreira\" -Recurse -Filter \"*\")",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Suporte\\\\Desktop\\\\Desenvolvimento\\\\convenioquiroferreira\" -Recurse | Where-Object { $_.PSIsContainer -eq $false } | Select-Object -ExpandProperty FullName | Select-Object -First 50)",
+      "Bash(xargs grep -l \"affiliate\\\\|vendedor\\\\|commission\\\\|referral\\\\|indicacao\")",
+      "Bash(Get-ChildItem *)"
     ]
   }
 }

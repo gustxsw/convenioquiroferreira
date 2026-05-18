@@ -2840,6 +2840,11 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
     // Admin-only fields
     if (req.user.currentRole === "admin") {
       if (roles !== undefined) {
+        const VALID_ROLES = ["client", "professional", "secretaria", "admin", "vendedor", "financeiro_agenda"];
+        const invalidRoles = roles.filter((r) => !VALID_ROLES.includes(r));
+        if (invalidRoles.length > 0) {
+          return res.status(400).json({ message: `Role(s) inválida(s): ${invalidRoles.join(", ")}` });
+        }
         updateData.roles = roles;
         if (!roles.includes("secretaria")) {
           updateData.linked_professional_id = null;
@@ -8032,7 +8037,7 @@ app.post(
         const couponResult = await pool.query(
           `SELECT id, code, discount_type, discount_value, is_active
            FROM coupons
-           WHERE UPPER(code) = UPPER($1) AND is_active = true`,
+           WHERE UPPER(code) = UPPER($1) AND is_active = true AND (coupon_type = 'titular' OR coupon_type IS NULL)`,
           [coupon_code]
         );
 
@@ -8683,13 +8688,16 @@ app.post("/api/webhooks/payment-success", express.json(), async (req, res) => {
 });
 
 async function processClientPayment(userId, payment) {
+  const dbClient = await pool.connect();
   try {
     console.log(`🔄 [PAGAMENTO] Processando pagamento de Cliente #${userId}`);
     console.log(`💰 [PAGAMENTO] Payment ID: ${payment.id}`);
     console.log(`💰 [PAGAMENTO] Valor: R$ ${payment.transaction_amount}`);
 
+    await dbClient.query("BEGIN");
+
     // 1. Atualizar status do pagamento
-    await pool.query(
+    await dbClient.query(
       `UPDATE client_payments
        SET status = $1,
            mp_payment_id = $2,
@@ -8703,7 +8711,7 @@ async function processClientPayment(userId, payment) {
     const expirationDate = new Date();
     expirationDate.setFullYear(expirationDate.getFullYear() + 1);
 
-    await pool.query(
+    await dbClient.query(
       `UPDATE users
        SET subscription_status = 'active',
            subscription_active = true,
@@ -8711,6 +8719,9 @@ async function processClientPayment(userId, payment) {
        WHERE id = $2`,
       [expirationDate, userId]
     );
+
+    await dbClient.query("COMMIT");
+    dbClient.release();
 
     // 2.5. Marcar referência como convertida (novo sistema de tracking de afiliados)
     try {
@@ -8775,9 +8786,9 @@ async function processClientPayment(userId, payment) {
 
         const existingCommission = await pool.query(
           paymentId
-            ? `SELECT id FROM affiliate_commissions WHERE mp_payment_id = $1`
-            : `SELECT id FROM affiliate_commissions WHERE payment_reference = $1`,
-          [paymentId || paymentReference]
+            ? `SELECT id FROM affiliate_commissions WHERE mp_payment_id = $1 AND affiliate_id = $2`
+            : `SELECT id FROM affiliate_commissions WHERE payment_reference = $1 AND affiliate_id = $2`,
+          [paymentId || paymentReference, affiliateId]
         );
 
         if (existingCommission.rows.length === 0) {
@@ -8868,6 +8879,10 @@ async function processClientPayment(userId, payment) {
       )}`
     );
   } catch (error) {
+    try {
+      await dbClient.query("ROLLBACK");
+      dbClient.release();
+    } catch (_) {}
     console.error(
       `❌ [PAGAMENTO] Erro ao processar pagamento de cliente:`,
       error.message
@@ -8877,6 +8892,7 @@ async function processClientPayment(userId, payment) {
 }
 
 async function processDependentPayment(dependentId, payment) {
+  const dbClient = await pool.connect();
   try {
     console.log(
       `🔄 [PAGAMENTO] Processando pagamento de Dependente #${dependentId}`
@@ -8884,8 +8900,10 @@ async function processDependentPayment(dependentId, payment) {
     console.log(`💰 [PAGAMENTO] Payment ID: ${payment.id}`);
     console.log(`💰 [PAGAMENTO] Valor: R$ ${payment.transaction_amount}`);
 
+    await dbClient.query("BEGIN");
+
     // 1. Atualizar status do pagamento
-    await pool.query(
+    await dbClient.query(
       `UPDATE dependent_payments
        SET status = $1,
            mp_payment_id = $2,
@@ -8899,7 +8917,7 @@ async function processDependentPayment(dependentId, payment) {
     const expirationDate = new Date();
     expirationDate.setFullYear(expirationDate.getFullYear() + 1);
 
-    await pool.query(
+    await dbClient.query(
       `UPDATE dependents
        SET subscription_status = 'active',
            subscription_active = true,
@@ -8907,6 +8925,9 @@ async function processDependentPayment(dependentId, payment) {
        WHERE id = $2`,
       [expirationDate, dependentId]
     );
+
+    await dbClient.query("COMMIT");
+    dbClient.release();
 
     console.log(
       `✅ [PAGAMENTO] Dependente atualizado e ações aplicadas com sucesso`
@@ -8917,6 +8938,10 @@ async function processDependentPayment(dependentId, payment) {
       )}`
     );
   } catch (error) {
+    try {
+      await dbClient.query("ROLLBACK");
+      dbClient.release();
+    } catch (_) {}
     console.error(
       `❌ [PAGAMENTO] Erro ao processar pagamento de dependente:`,
       error.message
@@ -10152,9 +10177,18 @@ app.post(
         unlimited_use,
       } = req.body;
 
-      if (!code || !coupon_type || (!discount_value && !final_price)) {
+      if (!code || !coupon_type || !final_price) {
         return res.status(400).json({ error: "Dados obrigatórios faltando" });
       }
+
+      const parsedFinalPrice = parseFloat(final_price);
+      if (isNaN(parsedFinalPrice) || parsedFinalPrice < 0) {
+        return res.status(400).json({ error: "Preço final inválido" });
+      }
+
+      const BASE_PRICES = { titular: 600, dependente: 100 };
+      const basePrice = BASE_PRICES[coupon_type] ?? 600;
+      const computedDiscount = Math.max(0, basePrice - parsedFinalPrice);
 
       const result = await pool.query(
         `INSERT INTO coupons
@@ -10164,8 +10198,8 @@ app.post(
         [
           code,
           coupon_type,
-          discount_value || 0,
-          final_price,
+          computedDiscount,
+          parsedFinalPrice,
           valid_from,
           valid_until,
           description,
@@ -10205,6 +10239,17 @@ app.put(
         is_active,
       } = req.body;
 
+      const parsedFinalPriceUpd = final_price !== undefined ? parseFloat(final_price) : null;
+      if (parsedFinalPriceUpd !== null && (isNaN(parsedFinalPriceUpd) || parsedFinalPriceUpd < 0)) {
+        return res.status(400).json({ error: "Preço final inválido" });
+      }
+
+      const BASE_PRICES_UPD = { titular: 600, dependente: 100 };
+      const computedDiscountUpd =
+        parsedFinalPriceUpd !== null && coupon_type
+          ? Math.max(0, (BASE_PRICES_UPD[coupon_type] ?? 600) - parsedFinalPriceUpd)
+          : discount_value;
+
       const result = await pool.query(
         `UPDATE coupons
        SET code = $1, coupon_type = $2, discount_value = $3, final_price = $4,
@@ -10214,8 +10259,8 @@ app.put(
         [
           code,
           coupon_type,
-          discount_value,
-          final_price,
+          computedDiscountUpd,
+          parsedFinalPriceUpd ?? final_price,
           valid_from,
           valid_until,
           description,

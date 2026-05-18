@@ -133,7 +133,7 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
 
       const apiUrl = getApiUrl();
 
-      const response = await fetchWithAuth(`${apiUrl}/api/validate-coupon/${couponCode.trim()}`, {
+      const response = await fetchWithAuth(`${apiUrl}/api/validate-coupon/${couponCode.trim()}?type=titular`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",

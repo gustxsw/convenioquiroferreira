@@ -96,6 +96,11 @@ const ReportsPage: React.FC = () => {
   }
 
   const fetchReport = async () => {
+    if (startDate > endDate) {
+      setError("A data inicial não pode ser maior que a data final");
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError("");
@@ -241,6 +246,11 @@ const ReportsPage: React.FC = () => {
   };
 
   const fetchAgendaFinancialReport = async () => {
+    if (startDate > endDate) {
+      setError("A data inicial não pode ser maior que a data final");
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError("");

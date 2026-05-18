@@ -29,6 +29,8 @@ interface Commission {
   client_cpf: string;
   amount: string;
   status: string;
+  commission_type?: "direct" | "override" | null;
+  source_affiliate_id?: number | null;
   created_at: string;
   paid_at?: string | null;
   paid_by_name?: string | null;
@@ -1162,6 +1164,9 @@ const ManageAffiliatesPage: React.FC = () => {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                      Tipo
+                    </th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
                       Cliente
                     </th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
@@ -1199,6 +1204,11 @@ const ManageAffiliatesPage: React.FC = () => {
                 <tbody className="divide-y divide-gray-200">
                   {commissions.map((commission) => (
                     <tr key={commission.id}>
+                      <td className="px-4 py-2">
+                        <span className={`px-2 py-1 text-xs rounded-full ${commission.commission_type === "override" ? "bg-purple-100 text-purple-800" : "bg-blue-100 text-blue-800"}`}>
+                          {commission.commission_type === "override" ? "Override" : "Direta"}
+                        </span>
+                      </td>
                       <td className="px-4 py-2 text-sm">{commission.client_name}</td>
                       <td className="px-4 py-2 text-sm">{commission.client_cpf}</td>
                       <td className="px-4 py-2 text-sm">

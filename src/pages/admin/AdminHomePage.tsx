@@ -105,10 +105,6 @@ const AdminHomePage: React.FC = () => {
 
         if (!usersResponse.ok) {
           throw new Error("Falha ao carregar dados de usuários");
-          console.error(
-            "Consultations response error:",
-            consultationsResponse.status
-          );
         }
 
         const usersData = await usersResponse.json();
