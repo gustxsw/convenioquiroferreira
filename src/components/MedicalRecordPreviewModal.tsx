@@ -16,6 +16,7 @@ import {
   fetchWithAuth,
   getApiUrl,
 } from "../utils/apiHelpers";
+import { getSpecialtyTemplate, getSpecialtyLabelPt } from "../config/specialtyTemplates";
 
 type RecordData = {
   id: number;
@@ -199,23 +200,29 @@ const MedicalRecordPreviewModal: React.FC<MedicalRecordPreviewModalProps> = ({
       .join("");
 
     const sf = recordData.specialty_fields;
+    const specCode = recordData.specialty_code;
     let specialtyFieldsHTML = "";
     if (sf && typeof sf === "object" && !Array.isArray(sf)) {
+      const tmpl = getSpecialtyTemplate(specCode);
       const rows = Object.entries(sf).filter(
-        ([, v]) =>
-          v !== null &&
-          v !== undefined &&
-          String(v).trim() !== ""
+        ([, v]) => v !== null && v !== undefined && String(v).trim() !== ""
       );
       if (rows.length > 0) {
+        const specialtyName = getSpecialtyLabelPt(specCode) || "Campos específicos da área";
         specialtyFieldsHTML = `
           <div class="section">
-            <h3>Campos específicos da área</h3>
+            <h3>${specialtyName}</h3>
             ${rows
-              .map(
-                ([k, v]) =>
-                  `<p><strong>${k}:</strong> ${String(v)}</p>`
-              )
+              .map(([k, v]) => {
+                let label = k;
+                if (tmpl) {
+                  for (const sec of tmpl.sections) {
+                    const f = sec.fields.find((f) => f.key === k && f.storage === "specialty");
+                    if (f) { label = f.label; break; }
+                  }
+                }
+                return `<p><strong>${label}:</strong> ${String(v)}</p>`;
+              })
               .join("")}
           </div>`;
       }

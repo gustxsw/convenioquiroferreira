@@ -867,6 +867,35 @@ const MedicalRecordsPage: React.FC = () => {
         )
         .join("");
 
+      const sf = record.specialty_fields;
+      const specCode = record.specialty_code;
+      let specialtyFieldsPrintHTML = "";
+      if (sf && typeof sf === "object" && !Array.isArray(sf)) {
+        const tmpl = getSpecialtyTemplate(specCode);
+        const rows = Object.entries(sf).filter(
+          ([, v]) => v !== null && v !== undefined && String(v as string).trim() !== ""
+        );
+        if (rows.length > 0) {
+          const specialtyName = getSpecialtyLabelPt(specCode) || "Campos específicos da área";
+          specialtyFieldsPrintHTML = `
+        <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; page-break-inside: avoid; background: #ffffff;">
+          <h3 style="margin: 0 0 10px 0; color: #c11c22; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 5px; font-weight: bold;">${specialtyName}</h3>
+          ${rows
+            .map(([k, v]) => {
+              let label = k;
+              if (tmpl) {
+                for (const sec of tmpl.sections) {
+                  const f = sec.fields.find((field) => field.key === k && field.storage === "specialty");
+                  if (f) { label = f.label; break; }
+                }
+              }
+              return `<p style="color: #000000; margin: 8px 0;"><strong>${label}:</strong> ${String(v)}</p>`;
+            })
+            .join("")}
+        </div>`;
+        }
+      }
+
       const htmlContent = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -958,8 +987,10 @@ const MedicalRecordsPage: React.FC = () => {
 
     ${medicalSectionsHTML}
 
+    ${specialtyFieldsPrintHTML}
+
     ${
-      medicalSections.length === 0
+      medicalSections.length === 0 && !specialtyFieldsPrintHTML
         ? `
     <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: #ffffff;">
         <p style="color: #000000; margin: 10px 0; text-align: justify;"><em>Prontuário médico sem informações clínicas detalhadas registradas.</em></p>

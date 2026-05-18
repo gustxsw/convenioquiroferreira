@@ -68,12 +68,86 @@ const SPECIALTY_FIELD_KEYS = {
   ]),
 };
 
+const SPECIALTY_LABELS = {
+  physiotherapist: "Fisioterapeuta",
+  occupational_therapist: "Terapeuta ocupacional",
+  psychologist: "Psicólogo",
+  dentist: "Dentista",
+  massage_therapist: "Massoterapeuta",
+  chiropractor: "Quiropraxista",
+};
+
+/** @type {Record<string, Record<string, string>>} */
+const SPECIALTY_FIELD_LABELS = {
+  physiotherapist: {
+    injury_history: "História da lesão / doença",
+    pain_location: "Localização da dor",
+    pain_vas: "Dor (EVA 0–10)",
+    goals: "Objetivos",
+    exercises: "Exercícios / conduta",
+    manual_therapy: "Terapia manual / recursos",
+    session_response: "Resposta / evolução da sessão",
+  },
+  occupational_therapist: {
+    roles_routines: "Papéis e rotinas",
+    adl_baseline: "AVD — linha de base",
+    smart_goals: "Metas (SMART)",
+    adaptations: "Adaptações / recomendações",
+    home_work_barriers: "Barreiras no ambiente (casa/trabalho)",
+  },
+  psychologist: {
+    demand: "Demanda apresentada",
+    life_history: "Histórico relevante",
+    mental_status: "Observação / mental status",
+    clinical_hypothesis: "Hipótese clínica",
+    therapeutic_plan: "Plano terapêutico",
+    interventions: "Intervenções",
+    risk_safety: "Riscos e segurança",
+  },
+  dentist: {
+    dental_chief_complaint: "Motivo da consulta",
+    oral_habits: "Hábitos orais",
+    extraoral: "Exame extraoral",
+    intraoral: "Exame intraoral",
+    periodontal: "Periodontal",
+    radiographic: "Exames de imagem",
+    dental_diagnosis: "Diagnóstico odontológico",
+    treatment_phases: "Plano / fases de tratamento",
+    procedures_done: "Procedimentos realizados",
+  },
+  massage_therapist: {
+    soft_tissue_complaint: "Queixa / foco",
+    contraindications: "Contraindicações",
+    palpation_findings: "Achados à palpação",
+    techniques_used: "Técnicas utilizadas",
+    regions: "Regiões trabalhadas",
+    post_session_notes: "Após a sessão",
+  },
+  chiropractor: {
+    chiro_history: "História clínica",
+    inspection: "Inspeção",
+    orthopedic_neuro: "Testes ortopédicos / neuro",
+    subluxation_findings: "Achados clínicos",
+    adjustment_plan: "Plano de ajuste / cuidado",
+    rehab_advice: "Orientações / reabilitação",
+    functional_goals: "Objetivos funcionais",
+  },
+};
+
 export function isValidSpecialtyCode(code) {
   return typeof code === "string" && SPECIALTY_CODES.includes(code);
 }
 
 export function getAllowedSpecialtyFieldKeys(specialtyCode) {
   return SPECIALTY_FIELD_KEYS[specialtyCode] || null;
+}
+
+export function getSpecialtyLabelPt(code) {
+  return SPECIALTY_LABELS[code] || code || "";
+}
+
+export function getSpecialtyFieldLabel(specialtyCode, fieldKey) {
+  return SPECIALTY_FIELD_LABELS[specialtyCode]?.[fieldKey] || fieldKey;
 }
 
 /**

@@ -3,6 +3,7 @@
  */
 import { pool } from "../db.js";
 import { generateDocumentPDF } from "./documentGenerator.js";
+import { getSpecialtyLabelPt, getSpecialtyFieldLabel } from "../config/specialtyAllowlists.js";
 
 /**
  * @param {import('pg').PoolClient | import('pg').Pool} db
@@ -41,14 +42,14 @@ export function buildMedicalRecordPdfPayload(record, professional) {
 
   let specialtyBlock = "";
   const sf = record.specialty_fields;
+  const specCode = record.specialty_code;
   if (sf && typeof sf === "object" && !Array.isArray(sf)) {
     const lines = Object.entries(sf)
-      .filter(
-        ([, v]) => v !== null && v !== undefined && String(v).trim() !== ""
-      )
-      .map(([k, v]) => `${k}: ${v}`);
+      .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "")
+      .map(([k, v]) => `${getSpecialtyFieldLabel(specCode, k)}: ${v}`);
     if (lines.length) {
-      specialtyBlock = `Campos específicos da área\n${lines.join("\n")}`;
+      const specialtyName = getSpecialtyLabelPt(specCode) || "Campos específicos da área";
+      specialtyBlock = `${specialtyName}\n${lines.join("\n")}`;
     }
   }
 
