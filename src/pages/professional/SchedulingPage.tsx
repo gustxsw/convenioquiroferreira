@@ -908,11 +908,6 @@ const SchedulingPage: React.FC = () => {
       setShowNewModal(false);
       resetForm();
 
-      // Force refresh the current date view
-      setTimeout(() => {
-        fetchData();
-      }, 1000);
-
       setTimeout(() => setSuccess(""), 3000);
     } catch (error) {
       setError(

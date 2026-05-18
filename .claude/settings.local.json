@@ -4,7 +4,10 @@
       "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Suporte\\\\Desktop\\\\Desenvolvimento\\\\convenioquiroferreira\" -Force | Format-Table Name, @{Name='Type';Expression={if\\($_.PSIsContainer\\){'DIR'}else{'FILE'}}})",
       "Bash(npx tsc *)",
       "Bash(node_modules\\\\.bin\\\\tsc --noEmit)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(node -e ' *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Suporte\\\\Desktop\\\\Desenvolvimento\\\\convenioquiroferreira\" -Directory)",
+      "Bash(Select-Object Name)"
     ]
   }
 }

@@ -33,6 +33,8 @@ import {
 
 type MedicalRecord = {
   id: number;
+  private_patient_id?: number | null;
+  patient_type?: "private" | "convenio" | null;
   patient_name: string | null;
   patient_cpf?: string | null;
   chief_complaint: string;
@@ -209,16 +211,14 @@ const MedicalRecordsPage: React.FC = () => {
     }
 
     if (selectedPatient) {
-      const selectedName = patients.find(
-        (p) => p.id.toString() === selectedPatient
-      )?.name;
+      const selectedId = parseInt(selectedPatient, 10);
       filtered = filtered.filter(
-        (record) => (record.patient_name || "") === (selectedName || "")
+        (record) => record.private_patient_id === selectedId
       );
     }
 
     setFilteredRecords(filtered);
-  }, [searchTerm, selectedPatient, records, patients]);
+  }, [searchTerm, selectedPatient, records]);
 
   const fetchData = async () => {
     try {
@@ -441,19 +441,20 @@ const MedicalRecordsPage: React.FC = () => {
   const openEditModal = (record: MedicalRecord) => {
     setModalMode("edit");
 
-    const matchingPatient = patients.find(
-      (p) =>
-        p.name === (record.patient_name || "") ||
-        p.cpf === (record.patient_cpf || "")
-    );
+    const isPrivate =
+      record.patient_type === "private" || !!record.private_patient_id;
+
+    const matchingPatient = record.private_patient_id
+      ? (patients.find((p) => p.id === record.private_patient_id) ?? null)
+      : null;
 
     setSpecialtyFormData(
       record.specialty_code ? loadSpecialtyStateFromRecord(record) : {}
     );
 
     setFormData({
-      patient_type: "private", // Default to private for editing
-      client_cpf: "",
+      patient_type: isPrivate ? "private" : "convenio",
+      client_cpf: isPrivate ? "" : record.patient_cpf || "",
       patient_name: record.patient_name || "",
       patient_cpf: record.patient_cpf || "",
       private_patient_id: matchingPatient ? matchingPatient.id.toString() : "",
@@ -477,8 +478,20 @@ const MedicalRecordsPage: React.FC = () => {
       },
     });
     setSelectedRecord(record);
-    setPrivatePatientSearch(record.patient_name || "");
-    setSelectedPrivatePatient(matchingPatient ?? null);
+
+    if (isPrivate) {
+      setPrivatePatientSearch(record.patient_name || "");
+      setSelectedPrivatePatient(matchingPatient);
+      setClientSearchResult(null);
+    } else {
+      setPrivatePatientSearch("");
+      setSelectedPrivatePatient(null);
+      setClientSearchResult({
+        name: record.patient_name,
+        cpf: record.patient_cpf,
+      });
+    }
+
     setIsModalOpen(true);
   };
 

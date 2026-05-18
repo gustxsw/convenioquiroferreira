@@ -27,6 +27,8 @@ export const SPECIALTY_CODES = [
   "physiotherapist",
   "occupational_therapist",
   "psychologist",
+  "psychoanalyst",
+  "psychiatrist",
   "dentist",
   "massage_therapist",
   "chiropractor",
@@ -714,10 +716,260 @@ const chiropractor: SpecialtyTemplate = {
   ],
 };
 
+const psychoanalyst: SpecialtyTemplate = {
+  code: "psychoanalyst",
+  labelPt: "Psicanalista",
+  sections: [
+    {
+      id: "demanda",
+      title: "Demanda e histórico",
+      fields: [
+        {
+          key: "chief_complaint",
+          label: "Queixa apresentada",
+          type: "textarea",
+          storage: "legacy",
+        },
+        {
+          key: "life_context",
+          label: "Contexto de vida / história",
+          type: "textarea",
+          storage: "specialty",
+        },
+        {
+          key: "family_dynamics",
+          label: "Dinâmica familiar",
+          type: "textarea",
+          storage: "specialty",
+        },
+      ],
+    },
+    {
+      id: "material",
+      title: "Material clínico",
+      fields: [
+        {
+          key: "free_associations",
+          label: "Associações livres / sonhos",
+          type: "textarea",
+          storage: "specialty",
+        },
+        {
+          key: "transference",
+          label: "Transferência / contratransferência",
+          type: "textarea",
+          storage: "specialty",
+        },
+        {
+          key: "defenses",
+          label: "Mecanismos de defesa observados",
+          type: "textarea",
+          storage: "specialty",
+        },
+      ],
+    },
+    {
+      id: "avaliacao",
+      title: "Avaliação e plano",
+      fields: [
+        {
+          key: "psychoanalytic_hypothesis",
+          label: "Hipótese psicanalítica",
+          type: "textarea",
+          storage: "specialty",
+        },
+        {
+          key: "theoretical_framework",
+          label: "Orientação teórica",
+          type: "textarea",
+          storage: "specialty",
+        },
+        {
+          key: "therapeutic_goals",
+          label: "Objetivos terapêuticos",
+          type: "textarea",
+          storage: "specialty",
+        },
+        {
+          key: "diagnosis",
+          label: "Diagnóstico / formulação",
+          type: "textarea",
+          storage: "legacy",
+        },
+        {
+          key: "treatment_plan",
+          label: "Plano de tratamento",
+          type: "textarea",
+          storage: "legacy",
+        },
+        {
+          key: "notes",
+          label: "Observações",
+          type: "textarea",
+          storage: "legacy",
+        },
+      ],
+    },
+    {
+      id: "gerais",
+      title: "Dados gerais",
+      fields: [
+        {
+          key: "past_medical_history",
+          label: "História médica / contexto",
+          type: "textarea",
+          storage: "legacy",
+        },
+        {
+          key: "medications",
+          label: "Medicamentos",
+          type: "textarea",
+          storage: "legacy",
+        },
+        {
+          key: "allergies",
+          label: "Alergias",
+          type: "textarea",
+          storage: "legacy",
+        },
+      ],
+    },
+  ],
+};
+
+const psychiatrist: SpecialtyTemplate = {
+  code: "psychiatrist",
+  labelPt: "Psiquiatra",
+  sections: [
+    {
+      id: "anamnese",
+      title: "Anamnese psiquiátrica",
+      fields: [
+        {
+          key: "chief_complaint",
+          label: "Queixa principal",
+          type: "textarea",
+          storage: "legacy",
+        },
+        {
+          key: "psychiatric_history",
+          label: "História psiquiátrica pregressa",
+          type: "textarea",
+          storage: "specialty",
+        },
+        {
+          key: "family_psychiatric_history",
+          label: "Histórico familiar psiquiátrico",
+          type: "textarea",
+          storage: "specialty",
+        },
+        {
+          key: "history_present_illness",
+          label: "História da doença atual",
+          type: "textarea",
+          storage: "legacy",
+        },
+      ],
+    },
+    {
+      id: "exame",
+      title: "Exame do estado mental",
+      fields: [
+        {
+          key: "mental_state_exam",
+          label: "Exame do estado mental",
+          type: "textarea",
+          storage: "specialty",
+        },
+        {
+          key: "risk_assessment",
+          label: "Avaliação de risco (suicídio / autoagressão)",
+          type: "textarea",
+          storage: "specialty",
+        },
+        {
+          key: "physical_examination",
+          label: "Exame físico geral",
+          type: "textarea",
+          storage: "legacy",
+        },
+      ],
+    },
+    {
+      id: "plano",
+      title: "Diagnóstico e tratamento",
+      fields: [
+        {
+          key: "psychiatric_diagnosis",
+          label: "Diagnóstico (CID / DSM)",
+          type: "textarea",
+          storage: "specialty",
+        },
+        {
+          key: "diagnosis",
+          label: "Diagnóstico (legado)",
+          type: "textarea",
+          storage: "legacy",
+        },
+        {
+          key: "pharmacological_treatment",
+          label: "Tratamento farmacológico",
+          type: "textarea",
+          storage: "specialty",
+        },
+        {
+          key: "psychosocial_interventions",
+          label: "Intervenções psicossociais",
+          type: "textarea",
+          storage: "specialty",
+        },
+        {
+          key: "treatment_plan",
+          label: "Plano terapêutico",
+          type: "textarea",
+          storage: "legacy",
+        },
+        {
+          key: "notes",
+          label: "Observações",
+          type: "textarea",
+          storage: "legacy",
+        },
+      ],
+    },
+    {
+      id: "gerais",
+      title: "Dados gerais",
+      fields: [
+        {
+          key: "past_medical_history",
+          label: "História médica pregressa",
+          type: "textarea",
+          storage: "legacy",
+        },
+        {
+          key: "medications",
+          label: "Medicamentos em uso",
+          type: "textarea",
+          storage: "legacy",
+        },
+        {
+          key: "allergies",
+          label: "Alergias",
+          type: "textarea",
+          storage: "legacy",
+        },
+      ],
+    },
+  ],
+};
+
 const TEMPLATES: Record<SpecialtyCode, SpecialtyTemplate> = {
   physiotherapist,
   occupational_therapist,
   psychologist,
+  psychoanalyst,
+  psychiatrist,
   dentist,
   massage_therapist,
   chiropractor,
