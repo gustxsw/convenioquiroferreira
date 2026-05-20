@@ -77,6 +77,7 @@ export function buildMedicalRecordPdfPayload(record, professional) {
     professionalSpecialty: professional.category_name || "",
     crm: professional.crm || "",
     signatureUrl: professional.signature_url || null,
+    logoUrl: professional.clinic_logo_url || null,
     currentDate: dateRef,
     date: dateRef,
   };
@@ -105,7 +106,7 @@ export async function regenerateMedicalRecordPdf(recordId, professionalId) {
   const record = recordResult.rows[0];
 
   const userResult = await pool.query(
-    `SELECT u.name, u.crm, u.signature_url, c.name AS category_name
+    `SELECT u.name, u.crm, u.signature_url, u.clinic_logo_url, c.name AS category_name
      FROM users u
      LEFT JOIN categories c ON u.category_id = c.id
      WHERE u.id = $1`,
@@ -117,6 +118,7 @@ export async function regenerateMedicalRecordPdf(recordId, professionalId) {
     name: prof.name,
     crm: prof.crm,
     signature_url: prof.signature_url,
+    clinic_logo_url: prof.clinic_logo_url,
     category_name: prof.category_name,
   });
 

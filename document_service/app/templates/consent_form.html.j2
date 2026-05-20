@@ -30,16 +30,14 @@
     </div>
   </div>
   <div class="signature-box">
-    {% if signature_url %}
-    <img src="{{ signature_url | e }}" alt="Assinatura" class="signature-image" />
-    {% else %}
-    <div class="signature-line"></div>
-    {% endif %}
-    <div>
-      <strong>Profissional Responsável</strong><br />
-      {{ professional_name | e }}<br />
-      {% if crm %}Registro Profissional: {{ crm | e }}{% endif %}
+    <div class="electronic-validation">
+      <p class="ev-label">Validado eletronicamente</p>
+      <strong>{{ professional_name | e }}</strong><br />
+      {% if professional_specialty %}{{ professional_specialty | e }}<br />{% endif %}
+      {% if crm %}{{ crm | e }}<br />{% endif %}
+      {{ validation_datetime | e }}
     </div>
+    <div><strong>Profissional Responsável</strong></div>
   </div>
 </div>
 {% endblock %}

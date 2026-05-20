@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import {
@@ -18,11 +18,6 @@ import {
   Briefcase,
   Phone,
 } from "lucide-react";
-import UploadSignatureModal from "../../components/UploadSignatureModal";
-import {
-  SIGNATURE_PREVIEW_MAX_HEIGHT_CLASS,
-  SIGNATURE_PREVIEW_MAX_WIDTH_CLASS,
-} from "../../constants/signatureDisplay";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 import { getProfessionalActorId } from "../../utils/professionalActor";
 import {
@@ -113,9 +108,12 @@ const ProfessionalProfilePage: React.FC = () => {
   const [locationToDelete, setLocationToDelete] =
     useState<AttendanceLocation | null>(null);
 
-  // Signature state
-  const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
-  const [showSignatureModal, setShowSignatureModal] = useState(false);
+
+  // Clinic logo state
+  const [clinicLogoUrl, setClinicLogoUrl] = useState<string | null>(null);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isDeletingLogo, setIsDeletingLogo] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchData();
@@ -217,14 +215,13 @@ const ProfessionalProfilePage: React.FC = () => {
         setLocations(locationsData);
       }
 
-      // Fetch signature
-      const signatureResponse = await fetchWithAuth(
-        `${apiUrl}/api/professionals/${actorId}/signature`
+      // Fetch clinic logo
+      const logoResponse = await fetchWithAuth(
+        `${apiUrl}/api/professionals/${actorId}/clinic-logo`
       );
-
-      if (signatureResponse.ok) {
-        const signatureData = await signatureResponse.json();
-        setSignatureUrl(signatureData.signature_url);
+      if (logoResponse.ok) {
+        const logoData = await logoResponse.json();
+        setClinicLogoUrl(logoData.clinic_logo_url ?? null);
       }
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -431,9 +428,58 @@ const ProfessionalProfilePage: React.FC = () => {
     }
   };
 
-  const handleSignatureSuccess = () => {
-    // Refresh signature data
-    fetchData();
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError("");
+    setSuccess("");
+    setIsUploadingLogo(true);
+    try {
+      const apiUrl = getApiUrl();
+      const actorId = getProfessionalActorId(user);
+      const formData = new FormData();
+      formData.append("clinic_logo", file);
+      const res = await fetchWithAuth(
+        `${apiUrl}/api/professionals/${actorId}/clinic-logo`,
+        { method: "POST", body: formData }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Erro ao salvar logo");
+      setClinicLogoUrl(data.clinic_logo_url);
+      setSuccess("Logo salva com sucesso!");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao salvar logo");
+    } finally {
+      setIsUploadingLogo(false);
+      if (logoInputRef.current) logoInputRef.current.value = "";
+    }
+  };
+
+  const handleLogoDelete = async () => {
+    setError("");
+    setSuccess("");
+    setIsDeletingLogo(true);
+    try {
+      const apiUrl = getApiUrl();
+      const actorId = getProfessionalActorId(user);
+      const res = await fetchWithAuth(
+        `${apiUrl}/api/professionals/${actorId}/clinic-logo`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || "Erro ao remover logo");
+      }
+      setClinicLogoUrl(null);
+      setSuccess("Logo removida.");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao remover logo");
+    } finally {
+      setIsDeletingLogo(false);
+    }
   };
 
   const formatZipCode = (value: string) => {
@@ -831,76 +877,80 @@ const ProfessionalProfilePage: React.FC = () => {
             </form>
           </div>
 
-          {/* Digital Signature Section */}
+          {/* Clinic Logo Section */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center">
                 <FileImage className="h-6 w-6 text-red-600 mr-2" />
-                <h2 className="text-xl font-semibold">Assinatura Digital</h2>
+                <h2 className="text-xl font-semibold">Logo da Clínica</h2>
               </div>
-
-              <button
-                onClick={() => setShowSignatureModal(true)}
-                className="btn btn-primary flex items-center"
-              >
-                <Upload className="h-5 w-5 mr-2" />
-                {signatureUrl ? "Alterar Assinatura" : "Adicionar Assinatura"}
-              </button>
+              <div className="flex items-center gap-2">
+                {clinicLogoUrl && (
+                  <button
+                    type="button"
+                    onClick={handleLogoDelete}
+                    disabled={isDeletingLogo}
+                    className="btn btn-secondary flex items-center text-red-600 hover:text-red-700"
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    {isDeletingLogo ? "Removendo..." : "Remover"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => logoInputRef.current?.click()}
+                  disabled={isUploadingLogo}
+                  className="btn btn-primary flex items-center"
+                >
+                  <Upload className="h-5 w-5 mr-2" />
+                  {isUploadingLogo ? "Enviando..." : clinicLogoUrl ? "Alterar Logo" : "Adicionar Logo"}
+                </button>
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={handleLogoUpload}
+                />
+              </div>
             </div>
 
-            {signatureUrl ? (
+            {clinicLogoUrl ? (
               <div className="text-center">
-                <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4 inline-block w-full max-w-md mx-auto">
+                <div className="bg-white border border-gray-200 rounded-lg p-6 inline-block w-full max-w-md mx-auto">
                   <img
-                    src={signatureUrl}
-                    alt="Sua assinatura digital"
-                    className={`mx-auto block object-contain bg-white ${SIGNATURE_PREVIEW_MAX_WIDTH_CLASS} ${SIGNATURE_PREVIEW_MAX_HEIGHT_CLASS}`}
+                    src={clinicLogoUrl}
+                    alt="Logo da clínica"
+                    className="mx-auto block object-contain max-h-24 max-w-xs"
                   />
                 </div>
-                <p className="text-sm text-gray-600">
-                  Esta assinatura será incluída automaticamente em todos os
-                  documentos que você gerar.
+                <p className="text-sm text-gray-600 mt-3">
+                  Esta logo será exibida automaticamente no cabeçalho de todos os
+                  documentos e prontuários gerados.
                 </p>
               </div>
             ) : (
               <div className="text-center py-8 bg-gray-50 rounded-lg">
                 <FileImage className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Nenhuma assinatura cadastrada
+                  Nenhuma logo cadastrada
                 </h3>
                 <p className="text-gray-600 mb-4">
-                  Adicione sua assinatura digital para que ela apareça
-                  automaticamente nos documentos gerados.
+                  Adicione a logo da sua clínica para que apareça automaticamente
+                  no cabeçalho dos documentos gerados.
                 </p>
                 <button
-                  onClick={() => setShowSignatureModal(true)}
+                  type="button"
+                  onClick={() => logoInputRef.current?.click()}
                   className="btn btn-primary inline-flex items-center"
                 >
                   <Upload className="h-5 w-5 mr-2" />
-                  Adicionar Assinatura
+                  Adicionar Logo
                 </button>
               </div>
             )}
-
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
-              <h4 className="font-medium text-blue-900 mb-2">
-                💡 Como funciona:
-              </h4>
-              <ul className="text-sm text-blue-700 space-y-1">
-                <li>
-                  • Envie uma foto e recorte só a área da assinatura; o sistema
-                  gera um PNG padronizado com fundo branco
-                </li>
-                <li>
-                  • A assinatura será incluída automaticamente em atestados,
-                  receitas e outros documentos
-                </li>
-                <li>
-                  • Você pode alterar ou remover a assinatura a qualquer momento
-                </li>
-              </ul>
-            </div>
           </div>
+
         </div>
 
         {/* Attendance Locations */}
@@ -1290,13 +1340,6 @@ const ProfessionalProfilePage: React.FC = () => {
         </div>
       )}
 
-      {/* Signature Upload Modal */}
-      <UploadSignatureModal
-        isOpen={showSignatureModal}
-        onClose={() => setShowSignatureModal(false)}
-        onSuccess={handleSignatureSuccess}
-        currentSignatureUrl={signatureUrl}
-      />
     </div>
   );
 };

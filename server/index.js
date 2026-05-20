@@ -494,10 +494,17 @@ const initializeDatabase = async () => {
         END IF;
         
         IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns 
+          SELECT 1 FROM information_schema.columns
           WHERE table_name = 'users' AND column_name = 'signature_url'
         ) THEN
           ALTER TABLE users ADD COLUMN signature_url TEXT;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'clinic_logo_url'
+        ) THEN
+          ALTER TABLE users ADD COLUMN clinic_logo_url TEXT;
         END IF;
         
         IF NOT EXISTS (
@@ -6283,6 +6290,84 @@ app.delete(
     }
   }
 );
+
+// Clinic logo routes
+app.post(
+  "/api/professionals/:id/clinic-logo",
+  authenticate,
+  createUpload().single("clinic_logo"),
+  async (req, res) => {
+    try {
+      const professionalId = Number.parseInt(req.params.id);
+      const canEdit =
+        (req.user.roles?.includes("professional") && professionalId === req.user.id) ||
+        (req.user.currentRole === "secretaria" && professionalId === req.user.professionalScopeId);
+      if (!canEdit) {
+        return res.status(403).json({ message: "Sem permissão para editar este perfil." });
+      }
+      if (!req.file) {
+        return res.status(400).json({ message: "Nenhum arquivo enviado." });
+      }
+      const result = await pool.query(
+        "UPDATE users SET clinic_logo_url = $1, updated_at = NOW() WHERE id = $2 RETURNING clinic_logo_url",
+        [req.file.path, professionalId]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Profissional não encontrado" });
+      }
+      res.json({ message: "Logo salva com sucesso", clinic_logo_url: result.rows[0].clinic_logo_url });
+    } catch (error) {
+      console.error("❌ [LOGO] Error uploading clinic logo:", error);
+      res.status(500).json({ message: "Erro ao salvar logo" });
+    }
+  }
+);
+
+app.get("/api/professionals/:id/clinic-logo", authenticate, async (req, res) => {
+  try {
+    const professionalId = Number.parseInt(req.params.id);
+    const canRead =
+      (req.user.roles?.includes("professional") && professionalId === req.user.id) ||
+      (req.user.currentRole === "secretaria" && professionalId === req.user.professionalScopeId);
+    if (!canRead) {
+      return res.status(403).json({ message: "Sem permissão." });
+    }
+    const result = await pool.query(
+      "SELECT clinic_logo_url FROM users WHERE id = $1 AND 'professional' = ANY(roles)",
+      [professionalId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Profissional não encontrado" });
+    }
+    res.json({ clinic_logo_url: result.rows[0].clinic_logo_url });
+  } catch (error) {
+    console.error("❌ [LOGO] Error fetching clinic logo:", error);
+    res.status(500).json({ message: "Erro ao buscar logo" });
+  }
+});
+
+app.delete("/api/professionals/:id/clinic-logo", authenticate, async (req, res) => {
+  try {
+    const professionalId = Number.parseInt(req.params.id);
+    const canEdit =
+      (req.user.roles?.includes("professional") && professionalId === req.user.id) ||
+      (req.user.currentRole === "secretaria" && professionalId === req.user.professionalScopeId);
+    if (!canEdit) {
+      return res.status(403).json({ message: "Sem permissão." });
+    }
+    const result = await pool.query(
+      "UPDATE users SET clinic_logo_url = NULL, updated_at = NOW() WHERE id = $1 RETURNING id",
+      [professionalId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Profissional não encontrado" });
+    }
+    res.json({ message: "Logo removida com sucesso" });
+  } catch (error) {
+    console.error("❌ [LOGO] Error removing clinic logo:", error);
+    res.status(500).json({ message: "Erro ao remover logo" });
+  }
+});
 
 app.post(
   "/api/upload-image",

@@ -67,36 +67,19 @@ const createStorage = () => {
     cloudinary: cloudinary,
     params: {
       folder: (req, file) => {
-        // Different folders based on field name
-        if (file.fieldname === 'signature') {
-          return 'quiro-ferreira/signatures';
-        }
+        if (file.fieldname === 'signature') return 'quiro-ferreira/signatures';
+        if (file.fieldname === 'clinic_logo') return 'quiro-ferreira/logos';
         return 'quiro-ferreira/professionals';
       },
       allowed_formats: ["jpg", "jpeg", "png", "webp"],
       transformation: (req, file) => {
-        // Different transformations based on field name
         if (file.fieldname === 'signature') {
-          // Client uploads 600×200 PNG (3:1, white bg). Limit avoids extra scaling/distortion.
-          return [
-            {
-              width: 600,
-              height: 200,
-              crop: "limit",
-              format: "png",
-              quality: "auto:good",
-            },
-          ];
+          return [{ width: 600, height: 200, crop: "limit", format: "png", quality: "auto:good" }];
         }
-        return [
-          {
-            width: 400,
-            height: 400,
-            crop: "fill",
-            gravity: "face",
-            quality: "auto:good",
-          },
-        ];
+        if (file.fieldname === 'clinic_logo') {
+          return [{ width: 800, height: 300, crop: "limit", quality: "auto:good" }];
+        }
+        return [{ width: 400, height: 400, crop: "fill", gravity: "face", quality: "auto:good" }];
       },
     },
   });

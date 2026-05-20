@@ -117,8 +117,18 @@ router.post('/medical', authenticate, async (req, res) => {
       return respondAgendaOnlyConvenioForbidden(res);
     }
 
+    // Inject professional's clinic logo automatically
+    const logoRow = await pool.query(
+      "SELECT clinic_logo_url FROM users WHERE id = $1",
+      [req.user.id]
+    );
+    const enrichedTemplateData = {
+      ...template_data,
+      logoUrl: logoRow.rows[0]?.clinic_logo_url || null,
+    };
+
     // Generate document using existing generator
-    const documentResult = await generateDocumentPDF(document_type, template_data);
+    const documentResult = await generateDocumentPDF(document_type, enrichedTemplateData);
     
     console.log('✅ [DOCUMENTS] Document generated:', documentResult.url);
 

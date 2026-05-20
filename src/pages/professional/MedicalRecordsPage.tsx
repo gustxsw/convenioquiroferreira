@@ -28,7 +28,6 @@ import {
   Download,
   Printer,
   Phone,
-  Send,
 } from "lucide-react";
 
 type MedicalRecord = {
@@ -173,7 +172,7 @@ const MedicalRecordsPage: React.FC = () => {
     documentServiceConfigured: boolean;
     specialtyMedicalRecords?: boolean;
   } | null>(null);
-  const [professionalData, setProfessionalData] = useState({
+const [professionalData, setProfessionalData] = useState({
     name: "",
     specialty: "",
     crm: "",
@@ -336,24 +335,37 @@ const MedicalRecordsPage: React.FC = () => {
   const sendRecordViaWhatsApp = async (record: MedicalRecord) => {
     try {
       setError("");
-
       const apiUrl = getApiUrl();
-      const response = await fetchWithAuth(
-        `${apiUrl}/api/medical-records/${record.id}/whatsapp`
-      );
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          errorData.message || "Não foi possível gerar o link do WhatsApp"
+      if (features?.whatsappBusinessDocumentSend && record.pdf_url) {
+        const response = await fetchWithAuth(
+          `${apiUrl}/api/medical-records/${record.id}/whatsapp/send-document`,
+          { method: "POST" }
         );
-      }
-
-      const data = await response.json();
-      if (data.whatsapp_url) {
-        window.open(data.whatsapp_url, "_blank");
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(
+            data.message || "Não foi possível enviar o arquivo pelo WhatsApp"
+          );
+        }
+        setSuccess("Documento enviado pelo WhatsApp.");
+        setTimeout(() => setSuccess(""), 5000);
       } else {
-        throw new Error("Link do WhatsApp não recebido do servidor");
+        const response = await fetchWithAuth(
+          `${apiUrl}/api/medical-records/${record.id}/whatsapp`
+        );
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(
+            errorData.message || "Não foi possível gerar o link do WhatsApp"
+          );
+        }
+        const data = await response.json();
+        if (data.whatsapp_url) {
+          window.open(data.whatsapp_url, "_blank");
+        } else {
+          throw new Error("Link do WhatsApp não recebido do servidor");
+        }
       }
     } catch (error) {
       console.error("Erro ao enviar prontuário via WhatsApp:", error);
@@ -361,33 +373,6 @@ const MedicalRecordsPage: React.FC = () => {
         error instanceof Error
           ? error.message
           : "Erro ao enviar prontuário via WhatsApp"
-      );
-      setTimeout(() => setError(""), 4000);
-    }
-  };
-
-  const sendRecordViaWhatsAppBusiness = async (record: MedicalRecord) => {
-    try {
-      setError("");
-      const apiUrl = getApiUrl();
-      const response = await fetchWithAuth(
-        `${apiUrl}/api/medical-records/${record.id}/whatsapp/send-document`,
-        { method: "POST" }
-      );
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(
-          data.message || "Não foi possível enviar o arquivo pelo WhatsApp API"
-        );
-      }
-      setSuccess("Documento enviado pelo WhatsApp Business API.");
-      setTimeout(() => setSuccess(""), 5000);
-    } catch (error) {
-      console.error("Erro WhatsApp Business (prontuário):", error);
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Erro ao enviar pelo WhatsApp Business API"
       );
       setTimeout(() => setError(""), 5000);
     }
@@ -1347,24 +1332,12 @@ const MedicalRecordsPage: React.FC = () => {
                           <Download className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => sendRecordViaWhatsApp(record)}
+                          onClick={() => void sendRecordViaWhatsApp(record)}
                           className="text-green-600 hover:text-green-800"
-                          title="WhatsApp (mensagem com link)"
+                          title="Enviar via WhatsApp"
                         >
                           <Phone className="h-4 w-4" />
                         </button>
-                        {features?.whatsappBusinessDocumentSend &&
-                          record.pdf_url && (
-                            <button
-                              onClick={() =>
-                                sendRecordViaWhatsAppBusiness(record)
-                              }
-                              className="text-emerald-700 hover:text-emerald-900"
-                              title="WhatsApp Business API — enviar PDF"
-                            >
-                              <Send className="h-4 w-4" />
-                            </button>
-                          )}
                         <button
                           onClick={() => openEditModal(record)}
                           className="text-blue-600 hover:text-blue-900"
@@ -1880,7 +1853,7 @@ const MedicalRecordsPage: React.FC = () => {
         </div>
       )}
 
-      {previewRecord && (
+{previewRecord && (
         <MedicalRecordPreviewModal
           isOpen={true}
           onClose={closePreviewModal}

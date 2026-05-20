@@ -10,15 +10,12 @@
   <div class="prescription-content">{{ prescription | e }}</div>
 </div>
 <div class="signature-area">
-  {% if signature_url %}
-  <img src="{{ signature_url | e }}" alt="Assinatura" class="signature-image" />
-  {% else %}
-  <div class="signature-line"></div>
-  {% endif %}
-  <div>
+  <div class="electronic-validation">
+    <p class="ev-label">Documento validado eletronicamente</p>
     <strong>{{ professional_name | e }}</strong><br />
-    {{ professional_specialty | e }}<br />
-    {% if crm %}Registro Profissional: {{ crm | e }}{% endif %}
+    {% if professional_specialty %}{{ professional_specialty | e }}<br />{% endif %}
+    {% if crm %}{{ crm | e }}<br />{% endif %}
+    {{ validation_datetime | e }}
   </div>
 </div>
 {% endblock %}

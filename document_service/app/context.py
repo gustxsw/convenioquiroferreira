@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 
@@ -17,6 +17,7 @@ def _get(d: dict[str, Any], *keys: str, default: str = "") -> str:
 def build_render_context(document_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     today = date.today().strftime("%d/%m/%Y")
     current = _get(payload, "currentDate", "current_date", default=today)
+    validation_datetime = datetime.now().strftime("%d/%m/%Y %H:%M")
 
     ctx = {
         "doc_title": _get(payload, "title", default="Documento Médico"),
@@ -28,7 +29,9 @@ def build_render_context(document_type: str, payload: dict[str, Any]) -> dict[st
         "professional_specialty": _get(payload, "professionalSpecialty", "professional_specialty"),
         "crm": _get(payload, "crm"),
         "signature_url": _get(payload, "signatureUrl", "signature_url"),
+        "logo_url": _get(payload, "logoUrl", "logo_url"),
         "current_date": current,
+        "validation_datetime": validation_datetime,
         "title": _get(payload, "title", default="Documento Médico"),
         "content": _get(payload, "content"),
         "description": _get(payload, "description"),
