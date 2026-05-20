@@ -576,7 +576,7 @@ const SchedulingPageWithExtras: React.FC = () => {
 
   const generateTimeSlots = () => {
     const slots = [];
-    for (let hour = 8; hour <= 18; hour++) {
+    for (let hour = 7; hour <= 18; hour++) {
       for (let minute = 0; minute < 60; minute += 30) {
         const timeStr = `${hour.toString().padStart(2, "0")}:${minute
           .toString()
