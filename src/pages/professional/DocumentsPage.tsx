@@ -16,7 +16,6 @@ import {
   Printer,
   AlertCircle,
   Phone,
-  Send,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 import { getProfessionalActorId } from "../../utils/professionalActor";
@@ -373,19 +372,55 @@ const DocumentsPage: React.FC = () => {
   const sendDocumentViaWhatsApp = async (document: SavedDocument) => {
     try {
       setError("");
-
       const apiUrl = getApiUrl();
+      const isPdf = documentUrlIsPdf(document.document_url);
+
+      // 1. Tenta navigator.share() — envia o arquivo PDF diretamente (mobile + WhatsApp/WhatsApp Business)
+      if (isPdf && document.document_url && typeof navigator !== "undefined" && navigator.share) {
+        try {
+          const pdfRes = await fetch(document.document_url);
+          if (pdfRes.ok) {
+            const blob = await pdfRes.blob();
+            const safeName = `${(document.title || "documento").replace(/[^\w\s-]/g, "")}.pdf`;
+            const file = new File([blob], safeName, { type: "application/pdf" });
+            const message = `Olá ${document.patient_name || ""}, envio aqui o documento "${document.title}".`;
+            const shareData: ShareData = { files: [file], text: message };
+            if (navigator.canShare?.(shareData)) {
+              await navigator.share(shareData);
+              return;
+            }
+          }
+        } catch (err: unknown) {
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          // Falha silenciosa — cai para próxima opção
+        }
+      }
+
+      // 2. WhatsApp Business Cloud API (envio do servidor — requer configuração WHATSAPP_CLOUD_TOKEN)
+      if (features?.whatsappBusinessDocumentSend && isPdf) {
+        const response = await fetchWithAuth(
+          `${apiUrl}/api/documents/${document.id}/whatsapp/send-document`,
+          { method: "POST" }
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.message || "Não foi possível enviar pelo WhatsApp");
+        }
+        setSuccess("Documento enviado pelo WhatsApp.");
+        setTimeout(() => setSuccess(""), 5000);
+        return;
+      }
+
+      // 3. Fallback: link wa.me com URL do documento na mensagem
       const response = await fetchWithAuth(
         `${apiUrl}/api/documents/${document.id}/whatsapp`
       );
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(
           errorData.message || "Não foi possível gerar o link do WhatsApp"
         );
       }
-
       const data = await response.json();
       if (data.whatsapp_url) {
         window.open(data.whatsapp_url, "_blank");
@@ -400,33 +435,6 @@ const DocumentsPage: React.FC = () => {
           : "Erro ao enviar documento via WhatsApp"
       );
       setTimeout(() => setError(""), 4000);
-    }
-  };
-
-  const sendDocumentViaWhatsAppBusiness = async (document: SavedDocument) => {
-    try {
-      setError("");
-      const apiUrl = getApiUrl();
-      const response = await fetchWithAuth(
-        `${apiUrl}/api/documents/${document.id}/whatsapp/send-document`,
-        { method: "POST" }
-      );
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(
-          data.message || "Não foi possível enviar pelo WhatsApp API"
-        );
-      }
-      setSuccess("Documento enviado pelo WhatsApp Business API.");
-      setTimeout(() => setSuccess(""), 5000);
-    } catch (error) {
-      console.error("Erro WhatsApp Business (documento):", error);
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Erro ao enviar pelo WhatsApp Business API"
-      );
-      setTimeout(() => setError(""), 5000);
     }
   };
 
@@ -952,24 +960,12 @@ const DocumentsPage: React.FC = () => {
                           <Printer className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => sendDocumentViaWhatsApp(document)}
+                          onClick={() => void sendDocumentViaWhatsApp(document)}
                           className="text-green-600 hover:text-green-800"
-                          title="WhatsApp (mensagem com link)"
+                          title="Enviar via WhatsApp"
                         >
                           <Phone className="h-4 w-4" />
                         </button>
-                        {features?.whatsappBusinessDocumentSend &&
-                          documentUrlIsPdf(document.document_url) && (
-                            <button
-                              onClick={() =>
-                                sendDocumentViaWhatsAppBusiness(document)
-                              }
-                              className="text-emerald-700 hover:text-emerald-900"
-                              title="WhatsApp Business API — enviar arquivo"
-                            >
-                              <Send className="h-4 w-4" />
-                            </button>
-                          )}
                         <button
                           onClick={() => confirmDelete(document)}
                           className="text-red-600 hover:text-red-900"

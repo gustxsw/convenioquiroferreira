@@ -337,6 +337,38 @@ const [professionalData, setProfessionalData] = useState({
       setError("");
       const apiUrl = getApiUrl();
 
+      // 1. Tenta navigator.share() — envia o arquivo PDF diretamente (mobile + WhatsApp/WhatsApp Business)
+      if (record.pdf_url && typeof navigator !== "undefined" && navigator.share) {
+        try {
+          // Busca direto da URL pública (Cloudinary) para evitar transformações do proxy
+          let pdfBlob: Blob | null = null;
+          try {
+            const directRes = await fetch(record.pdf_url);
+            if (directRes.ok) pdfBlob = await directRes.blob();
+          } catch {
+            // CORS ou falha — tenta via proxy autenticado
+          }
+          if (!pdfBlob) {
+            const pdfResult = await fetchMedicalRecordPdf(record.id);
+            if (pdfResult.ok) pdfBlob = pdfResult.blob;
+          }
+          if (pdfBlob) {
+            const safeName = `Prontuario_${(record.patient_name || "paciente").replace(/[^\w\s-]/g, "")}.pdf`;
+            const file = new File([pdfBlob], safeName, { type: "application/pdf" });
+            const message = `Olá ${record.patient_name || ""}, envio aqui o seu prontuário referente ao atendimento.`;
+            const shareData: ShareData = { files: [file], text: message };
+            if (navigator.canShare?.(shareData)) {
+              await navigator.share(shareData);
+              return;
+            }
+          }
+        } catch (err: unknown) {
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          // Falha silenciosa — cai para próxima opção
+        }
+      }
+
+      // 2. WhatsApp Business Cloud API (envio do servidor — requer configuração WHATSAPP_CLOUD_TOKEN)
       if (features?.whatsappBusinessDocumentSend && record.pdf_url) {
         const response = await fetchWithAuth(
           `${apiUrl}/api/medical-records/${record.id}/whatsapp/send-document`,
@@ -350,22 +382,24 @@ const [professionalData, setProfessionalData] = useState({
         }
         setSuccess("Documento enviado pelo WhatsApp.");
         setTimeout(() => setSuccess(""), 5000);
-      } else {
-        const response = await fetchWithAuth(
-          `${apiUrl}/api/medical-records/${record.id}/whatsapp`
+        return;
+      }
+
+      // 3. Fallback: link wa.me com URL do PDF na mensagem
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/medical-records/${record.id}/whatsapp`
+      );
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.message || "Não foi possível gerar o link do WhatsApp"
         );
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(
-            errorData.message || "Não foi possível gerar o link do WhatsApp"
-          );
-        }
-        const data = await response.json();
-        if (data.whatsapp_url) {
-          window.open(data.whatsapp_url, "_blank");
-        } else {
-          throw new Error("Link do WhatsApp não recebido do servidor");
-        }
+      }
+      const data = await response.json();
+      if (data.whatsapp_url) {
+        window.open(data.whatsapp_url, "_blank");
+      } else {
+        throw new Error("Link do WhatsApp não recebido do servidor");
       }
     } catch (error) {
       console.error("Erro ao enviar prontuário via WhatsApp:", error);
