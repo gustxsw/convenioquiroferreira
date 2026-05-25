@@ -17,7 +17,21 @@
       "Bash(Select-Object FullName)",
       "Bash(grep -E \"\\\\.\\(ts|tsx|js\\)$\")",
       "Bash(node *)",
-      "Bash(Select-Object Name, PSIsContainer)"
+      "Bash(Select-Object Name, PSIsContainer)",
+      "Bash(cd C:UsersSuporteDesktopDesenvolvimentodermato *)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Suporte\\\\Desktop\\\\Desenvolvimento\\\\dermato\" -Recurse -Directory | Select-Object -First 20 | ForEach-Object { $_.FullName })",
+      "Bash(python -c \"import document_service.app.render_engine; print\\('OK'\\)\")",
+      "Bash(pip install *)",
+      "Bash(python scripts/generate_pdf.py)",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"from weasyprint import HTML; print\\('weasyprint OK'\\)\")",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\Suporte\\\\Desktop\\\\Desenvolvimento\\\\dermato\\\\src\\\\\" -Recurse | Where-Object { $_.Name -match \"document|prontuario|record|pdf|export\" -and !$_.PSIsContainer } | Select-Object FullName)",
+      "PowerShell(python -c \"import reportlab; print\\('reportlab OK:', reportlab.Version\\)\" 2>&1)",
+      "PowerShell(python -c \"import xhtml2pdf; print\\('xhtml2pdf OK'\\)\" 2>&1)",
+      "Bash(Select-Object -First 100)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(grep -E \"\\\\.\\(ts|tsx|py\\)$\")",
+      "Bash(Select-Object -First 80)"
     ]
   }
 }

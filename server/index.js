@@ -10,7 +10,8 @@ import { pool } from "./db.js";
 import { authenticate, authorize } from "./middleware/auth.js";
 import createUpload, { createReceiptUpload } from "./middleware/upload.js";
 import { generateDocumentPDF } from "./utils/documentGenerator.js";
-import { regenerateMedicalRecordPdf } from "./utils/medicalRecordPdf.js";
+import { regenerateMedicalRecordPdf, buildMedicalRecordPdfPayload } from "./utils/medicalRecordPdf.js";
+import { renderPdfFromDocumentService } from "./utils/documentServiceClient.js";
 import {
   isWhatsappCloudConfigured,
   sendWhatsappDocumentMessage,
@@ -157,6 +158,61 @@ app.use(cookieParser());
 app.use("/api/documents", documentsRoutes);
 app.use("/api/pdf", pdfRoutes);
 app.use("/api/affiliate-tracking", affiliateTrackingRoutes);
+
+// Public PDF endpoint — authenticated via short-lived JWT share token (no cookie/Bearer required)
+// Used for WhatsApp links shared with patients
+app.get("/api/public/pdf", async (req, res) => {
+  const token = req.query.t;
+  if (!token || typeof token !== "string") {
+    return res.status(400).json({ message: "Token obrigatório" });
+  }
+  let payload;
+  try {
+    payload = jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    return res.status(401).json({ message: "Link inválido ou expirado" });
+  }
+  try {
+    let pdfUrl = null;
+    if (payload.type === "document") {
+      const r = await pool.query(
+        `SELECT document_url FROM medical_documents WHERE id = $1
+         UNION ALL
+         SELECT document_url FROM saved_documents WHERE id = $1
+         LIMIT 1`,
+        [payload.id]
+      );
+      pdfUrl = r.rows[0]?.document_url;
+    } else if (payload.type === "medical_record") {
+      const r = await pool.query(
+        `SELECT pdf_url AS document_url FROM medical_records WHERE id = $1`,
+        [payload.id]
+      );
+      pdfUrl = r.rows[0]?.document_url;
+    }
+    if (!pdfUrl) {
+      return res.status(404).json({ message: "Documento não encontrado" });
+    }
+    let fetchUrl = pdfUrl.trim();
+    if (fetchUrl.startsWith("//")) fetchUrl = `https:${fetchUrl}`;
+    const pdfRes = await fetch(fetchUrl, {
+      redirect: "follow",
+      headers: { Accept: "application/pdf,*/*" },
+    });
+    if (!pdfRes.ok) {
+      return res.status(502).json({ message: "Não foi possível obter o arquivo do documento." });
+    }
+    const buffer = Buffer.from(await pdfRes.arrayBuffer());
+    const ct = pdfRes.headers.get("content-type") || "application/pdf";
+    res.setHeader("Content-Type", ct.split(";")[0].trim());
+    res.setHeader("Content-Disposition", `inline; filename="documento.pdf"`);
+    res.setHeader("Content-Length", buffer.length);
+    res.send(buffer);
+  } catch (err) {
+    console.error("❌ [PUBLIC PDF] Error:", err);
+    res.status(500).json({ message: "Erro ao carregar documento" });
+  }
+});
 
 // Serve static files in production
 if (process.env.NODE_ENV === "production") {
@@ -6145,9 +6201,7 @@ app.get(
   async (req, res) => {
     res.json({
       whatsappBusinessDocumentSend: isWhatsappCloudConfigured(),
-      documentServiceConfigured: !!(
-        process.env.DOCUMENT_SERVICE_URL || ""
-      ).trim(),
+      documentServiceConfigured: true,
       specialtyOnboarding: specialtyFeaturesEnabled,
       specialtyMedicalRecords: specialtyFeaturesEnabled,
     });
@@ -6963,10 +7017,11 @@ app.get(
 
       const recordsResult = await pool.query(
         `
-      SELECT 
+      SELECT
         mr.*,
         COALESCE(pp.name, mr.patient_name) as patient_name,
-        COALESCE(pp.cpf, mr.patient_cpf) as patient_cpf
+        COALESCE(pp.cpf, mr.patient_cpf) as patient_cpf,
+        pp.phone AS patient_phone
       FROM medical_records mr
       LEFT JOIN private_patients pp ON mr.private_patient_id = pp.id
       WHERE mr.professional_id = $1
@@ -6976,7 +7031,14 @@ app.get(
         [req.user.professionalScopeId]
       );
 
-      res.json(recordsResult.rows);
+      const secret = process.env.JWT_SECRET;
+      const rows = recordsResult.rows.map(row => ({
+        ...row,
+        share_token: secret
+          ? jwt.sign({ type: 'medical_record', id: row.id }, secret, { expiresIn: '7d' })
+          : null,
+      }));
+      res.json(rows);
     } catch (error) {
       console.error("❌ Error fetching medical records:", error);
       res.status(500).json({ message: "Erro ao carregar prontuários" });
@@ -6984,7 +7046,8 @@ app.get(
   }
 );
 
-// GET /api/medical-records/:id/pdf — PDF com autenticação (evita 401 ao abrir link direto sem Bearer)
+// GET /api/medical-records/:id/pdf — Serve PDF do prontuário com autenticação.
+// Tenta a URL Cloudinary armazenada; se falhar (ou não existir), regenera do banco de dados.
 app.get(
   "/api/medical-records/:id/pdf",
   authenticate,
@@ -6992,11 +7055,16 @@ app.get(
   async (req, res) => {
     try {
       const { id } = req.params;
+      const disposition = req.query.download === "1" ? "attachment" : "inline";
+      const safeName = `Prontuario_${id}.pdf`;
 
       const recordResult = await pool.query(
-        `SELECT pdf_url, private_patient_id, patient_type
-         FROM medical_records
-         WHERE id = $1 AND professional_id = $2`,
+        `SELECT mr.*,
+                COALESCE(pp.name, mr.patient_name) AS patient_name,
+                COALESCE(pp.cpf, mr.patient_cpf) AS patient_cpf
+         FROM medical_records mr
+         LEFT JOIN private_patients pp ON mr.private_patient_id = pp.id
+         WHERE mr.id = $1 AND mr.professional_id = $2`,
         [id, req.user.professionalScopeId]
       );
 
@@ -7006,65 +7074,67 @@ app.get(
 
       const record = recordResult.rows[0];
 
-      if (
-        isAgendaOnlyProfessional(req) &&
-        isConvenioMedicalRecordRow(record)
-      ) {
+      if (isAgendaOnlyProfessional(req) && isConvenioMedicalRecordRow(record)) {
         return respondAgendaOnlyConvenioForbidden(res);
       }
 
+      const sendPdf = (buffer) => {
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader(
+          "Content-Disposition",
+          `${disposition}; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`
+        );
+        res.setHeader("Content-Length", buffer.length);
+        res.send(buffer);
+      };
+
+      // Tenta Cloudinary se houver pdf_url
       const pdfUrlRaw = (record.pdf_url || "").trim();
-      if (!pdfUrlRaw) {
-        return res.status(404).json({
-          message:
-            "Não há PDF deste prontuário. Salve ou atualize o prontuário para gerar o arquivo.",
-        });
-      }
-
-      let fetchUrl = pdfUrlRaw;
-      if (fetchUrl.startsWith("/")) {
-        const forwardedProto = req.get("x-forwarded-proto");
-        const proto =
-          (forwardedProto && forwardedProto.split(",")[0].trim()) ||
-          req.protocol ||
-          "https";
-        const host = req.get("x-forwarded-host") || req.get("host");
-        if (!host) {
-          return res.status(500).json({ message: "URL do PDF inválida" });
+      if (pdfUrlRaw) {
+        let fetchUrl = pdfUrlRaw;
+        if (fetchUrl.startsWith("/")) {
+          const proto = (req.get("x-forwarded-proto") || req.protocol || "https").split(",")[0].trim();
+          const host = req.get("x-forwarded-host") || req.get("host");
+          if (host) fetchUrl = `${proto}://${host}${fetchUrl}`;
+        } else if (fetchUrl.startsWith("//")) {
+          fetchUrl = `https:${fetchUrl}`;
         }
-        fetchUrl = `${proto}://${host}${fetchUrl}`;
-      } else if (fetchUrl.startsWith("//")) {
-        fetchUrl = `https:${fetchUrl}`;
+
+        console.log(`🔄 [MR-PDF] Trying Cloudinary: ${fetchUrl}`);
+        try {
+          const pdfRes = await fetch(fetchUrl, {
+            redirect: "follow",
+            headers: { Accept: "application/pdf,*/*" },
+          });
+          if (pdfRes.ok) {
+            return sendPdf(Buffer.from(await pdfRes.arrayBuffer()));
+          }
+          let body = ""; try { body = await pdfRes.text(); } catch { /* ignore */ }
+          console.warn(`⚠️ [MR-PDF] Cloudinary ${pdfRes.status} — falling back to regeneration. body=${body.slice(0, 200)}`);
+        } catch (fetchErr) {
+          console.warn(`⚠️ [MR-PDF] Cloudinary fetch threw — falling back to regeneration:`, fetchErr.message);
+        }
       }
 
-      const pdfRes = await fetch(fetchUrl, {
-        redirect: "follow",
-        headers: { Accept: "application/pdf,*/*" },
-      });
-
-      if (!pdfRes.ok) {
-        return res.status(502).json({
-          message:
-            "Não foi possível obter o arquivo do PDF. Tente regenerar o documento.",
-        });
-      }
-
-      const buffer = Buffer.from(await pdfRes.arrayBuffer());
-      const ct =
-        pdfRes.headers.get("content-type") || "application/pdf";
-      res.setHeader("Content-Type", ct.split(";")[0].trim());
-      const disposition =
-        req.query.download === "1" ? "attachment" : "inline";
-      const safeName = `Prontuario_${id}.pdf`;
-      res.setHeader(
-        "Content-Disposition",
-        `${disposition}; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`
+      // Regenera do banco de dados
+      console.log(`🔄 [MR-PDF] Regenerating PDF on-the-fly for record ${id}`);
+      const userResult = await pool.query(
+        `SELECT u.name, u.crm, u.signature_url, u.clinic_logo_url, u.category_name FROM users u WHERE u.id = $1`,
+        [req.user.professionalScopeId]
       );
-      res.setHeader("Content-Length", buffer.length);
-      res.send(buffer);
+      const prof = userResult.rows[0] || {};
+      const payload = buildMedicalRecordPdfPayload(record, {
+        name: prof.name,
+        crm: prof.crm,
+        signature_url: prof.signature_url,
+        clinic_logo_url: prof.clinic_logo_url,
+        category_name: prof.category_name,
+      });
+      const pdfBuffer = await renderPdfFromDocumentService("medical_record", payload);
+      return sendPdf(pdfBuffer);
     } catch (error) {
-      console.error("❌ Error streaming medical record PDF:", error);
-      res.status(500).json({ message: "Erro ao carregar PDF do prontuário" });
+      console.error("❌ Error serving medical record PDF:", error);
+      res.status(500).json({ message: "Erro ao carregar PDF do prontuário: " + error.message });
     }
   }
 );

@@ -17,7 +17,9 @@ import {
   AlertCircle,
   Phone,
 } from "lucide-react";
-import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
+import { fetchWithAuth, getApiUrl, fetchDocumentPdf } from "../../utils/apiHelpers";
+import { shareDocumentViaWhatsApp } from "../../utils/whatsappShare";
+
 import { getProfessionalActorId } from "../../utils/professionalActor";
 
 type SavedDocument = {
@@ -29,6 +31,8 @@ type SavedDocument = {
   document_url: string;
   document_metadata: any;
   created_at: string;
+  patient_phone?: string | null;
+  share_token?: string | null;
 };
 
 type PrivatePatient = {
@@ -73,9 +77,8 @@ const DocumentsPage: React.FC = () => {
   // Document view modal state
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [documentToView, setDocumentToView] = useState<{
-    url: string;
+    id: number;
     title: string;
-    type?: string;
   } | null>(null);
 
   // Form state for document generation
@@ -101,6 +104,9 @@ const DocumentsPage: React.FC = () => {
     null
   );
   const [isSearching, setIsSearching] = useState(false);
+
+  // WhatsApp busy state (tracks which document id is being processed)
+  const [whatsappBusyId, setWhatsappBusyId] = useState<number | null>(null);
 
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -268,12 +274,8 @@ const DocumentsPage: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const openViewModal = (document: SavedDocument) => {
-    setDocumentToView({
-      url: document.document_url,
-      title: document.title,
-      type: document.document_type,
-    });
+  const openViewModal = (doc: SavedDocument) => {
+    setDocumentToView({ id: doc.id, title: doc.title });
     setIsViewModalOpen(true);
   };
 
@@ -369,64 +371,20 @@ const DocumentsPage: React.FC = () => {
     }
   };
 
-  const sendDocumentViaWhatsApp = async (document: SavedDocument) => {
+  const sendDocumentViaBusinessApi = async (document: SavedDocument) => {
+    const apiUrl = getApiUrl();
     try {
-      setError("");
-      const apiUrl = getApiUrl();
-      const isPdf = documentUrlIsPdf(document.document_url);
-
-      // 1. Tenta navigator.share() — envia o arquivo PDF diretamente (mobile + WhatsApp/WhatsApp Business)
-      if (isPdf && document.document_url && typeof navigator !== "undefined" && navigator.share) {
-        try {
-          const pdfRes = await fetch(document.document_url);
-          if (pdfRes.ok) {
-            const blob = await pdfRes.blob();
-            const safeName = `${(document.title || "documento").replace(/[^\w\s-]/g, "")}.pdf`;
-            const file = new File([blob], safeName, { type: "application/pdf" });
-            const message = `Olá ${document.patient_name || ""}, envio aqui o documento "${document.title}".`;
-            const shareData: ShareData = { files: [file], text: message };
-            if (navigator.canShare?.(shareData)) {
-              await navigator.share(shareData);
-              return;
-            }
-          }
-        } catch (err: unknown) {
-          if (err instanceof DOMException && err.name === "AbortError") return;
-          // Falha silenciosa — cai para próxima opção
-        }
-      }
-
-      // 2. WhatsApp Business Cloud API (envio do servidor — requer configuração WHATSAPP_CLOUD_TOKEN)
-      if (features?.whatsappBusinessDocumentSend && isPdf) {
-        const response = await fetchWithAuth(
-          `${apiUrl}/api/documents/${document.id}/whatsapp/send-document`,
-          { method: "POST" }
-        );
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(data.message || "Não foi possível enviar pelo WhatsApp");
-        }
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/documents/${document.id}/whatsapp/send-document`,
+        { method: "POST" }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
         setSuccess("Documento enviado pelo WhatsApp.");
         setTimeout(() => setSuccess(""), 5000);
         return;
       }
-
-      // 3. Fallback: link wa.me com URL do documento na mensagem
-      const response = await fetchWithAuth(
-        `${apiUrl}/api/documents/${document.id}/whatsapp`
-      );
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          errorData.message || "Não foi possível gerar o link do WhatsApp"
-        );
-      }
-      const data = await response.json();
-      if (data.whatsapp_url) {
-        window.open(data.whatsapp_url, "_blank");
-      } else {
-        throw new Error("Link do WhatsApp não recebido do servidor");
-      }
+      throw new Error((data as { message?: string }).message || "Não foi possível enviar pelo WhatsApp");
     } catch (error) {
       console.error("Erro ao enviar documento via WhatsApp:", error);
       setError(
@@ -672,50 +630,74 @@ const DocumentsPage: React.FC = () => {
     }
   };
 
-  const printDocumentDirect = (document: SavedDocument) => {
+  const printDocumentDirect = async (document: SavedDocument, win: Window | null) => {
+    if (!win) {
+      setError("Popup foi bloqueado. Permita popups para abrir o documento.");
+      return;
+    }
     try {
       if (documentUrlIsPdf(document.document_url)) {
-        window.open(
-          document.document_url,
-          "_blank",
-          "noopener,noreferrer"
-        );
-        setSuccess("PDF aberto em nova aba.");
+        // Usa proxy autenticado para evitar bloqueio CORS/401 do Cloudinary
+        const result = await fetchDocumentPdf(document.id);
+        if (!result.ok) {
+          win.close();
+          setError(result.message);
+          return;
+        }
+        const url = URL.createObjectURL(result.blob);
+        win.location.href = url;
+        window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
         return;
       }
 
-      const printWindow = window.open("", "_blank", "width=800,height=600");
-      if (!printWindow) {
-        throw new Error("Popup foi bloqueado. Permita popups para imprimir.");
-      }
-
       if (document.document_url.includes(".html")) {
-        fetch(document.document_url)
-          .then((response) => response.text())
-          .then((htmlContent) => {
-            printWindow.document.write(htmlContent);
-            printWindow.document.close();
-            printWindow.onload = () => {
-              setTimeout(() => {
-                printWindow.print();
-                setTimeout(() => printWindow.close(), 1000);
-              }, 500);
-            };
-          })
-          .catch(() => {
-            printWindow.close();
-            setError("Erro ao carregar documento para impressão");
-          });
+        const response = await fetch(document.document_url);
+        if (!response.ok) {
+          win.close();
+          setError("Erro ao carregar documento para impressão");
+          return;
+        }
+        const htmlContent = await response.text();
+        win.document.write(htmlContent);
+        win.document.close();
+        win.onload = () => {
+          setTimeout(() => {
+            win.print();
+            setTimeout(() => win.close(), 1000);
+          }, 500);
+        };
       } else {
-        printWindow.location.href = document.document_url;
+        win.location.href = document.document_url;
       }
-
-      setSuccess("Janela de impressão aberta! Use Ctrl+P se necessário.");
     } catch (error) {
+      win.close();
       console.error("Error printing document:", error);
-      setError(
-        error instanceof Error ? error.message : "Erro ao imprimir documento"
-      );
+      setError(error instanceof Error ? error.message : "Erro ao abrir documento");
+    }
+  };
+
+  const downloadDocumentPdf = async (doc: SavedDocument) => {
+    try {
+      const result = await fetchDocumentPdf(doc.id);
+      if (!result.ok) {
+        setError(result.message);
+        setTimeout(() => setError(""), 4000);
+        return;
+      }
+      const url = URL.createObjectURL(result.blob);
+      const safeName = `${(doc.title || "Documento")
+        .replace(/[^a-zA-Z0-9\s]/g, "")
+        .replace(/\s+/g, "_")}.pdf`;
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = safeName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("Erro ao baixar documento");
+      setTimeout(() => setError(""), 4000);
     }
   };
 
@@ -953,18 +935,52 @@ const DocumentsPage: React.FC = () => {
                           <Eye className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => printDocumentDirect(document)}
+                          onClick={() => void downloadDocumentPdf(document)}
+                          className="text-blue-600 hover:text-blue-900"
+                          title="Baixar PDF"
+                        >
+                          <Download className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            const win = window.open("about:blank", "_blank");
+                            void printDocumentDirect(document, win);
+                          }}
                           className="text-green-600 hover:text-green-900"
                           title="Imprimir"
                         >
                           <Printer className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => void sendDocumentViaWhatsApp(document)}
-                          className="text-green-600 hover:text-green-800"
+                          disabled={whatsappBusyId === document.id}
+                          onClick={async () => {
+                            setWhatsappBusyId(document.id);
+                            setError("");
+                            try {
+                              const result = await shareDocumentViaWhatsApp({
+                                documentId: document.id,
+                                documentFileName: `${(document.title || "Documento").replace(/[^a-zA-Z0-9\s]/g, "").replace(/\s+/g, "_")}.pdf`,
+                                documentTypeLabel: getDocumentTypeDisplay(document.document_type),
+                                patientName: document.patient_name,
+                                patientPhone: document.patient_phone,
+                                shareToken: document.share_token,
+                              });
+                              if (result.error) {
+                                setError(result.error);
+                                setTimeout(() => setError(""), 5000);
+                              }
+                            } finally {
+                              setWhatsappBusyId(null);
+                            }
+                          }}
+                          className="text-green-600 hover:text-green-800 disabled:opacity-40"
                           title="Enviar via WhatsApp"
                         >
-                          <Phone className="h-4 w-4" />
+                          {whatsappBusyId === document.id ? (
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-green-600 border-t-transparent" />
+                          ) : (
+                            <Phone className="h-4 w-4" />
+                          )}
                         </button>
                         <button
                           onClick={() => confirmDelete(document)}
@@ -1387,13 +1403,14 @@ const DocumentsPage: React.FC = () => {
       )}
 
       {/* Document view modal */}
-      <DocumentViewModal
-        isOpen={isViewModalOpen}
-        onClose={() => setIsViewModalOpen(false)}
-        documentUrl={documentToView?.url || ""}
-        documentTitle={documentToView?.title || ""}
-        documentType={documentToView?.type}
-      />
+      {documentToView && (
+        <DocumentViewModal
+          isOpen={isViewModalOpen}
+          onClose={() => { setIsViewModalOpen(false); setDocumentToView(null); }}
+          documentId={documentToView.id}
+          documentTitle={documentToView.title}
+        />
+      )}
 
       {/* Delete confirmation modal */}
       {showDeleteConfirm && documentToDelete && (

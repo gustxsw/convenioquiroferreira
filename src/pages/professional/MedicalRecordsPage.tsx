@@ -12,6 +12,7 @@ import {
   fetchWithAuth,
   getApiUrl,
 } from "../../utils/apiHelpers";
+import { shareMedicalRecordViaWhatsApp } from "../../utils/whatsappShare";
 import { getProfessionalActorId } from "../../utils/professionalActor";
 import MedicalRecordPreviewModal from "../../components/MedicalRecordPreviewModal";
 import {
@@ -25,7 +26,6 @@ import {
   Eye,
   X,
   Check,
-  Download,
   Printer,
   Phone,
 } from "lucide-react";
@@ -52,6 +52,8 @@ type MedicalRecord = {
   pdf_generated_at?: string | null;
   specialty_code?: string | null;
   specialty_fields?: Record<string, unknown> | null;
+  patient_phone?: string | null;
+  share_token?: string | null;
 };
 
 type PrivatePatient = {
@@ -172,6 +174,8 @@ const MedicalRecordsPage: React.FC = () => {
     documentServiceConfigured: boolean;
     specialtyMedicalRecords?: boolean;
   } | null>(null);
+  // WhatsApp busy state (tracks which record id is being processed)
+  const [whatsappBusyId, setWhatsappBusyId] = useState<number | null>(null);
 const [professionalData, setProfessionalData] = useState({
     name: "",
     specialty: "",
@@ -332,77 +336,24 @@ const [professionalData, setProfessionalData] = useState({
     setShowPrivatePatientDropdown(false);
   };
 
-  const sendRecordViaWhatsApp = async (record: MedicalRecord) => {
+  const sendRecordViaBusinessApi = async (record: MedicalRecord) => {
+    const apiUrl = getApiUrl();
     try {
-      setError("");
-      const apiUrl = getApiUrl();
-
-      // 1. Tenta navigator.share() — envia o arquivo PDF diretamente (mobile + WhatsApp/WhatsApp Business)
-      if (record.pdf_url && typeof navigator !== "undefined" && navigator.share) {
-        try {
-          // Busca direto da URL pública (Cloudinary) para evitar transformações do proxy
-          let pdfBlob: Blob | null = null;
-          try {
-            const directRes = await fetch(record.pdf_url);
-            if (directRes.ok) pdfBlob = await directRes.blob();
-          } catch {
-            // CORS ou falha — tenta via proxy autenticado
-          }
-          if (!pdfBlob) {
-            const pdfResult = await fetchMedicalRecordPdf(record.id);
-            if (pdfResult.ok) pdfBlob = pdfResult.blob;
-          }
-          if (pdfBlob) {
-            const safeName = `Prontuario_${(record.patient_name || "paciente").replace(/[^\w\s-]/g, "")}.pdf`;
-            const file = new File([pdfBlob], safeName, { type: "application/pdf" });
-            const message = `Olá ${record.patient_name || ""}, envio aqui o seu prontuário referente ao atendimento.`;
-            const shareData: ShareData = { files: [file], text: message };
-            if (navigator.canShare?.(shareData)) {
-              await navigator.share(shareData);
-              return;
-            }
-          }
-        } catch (err: unknown) {
-          if (err instanceof DOMException && err.name === "AbortError") return;
-          // Falha silenciosa — cai para próxima opção
-        }
-      }
-
-      // 2. WhatsApp Business Cloud API (envio do servidor — requer configuração WHATSAPP_CLOUD_TOKEN)
-      if (features?.whatsappBusinessDocumentSend && record.pdf_url) {
-        const response = await fetchWithAuth(
-          `${apiUrl}/api/medical-records/${record.id}/whatsapp/send-document`,
-          { method: "POST" }
-        );
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(
-            data.message || "Não foi possível enviar o arquivo pelo WhatsApp"
-          );
-        }
-        setSuccess("Documento enviado pelo WhatsApp.");
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/medical-records/${record.id}/whatsapp/send-document`,
+        { method: "POST" }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        setSuccess("Prontuário enviado pelo WhatsApp.");
         setTimeout(() => setSuccess(""), 5000);
         return;
       }
-
-      // 3. Fallback: link wa.me com URL do PDF na mensagem
-      const response = await fetchWithAuth(
-        `${apiUrl}/api/medical-records/${record.id}/whatsapp`
+      throw new Error(
+        (data as { message?: string }).message || "Não foi possível enviar o arquivo pelo WhatsApp"
       );
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          errorData.message || "Não foi possível gerar o link do WhatsApp"
-        );
-      }
-      const data = await response.json();
-      if (data.whatsapp_url) {
-        window.open(data.whatsapp_url, "_blank");
-      } else {
-        throw new Error("Link do WhatsApp não recebido do servidor");
-      }
     } catch (error) {
-      console.error("Erro ao enviar prontuário via WhatsApp:", error);
+      console.error("Erro ao enviar prontuário via WhatsApp Business:", error);
       setError(
         error instanceof Error
           ? error.message
@@ -818,16 +769,21 @@ const [professionalData, setProfessionalData] = useState({
   };
 
   // Abre PDF do servidor ou gera HTML local para impressão
-  const printMedicalRecordDirect = async (record: MedicalRecord) => {
+  const printMedicalRecordDirect = async (record: MedicalRecord, win: Window | null) => {
+    if (!win) {
+      setError("Popup foi bloqueado. Permita popups para imprimir.");
+      return;
+    }
     try {
       setError("");
       if (record.pdf_url) {
         const result = await fetchMedicalRecordPdf(record.id);
         if (!result.ok) {
+          win.close();
           throw new Error(result.message);
         }
         const url = URL.createObjectURL(result.blob);
-        window.open(url, "_blank", "noopener,noreferrer");
+        win.location.href = url;
         window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
         return;
       }
@@ -1059,22 +1015,16 @@ const [professionalData, setProfessionalData] = useState({
       if (isMobile) {
         const blob = new Blob([htmlContent], { type: "text/html;charset=utf-8" });
         const url = URL.createObjectURL(blob);
-        window.location.href = url;
+        win.location.href = url;
         setSuccess("Documento aberto. Use a opção de imprimir do seu dispositivo.");
         return;
       }
 
-      const printWindow = window.open("", "_blank", "width=800,height=600");
-
-      if (!printWindow) {
-        throw new Error("Popup foi bloqueado. Permita popups para imprimir.");
-      }
-
-      printWindow.document.write(htmlContent);
-      printWindow.document.close();
-
+      win.document.write(htmlContent);
+      win.document.close();
       setSuccess("Janela de impressão aberta! Use Ctrl+P se necessário.");
     } catch (error) {
+      win.close();
       console.error("Error printing medical record:", error);
       setError(
         error instanceof Error ? error.message : "Erro ao imprimir prontuário"
@@ -1359,18 +1309,44 @@ const [professionalData, setProfessionalData] = useState({
                           <Eye className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => void printMedicalRecordDirect(record)}
+                          onClick={() => {
+                            const win = window.open("about:blank", "_blank");
+                            void printMedicalRecordDirect(record, win);
+                          }}
                           className="text-purple-600 hover:text-purple-900"
-                          title="Imprimir Direto"
+                          title="Abrir / Imprimir PDF"
                         >
-                          <Download className="h-4 w-4" />
+                          <Printer className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => void sendRecordViaWhatsApp(record)}
-                          className="text-green-600 hover:text-green-800"
+                          disabled={whatsappBusyId === record.id}
+                          onClick={async () => {
+                            setWhatsappBusyId(record.id);
+                            setError("");
+                            try {
+                              const result = await shareMedicalRecordViaWhatsApp({
+                                recordId: record.id,
+                                hasPdfUrl: !!record.pdf_url,
+                                patientName: record.patient_name || "Paciente",
+                                patientPhone: record.patient_phone,
+                                shareToken: record.share_token,
+                              });
+                              if (result.error) {
+                                setError(result.error);
+                                setTimeout(() => setError(""), 6000);
+                              }
+                            } finally {
+                              setWhatsappBusyId(null);
+                            }
+                          }}
+                          className="text-green-600 hover:text-green-800 disabled:opacity-40"
                           title="Enviar via WhatsApp"
                         >
-                          <Phone className="h-4 w-4" />
+                          {whatsappBusyId === record.id ? (
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-green-600 border-t-transparent" />
+                          ) : (
+                            <Phone className="h-4 w-4" />
+                          )}
                         </button>
                         <button
                           onClick={() => openEditModal(record)}

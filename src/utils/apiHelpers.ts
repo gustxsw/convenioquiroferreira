@@ -168,3 +168,23 @@ export async function fetchMedicalRecordPdf(
   const blob = await res.blob();
   return { ok: true, blob };
 }
+
+/** PDF de documento (atestado, receituário etc.) via API autenticada. */
+export async function fetchDocumentPdf(
+  documentId: number
+): Promise<{ ok: true; blob: Blob } | { ok: false; message: string }> {
+  const apiUrl = getApiUrl();
+  const res = await fetchWithAuth(`${apiUrl}/api/documents/${documentId}/pdf`);
+  if (!res.ok) {
+    let message = "Não foi possível carregar o documento";
+    try {
+      const j = (await res.json()) as { message?: string };
+      if (j?.message) message = j.message;
+    } catch {
+      /* resposta não JSON */
+    }
+    return { ok: false, message };
+  }
+  const blob = await res.blob();
+  return { ok: true, blob };
+}

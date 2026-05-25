@@ -1,0 +1,392 @@
+#!/usr/bin/env python3
+"""
+Gerador de PDF standalone para documentos médicos — chamado pelo Node.js via execFile.
+Usa reportlab (sem WeasyPrint/xhtml2pdf) — mesmo padrão do projeto dermato.
+
+Uso: python generate_pdf.py <in.json> <out.pdf>
+  in.json: {"document_type": "...", "payload": {...}}
+"""
+from __future__ import annotations
+
+import json
+import sys
+import unicodedata
+from datetime import datetime
+from pathlib import Path
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import cm
+from reportlab.platypus import (
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def ascii_safe(s: str | None) -> str:
+    if not s:
+        return "—"
+    out = unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii")
+    return out.strip() or "—"
+
+
+def multiline(s: str | None) -> str:
+    if not s:
+        return "—"
+    return ascii_safe(s).replace("\n", "<br/>")
+
+
+def get(payload: dict, *keys: str, default: str = "") -> str:
+    for k in keys:
+        v = payload.get(k)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    return default
+
+
+# ---------------------------------------------------------------------------
+# Styles
+# ---------------------------------------------------------------------------
+
+def build_styles() -> dict:
+    base = getSampleStyleSheet()
+    return {
+        "title": ParagraphStyle(
+            name="DocTitle",
+            parent=base["Heading1"],
+            fontSize=16,
+            spaceAfter=6,
+            textColor=colors.HexColor("#7f1d1d"),
+        ),
+        "subtitle": ParagraphStyle(
+            name="DocSubtitle",
+            parent=base["Normal"],
+            fontSize=10,
+            spaceAfter=2,
+            textColor=colors.HexColor("#991b1b"),
+        ),
+        "h2": ParagraphStyle(
+            name="DocH2",
+            parent=base["Heading2"],
+            fontSize=11,
+            spaceBefore=10,
+            spaceAfter=4,
+            textColor=colors.HexColor("#7f1d1d"),
+        ),
+        "normal": ParagraphStyle(
+            name="DocNormal",
+            parent=base["Normal"],
+            fontSize=10,
+            leading=14,
+        ),
+        "small": ParagraphStyle(
+            name="DocSmall",
+            parent=base["Normal"],
+            fontSize=9,
+            leading=11,
+            textColor=colors.HexColor("#44403c"),
+        ),
+        "label": ParagraphStyle(
+            name="DocLabel",
+            parent=base["Normal"],
+            fontSize=10,
+            leading=14,
+            textColor=colors.HexColor("#44403c"),
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Shared blocks
+# ---------------------------------------------------------------------------
+
+def render_header(story: list, styles: dict, payload: dict, doc_title: str) -> None:
+    prof_name = get(payload, "professionalName", "professional_name", default="Profissional de Saude")
+    specialty = get(payload, "professionalSpecialty", "professional_specialty")
+    crm = get(payload, "crm")
+
+    story.append(Paragraph(ascii_safe(prof_name), styles["title"]))
+    if specialty:
+        story.append(Paragraph(ascii_safe(specialty), styles["subtitle"]))
+    if crm:
+        story.append(Paragraph(f"CRM/CREFITO: {ascii_safe(crm)}", styles["subtitle"]))
+    story.append(Spacer(1, 0.3 * cm))
+    story.append(Paragraph(f"<b>{ascii_safe(doc_title).upper()}</b>", styles["h2"]))
+    story.append(Spacer(1, 0.1 * cm))
+
+
+def render_patient_block(story: list, styles: dict, payload: dict) -> None:
+    patient_name = get(payload, "patientName", "patient_name", default="Paciente")
+    patient_cpf = get(payload, "patientCpf", "patient_cpf")
+    current_date = get(
+        payload, "currentDate", "current_date",
+        default=datetime.now().strftime("%d/%m/%Y"),
+    )
+
+    story.append(Paragraph(f"<b>Paciente:</b> {ascii_safe(patient_name)}", styles["normal"]))
+    if patient_cpf:
+        story.append(Paragraph(f"<b>CPF:</b> {ascii_safe(patient_cpf)}", styles["normal"]))
+    story.append(Paragraph(f"<b>Data:</b> {ascii_safe(current_date)}", styles["normal"]))
+    story.append(Spacer(1, 0.3 * cm))
+
+
+def render_footer(story: list, styles: dict, payload: dict) -> None:
+    prof_name = get(payload, "professionalName", "professional_name")
+    specialty = get(payload, "professionalSpecialty", "professional_specialty")
+    crm = get(payload, "crm")
+
+    story.append(Spacer(1, 1.2 * cm))
+
+    parts: list[str] = []
+    if prof_name:
+        parts.append(ascii_safe(prof_name))
+    if specialty:
+        parts.append(ascii_safe(specialty))
+    if crm:
+        parts.append(f"CRM/CREFITO: {ascii_safe(crm)}")
+
+    if parts:
+        story.append(Paragraph("<br/>".join(parts), styles["normal"]))
+        story.append(Spacer(1, 0.15 * cm))
+
+    story.append(Paragraph("_" * 42 + "<br/><i>Assinatura do profissional</i>", styles["small"]))
+
+
+# ---------------------------------------------------------------------------
+# Renderers por tipo de documento
+# ---------------------------------------------------------------------------
+
+def render_medical_record(story: list, styles: dict, payload: dict) -> None:
+    """
+    Renderiza prontuário médico.
+    O payload.content é texto com seções separadas por \\n\\n.
+    Seções com header são detectadas pela ausência de ':' na primeira linha.
+    """
+    content = get(payload, "content")
+
+    if not content or content == "—":
+        story.append(Paragraph("Prontuario sem informacoes clinicas detalhadas registradas.", styles["normal"]))
+        return
+
+    blocks = [b.strip() for b in content.split("\n\n") if b.strip()]
+    for block in blocks:
+        lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
+        if not lines:
+            continue
+
+        first = lines[0]
+        rest = lines[1:]
+
+        if rest:
+            # Multi-line block: first line is section header
+            story.append(Paragraph(f"<b>{ascii_safe(first)}</b>", styles["h2"]))
+            for ln in rest:
+                story.append(Paragraph(multiline(ln), styles["normal"]))
+        else:
+            # Single line: render as-is (may be "Label: value")
+            if ":" in first:
+                parts = first.split(":", 1)
+                label = ascii_safe(parts[0].strip())
+                value = ascii_safe(parts[1].strip()) if len(parts) > 1 else ""
+                if value and value != "—":
+                    story.append(Paragraph(f"<b>{label}:</b> {value}", styles["normal"]))
+                else:
+                    story.append(Paragraph(f"<b>{ascii_safe(first)}</b>", styles["h2"]))
+            else:
+                story.append(Paragraph(f"<b>{ascii_safe(first)}</b>", styles["h2"]))
+
+        story.append(Spacer(1, 0.15 * cm))
+
+
+def render_certificate(story: list, styles: dict, payload: dict) -> None:
+    description = get(payload, "description")
+    days = get(payload, "days", default="1")
+    cid = get(payload, "cid")
+    current_date = get(
+        payload, "currentDate", "current_date",
+        default=datetime.now().strftime("%d/%m/%Y"),
+    )
+
+    body = (
+        f"Atesto, para os devidos fins, que o(a) paciente acima identificado(a) "
+        f"esteve sob meus cuidados profissionais e necessita de afastamento de suas "
+        f"atividades habituais pelo periodo de <b>{ascii_safe(days)} dia(s)</b> "
+        f"a partir de <b>{ascii_safe(current_date)}</b>."
+    )
+    if description and description != "—":
+        body += f"<br/><br/><b>Descricao:</b><br/>{multiline(description)}"
+    if cid and cid != "—":
+        body += f"<br/><br/><b>CID:</b> {ascii_safe(cid)}"
+
+    story.append(Paragraph(body, styles["normal"]))
+
+
+def render_prescription(story: list, styles: dict, payload: dict) -> None:
+    prescription = get(payload, "prescription")
+    if prescription and prescription != "—":
+        story.append(Paragraph(multiline(prescription), styles["normal"]))
+    else:
+        story.append(Paragraph("Sem itens prescritos.", styles["normal"]))
+
+
+def render_consent_form(story: list, styles: dict, payload: dict) -> None:
+    procedure = get(payload, "procedure")
+    description = get(payload, "description")
+    risks = get(payload, "risks")
+
+    if procedure and procedure != "—":
+        story.append(Paragraph("<b>Procedimento a ser realizado:</b>", styles["h2"]))
+        story.append(Paragraph(ascii_safe(procedure), styles["normal"]))
+        story.append(Spacer(1, 0.2 * cm))
+
+    if description and description != "—":
+        story.append(Paragraph("<b>Descricao do Procedimento:</b>", styles["h2"]))
+        story.append(Paragraph(multiline(description), styles["normal"]))
+        story.append(Spacer(1, 0.2 * cm))
+
+    if risks and risks != "—":
+        story.append(Paragraph("<b>Riscos e Beneficios:</b>", styles["h2"]))
+        story.append(Paragraph(multiline(risks), styles["normal"]))
+        story.append(Spacer(1, 0.3 * cm))
+
+    consent_text = (
+        "Declaro que fui devidamente informado(a) sobre o procedimento acima descrito, "
+        "seus riscos, beneficios e alternativas. Todas as minhas duvidas foram "
+        "esclarecidas e consinto com a realizacao do procedimento.<br/><br/>"
+        "Estou ciente de que nenhum procedimento e 100% isento de riscos e que "
+        "complicacoes podem ocorrer mesmo com todos os cuidados tecnicos adequados.<br/><br/>"
+        "Autorizo o profissional de saude a realizar o procedimento proposto e declaro "
+        "que este consentimento e dado de forma livre e esclarecida."
+    )
+    story.append(Paragraph("<b>Declaracao de Consentimento:</b>", styles["h2"]))
+    story.append(Paragraph(consent_text, styles["normal"]))
+
+    # Dual signature area
+    story.append(Spacer(1, 1.2 * cm))
+    patient_name = get(payload, "patientName", "patient_name", default="Paciente")
+    prof_name = get(payload, "professionalName", "professional_name")
+    specialty = get(payload, "professionalSpecialty", "professional_specialty")
+    crm = get(payload, "crm")
+
+    prof_parts = [ascii_safe(prof_name)]
+    if specialty:
+        prof_parts.append(ascii_safe(specialty))
+    if crm:
+        prof_parts.append(f"CRM/CREFITO: {ascii_safe(crm)}")
+
+    sig_data = [
+        [
+            Paragraph(
+                f"_____________________<br/><b>Paciente ou Responsavel</b><br/>{ascii_safe(patient_name)}",
+                styles["small"],
+            ),
+            Paragraph(
+                f"_____________________<br/><b>Profissional Responsavel</b><br/>{'<br/>'.join(prof_parts)}",
+                styles["small"],
+            ),
+        ]
+    ]
+    sig_table = Table(sig_data, colWidths=[8 * cm, 8 * cm])
+    sig_table.setStyle(
+        TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ])
+    )
+    story.append(sig_table)
+    return  # skip default footer (already rendered above)
+
+
+def render_exam_request(story: list, styles: dict, payload: dict) -> None:
+    content = get(payload, "content")
+    story.append(Paragraph("<b>Exames Solicitados:</b>", styles["h2"]))
+    if content and content != "—":
+        story.append(Paragraph(multiline(content), styles["normal"]))
+    else:
+        story.append(Paragraph("Sem exames informados.", styles["normal"]))
+
+
+def render_generic(story: list, styles: dict, payload: dict) -> None:
+    content = get(payload, "content") or get(payload, "description")
+    if content and content != "—":
+        story.append(Paragraph(multiline(content), styles["normal"]))
+    else:
+        story.append(Paragraph("Sem conteudo informado.", styles["normal"]))
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+TITLE_MAP: dict[str, str] = {
+    "certificate": "Atestado",
+    "prescription": "Receituario",
+    "consent_form": "Termo de Consentimento Livre e Esclarecido",
+    "exam_request": "Solicitacao de Exames",
+    "declaration": "Declaracao",
+    "lgpd": "Termo LGPD",
+    "medical_record": "Prontuario",
+    "other": "Documento",
+}
+
+
+def main() -> None:
+    if len(sys.argv) < 3:
+        print("Uso: generate_pdf.py <in.json> <out.pdf>", file=sys.stderr)
+        sys.exit(1)
+
+    data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8-sig"))
+    out_path = Path(sys.argv[2])
+
+    document_type = str(data.get("document_type") or "other").lower()
+    payload: dict = data.get("payload") or {}
+
+    title = get(payload, "title") or TITLE_MAP.get(document_type, "Documento")
+
+    styles = build_styles()
+    doc = SimpleDocTemplate(
+        str(out_path),
+        pagesize=A4,
+        rightMargin=2 * cm,
+        leftMargin=2 * cm,
+        topMargin=2 * cm,
+        bottomMargin=2 * cm,
+    )
+    story: list = []
+
+    render_header(story, styles, payload, title)
+    render_patient_block(story, styles, payload)
+
+    skip_footer = False
+
+    if document_type == "medical_record":
+        render_medical_record(story, styles, payload)
+    elif document_type == "certificate":
+        render_certificate(story, styles, payload)
+    elif document_type == "prescription":
+        render_prescription(story, styles, payload)
+    elif document_type == "consent_form":
+        render_consent_form(story, styles, payload)
+        skip_footer = True
+    elif document_type == "exam_request":
+        render_exam_request(story, styles, payload)
+    else:
+        render_generic(story, styles, payload)
+
+    if not skip_footer:
+        render_footer(story, styles, payload)
+
+    doc.build(story)
+
+
+if __name__ == "__main__":
+    main()

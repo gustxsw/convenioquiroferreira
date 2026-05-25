@@ -106,9 +106,8 @@ export async function regenerateMedicalRecordPdf(recordId, professionalId) {
   const record = recordResult.rows[0];
 
   const userResult = await pool.query(
-    `SELECT u.name, u.crm, u.signature_url, u.clinic_logo_url, c.name AS category_name
+    `SELECT u.name, u.crm, u.signature_url, u.clinic_logo_url, u.category_name
      FROM users u
-     LEFT JOIN categories c ON u.category_id = c.id
      WHERE u.id = $1`,
     [professionalId]
   );
