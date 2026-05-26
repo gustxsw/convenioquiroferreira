@@ -8,9 +8,11 @@ Uso: python generate_pdf.py <in.json> <out.pdf>
 """
 from __future__ import annotations
 
+import io
 import json
 import sys
 import unicodedata
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -19,6 +21,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import (
+    Image,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -108,7 +111,36 @@ def build_styles() -> dict:
 # Shared blocks
 # ---------------------------------------------------------------------------
 
+def _fetch_logo(url: str) -> io.BytesIO | None:
+    if not url or not url.startswith("http"):
+        return None
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = resp.read()
+        return io.BytesIO(data)
+    except Exception:
+        return None
+
+
 def render_header(story: list, styles: dict, payload: dict, doc_title: str) -> None:
+    logo_url = get(payload, "logoUrl", "logo_url")
+    if logo_url:
+        logo_data = _fetch_logo(logo_url)
+        if logo_data:
+            try:
+                img = Image(logo_data)
+                max_w = 6 * cm
+                max_h = 2.5 * cm
+                ratio = min(max_w / img.imageWidth, max_h / img.imageHeight)
+                img.drawWidth = img.imageWidth * ratio
+                img.drawHeight = img.imageHeight * ratio
+                img.hAlign = "LEFT"
+                story.append(img)
+                story.append(Spacer(1, 0.2 * cm))
+            except Exception:
+                pass
+
     prof_name = get(payload, "professionalName", "professional_name", default="Profissional de Saude")
     specialty = get(payload, "professionalSpecialty", "professional_specialty")
     crm = get(payload, "crm")
@@ -158,6 +190,8 @@ def render_footer(story: list, styles: dict, payload: dict) -> None:
         story.append(Spacer(1, 0.15 * cm))
 
     story.append(Paragraph("_" * 42 + "<br/><i>Assinatura do profissional</i>", styles["small"]))
+    story.append(Spacer(1, 0.25 * cm))
+    story.append(Paragraph("<i>Documento validado eletronicamente</i>", styles["small"]))
 
 
 # ---------------------------------------------------------------------------
@@ -303,6 +337,8 @@ def render_consent_form(story: list, styles: dict, payload: dict) -> None:
         ])
     )
     story.append(sig_table)
+    story.append(Spacer(1, 0.25 * cm))
+    story.append(Paragraph("<i>Documento validado eletronicamente</i>", styles["small"]))
     return  # skip default footer (already rendered above)
 
 
