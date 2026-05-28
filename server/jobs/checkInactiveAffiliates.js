@@ -36,6 +36,7 @@ export function scheduleAffiliateInactivityCheck() {
               leadership_enabled = false
           WHERE id IN (SELECT id FROM inactive_affiliates)
             AND status = 'active'
+            AND leadership_enabled = false
           RETURNING id
         `
         );
