@@ -661,6 +661,19 @@ const MedicalRecordsPage: React.FC = () => {
                         placeholder="16 rpm"
                       />
                     </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        SpO2
+                      </label>
+                      <input
+                        type="text"
+                        name="vital_signs.oxygen_saturation"
+                        value={formData.vital_signs.oxygen_saturation}
+                        onChange={handleInputChange}
+                        className="input"
+                        placeholder="98%"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -860,6 +873,12 @@ const MedicalRecordsPage: React.FC = () => {
                       <div>
                         <strong>FR:</strong>{" "}
                         {selectedRecord.vital_signs.respiratory_rate}
+                      </div>
+                    )}
+                    {selectedRecord.vital_signs.oxygen_saturation && (
+                      <div>
+                        <strong>SpO2:</strong>{" "}
+                        {selectedRecord.vital_signs.oxygen_saturation}
                       </div>
                     )}
                   </div>
