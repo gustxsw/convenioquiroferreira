@@ -263,6 +263,12 @@ const AdminHomePage: React.FC = () => {
       icon: <BarChart2 className="h-6 w-6 text-red-600" />,
       link: "/admin/reports",
     },
+    {
+      title: "Parceiros da Agenda",
+      description: "Configurar parceiros e vincular profissionais indicados",
+      icon: <Users className="h-6 w-6 text-red-600" />,
+      link: "/admin/agenda-partners",
+    },
   ];
 
   return (

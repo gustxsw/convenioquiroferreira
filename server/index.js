@@ -346,6 +346,38 @@ const initializeDatabase = async () => {
           ALTER TABLE users ADD COLUMN agenda_end_time VARCHAR(5) DEFAULT '18:00';
         END IF;
 
+        -- Parceiros da agenda: identidade do parceiro (separada da regra de comissão)
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'is_agenda_partner'
+        ) THEN
+          ALTER TABLE users ADD COLUMN is_agenda_partner BOOLEAN DEFAULT false;
+        END IF;
+
+        -- Regra de comissão do parceiro (% sobre a receita de agenda dos profissionais dele)
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'agenda_partner_percentage'
+        ) THEN
+          ALTER TABLE users ADD COLUMN agenda_partner_percentage DECIMAL(5,2);
+        END IF;
+
+        -- Código de parceria usado no cadastro do profissional para auto-vínculo
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'agenda_partner_code'
+        ) THEN
+          ALTER TABLE users ADD COLUMN agenda_partner_code VARCHAR(20);
+        END IF;
+
+        -- Em linhas de profissional: parceiro responsável (NULL = sem parceiro)
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'agenda_partner_id'
+        ) THEN
+          ALTER TABLE users ADD COLUMN agenda_partner_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
+
         -- Hash SHA-256 do token tem 64 caracteres; VARCHAR curto quebra a redefinição de senha
         IF EXISTS (
           SELECT 1 FROM information_schema.columns
@@ -364,6 +396,19 @@ const initializeDatabase = async () => {
     await pool.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_users_professional_registration_number
       ON users (professional_registration_number);
+    `);
+
+    // Índice para buscas de profissionais por parceiro responsável
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_users_agenda_partner_id
+      ON users (agenda_partner_id);
+    `);
+
+    // Código de parceria único (apenas onde definido)
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_agenda_partner_code
+      ON users (agenda_partner_code)
+      WHERE agenda_partner_code IS NOT NULL;
     `);
 
     await pool.query(`
@@ -1641,6 +1686,7 @@ app.post("/api/auth/register", async (req, res) => {
       password,
       affiliate_code,
       registration_role,
+      agenda_partner_code,
     } = req.body;
 
     console.log("🔄 Registration attempt for CPF:", cpf);
@@ -1715,6 +1761,21 @@ app.post("/api/auth/register", async (req, res) => {
     const professionalTypeToRegister =
       roleToRegister === "professional" ? "agenda_only" : "convenio";
 
+    // Vínculo automático ao parceiro da agenda via código (apenas para profissionais)
+    let agendaPartnerId = null;
+    if (roleToRegister === "professional" && agenda_partner_code) {
+      const partnerResult = await pool.query(
+        "SELECT id FROM users WHERE agenda_partner_code = $1 AND is_agenda_partner = true",
+        [agenda_partner_code.trim()]
+      );
+      if (partnerResult.rows.length > 0) {
+        agendaPartnerId = partnerResult.rows[0].id;
+        console.log("✅ Professional will be linked to agenda partner:", agendaPartnerId);
+      } else {
+        console.log("⚠️ Agenda partner code provided but not found:", agenda_partner_code);
+      }
+    }
+
     let professionalRegistrationNumber = null;
     if (roleToRegister === "professional") {
       const seqResult = await pool.query(
@@ -1737,8 +1798,8 @@ app.post("/api/auth/register", async (req, res) => {
         name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, password, roles,
         affiliate_code, referred_by_affiliate_id, professional_registration_number, professional_type,
-        onboarding_status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        onboarding_status, agenda_partner_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       RETURNING id, name, cpf, email, roles, subscription_status
     `,
       [
@@ -1760,6 +1821,7 @@ app.post("/api/auth/register", async (req, res) => {
         professionalRegistrationNumber,
         professionalTypeToRegister,
         onboardingStatusForInsert,
+        agendaPartnerId,
       ]
     );
 
@@ -3408,16 +3470,42 @@ app.get(
           .json({ message: "Datas inicial e final são obrigatórias" });
       }
 
+      // Identidade do parceiro é independente da regra de comissão (flag própria).
+      // Admin é sempre visão global; financeiro_agenda pode ser parceiro escopado.
+      let partnerInfo = { isPartner: false, percentage: 0 };
+      if (req.user.currentRole === "financeiro_agenda") {
+        const meResult = await pool.query(
+          "SELECT is_agenda_partner, agenda_partner_percentage FROM users WHERE id = $1",
+          [req.user.id]
+        );
+        const me = meResult.rows[0];
+        if (me?.is_agenda_partner) {
+          partnerInfo = {
+            isPartner: true,
+            percentage: Number(me.agenda_partner_percentage || 0),
+          };
+        }
+      }
+
+      const params = [`${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`];
+      let partnerFilter = "";
+      if (partnerInfo.isPartner) {
+        params.push(req.user.id);
+        partnerFilter = ` AND u.agenda_partner_id = $${params.length}`;
+      }
+
       const summaryResult = await pool.query(
         `
         SELECT
           COUNT(*)::int AS total_payments,
           COALESCE(SUM(ap.amount), 0) AS total_amount
         FROM agenda_payments ap
+        JOIN users u ON u.id = ap.professional_id
         WHERE ap.status = 'approved'
           AND ap.created_at BETWEEN $1::timestamptz AND $2::timestamptz
+          ${partnerFilter}
       `,
-        [`${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
+        params
       );
 
       const byProfessionalResult = await pool.query(
@@ -3431,11 +3519,17 @@ app.get(
         JOIN users u ON u.id = ap.professional_id
         WHERE ap.status = 'approved'
           AND ap.created_at BETWEEN $1::timestamptz AND $2::timestamptz
+          ${partnerFilter}
         GROUP BY u.id, u.name
         ORDER BY total_amount DESC, payments_count DESC, u.name ASC
       `,
-        [`${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`]
+        params
       );
+
+      const totalAmount = Number(summaryResult.rows[0]?.total_amount || 0);
+      const partnerCommission = partnerInfo.isPartner
+        ? totalAmount * (partnerInfo.percentage / 100)
+        : 0;
 
       res.json({
         period: {
@@ -3444,7 +3538,7 @@ app.get(
         },
         summary: {
           total_payments: Number(summaryResult.rows[0]?.total_payments || 0),
-          total_amount: Number(summaryResult.rows[0]?.total_amount || 0),
+          total_amount: totalAmount,
         },
         by_professional: byProfessionalResult.rows.map((row) => ({
           professional_id: Number(row.professional_id),
@@ -3452,12 +3546,274 @@ app.get(
           payments_count: Number(row.payments_count || 0),
           total_amount: Number(row.total_amount || 0),
         })),
+        partner: partnerInfo.isPartner
+          ? {
+              is_partner: true,
+              percentage: partnerInfo.percentage,
+              commission_amount: partnerCommission,
+            }
+          : { is_partner: false },
       });
     } catch (error) {
       console.error("❌ Error generating agenda financial summary:", error);
       res
         .status(500)
         .json({ message: "Erro ao gerar resumo financeiro da agenda" });
+    }
+  }
+);
+
+// ===== PARCEIROS DA AGENDA (admin) =====
+
+// Gera um código de parceria curto e único a partir do nome
+function generateAgendaPartnerCode(name) {
+  const slug = (name || "parceiro")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]/g, "")
+    .slice(0, 10) || "parceiro";
+  const rand = Math.random().toString(36).slice(2, 6);
+  return `${slug}_${rand}`;
+}
+
+// Lista parceiros da agenda (usuários financeiro_agenda marcados como parceiro)
+app.get(
+  "/api/admin/agenda-partners",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          u.id,
+          u.name,
+          u.email,
+          u.agenda_partner_code,
+          u.agenda_partner_percentage,
+          (
+            SELECT COUNT(*)::int FROM users p
+            WHERE p.agenda_partner_id = u.id
+          ) AS professionals_count
+        FROM users u
+        WHERE 'financeiro_agenda' = ANY(u.roles)
+          AND u.is_agenda_partner = true
+        ORDER BY u.name
+      `);
+
+      res.json(
+        result.rows.map((row) => ({
+          id: Number(row.id),
+          name: row.name,
+          email: row.email,
+          code: row.agenda_partner_code,
+          percentage:
+            row.agenda_partner_percentage == null
+              ? null
+              : Number(row.agenda_partner_percentage),
+          professionals_count: Number(row.professionals_count || 0),
+        }))
+      );
+    } catch (error) {
+      console.error("❌ Error listing agenda partners:", error);
+      res.status(500).json({ message: "Erro ao listar parceiros da agenda" });
+    }
+  }
+);
+
+// Marca/atualiza/desmarca um usuário como parceiro da agenda
+app.put(
+  "/api/admin/agenda-partners/:userId",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const userId = Number.parseInt(req.params.userId, 10);
+      const { is_partner, percentage, code } = req.body;
+
+      if (Number.isNaN(userId)) {
+        return res.status(400).json({ message: "Usuário inválido" });
+      }
+
+      const userResult = await pool.query(
+        "SELECT id, name, roles, agenda_partner_code FROM users WHERE id = $1",
+        [userId]
+      );
+      if (userResult.rows.length === 0) {
+        return res.status(404).json({ message: "Usuário não encontrado" });
+      }
+
+      const target = userResult.rows[0];
+      if (!target.roles?.includes("financeiro_agenda")) {
+        return res.status(400).json({
+          message:
+            "O usuário precisa ter o perfil 'financeiro_agenda' antes de virar parceiro.",
+        });
+      }
+
+      // Desmarcar parceiro
+      if (is_partner === false) {
+        await pool.query(
+          "UPDATE users SET is_agenda_partner = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+          [userId]
+        );
+        return res.json({ id: userId, is_partner: false });
+      }
+
+      // Validar porcentagem (opcional; é apenas a regra de comissão)
+      let parsedPercentage = null;
+      if (percentage !== undefined && percentage !== null && percentage !== "") {
+        parsedPercentage = Number(percentage);
+        if (
+          Number.isNaN(parsedPercentage) ||
+          parsedPercentage < 0 ||
+          parsedPercentage > 100
+        ) {
+          return res
+            .status(400)
+            .json({ message: "Porcentagem deve estar entre 0 e 100" });
+        }
+      }
+
+      // Definir código (gera se não houver)
+      let finalCode = (code || "").trim() || target.agenda_partner_code;
+      if (!finalCode) {
+        finalCode = generateAgendaPartnerCode(target.name);
+      }
+
+      try {
+        const updated = await pool.query(
+          `UPDATE users
+           SET is_agenda_partner = true,
+               agenda_partner_percentage = $1,
+               agenda_partner_code = $2,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $3
+           RETURNING id, agenda_partner_percentage, agenda_partner_code`,
+          [parsedPercentage, finalCode, userId]
+        );
+        const row = updated.rows[0];
+        res.json({
+          id: Number(row.id),
+          is_partner: true,
+          percentage:
+            row.agenda_partner_percentage == null
+              ? null
+              : Number(row.agenda_partner_percentage),
+          code: row.agenda_partner_code,
+        });
+      } catch (err) {
+        if (err.code === "23505") {
+          return res
+            .status(400)
+            .json({ message: "Este código de parceria já está em uso" });
+        }
+        throw err;
+      }
+    } catch (error) {
+      console.error("❌ Error updating agenda partner:", error);
+      res.status(500).json({ message: "Erro ao salvar parceiro da agenda" });
+    }
+  }
+);
+
+// Lista profissionais vinculados ao parceiro + disponíveis para vincular
+app.get(
+  "/api/admin/agenda-partners/:userId/professionals",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const userId = Number.parseInt(req.params.userId, 10);
+      if (Number.isNaN(userId)) {
+        return res.status(400).json({ message: "Usuário inválido" });
+      }
+
+      const linkedResult = await pool.query(
+        `SELECT id, name, email, professional_type
+         FROM users
+         WHERE 'professional' = ANY(roles) AND agenda_partner_id = $1
+         ORDER BY name`,
+        [userId]
+      );
+
+      const availableResult = await pool.query(
+        `SELECT id, name, email, professional_type
+         FROM users
+         WHERE 'professional' = ANY(roles) AND agenda_partner_id IS NULL
+         ORDER BY name`
+      );
+
+      const mapRow = (row) => ({
+        id: Number(row.id),
+        name: row.name,
+        email: row.email,
+        professional_type: row.professional_type,
+      });
+
+      res.json({
+        linked: linkedResult.rows.map(mapRow),
+        available: availableResult.rows.map(mapRow),
+      });
+    } catch (error) {
+      console.error("❌ Error listing partner professionals:", error);
+      res
+        .status(500)
+        .json({ message: "Erro ao listar profissionais do parceiro" });
+    }
+  }
+);
+
+// Define/remove o parceiro responsável por um profissional (atribuição manual)
+app.put(
+  "/api/admin/professionals/:profId/agenda-partner",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const profId = Number.parseInt(req.params.profId, 10);
+      const { partner_id } = req.body;
+
+      if (Number.isNaN(profId)) {
+        return res.status(400).json({ message: "Profissional inválido" });
+      }
+
+      const profResult = await pool.query(
+        "SELECT id, roles FROM users WHERE id = $1",
+        [profId]
+      );
+      if (
+        profResult.rows.length === 0 ||
+        !profResult.rows[0].roles?.includes("professional")
+      ) {
+        return res.status(404).json({ message: "Profissional não encontrado" });
+      }
+
+      let partnerId = null;
+      if (partner_id !== null && partner_id !== undefined && partner_id !== "") {
+        partnerId = Number.parseInt(partner_id, 10);
+        const partnerResult = await pool.query(
+          "SELECT id FROM users WHERE id = $1 AND is_agenda_partner = true",
+          [partnerId]
+        );
+        if (partnerResult.rows.length === 0) {
+          return res
+            .status(400)
+            .json({ message: "Parceiro inválido ou não é parceiro da agenda" });
+        }
+      }
+
+      await pool.query(
+        "UPDATE users SET agenda_partner_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+        [partnerId, profId]
+      );
+
+      res.json({ professional_id: profId, partner_id: partnerId });
+    } catch (error) {
+      console.error("❌ Error assigning professional to partner:", error);
+      res
+        .status(500)
+        .json({ message: "Erro ao vincular profissional ao parceiro" });
     }
   }
 );

@@ -46,6 +46,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
         { to: '/admin/users', icon: <Users size={20} />, label: 'Usuários' },
         { to: '/admin/scheduling-access', icon: <Clock size={20} />, label: 'Acesso à Agenda' },
         { to: '/admin/affiliates', icon: <DollarSign size={20} />, label: 'Afiliados' },
+        { to: '/admin/agenda-partners', icon: <UserCheck size={20} />, label: 'Parceiros da Agenda' },
         { to: '/admin/coupons', icon: <Ticket size={20} />, label: 'Cupons' },
         { to: '/admin/reports', icon: <BarChart2 size={20} />, label: 'Relatórios' },
       ];
