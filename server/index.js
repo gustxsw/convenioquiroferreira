@@ -6195,12 +6195,19 @@ app.delete(
 app.get("/api/professionals", authenticate, async (req, res) => {
   try {
     const professionalsResult = await pool.query(`
-      SELECT 
+      SELECT
         id, name, email, phone, address, address_number, address_complement,
         neighborhood, city, state, category_name, photo_url, crm, percentage, professional_type
-      FROM users 
-      WHERE 'professional' = ANY(roles) AND professional_type = 'convenio'
-      ORDER BY name
+      FROM users u
+      WHERE 'professional' = ANY(u.roles)
+        AND u.professional_type = 'convenio'
+        AND EXISTS (
+          SELECT 1 FROM scheduling_access sa
+          WHERE sa.professional_id = u.id
+            AND sa.is_active = true
+            AND sa.expires_at > CURRENT_TIMESTAMP
+        )
+      ORDER BY u.name
     `);
 
     console.log("✅ Professionals fetched:", professionalsResult.rows.length);
