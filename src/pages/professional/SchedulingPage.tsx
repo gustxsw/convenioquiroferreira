@@ -35,6 +35,7 @@ import SchedulingAccessPayment from "../../components/SchedulingAccessPayment";
 import QuickScheduleModal from "../../components/QuickScheduleModal";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 import { getProfessionalActorId } from "../../utils/professionalActor";
+import { timeToMinutes, minutesToTime } from "../../utils/timeSlotValidation";
 
 type Consultation = {
   id: number;
@@ -111,6 +112,9 @@ const SchedulingPage: React.FC = () => {
     const saved = localStorage.getItem("scheduling-slot-duration");
     return saved ? (Number(saved) as SlotDuration) : 30;
   });
+  // Working hours (expediente) — loaded from backend (GET /api/professional/working-hours)
+  const [workingStart, setWorkingStart] = useState<string>("07:00");
+  const [workingEnd, setWorkingEnd] = useState<string>("18:00");
   const [showSlotModal, setShowSlotModal] = useState(false);
   const [showQuickScheduleModal, setShowQuickScheduleModal] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<{
@@ -312,6 +316,10 @@ const SchedulingPage: React.FC = () => {
   }, [selectedDate]);
 
   useEffect(() => {
+    fetchWorkingHours();
+  }, []);
+
+  useEffect(() => {
     if (formData.patient_type !== "private") {
       return;
     }
@@ -461,6 +469,52 @@ const SchedulingPage: React.FC = () => {
   const handleSlotDurationChange = (duration: SlotDuration) => {
     setSlotDuration(duration);
     localStorage.setItem("scheduling-slot-duration", duration.toString());
+  };
+
+  // Load working hours (expediente) from backend
+  const fetchWorkingHours = async () => {
+    try {
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/professional/working-hours`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        if (data.start_time) setWorkingStart(data.start_time);
+        if (data.end_time) setWorkingEnd(data.end_time);
+      }
+    } catch (error) {
+      console.error("Error fetching working hours:", error);
+    }
+  };
+
+  // Persist working hours (expediente) to backend
+  const handleWorkingHoursChange = async (startTime: string, endTime: string) => {
+    try {
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/professional/working-hours`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ start_time: startTime, end_time: endTime }),
+        }
+      );
+
+      if (response.ok) {
+        setWorkingStart(startTime);
+        setWorkingEnd(endTime);
+        setSuccess("Horário de trabalho atualizado com sucesso!");
+        setTimeout(() => setSuccess(""), 3000);
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        setError(errorData.message || "Erro ao salvar horário de trabalho");
+        setTimeout(() => setError(""), 3000);
+      }
+    } catch (error) {
+      setError("Erro ao salvar horário de trabalho");
+      setTimeout(() => setError(""), 3000);
+    }
   };
 
   // Handle slot click for quick scheduling
@@ -1137,20 +1191,21 @@ const SchedulingPage: React.FC = () => {
     }
   };
   const delay = 3000; // 3 seconds between attempts
-  const generateTimeSlots = (duration = 30) => {
+  const generateTimeSlots = (
+    duration = 30,
+    startTime = "07:00",
+    endTime = "18:00"
+  ) => {
     const slots = [];
-    for (let hour = 7; hour <= 18; hour++) {
-      for (let minute = 0; minute < 60; minute += duration) {
-        const timeStr = `${hour.toString().padStart(2, "0")}:${minute
-          .toString()
-          .padStart(2, "0")}`;
-        slots.push(timeStr);
-      }
+    const startMinutes = timeToMinutes(startTime);
+    const endMinutes = timeToMinutes(endTime);
+    for (let minutes = startMinutes; minutes < endMinutes; minutes += duration) {
+      slots.push(minutesToTime(minutes));
     }
     return slots;
   };
 
-  const timeSlots = generateTimeSlots(slotDuration);
+  const timeSlots = generateTimeSlots(slotDuration, workingStart, workingEnd);
 
   // 🔥 FIXED: Group consultations by time - WITH PROPER TIMEZONE CONVERSION
   const consultationsByTime = consultations.reduce((acc, consultation) => {
@@ -2890,8 +2945,11 @@ const SchedulingPage: React.FC = () => {
         <SlotCustomizationModal
           isOpen={showSlotModal}
           currentSlotDuration={slotDuration}
+          startTime={workingStart}
+          endTime={workingEnd}
           onClose={() => setShowSlotModal(false)}
           onSlotDurationChange={handleSlotDurationChange}
+          onWorkingHoursChange={handleWorkingHoursChange}
         />
 
         {/* Quick Schedule Modal */}

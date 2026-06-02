@@ -7,17 +7,36 @@ type SlotDuration = 15 | 30 | 60;
 type SlotCustomizationModalProps = {
   isOpen: boolean;
   currentSlotDuration: SlotDuration;
+  startTime: string;
+  endTime: string;
   onClose: () => void;
   onSlotDurationChange: (duration: SlotDuration) => void;
+  onWorkingHoursChange: (startTime: string, endTime: string) => void;
 };
 
 const SlotCustomizationModal: React.FC<SlotCustomizationModalProps> = ({
   isOpen,
   currentSlotDuration,
+  startTime,
+  endTime,
   onClose,
   onSlotDurationChange,
+  onWorkingHoursChange,
 }) => {
   const [selectedDuration, setSelectedDuration] = useState<SlotDuration>(currentSlotDuration);
+  const [selectedStart, setSelectedStart] = useState<string>(startTime);
+  const [selectedEnd, setSelectedEnd] = useState<string>(endTime);
+  const [hoursError, setHoursError] = useState<string>("");
+
+  // Sincroniza os campos quando o modal reabre com novos valores
+  React.useEffect(() => {
+    if (isOpen) {
+      setSelectedDuration(currentSlotDuration);
+      setSelectedStart(startTime);
+      setSelectedEnd(endTime);
+      setHoursError("");
+    }
+  }, [isOpen, currentSlotDuration, startTime, endTime]);
 
   const slotOptions = [
     {
@@ -41,7 +60,13 @@ const SlotCustomizationModal: React.FC<SlotCustomizationModalProps> = ({
   ];
 
   const handleApply = () => {
+    if (selectedStart >= selectedEnd) {
+      setHoursError("O horário de início deve ser anterior ao horário de fim.");
+      return;
+    }
+
     onSlotDurationChange(selectedDuration);
+    onWorkingHoursChange(selectedStart, selectedEnd);
     onClose();
   };
 
@@ -54,7 +79,7 @@ const SlotCustomizationModal: React.FC<SlotCustomizationModalProps> = ({
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-bold flex items-center">
               <Settings className="h-6 w-6 text-red-600 mr-2" />
-              Personalizar Slots de Tempo
+              Configurações da Agenda
             </h2>
             <button
               onClick={onClose}
@@ -115,6 +140,52 @@ const SlotCustomizationModal: React.FC<SlotCustomizationModalProps> = ({
                 </div>
               </label>
             ))}
+          </div>
+
+          <div className="mt-6 border-t border-gray-200 pt-6">
+            <h3 className="text-base font-semibold text-gray-900 flex items-center mb-1">
+              <Clock className="h-5 w-5 text-red-600 mr-2" />
+              Horário de Trabalho
+            </h3>
+            <p className="text-gray-600 text-sm mb-4">
+              Defina o horário de início e fim do seu expediente. A agenda mostrará
+              apenas os horários dentro desse período.
+            </p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Início
+                </label>
+                <input
+                  type="time"
+                  value={selectedStart}
+                  onChange={(e) => {
+                    setSelectedStart(e.target.value);
+                    setHoursError("");
+                  }}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Fim
+                </label>
+                <input
+                  type="time"
+                  value={selectedEnd}
+                  onChange={(e) => {
+                    setSelectedEnd(e.target.value);
+                    setHoursError("");
+                  }}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            {hoursError && (
+              <p className="text-sm text-red-600 mt-2">{hoursError}</p>
+            )}
           </div>
 
           <div className="bg-blue-50 p-4 rounded-lg mt-6">

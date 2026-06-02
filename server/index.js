@@ -331,6 +331,21 @@ const initializeDatabase = async () => {
           ALTER TABLE users ADD COLUMN reset_password_expires_at TIMESTAMP;
         END IF;
 
+        -- Horário de trabalho (expediente) do profissional, formato 'HH:MM'
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'agenda_start_time'
+        ) THEN
+          ALTER TABLE users ADD COLUMN agenda_start_time VARCHAR(5) DEFAULT '07:00';
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'agenda_end_time'
+        ) THEN
+          ALTER TABLE users ADD COLUMN agenda_end_time VARCHAR(5) DEFAULT '18:00';
+        END IF;
+
         -- Hash SHA-256 do token tem 64 caracteres; VARCHAR curto quebra a redefinição de senha
         IF EXISTS (
           SELECT 1 FROM information_schema.columns
@@ -3907,6 +3922,32 @@ app.get(
   }
 );
 
+// ===== HORÁRIO DE TRABALHO (EXPEDIENTE) =====
+
+const DEFAULT_WORKING_START = "07:00";
+const DEFAULT_WORKING_END = "18:00";
+const WORKING_TIME_REGEX = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
+
+// Busca o expediente do profissional (colunas em users), aplicando defaults se nulos
+async function getWorkingHours(professionalId) {
+  const result = await pool.query(
+    "SELECT agenda_start_time, agenda_end_time FROM users WHERE id = $1",
+    [professionalId]
+  );
+  const row = result.rows[0] || {};
+  return {
+    start: row.agenda_start_time || DEFAULT_WORKING_START,
+    end: row.agenda_end_time || DEFAULT_WORKING_END,
+  };
+}
+
+// Verifica se o horário (UTC) cai dentro do expediente, comparando no fuso do Brasil
+function isWithinWorkingHours(dateUTC, { start, end }) {
+  const time = formatToBrazilTimeOnly(dateUTC); // "HH:MM"
+  if (!time) return false;
+  return time >= start && time < end;
+}
+
 // Create new consultation (RegisterConsultationPage - no scheduling access required)
 app.post(
   "/api/consultations",
@@ -4026,6 +4067,14 @@ app.post(
         "🔄 [CREATE] DateTime for storage (UTC):",
         dateTimeForStorage
       );
+
+      // Validar que o horário está dentro do expediente do profissional
+      const workingHours = await getWorkingHours(req.user.professionalScopeId);
+      if (!isWithinWorkingHours(dateTimeForStorage, workingHours)) {
+        return res.status(400).json({
+          message: `Horário fora do expediente. Seu horário de trabalho é das ${workingHours.start} às ${workingHours.end}.`,
+        });
+      }
 
       const conflictCheck = await pool.query(
         `
@@ -4245,6 +4294,23 @@ app.post(
       }
 
       console.log("🔄 [RECURRING] Generated dates:", consultationDates.length);
+
+      // Validar expediente (todas as ocorrências compartilham o mesmo horário do dia)
+      if (consultationDates.length > 0) {
+        const recurringWorkingHours = await getWorkingHours(
+          req.user.professionalScopeId
+        );
+        if (
+          !isWithinWorkingHours(
+            consultationDates[0].toISOString(),
+            recurringWorkingHours
+          )
+        ) {
+          return res.status(400).json({
+            message: `Horário fora do expediente. Seu horário de trabalho é das ${recurringWorkingHours.start} às ${recurringWorkingHours.end}.`,
+          });
+        }
+      }
 
       const conflicts = [];
       const validDates = [];
@@ -4500,6 +4566,15 @@ app.put(
 
       if (date !== undefined) {
         const dateTimeForStorage = toUTCString(date);
+
+        // Validar que o novo horário está dentro do expediente do profissional
+        const workingHours = await getWorkingHours(req.user.professionalScopeId);
+        if (!isWithinWorkingHours(dateTimeForStorage, workingHours)) {
+          return res.status(400).json({
+            message: `Horário fora do expediente. Seu horário de trabalho é das ${workingHours.start} às ${workingHours.end}.`,
+          });
+        }
+
         updateFields.push(`date = $${paramCount++}`);
         updateValues.push(dateTimeForStorage);
 
@@ -5673,6 +5748,63 @@ app.delete(
     } catch (error) {
       console.error("❌ Error deleting dependent:", error);
       res.status(500).json({ message: "Erro ao excluir dependente" });
+    }
+  }
+);
+
+// ===== WORKING HOURS (EXPEDIENTE) ROUTES =====
+
+// Get the professional's working hours (start/end)
+app.get(
+  "/api/professional/working-hours",
+  authenticate,
+  authorize(["professional", "secretaria"]),
+  async (req, res) => {
+    try {
+      const professionalId = req.user.professionalScopeId;
+      const { start, end } = await getWorkingHours(professionalId);
+      res.json({ start_time: start, end_time: end });
+    } catch (error) {
+      console.error("Error fetching working hours:", error);
+      res.status(500).json({ message: "Erro ao carregar horário de trabalho" });
+    }
+  }
+);
+
+// Update the professional's working hours (start/end)
+app.put(
+  "/api/professional/working-hours",
+  authenticate,
+  authorize(["professional", "secretaria"]),
+  async (req, res) => {
+    try {
+      const professionalId = req.user.professionalScopeId;
+      const { start_time, end_time } = req.body;
+
+      if (
+        !WORKING_TIME_REGEX.test(start_time || "") ||
+        !WORKING_TIME_REGEX.test(end_time || "")
+      ) {
+        return res
+          .status(400)
+          .json({ message: "Horários devem estar no formato HH:MM" });
+      }
+
+      if (start_time >= end_time) {
+        return res.status(400).json({
+          message: "O horário de início deve ser anterior ao horário de fim",
+        });
+      }
+
+      await pool.query(
+        "UPDATE users SET agenda_start_time = $1, agenda_end_time = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3",
+        [start_time, end_time, professionalId]
+      );
+
+      res.json({ start_time, end_time });
+    } catch (error) {
+      console.error("Error updating working hours:", error);
+      res.status(500).json({ message: "Erro ao salvar horário de trabalho" });
     }
   }
 );
