@@ -654,6 +654,27 @@ const initializeDatabase = async () => {
       )
     `);
 
+    // Patient evolution entries (clinical progress notes, 1:N per medical record)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS medical_record_evolutions (
+        id SERIAL PRIMARY KEY,
+        medical_record_id INTEGER NOT NULL REFERENCES medical_records(id) ON DELETE CASCADE,
+        professional_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        evolution_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_mr_evolutions_professional
+        ON medical_record_evolutions(professional_id)
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_mr_evolutions_record_date
+        ON medical_record_evolutions(medical_record_id, evolution_date DESC)
+    `);
+
     // Medical documents table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS medical_documents (
@@ -7160,7 +7181,8 @@ app.get(
         mr.*,
         COALESCE(pp.name, mr.patient_name) as patient_name,
         COALESCE(pp.cpf, mr.patient_cpf) as patient_cpf,
-        pp.phone AS patient_phone
+        pp.phone AS patient_phone,
+        (SELECT COUNT(*) FROM medical_record_evolutions e WHERE e.medical_record_id = mr.id) AS evolutions_count
       FROM medical_records mr
       LEFT JOIN private_patients pp ON mr.private_patient_id = pp.id
       WHERE mr.professional_id = $1
@@ -7643,6 +7665,150 @@ app.delete(
     } catch (error) {
       console.error("❌ Error deleting medical record:", error);
       res.status(500).json({ message: "Erro ao excluir prontuário" });
+    }
+  }
+);
+
+// ── Evoluções do paciente (notas de evolução clínica, 1:N por prontuário) ──
+
+// Busca o prontuário garantindo posse pelo profissional e respeitando agenda-only.
+// Retorna { record } se ok, ou envia a resposta de erro e retorna null.
+const loadOwnedMedicalRecord = async (req, res, recordId) => {
+  const result = await pool.query(
+    `SELECT * FROM medical_records WHERE id = $1 AND professional_id = $2`,
+    [recordId, req.user.professionalScopeId]
+  );
+  if (result.rows.length === 0) {
+    res.status(404).json({ message: "Prontuário não encontrado" });
+    return null;
+  }
+  const record = result.rows[0];
+  if (isAgendaOnlyProfessional(req) && isConvenioMedicalRecordRow(record)) {
+    respondAgendaOnlyConvenioForbidden(res);
+    return null;
+  }
+  return record;
+};
+
+app.get(
+  "/api/medical-records/:id/evolutions",
+  authenticate,
+  authorize(["professional", "secretaria"]),
+  async (req, res) => {
+    try {
+      const record = await loadOwnedMedicalRecord(req, res, req.params.id);
+      if (!record) return;
+
+      const result = await pool.query(
+        `SELECT id, medical_record_id, professional_id, evolution_date, content, created_at, updated_at
+         FROM medical_record_evolutions
+         WHERE medical_record_id = $1
+         ORDER BY evolution_date DESC, id DESC`,
+        [record.id]
+      );
+      res.json(result.rows);
+    } catch (error) {
+      console.error("❌ Error fetching evolutions:", error);
+      res.status(500).json({ message: "Erro ao carregar evoluções" });
+    }
+  }
+);
+
+app.post(
+  "/api/medical-records/:id/evolutions",
+  authenticate,
+  authorize(["professional", "secretaria"]),
+  async (req, res) => {
+    try {
+      const record = await loadOwnedMedicalRecord(req, res, req.params.id);
+      if (!record) return;
+
+      const { content, evolution_date } = req.body;
+      if (!content || !content.trim()) {
+        return res.status(400).json({ message: "Conteúdo da evolução é obrigatório" });
+      }
+
+      const result = await pool.query(
+        `INSERT INTO medical_record_evolutions (medical_record_id, professional_id, evolution_date, content)
+         VALUES ($1, $2, COALESCE($3::timestamp, CURRENT_TIMESTAMP), $4)
+         RETURNING id, medical_record_id, professional_id, evolution_date, content, created_at, updated_at`,
+        [record.id, req.user.professionalScopeId, evolution_date || null, content.trim()]
+      );
+      res.status(201).json({ message: "Evolução registrada com sucesso", evolution: result.rows[0] });
+    } catch (error) {
+      console.error("❌ Error creating evolution:", error);
+      res.status(500).json({ message: "Erro ao registrar evolução" });
+    }
+  }
+);
+
+// Busca a evolução garantindo que pertence a um prontuário do profissional.
+// Retorna a linha da evolução, ou envia erro e retorna null.
+const loadOwnedEvolution = async (req, res, evolutionId) => {
+  const result = await pool.query(
+    `SELECT e.*, mr.private_patient_id, mr.patient_type
+     FROM medical_record_evolutions e
+     JOIN medical_records mr ON mr.id = e.medical_record_id
+     WHERE e.id = $1 AND mr.professional_id = $2`,
+    [evolutionId, req.user.professionalScopeId]
+  );
+  if (result.rows.length === 0) {
+    res.status(404).json({ message: "Evolução não encontrada" });
+    return null;
+  }
+  const row = result.rows[0];
+  if (isAgendaOnlyProfessional(req) && isConvenioMedicalRecordRow(row)) {
+    respondAgendaOnlyConvenioForbidden(res);
+    return null;
+  }
+  return row;
+};
+
+app.put(
+  "/api/medical-records/evolutions/:evolutionId",
+  authenticate,
+  authorize(["professional", "secretaria"]),
+  async (req, res) => {
+    try {
+      const existing = await loadOwnedEvolution(req, res, req.params.evolutionId);
+      if (!existing) return;
+
+      const { content, evolution_date } = req.body;
+      if (content !== undefined && (!content || !content.trim())) {
+        return res.status(400).json({ message: "Conteúdo da evolução é obrigatório" });
+      }
+
+      const result = await pool.query(
+        `UPDATE medical_record_evolutions
+         SET content = COALESCE($1, content),
+             evolution_date = COALESCE($2::timestamp, evolution_date),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $3
+         RETURNING id, medical_record_id, professional_id, evolution_date, content, created_at, updated_at`,
+        [content?.trim() ?? null, evolution_date || null, existing.id]
+      );
+      res.json({ message: "Evolução atualizada com sucesso", evolution: result.rows[0] });
+    } catch (error) {
+      console.error("❌ Error updating evolution:", error);
+      res.status(500).json({ message: "Erro ao atualizar evolução" });
+    }
+  }
+);
+
+app.delete(
+  "/api/medical-records/evolutions/:evolutionId",
+  authenticate,
+  authorize(["professional", "secretaria"]),
+  async (req, res) => {
+    try {
+      const existing = await loadOwnedEvolution(req, res, req.params.evolutionId);
+      if (!existing) return;
+
+      await pool.query(`DELETE FROM medical_record_evolutions WHERE id = $1`, [existing.id]);
+      res.json({ message: "Evolução excluída com sucesso" });
+    } catch (error) {
+      console.error("❌ Error deleting evolution:", error);
+      res.status(500).json({ message: "Erro ao excluir evolução" });
     }
   }
 );

@@ -15,6 +15,7 @@ import {
 import { shareMedicalRecordViaWhatsApp } from "../../utils/whatsappShare";
 import { getProfessionalActorId } from "../../utils/professionalActor";
 import MedicalRecordPreviewModal from "../../components/MedicalRecordPreviewModal";
+import EvolutionsModal from "../../components/EvolutionsModal";
 import {
   Stethoscope,
   Plus,
@@ -28,6 +29,7 @@ import {
   Check,
   Printer,
   Phone,
+  ClipboardList,
 } from "lucide-react";
 
 type MedicalRecord = {
@@ -54,6 +56,7 @@ type MedicalRecord = {
   specialty_fields?: Record<string, unknown> | null;
   patient_phone?: string | null;
   share_token?: string | null;
+  evolutions_count?: number | string;
 };
 
 type PrivatePatient = {
@@ -106,6 +109,11 @@ const MedicalRecordsPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [selectedRecord, setSelectedRecord] = useState<MedicalRecord | null>(
+    null
+  );
+
+  // Evolutions modal state
+  const [evolutionsRecord, setEvolutionsRecord] = useState<MedicalRecord | null>(
     null
   );
 
@@ -1309,6 +1317,18 @@ const [professionalData, setProfessionalData] = useState({
                           <Eye className="h-4 w-4" />
                         </button>
                         <button
+                          onClick={() => setEvolutionsRecord(record)}
+                          className="relative text-teal-600 hover:text-teal-800"
+                          title={`Evoluções: ${Number(record.evolutions_count) || 0}`}
+                        >
+                          <ClipboardList className="h-4 w-4" />
+                          {Number(record.evolutions_count) > 0 && (
+                            <span className="absolute -top-2 -right-2 bg-teal-600 text-white text-[10px] leading-none rounded-full min-w-[14px] h-[14px] px-1 flex items-center justify-center">
+                              {Number(record.evolutions_count)}
+                            </span>
+                          )}
+                        </button>
+                        <button
                           onClick={() => {
                             const win = window.open("about:blank", "_blank");
                             void printMedicalRecordDirect(record, win);
@@ -1887,6 +1907,16 @@ const [professionalData, setProfessionalData] = useState({
             setPreviewRecord(updated);
             void fetchData();
           }}
+        />
+      )}
+
+      {evolutionsRecord && (
+        <EvolutionsModal
+          isOpen={true}
+          onClose={() => setEvolutionsRecord(null)}
+          recordId={evolutionsRecord.id}
+          patientName={evolutionsRecord.patient_name}
+          onChanged={() => void fetchData()}
         />
       )}
     </div>
