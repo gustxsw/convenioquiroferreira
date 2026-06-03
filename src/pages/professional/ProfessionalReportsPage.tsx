@@ -34,6 +34,7 @@ type AnalyticsConsultation = {
   service_name: string;
   client_name: string;
   patient_type: "convenio" | "private" | "unknown";
+  convenio?: string | null;
 };
 
 type AnalyticsReport = {
@@ -64,6 +65,7 @@ const ProfessionalReportsPage: React.FC = () => {
     "faturamento-periodo",
     "consultas-por-servico",
     "ranking-servicos",
+    "convenios",
   ]);
 
   // Get default date range (current month)
@@ -304,6 +306,7 @@ const ProfessionalReportsPage: React.FC = () => {
                 { id: "taxa-cancelados", label: "Taxa de cancelados" },
                 { id: "horarios-movimentados", label: "Horários mais movimentados" },
                 { id: "receita-forma-pagamento", label: "Receita por forma de pagamento" },
+                { id: "convenios", label: "Atendimentos por convênio" },
                 { id: "clientes-inativos", label: "Clientes inativos" },
               ].map((opt) => (
                 <label
@@ -900,6 +903,72 @@ const ProfessionalReportsPage: React.FC = () => {
                           <tr key={row.method}>
                             <td className="px-4 py-2 text-gray-900">
                               {row.method}
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              {row.consultations}
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              {formatCurrency(row.revenue)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Atendimentos por convênio */}
+          {analytics &&
+            analytics.consultations.length > 0 &&
+            selectedReports.includes("convenios") && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center mb-4">
+                <TrendingUp className="h-5 w-5 text-indigo-600 mr-2" />
+                <h3 className="text-lg font-semibold">
+                  Atendimentos por convênio
+                </h3>
+              </div>
+              {(() => {
+                const byConvenio = groupBy(nonCancelledConsultations, (c) =>
+                  (c.convenio && c.convenio.trim()) || "Sem convênio"
+                );
+                const rows = Object.entries(byConvenio).map(
+                  ([convenio, list]) => ({
+                    convenio,
+                    consultations: list.length,
+                    revenue: list.reduce(
+                      (sum, item) => sum + Number(item.value || 0),
+                      0
+                    ),
+                  })
+                );
+                const sorted = rows.sort(
+                  (a, b) => b.consultations - a.consultations
+                );
+                return (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left font-medium text-gray-500">
+                            Convênio
+                          </th>
+                          <th className="px-4 py-2 text-right font-medium text-gray-500">
+                            Atendimentos
+                          </th>
+                          <th className="px-4 py-2 text-right font-medium text-gray-500">
+                            Valor total
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {sorted.map((row) => (
+                          <tr key={row.convenio}>
+                            <td className="px-4 py-2 text-gray-900">
+                              {row.convenio}
                             </td>
                             <td className="px-4 py-2 text-right">
                               {row.consultations}

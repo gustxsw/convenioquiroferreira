@@ -3869,7 +3869,8 @@ app.get(
             WHEN c.user_id IS NOT NULL OR c.dependent_id IS NOT NULL THEN 'convenio'
             WHEN c.private_patient_id IS NOT NULL THEN 'private'
             ELSE 'unknown'
-          END AS patient_type
+          END AS patient_type,
+          COALESCE(NULLIF(TRIM(c.convenio), ''), NULLIF(TRIM(pp.convenio), '')) AS convenio
         FROM consultations c
         LEFT JOIN services s ON c.service_id = s.id
         LEFT JOIN users u ON c.user_id = u.id
