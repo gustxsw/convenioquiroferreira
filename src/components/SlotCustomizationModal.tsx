@@ -74,8 +74,8 @@ const SlotCustomizationModal: React.FC<SlotCustomizationModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-md">
-        <div className="p-6 border-b border-gray-200">
+      <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] flex flex-col">
+        <div className="p-6 border-b border-gray-200 flex-shrink-0">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-bold flex items-center">
               <Settings className="h-6 w-6 text-red-600 mr-2" />
@@ -90,7 +90,7 @@ const SlotCustomizationModal: React.FC<SlotCustomizationModalProps> = ({
           </div>
         </div>
 
-        <div className="p-6">
+        <div className="p-6 overflow-y-auto flex-1">
           <div className="mb-4">
             <p className="text-gray-600 text-sm">
               Escolha a duração dos slots de tempo. Esta configuração determina quais horários 
@@ -198,7 +198,7 @@ const SlotCustomizationModal: React.FC<SlotCustomizationModalProps> = ({
           </div>
         </div>
 
-        <div className="flex justify-end space-x-3 p-6 border-t border-gray-200">
+        <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 flex-shrink-0">
           <button
             onClick={onClose}
             className="btn btn-secondary"

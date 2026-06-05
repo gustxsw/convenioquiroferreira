@@ -121,8 +121,8 @@ const EvolutionsModal: React.FC<EvolutionsModalProps> = ({
       }
       setNewContent("");
       setNewDate(nowDatetimeLocal());
-      await loadEvolutions();
       onChanged?.();
+      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao registrar evolução");
     } finally {
