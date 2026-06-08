@@ -31,6 +31,8 @@ const RegisterPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [affiliateCode, setAffiliateCode] = useState<string | null>(null);
   const [affiliateName, setAffiliateName] = useState<string | null>(null);
+  const [agendaPartnerCode, setAgendaPartnerCode] = useState<string | null>(null);
+  const [agendaPartnerName, setAgendaPartnerName] = useState<string | null>(null);
 
   // Terms of service state
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -41,11 +43,15 @@ const RegisterPage: React.FC = () => {
 
   const { selectRole } = useAuth();
 
-  // Capture affiliate code from URL
+  // Capture affiliate code (?ref=) and agenda partner code (?partner=) from URL
   useEffect(() => {
     const refCode = searchParams.get("ref");
     if (refCode) {
       validateAffiliateCode(refCode);
+    }
+    const partnerCode = searchParams.get("partner");
+    if (partnerCode) {
+      validateAgendaPartnerCode(partnerCode);
     }
   }, [searchParams]);
 
@@ -61,6 +67,26 @@ const RegisterPage: React.FC = () => {
       }
     } catch (error) {
       console.error("Error validating affiliate code:", error);
+    }
+  };
+
+  // Código de parceiro da agenda: vincula um PROFISSIONAL ao parceiro. Ao chegar
+  // por esse link, já deixamos o cadastro pré-selecionado como profissional.
+  const validateAgendaPartnerCode = async (code: string) => {
+    try {
+      const apiUrl = getApiUrl();
+      const response = await fetch(
+        `${apiUrl}/api/agenda-partners/validate/${encodeURIComponent(code)}`
+      );
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data.valid) {
+        setAgendaPartnerCode(code);
+        setAgendaPartnerName(data.partner.name);
+        setRegistrationRole("professional");
+      }
+    } catch (error) {
+      console.error("Error validating agenda partner code:", error);
     }
   };
 
@@ -230,6 +256,7 @@ const RegisterPage: React.FC = () => {
           password: formData.password,
           affiliate_code: affiliateCode || null,
           registration_role: registrationRole,
+          agenda_partner_code: agendaPartnerCode || null,
         }),
         credentials: "include",
       });
@@ -315,6 +342,16 @@ const RegisterPage: React.FC = () => {
               <p className="text-sm text-green-800">
                 <Check className="inline w-4 h-4 mr-1" />
                 Você está se cadastrando através da indicação de: <strong>{affiliateName}</strong>
+              </p>
+            </div>
+          )}
+
+          {agendaPartnerName && (
+            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <Check className="inline w-4 h-4 mr-1" />
+                Você está se cadastrando como profissional indicado pelo parceiro:{" "}
+                <strong>{agendaPartnerName}</strong>
               </p>
             </div>
           )}

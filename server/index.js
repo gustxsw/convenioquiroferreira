@@ -11235,6 +11235,32 @@ app.get("/api/affiliates/validate/:code", async (req, res) => {
   }
 });
 
+// Valida (público) um código de parceiro da agenda usado no link de cadastro
+// do profissional. Retorna o nome do parceiro para confirmação na tela.
+app.get("/api/agenda-partners/validate/:code", async (req, res) => {
+  try {
+    const code = (req.params.code || "").trim();
+    if (!code) {
+      return res.status(404).json({ valid: false });
+    }
+
+    const result = await pool.query(
+      `SELECT id, name FROM users
+       WHERE agenda_partner_code = $1 AND is_agenda_partner = true`,
+      [code]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ valid: false });
+    }
+
+    res.json({ valid: true, partner: { id: result.rows[0].id, name: result.rows[0].name } });
+  } catch (error) {
+    console.error("Error validating agenda partner code:", error);
+    res.status(500).json({ error: "Erro ao validar código de parceria" });
+  }
+});
+
 app.use((err, req, res, next) => {
   console.error("❌ [ERROR-HANDLER] Unhandled error:", err);
 
