@@ -36,7 +36,6 @@ import {
   scheduleExpiryCheck,
   checkExpiredSubscriptionsNow,
 } from "./jobs/checkExpiredSubscriptions.js";
-import { scheduleAffiliateInactivityCheck } from "./jobs/checkInactiveAffiliates.js";
 import { scheduleMonthlyAgendaRevenueReport } from "./jobs/monthlyAgendaRevenueReport.js";
 import {
   normalizeProfessionalType,
@@ -10896,10 +10895,6 @@ const startServer = async () => {
     scheduleExpiryCheck();
     await checkExpiredSubscriptionsNow();
     console.log("✅ Subscription expiry check job initialized");
-
-    console.log("⏰ Setting up affiliate inactivity check job...");
-    scheduleAffiliateInactivityCheck();
-    console.log("✅ Affiliate inactivity check job initialized");
 
     console.log("⏰ Setting up monthly agenda revenue report job...");
     scheduleMonthlyAgendaRevenueReport();
