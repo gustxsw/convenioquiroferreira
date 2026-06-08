@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Calendar, DollarSign, Users } from "lucide-react";
+import { Calendar, DollarSign, Users, Percent } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type AgendaFinancialResponse = {
@@ -17,6 +17,11 @@ type AgendaFinancialResponse = {
     payments_count: number;
     total_amount: number;
   }>;
+  partner?: {
+    is_partner: boolean;
+    percentage?: number | null;
+    commission_amount?: number;
+  };
 };
 
 const AgendaFinancialPage: React.FC = () => {
@@ -76,7 +81,9 @@ const AgendaFinancialPage: React.FC = () => {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Financeiro da Agenda</h1>
         <p className="text-gray-600">
-          Acompanhe os pagamentos de agenda dos profissionais
+          {data?.partner?.is_partner
+            ? "Acompanhe os pagamentos de agenda dos profissionais sob sua responsabilidade"
+            : "Acompanhe os pagamentos de agenda dos profissionais"}
         </p>
       </div>
 
@@ -115,7 +122,11 @@ const AgendaFinancialPage: React.FC = () => {
 
       {data && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div
+            className={`grid grid-cols-1 gap-4 ${
+              data.partner?.is_partner ? "md:grid-cols-3" : "md:grid-cols-2"
+            }`}
+          >
             <div className="card">
               <div className="flex items-center text-gray-600 mb-2">
                 <DollarSign className="h-5 w-5 mr-2 text-green-600" />
@@ -135,6 +146,23 @@ const AgendaFinancialPage: React.FC = () => {
                 {data.summary.total_payments}
               </p>
             </div>
+
+            {data.partner?.is_partner && (
+              <div className="card">
+                <div className="flex items-center text-gray-600 mb-2">
+                  <Percent className="h-5 w-5 mr-2 text-red-600" />
+                  <span>
+                    Sua comissão de parceria
+                    {data.partner.percentage != null
+                      ? ` (${data.partner.percentage}%)`
+                      : ""}
+                  </span>
+                </div>
+                <p className="text-3xl font-bold text-red-600">
+                  {formatCurrency(data.partner.commission_amount || 0)}
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="card">
