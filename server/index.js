@@ -3523,12 +3523,12 @@ app.get(
       // parceiro. Um financeiro_agenda sem a flag de parceiro não enxerga nada
       // (evita que um usuário mal configurado veja o financeiro de todos).
       const params = [`${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`];
-      let partnerInfo = { isPartner: false, percentage: 0 };
+      let partnerInfo = { isPartner: false, percentage: 0, code: null };
       let partnerFilter = "";
 
       if (req.user.currentRole === "financeiro_agenda") {
         const meResult = await pool.query(
-          "SELECT is_agenda_partner, agenda_partner_percentage FROM users WHERE id = $1",
+          "SELECT is_agenda_partner, agenda_partner_percentage, agenda_partner_code FROM users WHERE id = $1",
           [req.user.id]
         );
         const me = meResult.rows[0];
@@ -3536,6 +3536,7 @@ app.get(
           partnerInfo = {
             isPartner: true,
             percentage: Number(me.agenda_partner_percentage || 0),
+            code: me.agenda_partner_code || null,
           };
           params.push(req.user.id);
           partnerFilter = ` AND u.agenda_partner_id = $${params.length}`;
@@ -3602,6 +3603,7 @@ app.get(
               is_partner: true,
               percentage: partnerInfo.percentage,
               commission_amount: partnerCommission,
+              code: partnerInfo.code || null,
             }
           : { is_partner: false },
       });
@@ -3738,6 +3740,13 @@ app.put(
       if (is_partner === false) {
         await pool.query(
           "UPDATE users SET is_agenda_partner = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+          [userId]
+        );
+        // Libera os profissionais vinculados para não ficarem órfãos apontando
+        // para um usuário que não é mais parceiro (voltam a ficar disponíveis
+        // para vincular a outro parceiro).
+        await pool.query(
+          "UPDATE users SET agenda_partner_id = NULL WHERE agenda_partner_id = $1",
           [userId]
         );
         return res.json({ id: userId, is_partner: false });

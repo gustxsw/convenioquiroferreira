@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Calendar, DollarSign, Users, Percent } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Calendar, DollarSign, Users, Percent, Link2, Check } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type AgendaFinancialResponse = {
@@ -21,6 +21,7 @@ type AgendaFinancialResponse = {
     is_partner: boolean;
     percentage?: number | null;
     commission_amount?: number;
+    code?: string | null;
   };
 };
 
@@ -38,6 +39,24 @@ const AgendaFinancialPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState<AgendaFinancialResponse | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const partnerLink = data?.partner?.code
+    ? `${window.location.origin}/register?partner=${encodeURIComponent(
+        data.partner.code
+      )}`
+    : "";
+
+  const copyPartnerLink = async () => {
+    if (!partnerLink) return;
+    try {
+      await navigator.clipboard.writeText(partnerLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* área de transferência indisponível: o link continua visível para cópia manual */
+    }
+  };
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("pt-BR", {
@@ -76,6 +95,13 @@ const AgendaFinancialPage: React.FC = () => {
     fetchSummary();
   };
 
+  // Carrega o resumo automaticamente ao abrir (mês atual), para o parceiro já
+  // ver seus números e o link de indicação sem precisar clicar em "Buscar".
+  useEffect(() => {
+    fetchSummary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div>
       <div className="mb-6">
@@ -86,6 +112,45 @@ const AgendaFinancialPage: React.FC = () => {
             : "Acompanhe os pagamentos de agenda dos profissionais"}
         </p>
       </div>
+
+      {data?.partner?.is_partner && partnerLink && (
+        <div className="card mb-6 border-blue-200 bg-blue-50">
+          <div className="flex items-center mb-2 text-blue-800">
+            <Link2 className="h-5 w-5 mr-2" />
+            <h2 className="text-lg font-semibold">Seu link de indicação</h2>
+          </div>
+          <p className="text-sm text-blue-800 mb-3">
+            Compartilhe este link com profissionais. Quem se cadastrar por ele
+            entra automaticamente sob a sua responsabilidade.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={partnerLink}
+              readOnly
+              onFocus={(e) => e.target.select()}
+              className="flex-1 px-3 py-2 border border-blue-200 rounded-lg bg-white text-sm text-gray-700"
+            />
+            <button
+              type="button"
+              onClick={copyPartnerLink}
+              className="btn btn-primary flex items-center justify-center whitespace-nowrap"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-4 w-4 mr-2" />
+                  Copiado!
+                </>
+              ) : (
+                <>
+                  <Link2 className="h-4 w-4 mr-2" />
+                  Copiar link
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="card mb-6">
         <div className="flex items-center mb-4">

@@ -8,6 +8,7 @@ import {
   Users,
   Plus,
   Trash2,
+  Link2,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
@@ -241,6 +242,22 @@ const ManageAgendaPartnersPage: React.FC = () => {
     }
   };
 
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+
+  const copyPartnerLink = async (partner: Partner) => {
+    if (!partner.code) return;
+    const link = `${window.location.origin}/register?partner=${encodeURIComponent(
+      partner.code
+    )}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedId(partner.id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      /* área de transferência indisponível */
+    }
+  };
+
   const filteredAvailable = available.filter(
     (p) =>
       !profSearch ||
@@ -346,6 +363,25 @@ const ManageAgendaPartnersPage: React.FC = () => {
                       <code className="bg-gray-100 px-2 py-1 rounded">
                         {partner.code || "-"}
                       </code>
+                      {partner.code && (
+                        <button
+                          onClick={() => copyPartnerLink(partner)}
+                          className="ml-2 text-blue-600 hover:text-blue-800 inline-flex items-center align-middle"
+                          title="Copiar link de indicação"
+                        >
+                          {copiedId === partner.id ? (
+                            <>
+                              <Check className="h-4 w-4 mr-1" />
+                              Copiado!
+                            </>
+                          ) : (
+                            <>
+                              <Link2 className="h-4 w-4 mr-1" />
+                              Link
+                            </>
+                          )}
+                        </button>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {partner.percentage != null
