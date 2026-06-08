@@ -289,7 +289,7 @@ const RegisterPage: React.FC = () => {
       }
 
       // Auto-select role based on registration
-      await selectRole(data.user.id, registrationRole);
+      await selectRole(data.user.id, registrationRole, data.preAuthToken);
     } catch (error) {
       console.error("Registration error:", error);
       if (error instanceof Error) {

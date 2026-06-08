@@ -1871,6 +1871,9 @@ app.post("/api/auth/register", async (req, res) => {
 
     res.status(201).json({
       message: "Usuário criado com sucesso",
+      // Pre-auth token para o auto-login logo após o cadastro (select-role exige
+      // esta prova de identidade; sem ele o cadastro caía em "sessão inválida").
+      preAuthToken: generatePreAuthToken(user.id),
       user: {
         id: user.id,
         name: user.name,
