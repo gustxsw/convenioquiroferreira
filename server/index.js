@@ -9846,14 +9846,25 @@ async function processAgendaPayment(professionalId, payment) {
     console.log(`💰 [PAGAMENTO] Payment ID: ${payment.id}`);
     console.log(`💰 [PAGAMENTO] Valor: R$ ${payment.transaction_amount}`);
 
-    // 1. Atualizar status do pagamento
+    // 1. Atualizar status do pagamento. Gravamos o valor REAL pago
+    //    (payment.transaction_amount, vindo do MercadoPago) como fonte da
+    //    verdade — assim os relatórios e a comissão do parceiro refletem
+    //    exatamente o que o profissional pagou, independente de o preço da
+    //    agenda mudar no futuro. COALESCE mantém o valor atual se o gateway
+    //    não enviar o transaction_amount por algum motivo.
     await pool.query(
       `UPDATE agenda_payments
        SET status = $1,
            mp_payment_id = $2,
+           amount = COALESCE($3, amount),
            processed_at = NOW()
-       WHERE professional_id = $3 AND status = 'pending'`,
-      ["approved", payment.id.toString(), professionalId]
+       WHERE professional_id = $4 AND status = 'pending'`,
+      [
+        "approved",
+        payment.id.toString(),
+        payment.transaction_amount ?? null,
+        professionalId,
+      ]
     );
     console.log(`✅ [PAGAMENTO] Pagamento marcado como aprovado no banco`);
 
