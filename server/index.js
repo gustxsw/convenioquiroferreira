@@ -1467,6 +1467,10 @@ const generateToken = (user) => {
 };
 
 const generateAccessToken = (user) => {
+  // Short-lived on purpose: if an access token leaks it's only usable for a
+  // bounded window, and role/permission changes take effect within an hour
+  // (the SPA refreshes transparently via fetchWithAuth on TOKEN_EXPIRED).
+  // Longevity is provided by the 30-day refresh token, not the access token.
   return jwt.sign(
     {
       id: user.id,
@@ -1474,13 +1478,19 @@ const generateAccessToken = (user) => {
       roles: user.roles,
     },
     process.env.JWT_SECRET || "your-secret-key",
-    { expiresIn: "7d" }
+    { expiresIn: "1h" }
   );
 };
 
-const generateRefreshToken = () => {
+const generateRefreshToken = (userId) => {
+  // SECURITY: the refresh token MUST be bound to the user AND carry enough
+  // entropy to be globally unique. Without a userId + random jti, the payload
+  // would be identical for every user and JWT/HMAC signing is deterministic,
+  // so two tokens minted in the same second would be byte-for-byte identical.
+  // That collision let one user's refresh request match another user's stored
+  // token hash, handing them an access token for the wrong account.
   return jwt.sign(
-    { type: "refresh" },
+    { type: "refresh", userId, jti: crypto.randomUUID() },
     process.env.JWT_SECRET || "your-secret-key",
     { expiresIn: "30d" }
   );
@@ -2318,7 +2328,7 @@ app.post("/api/auth/select-role", async (req, res) => {
     };
 
     const accessToken = generateAccessToken(userData);
-    const refreshToken = generateRefreshToken();
+    const refreshToken = generateRefreshToken(user.id);
 
     await saveRefreshToken(user.id, refreshToken);
 
@@ -2327,7 +2337,7 @@ app.post("/api/auth/select-role", async (req, res) => {
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: 15 * 60 * 1000,
+      maxAge: 60 * 60 * 1000,
     });
 
     console.log("✅ Role selected successfully:", role);
@@ -2428,13 +2438,27 @@ app.post("/api/auth/refresh", async (req, res) => {
         .json({ message: "Refresh token inválido ou expirado" });
     }
 
+    // SECURITY: the user identity comes from the cryptographically-signed
+    // token, NOT from "whichever stored hash happens to match first". Tokens
+    // issued before the userId/jti fix won't have a userId — force those to
+    // re-login instead of falling back to a global scan that could cross users.
+    const refreshUserId = Number(decoded.userId);
+    if (decoded.type !== "refresh" || !Number.isInteger(refreshUserId)) {
+      console.log("❌ Refresh token missing/invalid userId — forcing re-login");
+      return res.status(401).json({
+        message: "Sessão expirada. Faça login novamente.",
+        code: "REFRESH_TOKEN_OUTDATED",
+      });
+    }
+
     const storedTokens = await pool.query(
       `SELECT rt.id, rt.user_id, rt.token_hash, rt.expires_at, rt.revoked,
               u.name, u.roles, u.subscription_status, u.subscription_expiry
        FROM refresh_tokens rt
        JOIN users u ON rt.user_id = u.id
-       WHERE rt.revoked = false AND rt.expires_at > NOW()
-       ORDER BY rt.created_at DESC`
+       WHERE rt.user_id = $1 AND rt.revoked = false AND rt.expires_at > NOW()
+       ORDER BY rt.created_at DESC`,
+      [refreshUserId]
     );
 
     let matchedToken = null;
@@ -2489,7 +2513,7 @@ app.post("/api/auth/refresh", async (req, res) => {
     };
 
     const newAccessToken = generateAccessToken(userData);
-    const newRefreshToken = generateRefreshToken();
+    const newRefreshToken = generateRefreshToken(user.id);
 
     await pool.query(`UPDATE refresh_tokens SET revoked = true WHERE id = $1`, [
       matchedToken.id,
@@ -2502,7 +2526,7 @@ app.post("/api/auth/refresh", async (req, res) => {
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: 15 * 60 * 1000,
+      maxAge: 60 * 60 * 1000,
     });
 
     console.log("✅ Tokens refreshed successfully for user:", user.id);
