@@ -34,6 +34,7 @@ import RecurringConsultationModal from "../../components/RecurringConsultationMo
 import SchedulingAccessPayment from "../../components/SchedulingAccessPayment";
 import QuickScheduleModal from "../../components/QuickScheduleModal";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
+import { ls } from "../../utils/storage";
 import { getProfessionalActorId } from "../../utils/professionalActor";
 import { timeToMinutes, minutesToTime } from "../../utils/timeSlotValidation";
 
@@ -109,7 +110,7 @@ const SchedulingPage: React.FC = () => {
 
   // Slot customization state
   const [slotDuration, setSlotDuration] = useState<SlotDuration>(() => {
-    const saved = localStorage.getItem("scheduling-slot-duration");
+    const saved = ls.get("scheduling-slot-duration");
     return saved ? (Number(saved) as SlotDuration) : 30;
   });
   // Working hours (expediente) — loaded from backend (GET /api/professional/working-hours)
@@ -468,7 +469,7 @@ const SchedulingPage: React.FC = () => {
   // Handle slot duration change
   const handleSlotDurationChange = (duration: SlotDuration) => {
     setSlotDuration(duration);
-    localStorage.setItem("scheduling-slot-duration", duration.toString());
+    ls.set("scheduling-slot-duration", duration.toString());
   };
 
   // Load working hours (expediente) from backend

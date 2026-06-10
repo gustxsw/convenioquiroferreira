@@ -1,3 +1,5 @@
+import { ls } from "./storage";
+
 /** Dígitos padrão: +55 64 98121-0313 */
 const FALLBACK_WHATSAPP_DIGITS = "5564981210313";
 
@@ -42,19 +44,15 @@ export function getConvenioTelHref(): string {
 }
 
 export function isAgendaOnlyConvenioPromoSnoozed(): boolean {
-  try {
-    const raw = localStorage.getItem(AGENDA_ONLY_CONVENIO_SNOOZE_KEY);
-    if (!raw) return false;
-    const until = Number.parseInt(raw, 10);
-    if (Number.isNaN(until)) return false;
-    return Date.now() < until;
-  } catch {
-    return false;
-  }
+  const raw = ls.get(AGENDA_ONLY_CONVENIO_SNOOZE_KEY);
+  if (!raw) return false;
+  const until = Number.parseInt(raw, 10);
+  if (Number.isNaN(until)) return false;
+  return Date.now() < until;
 }
 
 export function snoozeAgendaOnlyConvenioPromo(): void {
   const until = Date.now() + SNOOZE_MS;
-  localStorage.setItem(AGENDA_ONLY_CONVENIO_SNOOZE_KEY, String(until));
+  ls.set(AGENDA_ONLY_CONVENIO_SNOOZE_KEY, String(until));
   window.dispatchEvent(new Event(AGENDA_ONLY_CONVENIO_SNOOZE_EVENT));
 }

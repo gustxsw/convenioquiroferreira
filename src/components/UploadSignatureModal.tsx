@@ -11,6 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../utils/apiHelpers";
+import { ls } from "../utils/storage";
 import { getProfessionalActorId } from "../utils/professionalActor";
 import {
   SIGNATURE_ASPECT,
@@ -124,7 +125,7 @@ const UploadSignatureModal: React.FC<UploadSignatureModalProps> = ({
       }
 
       const apiUrl = getApiUrl();
-      const userData = JSON.parse(localStorage.getItem("user") || "{}");
+      const userData = JSON.parse(ls.get("user") || "{}");
       const targetId = getProfessionalActorId(userData) ?? userData.id;
 
       if (!targetId) {
@@ -177,7 +178,7 @@ const UploadSignatureModal: React.FC<UploadSignatureModalProps> = ({
       setSuccess("");
 
       const apiUrl = getApiUrl();
-      const userData = JSON.parse(localStorage.getItem("user") || "{}");
+      const userData = JSON.parse(ls.get("user") || "{}");
       const targetId = getProfessionalActorId(userData) ?? userData.id;
 
       const response = await fetchWithAuth(

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { Link, useNavigate } from "react-router-dom";
+import { ss, ls } from "../utils/storage";
 import {
   Users,
   Award,
@@ -47,7 +48,7 @@ const LoginPage: React.FC = () => {
         
         // SALVAR NO SESSIONSTORAGE (limpa ao fechar a aba) JUNTO COM O
         // preAuthToken que será exigido pelo /api/auth/select-role.
-        sessionStorage.setItem(
+        ss.set(
           "tempUser",
           JSON.stringify({
             user: result.user,
@@ -56,7 +57,7 @@ const LoginPage: React.FC = () => {
         );
         // Limpa qualquer tempUser antigo persistido em localStorage
         // (garante que ninguém puxe sessão de outro usuário daqui).
-        localStorage.removeItem("tempUser");
+        ls.remove("tempUser");
         
         // REDIRECIONAR PARA PÁGINA DE SELEÇÃO
         navigate('/select-role', { replace: true });

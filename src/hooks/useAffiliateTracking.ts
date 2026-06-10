@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { ls } from "../utils/storage";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 const STORAGE_KEY = "affiliate_referral";
@@ -6,12 +7,12 @@ const VISITOR_ID_KEY = "visitor_id";
 
 // Generate a unique visitor identifier
 function getOrCreateVisitorId(): string {
-  let visitorId = localStorage.getItem(VISITOR_ID_KEY);
+  let visitorId = ls.get(VISITOR_ID_KEY);
 
   if (!visitorId) {
     // Create a unique ID based on timestamp and random number
     visitorId = `visitor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    localStorage.setItem(VISITOR_ID_KEY, visitorId);
+    ls.set(VISITOR_ID_KEY, visitorId);
   }
 
   return visitorId;
@@ -43,7 +44,7 @@ export function useAffiliateTracking() {
       trackAffiliateReferral(referralCode);
     } else {
       // Check if there's an existing referral in storage
-      const existingReferral = localStorage.getItem(STORAGE_KEY);
+      const existingReferral = ls.get(STORAGE_KEY);
       if (existingReferral) {
         console.log("Existing affiliate referral found:", JSON.parse(existingReferral));
       }
@@ -94,7 +95,7 @@ async function trackAffiliateReferral(referralCode: string) {
       visitorIdentifier,
     };
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(referralInfo));
+    ls.set(STORAGE_KEY, JSON.stringify(referralInfo));
 
     console.log("✅ Affiliate referral tracked successfully:", data);
 
@@ -109,12 +110,12 @@ async function trackAffiliateReferral(referralCode: string) {
 }
 
 export function getStoredReferral() {
-  const stored = localStorage.getItem(STORAGE_KEY);
+  const stored = ls.get(STORAGE_KEY);
   return stored ? JSON.parse(stored) : null;
 }
 
 export function clearStoredReferral() {
-  localStorage.removeItem(STORAGE_KEY);
+  ls.remove(STORAGE_KEY);
 }
 
 export async function linkUserToAffiliate(userId: number) {
@@ -148,7 +149,7 @@ export async function linkUserToAffiliate(userId: number) {
 
 export async function markReferralAsConverted(userId?: number) {
   try {
-    const token = localStorage.getItem("token");
+    const token = ls.get("token");
 
     if (!token) {
       console.log("No token found, skipping conversion tracking");

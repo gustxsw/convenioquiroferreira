@@ -1,3 +1,5 @@
+import { ls } from "./storage";
+
 /**
  * URL base da API. Em produção, defina VITE_API_URL no build se o front e o back
  * estiverem em domínios diferentes (evita chamar localhost ou outro host errado).
@@ -36,7 +38,7 @@ const processQueue = (error: Error | null, token: string | null = null) => {
 
 export const refreshAccessToken = async (): Promise<string | null> => {
   try {
-    const refreshToken = localStorage.getItem("refreshToken");
+    const refreshToken = ls.get("refreshToken");
 
     if (!refreshToken) {
       return null;
@@ -52,31 +54,31 @@ export const refreshAccessToken = async (): Promise<string | null> => {
     });
 
     if (!response.ok) {
-      localStorage.removeItem("token");
-      localStorage.removeItem("refreshToken");
-      localStorage.removeItem("user");
-      localStorage.removeItem("tempUser");
-      localStorage.removeItem("role");
-      localStorage.removeItem("userType");
+      ls.remove("token");
+      ls.remove("refreshToken");
+      ls.remove("user");
+      ls.remove("tempUser");
+      ls.remove("role");
+      ls.remove("userType");
       window.location.href = "/";
       return null;
     }
 
     const data = await response.json();
 
-    localStorage.setItem("token", data.accessToken);
-    localStorage.setItem("refreshToken", data.refreshToken);
-    localStorage.setItem("user", JSON.stringify(data.user));
+    ls.set("token", data.accessToken);
+    ls.set("refreshToken", data.refreshToken);
+    ls.set("user", JSON.stringify(data.user));
 
     return data.accessToken;
   } catch (error) {
     // Intentionally silent in UI console to avoid leaking sensitive auth context.
-    localStorage.removeItem("token");
-    localStorage.removeItem("refreshToken");
-    localStorage.removeItem("user");
-    localStorage.removeItem("tempUser");
-    localStorage.removeItem("role");
-    localStorage.removeItem("userType");
+    ls.remove("token");
+    ls.remove("refreshToken");
+    ls.remove("user");
+    ls.remove("tempUser");
+    ls.remove("role");
+    ls.remove("userType");
     window.location.href = "/";
     return null;
   }
@@ -86,7 +88,7 @@ export const fetchWithAuth = async (
   url: string,
   options: RequestInit = {}
 ): Promise<Response> => {
-  const token = localStorage.getItem("token");
+  const token = ls.get("token");
 
   const headers = {
     ...options.headers,
@@ -106,7 +108,7 @@ export const fetchWithAuth = async (
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         }).then(() => {
-          const newToken = localStorage.getItem("token");
+          const newToken = ls.get("token");
           return fetch(url, {
             ...options,
             headers: {

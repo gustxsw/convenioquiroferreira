@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { ChevronDown, User, Shield, Briefcase, RefreshCw } from 'lucide-react';
+import { ls } from '../utils/storage';
 
 const RoleSwitcher: React.FC = () => {
   const { user, switchRole } = useAuth();
@@ -10,7 +11,7 @@ const RoleSwitcher: React.FC = () => {
   if (!user || !user.currentRole) return null;
 
   // If user has only one role, don't show the switcher
-  const userRoles = JSON.parse(localStorage.getItem('user') || '{}').roles || [];
+  const userRoles = JSON.parse(ls.get('user') || '{}').roles || [];
   if (userRoles.length <= 1) return null;
 
   const handleRoleSwitch = async (role: string) => {

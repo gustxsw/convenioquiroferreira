@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
+import { ss, ls } from "../utils/storage";
 import { Users, Award, Briefcase, ArrowLeft, RefreshCw, TrendingUp } from "lucide-react";
 
 const RoleSelectionPage: React.FC = () => {
@@ -17,7 +18,7 @@ const RoleSelectionPage: React.FC = () => {
     // Fall back to localStorage (legacy) only for very short transition; if
     // legacy entry is found we discard it because it lacks the preAuthToken
     // required by the new /api/auth/select-role contract.
-    const sessionTempUser = sessionStorage.getItem("tempUser");
+    const sessionTempUser = ss.get("tempUser");
     if (sessionTempUser) {
       try {
         const parsed = JSON.parse(sessionTempUser);
@@ -32,16 +33,16 @@ const RoleSelectionPage: React.FC = () => {
     }
 
     // No valid pre-auth context — force re-login.
-    sessionStorage.removeItem("tempUser");
-    localStorage.removeItem("tempUser");
+    ss.remove("tempUser");
+    ls.remove("tempUser");
     navigate("/", { replace: true });
   }, [navigate]);
 
   const handleRoleSelect = async (role: string) => {
     if (!user || !preAuthToken) {
       setError("Sessão de login expirada. Faça login novamente.");
-      sessionStorage.removeItem("tempUser");
-      localStorage.removeItem("tempUser");
+      ss.remove("tempUser");
+      ls.remove("tempUser");
       navigate("/", { replace: true });
       return;
     }
@@ -54,8 +55,8 @@ const RoleSelectionPage: React.FC = () => {
       await selectRole(user.id, role, preAuthToken);
       
       // LIMPAR DADOS TEMPORÁRIOS
-      sessionStorage.removeItem("tempUser");
-      localStorage.removeItem("tempUser");
+      ss.remove("tempUser");
+      ls.remove("tempUser");
       
     } catch (error) {
       console.error("❌ Erro ao selecionar role:", error);
@@ -70,8 +71,8 @@ const RoleSelectionPage: React.FC = () => {
   };
 
   const handleBackToLogin = () => {
-    sessionStorage.removeItem("tempUser");
-    localStorage.removeItem("tempUser");
+    ss.remove("tempUser");
+    ls.remove("tempUser");
     navigate("/", { replace: true });
   };
 

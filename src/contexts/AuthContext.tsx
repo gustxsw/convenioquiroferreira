@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from "r
 import { useNavigate } from "react-router-dom";
 import { getApiUrl, refreshAccessToken } from "../utils/apiHelpers";
 import { logger } from "../utils/logger";
+import { ls } from "../utils/storage";
 
 export type ProfessionalType = "agenda_only" | "convenio";
 
@@ -57,12 +58,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const authCheckAbortRef = useRef<AbortController | null>(null);
 
   const clearLocalAuthState = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("refreshToken");
-    localStorage.removeItem("user");
-    localStorage.removeItem("tempUser");
-    localStorage.removeItem("role");
-    localStorage.removeItem("userType");
+    ls.remove("token");
+    ls.remove("refreshToken");
+    ls.remove("user");
+    ls.remove("tempUser");
+    ls.remove("role");
+    ls.remove("userType");
   };
 
   const invalidatePendingAuthChecks = () => {
@@ -83,8 +84,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const checkAuthStatus = async () => {
       try {
-        const token = localStorage.getItem("token");
-        const refreshToken = localStorage.getItem("refreshToken");
+        const token = ls.get("token");
+        const refreshToken = ls.get("refreshToken");
 
         if (!token || !refreshToken) {
           if (!isStillCurrent()) return;
@@ -158,7 +159,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         // Sanity check: the token currently in localStorage must still be the
         // same one we used for this request. If the user logged in/out during
         // the in-flight request, abort and let the new flow set the state.
-        const currentToken = localStorage.getItem("token");
+        const currentToken = ls.get("token");
         if (currentToken !== token && currentToken !== null) {
           // A newer login already happened — do NOT overwrite the new state
           // with the old user's payload.
@@ -175,10 +176,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           return;
         }
 
-        localStorage.setItem("user", JSON.stringify(data.user));
-        localStorage.removeItem("tempUser");
-        localStorage.removeItem("role");
-        localStorage.removeItem("userType");
+        ls.set("user", JSON.stringify(data.user));
+        ls.remove("tempUser");
+        ls.remove("role");
+        ls.remove("userType");
 
         setUser(data.user);
       } catch (err) {
@@ -313,13 +314,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const data = await response.json();
 
-      localStorage.removeItem("tempUser");
-      localStorage.removeItem("role");
-      localStorage.removeItem("userType");
+      ls.remove("tempUser");
+      ls.remove("role");
+      ls.remove("userType");
 
-      localStorage.setItem("token", data.accessToken);
-      localStorage.setItem("refreshToken", data.refreshToken);
-      localStorage.setItem("user", JSON.stringify(data.user));
+      ls.set("token", data.accessToken);
+      ls.set("refreshToken", data.refreshToken);
+      ls.set("user", JSON.stringify(data.user));
 
       // Bump the session version AGAIN after we've written the new token to
       // localStorage so any in-flight check that sneaked past the first
@@ -345,7 +346,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     } catch (error) {
       logger.error("Role selection error");
-      localStorage.removeItem("tempUser");
+      ls.remove("tempUser");
       throw error;
     } finally {
       setIsLoading(false);
@@ -353,8 +354,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const refreshSession = async () => {
-    const token = localStorage.getItem("token");
-    const refreshToken = localStorage.getItem("refreshToken");
+    const token = ls.get("token");
+    const refreshToken = ls.get("refreshToken");
     if (!token || !refreshToken) return;
 
     const versionAtStart = sessionVersionRef.current;
@@ -391,10 +392,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       const data = await response.json();
       // If the user logged in/out while the request was in flight, drop it.
       if (sessionVersionRef.current !== versionAtStart) return;
-      const currentToken = localStorage.getItem("token");
+      const currentToken = ls.get("token");
       if (currentToken !== token && currentToken !== null) return;
       if (!data?.user?.id) return;
-      localStorage.setItem("user", JSON.stringify(data.user));
+      ls.set("user", JSON.stringify(data.user));
       setUser(data.user);
     }
   };
@@ -405,7 +406,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       invalidatePendingAuthChecks();
 
       const apiUrl = getApiUrl();
-      const token = localStorage.getItem("token");
+      const token = ls.get("token");
 
       const response = await fetch(`${apiUrl}/api/auth/switch-role`, {
         method: "POST",
@@ -425,11 +426,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const data = await response.json();
 
-      localStorage.setItem("token", data.accessToken || data.token);
+      ls.set("token", data.accessToken || data.token);
       if (data.refreshToken) {
-        localStorage.setItem("refreshToken", data.refreshToken);
+        ls.set("refreshToken", data.refreshToken);
       }
-      localStorage.setItem("user", JSON.stringify(data.user));
+      ls.set("user", JSON.stringify(data.user));
 
       setUser(data.user);
 
