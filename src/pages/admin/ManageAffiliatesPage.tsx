@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
-import { Users, Plus, DollarSign, CheckCircle, XCircle, Copy, Check, UserPlus, Search, FileText } from "lucide-react";
+import { Users, Plus, DollarSign, CheckCircle, XCircle, Copy, Check, UserPlus, Search, FileText, Trash2 } from "lucide-react";
 
 interface Affiliate {
   id: number;
@@ -83,6 +83,7 @@ const ManageAffiliatesPage: React.FC = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [deletingAffiliate, setDeletingAffiliate] = useState<{ id: number; name: string } | null>(null);
   const [affiliateSearch, setAffiliateSearch] = useState("");
   const [searchCpf, setSearchCpf] = useState("");
   const [searchedUser, setSearchedUser] = useState<ExistingUser | null>(null);
@@ -405,6 +406,30 @@ const ManageAffiliatesPage: React.FC = () => {
     }
   };
 
+  const handleDeleteAffiliate = async () => {
+    if (!deletingAffiliate) return;
+    try {
+      setError("");
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/admin/affiliates/${deletingAffiliate.id}`,
+        { method: "DELETE" }
+      );
+      if (!response.ok) {
+        const data = await response.json();
+        setError(data.message || "Erro ao excluir afiliado");
+        setDeletingAffiliate(null);
+        return;
+      }
+      setAffiliates((prev) => prev.filter((a) => a.id !== deletingAffiliate.id));
+      setSuccess("Afiliado excluído com sucesso.");
+      setDeletingAffiliate(null);
+    } catch {
+      setError("Erro ao excluir afiliado");
+      setDeletingAffiliate(null);
+    }
+  };
+
   const viewCommissions = async (affiliate: Affiliate) => {
     try {
       setSelectedAffiliate(affiliate);
@@ -648,6 +673,13 @@ const ManageAffiliatesPage: React.FC = () => {
                 Desvincular líder
               </button>
             )}
+            <button
+              onClick={() => setDeletingAffiliate({ id: affiliate.id, name: affiliate.name })}
+              className="mt-2 w-full px-3 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 inline-flex items-center justify-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" />
+              Excluir afiliado
+            </button>
           </div>
         ))}
       </div>
@@ -911,6 +943,18 @@ const ManageAffiliatesPage: React.FC = () => {
                                   </>
                                 )}
                               </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeletingAffiliate({ id: affiliate.id, name: affiliate.name });
+                                }}
+                                className="px-3 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 inline-flex items-center"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Excluir
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -923,6 +967,31 @@ const ManageAffiliatesPage: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {deletingAffiliate && (
+        <div className="modal">
+          <div className="modal-content max-w-sm">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Excluir afiliado</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Tem certeza que deseja excluir <strong>{deletingAffiliate.name}</strong>? Esta ação não pode ser desfeita.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setDeletingAffiliate(null)}
+                className="btn btn-secondary"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDeleteAffiliate}
+                className="btn btn-primary"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">

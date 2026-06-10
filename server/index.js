@@ -10476,6 +10476,41 @@ app.put(
   }
 );
 
+// Delete affiliate (only if no commissions recorded)
+app.delete(
+  "/api/admin/affiliates/:id",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const { rows: [check] } = await pool.query(
+        "SELECT COUNT(*) FROM affiliate_commissions WHERE affiliate_id = $1",
+        [id]
+      );
+      if (parseInt(check.count) > 0) {
+        return res.status(400).json({
+          message: "Este afiliado possui comissões registradas e não pode ser excluído. Desative-o se necessário.",
+        });
+      }
+
+      const { rows } = await pool.query(
+        "DELETE FROM affiliates WHERE id = $1 RETURNING id",
+        [id]
+      );
+      if (rows.length === 0) {
+        return res.status(404).json({ message: "Afiliado não encontrado" });
+      }
+
+      res.json({ message: "Afiliado excluído com sucesso" });
+    } catch (error) {
+      console.error("Error deleting affiliate:", error);
+      res.status(500).json({ error: "Erro ao excluir afiliado" });
+    }
+  }
+);
+
 // Get affiliate details with commissions
 app.get(
   "/api/admin/affiliates/:id/commissions",
