@@ -11,6 +11,7 @@ export const SPECIALTY_CODES = [
   "dentist",
   "massage_therapist",
   "chiropractor",
+  "services",
 ];
 
 /** @type {Record<string, Set<string>>} */
@@ -87,6 +88,8 @@ const SPECIALTY_FIELD_KEYS = {
     "rehab_advice",
     "functional_goals",
   ]),
+  // "Serviços" usa apenas campos legados de medical_records — sem campos específicos.
+  services: new Set([]),
 };
 
 const SPECIALTY_LABELS = {
@@ -98,6 +101,7 @@ const SPECIALTY_LABELS = {
   dentist: "Dentista",
   massage_therapist: "Massoterapeuta",
   chiropractor: "Quiropraxista",
+  services: "Serviços",
 };
 
 /** @type {Record<string, Record<string, string>>} */

@@ -32,6 +32,7 @@ export const SPECIALTY_CODES = [
   "dentist",
   "massage_therapist",
   "chiropractor",
+  "services",
 ] as const;
 
 export type SpecialtyCode = (typeof SPECIALTY_CODES)[number];
@@ -964,6 +965,85 @@ const psychiatrist: SpecialtyTemplate = {
   ],
 };
 
+const services: SpecialtyTemplate = {
+  code: "services",
+  labelPt: "Serviços",
+  sections: [
+    {
+      id: "atendimento",
+      title: "Atendimento",
+      fields: [
+        {
+          key: "chief_complaint",
+          label: "Queixa / motivo do atendimento",
+          type: "textarea",
+          storage: "legacy",
+        },
+        {
+          key: "history_present_illness",
+          label: "Histórico / contexto",
+          type: "textarea",
+          storage: "legacy",
+        },
+        {
+          key: "physical_examination",
+          label: "Avaliação",
+          type: "textarea",
+          storage: "legacy",
+        },
+      ],
+    },
+    {
+      id: "conduta",
+      title: "Conduta",
+      fields: [
+        {
+          key: "diagnosis",
+          label: "Impressão / avaliação",
+          type: "textarea",
+          storage: "legacy",
+        },
+        {
+          key: "treatment_plan",
+          label: "Serviço realizado / conduta",
+          type: "textarea",
+          storage: "legacy",
+        },
+        {
+          key: "notes",
+          label: "Observações",
+          type: "textarea",
+          storage: "legacy",
+        },
+      ],
+    },
+    {
+      id: "gerais",
+      title: "Dados gerais",
+      fields: [
+        {
+          key: "past_medical_history",
+          label: "História / contexto relevante",
+          type: "textarea",
+          storage: "legacy",
+        },
+        {
+          key: "medications",
+          label: "Medicamentos",
+          type: "textarea",
+          storage: "legacy",
+        },
+        {
+          key: "allergies",
+          label: "Alergias",
+          type: "textarea",
+          storage: "legacy",
+        },
+      ],
+    },
+  ],
+};
+
 const TEMPLATES: Record<SpecialtyCode, SpecialtyTemplate> = {
   physiotherapist,
   occupational_therapist,
@@ -973,6 +1053,7 @@ const TEMPLATES: Record<SpecialtyCode, SpecialtyTemplate> = {
   dentist,
   massage_therapist,
   chiropractor,
+  services,
 };
 
 export function getSpecialtyTemplate(
