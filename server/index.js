@@ -4269,11 +4269,14 @@ app.get(
     try {
       console.log("📊 Generating professionals by city report");
 
+      // Mesmo critério do relatório de clientes: profissionais sem cidade caem
+      // num único bucket "Não informado" (estado forçado a ''), que vai por último.
+      const noCityState = "CASE WHEN NULLIF(TRIM(u.city), '') IS NULL THEN '' ELSE COALESCE(u.state, '') END";
       const result = await pool.query(
         `
         SELECT
           COALESCE(mode() WITHIN GROUP (ORDER BY NULLIF(TRIM(u.city), '')), 'Não informado') as city,
-          COALESCE(u.state, '') as state,
+          ${noCityState} as state,
           COUNT(*) as total_professionals,
           json_agg(
             json_build_object(
@@ -4283,8 +4286,8 @@ app.get(
           ) as categories
         FROM users u
         WHERE 'professional' = ANY(u.roles)
-        GROUP BY ${cityGroupKeySql("u.city")}, u.state
-        ORDER BY total_professionals DESC
+        GROUP BY ${cityGroupKeySql("u.city")}, ${noCityState}
+        ORDER BY (${cityGroupKeySql("u.city")} = '') ASC, total_professionals DESC
       `
       );
 
