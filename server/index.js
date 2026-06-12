@@ -1600,6 +1600,11 @@ const validateEmail = (email) => {
 // Padroniza nome de cidade na gravação: trim, espaços únicos e capitalização
 // tipo título ("mogi guaçu " → "Mogi Guaçu"), mantendo conectivos em minúsculas
 const CITY_LOWERCASE_WORDS = new Set(["de", "da", "do", "das", "dos", "e"]);
+const capitalizeCityWord = (word) =>
+  word
+    .split("-")
+    .map((part) => part.charAt(0).toLocaleUpperCase("pt-BR") + part.slice(1))
+    .join("-");
 const normalizeCity = (value) => {
   if (typeof value !== "string") return null;
   const collapsed = value.trim().replace(/\s+/g, " ");
@@ -1610,7 +1615,7 @@ const normalizeCity = (value) => {
     .map((word, index) =>
       index > 0 && CITY_LOWERCASE_WORDS.has(word)
         ? word
-        : word.charAt(0).toLocaleUpperCase("pt-BR") + word.slice(1)
+        : capitalizeCityWord(word)
     )
     .join(" ");
 };
