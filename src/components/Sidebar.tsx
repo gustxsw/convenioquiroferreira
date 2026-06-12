@@ -10,61 +10,62 @@ type SidebarProps = {
 
 const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
   const { user } = useAuth();
-  
-  // Navigation links based on user current role
+
+  // Navigation links based on user current role. Cada item tem uma cor própria
+  // de ícone (decisão do dono do convênio: navbar mais colorida).
   const getNavLinks = () => {
     if (user?.currentRole === 'client') {
       return [
-        { to: '/client', icon: <Home size={20} />, label: 'Início' },
-        { to: '/client/professionals', icon: <Users size={20} />, label: 'Profissionais' },
+        { to: '/client', icon: <Home size={20} />, label: 'Início', color: 'text-blue-500' },
+        { to: '/client/professionals', icon: <Users size={20} />, label: 'Profissionais', color: 'text-emerald-500' },
       ];
     } else if (user?.currentRole === 'professional') {
       return [
-        { to: '/professional', icon: <Home size={20} />, label: 'Início' },
-        { to: '/professional/scheduling', icon: <CalendarDays size={20} />, label: 'Agenda' },
-        { to: '/professional/private-patients', icon: <UserCheck size={20} />, label: 'Pacientes Particulares' },
-        { to: '/professional/services', icon: <FileText size={20} />, label: 'Meus Serviços' },
-        { to: '/professional/medical-records', icon: <Stethoscope size={20} />, label: 'Prontuários' },
-        { to: '/professional/documents', icon: <FileImage size={20} />, label: 'Documentos' },
-        { to: '/professional/reports', icon: <BarChart2 size={20} />, label: 'Relatórios' },
-        { to: '/professional/profile', icon: <Settings size={20} />, label: 'Perfil' },
+        { to: '/professional', icon: <Home size={20} />, label: 'Início', color: 'text-blue-500' },
+        { to: '/professional/scheduling', icon: <CalendarDays size={20} />, label: 'Agenda', color: 'text-purple-500' },
+        { to: '/professional/private-patients', icon: <UserCheck size={20} />, label: 'Pacientes Particulares', color: 'text-emerald-500' },
+        { to: '/professional/services', icon: <FileText size={20} />, label: 'Meus Serviços', color: 'text-amber-500' },
+        { to: '/professional/medical-records', icon: <Stethoscope size={20} />, label: 'Prontuários', color: 'text-rose-500' },
+        { to: '/professional/documents', icon: <FileImage size={20} />, label: 'Documentos', color: 'text-cyan-500' },
+        { to: '/professional/reports', icon: <BarChart2 size={20} />, label: 'Relatórios', color: 'text-indigo-500' },
+        { to: '/professional/profile', icon: <Settings size={20} />, label: 'Perfil', color: 'text-slate-500' },
       ];
     } else if (user?.currentRole === 'secretaria') {
       return [
-        { to: '/professional', icon: <Home size={20} />, label: 'Início' },
-        { to: '/professional/scheduling', icon: <CalendarDays size={20} />, label: 'Agenda' },
-        { to: '/professional/private-patients', icon: <UserCheck size={20} />, label: 'Pacientes Particulares' },
-        { to: '/professional/services', icon: <FileText size={20} />, label: 'Meus Serviços' },
-        { to: '/professional/medical-records', icon: <Stethoscope size={20} />, label: 'Prontuários' },
-        { to: '/professional/documents', icon: <FileImage size={20} />, label: 'Documentos' },
-        { to: '/professional/reports', icon: <BarChart2 size={20} />, label: 'Relatórios' },
-        { to: '/professional/profile', icon: <Settings size={20} />, label: 'Perfil' },
+        { to: '/professional', icon: <Home size={20} />, label: 'Início', color: 'text-blue-500' },
+        { to: '/professional/scheduling', icon: <CalendarDays size={20} />, label: 'Agenda', color: 'text-purple-500' },
+        { to: '/professional/private-patients', icon: <UserCheck size={20} />, label: 'Pacientes Particulares', color: 'text-emerald-500' },
+        { to: '/professional/services', icon: <FileText size={20} />, label: 'Meus Serviços', color: 'text-amber-500' },
+        { to: '/professional/medical-records', icon: <Stethoscope size={20} />, label: 'Prontuários', color: 'text-rose-500' },
+        { to: '/professional/documents', icon: <FileImage size={20} />, label: 'Documentos', color: 'text-cyan-500' },
+        { to: '/professional/reports', icon: <BarChart2 size={20} />, label: 'Relatórios', color: 'text-indigo-500' },
+        { to: '/professional/profile', icon: <Settings size={20} />, label: 'Perfil', color: 'text-slate-500' },
       ];
     } else if (user?.currentRole === 'admin') {
       return [
-        { to: '/admin', icon: <Home size={20} />, label: 'Início' },
-        { to: '/admin/users', icon: <Users size={20} />, label: 'Usuários' },
-        { to: '/admin/scheduling-access', icon: <Clock size={20} />, label: 'Acesso à Agenda' },
-        { to: '/admin/affiliates', icon: <DollarSign size={20} />, label: 'Afiliados' },
-        { to: '/admin/agenda-partners', icon: <UserCheck size={20} />, label: 'Parceiros da Agenda' },
-        { to: '/admin/coupons', icon: <Ticket size={20} />, label: 'Cupons' },
-        { to: '/admin/reports', icon: <BarChart2 size={20} />, label: 'Relatórios' },
+        { to: '/admin', icon: <Home size={20} />, label: 'Início', color: 'text-blue-500' },
+        { to: '/admin/users', icon: <Users size={20} />, label: 'Usuários', color: 'text-emerald-500' },
+        { to: '/admin/scheduling-access', icon: <Clock size={20} />, label: 'Acesso à Agenda', color: 'text-purple-500' },
+        { to: '/admin/affiliates', icon: <DollarSign size={20} />, label: 'Afiliados', color: 'text-green-500' },
+        { to: '/admin/agenda-partners', icon: <UserCheck size={20} />, label: 'Parceiros da Agenda', color: 'text-orange-500' },
+        { to: '/admin/coupons', icon: <Ticket size={20} />, label: 'Cupons', color: 'text-pink-500' },
+        { to: '/admin/reports', icon: <BarChart2 size={20} />, label: 'Relatórios', color: 'text-indigo-500' },
       ];
     } else if (user?.currentRole === 'vendedor') {
       return [
-        { to: '/affiliate', icon: <Home size={20} />, label: 'Painel' },
+        { to: '/affiliate', icon: <Home size={20} />, label: 'Painel', color: 'text-blue-500' },
       ];
     } else if (user?.currentRole === 'financeiro_agenda') {
       return [
-        { to: '/financeiro/agenda', icon: <DollarSign size={20} />, label: 'Financeiro Agenda' },
+        { to: '/financeiro/agenda', icon: <DollarSign size={20} />, label: 'Financeiro Agenda', color: 'text-green-500' },
       ];
     }
-    
+
     return [];
   };
-  
+
   const navLinks = getNavLinks();
-  
+
   return (
     <aside className="h-full">
       <div className="p-4">
@@ -97,7 +98,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
                 }`
               }
             >
-              {link.icon}
+              {React.cloneElement(link.icon, { className: `${link.color} shrink-0` })}
               <span className="ml-3">{link.label}</span>
             </NavLink>
           ))}
