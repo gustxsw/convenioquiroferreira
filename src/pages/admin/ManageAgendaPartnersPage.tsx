@@ -9,6 +9,7 @@ import {
   Plus,
   Trash2,
   Link2,
+  DollarSign,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
@@ -35,6 +36,34 @@ type EligibleUser = {
   is_agenda_partner: boolean;
 };
 
+type Commission = {
+  id: number;
+  agenda_payment_id: number;
+  created_at: string;
+  base_amount: number;
+  percentage: number;
+  amount: number;
+  status: "paid" | "pending";
+  professional_id: number;
+  professional_name: string;
+  paid_at: string | null;
+  paid_method: string | null;
+  paid_receipt_url: string | null;
+  paid_by_name: string | null;
+};
+
+type CommissionTotals = {
+  pending: number;
+  paid: number;
+  total: number;
+};
+
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value || 0);
+
 const ManageAgendaPartnersPage: React.FC = () => {
   const [partners, setPartners] = useState<Partner[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -58,6 +87,25 @@ const ManageAgendaPartnersPage: React.FC = () => {
   const [available, setAvailable] = useState<ProfessionalLite[]>([]);
   const [profSearch, setProfSearch] = useState("");
   const [isLoadingProfs, setIsLoadingProfs] = useState(false);
+
+  // Commissions modal (marcar comissão como paga + comprovante)
+  const [isCommissionsOpen, setIsCommissionsOpen] = useState(false);
+  const [commissionsPartner, setCommissionsPartner] = useState<Partner | null>(
+    null
+  );
+  const [commissions, setCommissions] = useState<Commission[]>([]);
+  const [commissionTotals, setCommissionTotals] = useState<CommissionTotals>({
+    pending: 0,
+    paid: 0,
+    total: 0,
+  });
+  const [isLoadingCommissions, setIsLoadingCommissions] = useState(false);
+  const [selectedCommissionIds, setSelectedCommissionIds] = useState<number[]>(
+    []
+  );
+  const [paymentMethod, setPaymentMethod] = useState("Pix");
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [isPaying, setIsPaying] = useState(false);
 
   useEffect(() => {
     fetchPartners();
@@ -242,6 +290,110 @@ const ManageAgendaPartnersPage: React.FC = () => {
     }
   };
 
+  const openCommissionsModal = async (partner: Partner) => {
+    setCommissionsPartner(partner);
+    setSelectedCommissionIds([]);
+    setReceiptFile(null);
+    setPaymentMethod("Pix");
+    setIsCommissionsOpen(true);
+    await fetchCommissions(partner.id);
+  };
+
+  const closeCommissionsModal = () => {
+    setIsCommissionsOpen(false);
+    setCommissionsPartner(null);
+    setCommissions([]);
+    setCommissionTotals({ pending: 0, paid: 0, total: 0 });
+    setSelectedCommissionIds([]);
+    setReceiptFile(null);
+  };
+
+  const fetchCommissions = async (partnerId: number) => {
+    try {
+      setIsLoadingCommissions(true);
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/admin/agenda-partners/${partnerId}/commissions`
+      );
+      if (!response.ok) {
+        throw new Error("Falha ao carregar comissões");
+      }
+      const data = await response.json();
+      setCommissions(Array.isArray(data.commissions) ? data.commissions : []);
+      setCommissionTotals(
+        data.totals || { pending: 0, paid: 0, total: 0 }
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Erro ao carregar comissões"
+      );
+      setTimeout(() => setError(""), 3000);
+    } finally {
+      setIsLoadingCommissions(false);
+    }
+  };
+
+  const toggleCommission = (commission: Commission) => {
+    if (commission.status !== "pending") return;
+    setSelectedCommissionIds((prev) =>
+      prev.includes(commission.id)
+        ? prev.filter((id) => id !== commission.id)
+        : [...prev, commission.id]
+    );
+  };
+
+  const toggleAllPending = () => {
+    const pendingIds = commissions
+      .filter((c) => c.status === "pending")
+      .map((c) => c.id);
+    const allSelected =
+      pendingIds.length > 0 &&
+      pendingIds.every((id) => selectedCommissionIds.includes(id));
+    setSelectedCommissionIds(allSelected ? [] : pendingIds);
+  };
+
+  const payCommissions = async () => {
+    if (!commissionsPartner || selectedCommissionIds.length === 0) return;
+    const toPay = commissions.filter((c) =>
+      selectedCommissionIds.includes(c.id)
+    );
+    try {
+      setIsPaying(true);
+      setError("");
+      const apiUrl = getApiUrl();
+      for (const commission of toPay) {
+        const formData = new FormData();
+        formData.append("paid_method", paymentMethod.trim() || "Pix");
+        if (receiptFile) formData.append("receipt", receiptFile);
+
+        const response = await fetchWithAuth(
+          `${apiUrl}/api/admin/agenda-partners/commissions/${commission.agenda_payment_id}/pay`,
+          { method: "PUT", body: formData }
+        );
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.message || "Erro ao registrar pagamento");
+        }
+      }
+      setSuccess("Pagamento registrado com sucesso!");
+      setTimeout(() => setSuccess(""), 2000);
+      setSelectedCommissionIds([]);
+      setReceiptFile(null);
+      await fetchCommissions(commissionsPartner.id);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Erro ao registrar pagamento"
+      );
+      setTimeout(() => setError(""), 3000);
+    } finally {
+      setIsPaying(false);
+    }
+  };
+
+  const selectedCommissionsTotal = commissions
+    .filter((c) => selectedCommissionIds.includes(c.id))
+    .reduce((sum, c) => sum + (c.amount || 0), 0);
+
   const [copiedId, setCopiedId] = useState<number | null>(null);
 
   const copyPartnerLink = async (partner: Partner) => {
@@ -392,6 +544,13 @@ const ManageAgendaPartnersPage: React.FC = () => {
                       {partner.professionals_count}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm space-x-2">
+                      <button
+                        onClick={() => openCommissionsModal(partner)}
+                        className="text-green-600 hover:text-green-800 inline-flex items-center"
+                      >
+                        <DollarSign className="h-4 w-4 mr-1" />
+                        Comissões
+                      </button>
                       <button
                         onClick={() => openProfsModal(partner)}
                         className="text-blue-600 hover:text-blue-800 inline-flex items-center"
@@ -645,6 +804,234 @@ const ManageAgendaPartnersPage: React.FC = () => {
 
             <div className="p-6 border-t border-gray-200 flex justify-end">
               <button onClick={closeProfsModal} className="btn btn-secondary">
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Commissions modal */}
+      {isCommissionsOpen && commissionsPartner && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold flex items-center">
+                  <DollarSign className="h-6 w-6 text-green-600 mr-2" />
+                  Comissões de {commissionsPartner.name}
+                </h2>
+                <p className="text-sm text-gray-600">
+                  {commissionsPartner.percentage != null
+                    ? `${commissionsPartner.percentage}% sobre os pagamentos de agenda dos profissionais vinculados`
+                    : "Porcentagem de parceria não definida"}
+                </p>
+              </div>
+              <button
+                onClick={closeCommissionsModal}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Resumo */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-4 border rounded-lg">
+                  <p className="text-xs text-gray-500">Pendente</p>
+                  <p className="text-xl font-bold text-yellow-600">
+                    {formatCurrency(commissionTotals.pending)}
+                  </p>
+                </div>
+                <div className="p-4 border rounded-lg">
+                  <p className="text-xs text-gray-500">Pago</p>
+                  <p className="text-xl font-bold text-green-600">
+                    {formatCurrency(commissionTotals.paid)}
+                  </p>
+                </div>
+                <div className="p-4 border rounded-lg">
+                  <p className="text-xs text-gray-500">Total</p>
+                  <p className="text-xl font-bold text-gray-900">
+                    {formatCurrency(commissionTotals.total)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Pagamento das selecionadas */}
+              <div className="border rounded-lg p-4 bg-gray-50">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">
+                      Forma de pagamento
+                    </label>
+                    <input
+                      type="text"
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      placeholder="Ex: Pix, Transferência..."
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">
+                      Comprovante (opcional)
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={(e) =>
+                        setReceiptFile(e.target.files?.[0] || null)
+                      }
+                      className="w-full text-sm"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={payCommissions}
+                    className="btn btn-primary flex items-center justify-center disabled:opacity-50"
+                    disabled={isPaying || selectedCommissionIds.length === 0}
+                  >
+                    <Check className="h-4 w-4 mr-2" />
+                    {isPaying
+                      ? "Processando..."
+                      : `Pagar ${selectedCommissionIds.length} (${formatCurrency(
+                          selectedCommissionsTotal
+                        )})`}
+                  </button>
+                </div>
+              </div>
+
+              {/* Lista de comissões */}
+              {isLoadingCommissions ? (
+                <p className="text-gray-500 text-sm text-center py-8">
+                  Carregando comissões...
+                </p>
+              ) : commissions.length === 0 ? (
+                <p className="text-gray-500 text-sm text-center py-8">
+                  Nenhuma comissão (pagamento de agenda aprovado) para os
+                  profissionais deste parceiro.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left">
+                          <input
+                            type="checkbox"
+                            onChange={toggleAllPending}
+                            checked={
+                              commissions.some((c) => c.status === "pending") &&
+                              commissions
+                                .filter((c) => c.status === "pending")
+                                .every((c) =>
+                                  selectedCommissionIds.includes(c.id)
+                                )
+                            }
+                            className="h-4 w-4 text-green-600 border-gray-300 rounded"
+                          />
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          Profissional
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          Pagamento agenda
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          Comissão
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          Status
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          Comprovante
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {commissions.map((commission) => (
+                        <tr key={commission.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedCommissionIds.includes(
+                                commission.id
+                              )}
+                              disabled={commission.status !== "pending"}
+                              onChange={() => toggleCommission(commission)}
+                              className="h-4 w-4 text-green-600 border-gray-300 rounded disabled:opacity-40"
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            {commission.professional_name}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {formatCurrency(commission.base_amount)}
+                            <span className="text-xs text-gray-400 ml-1">
+                              ·{" "}
+                              {new Date(
+                                commission.created_at
+                              ).toLocaleDateString("pt-BR")}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm font-semibold text-green-600">
+                            {formatCurrency(commission.amount)}
+                            <span className="text-xs text-gray-400 ml-1">
+                              ({commission.percentage}%)
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`px-2 py-1 text-xs rounded-full ${
+                                commission.status === "paid"
+                                  ? "bg-green-100 text-green-800"
+                                  : "bg-yellow-100 text-yellow-800"
+                              }`}
+                            >
+                              {commission.status === "paid"
+                                ? "Pago"
+                                : "Pendente"}
+                            </span>
+                            {commission.status === "paid" &&
+                              commission.paid_at && (
+                                <span className="block text-xs text-gray-400 mt-1">
+                                  {new Date(
+                                    commission.paid_at
+                                  ).toLocaleDateString("pt-BR")}
+                                  {commission.paid_method
+                                    ? ` · ${commission.paid_method}`
+                                    : ""}
+                                </span>
+                              )}
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            {commission.paid_receipt_url ? (
+                              <a
+                                href={commission.paid_receipt_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-blue-600 hover:text-blue-700"
+                              >
+                                Ver
+                              </a>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={closeCommissionsModal}
+                className="btn btn-secondary"
+              >
                 Fechar
               </button>
             </div>

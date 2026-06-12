@@ -978,6 +978,33 @@ const initializeDatabase = async () => {
       )
     `);
 
+    // Liquidação da comissão dos parceiros da agenda. Cada pagamento de agenda
+    // aprovado de um profissional vinculado a um parceiro é uma "comissão"
+    // (valor × % do parceiro); esta tabela registra quando essa comissão foi
+    // paga pelo admin, com comprovante — 1 linha por pagamento (agenda_payment_id
+    // único). Espelha o fluxo de affiliate_commissions, mas a comissão em si é
+    // derivada dos agenda_payments (não duplicamos os valores aqui).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS agenda_partner_commission_payments (
+        id SERIAL PRIMARY KEY,
+        partner_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        agenda_payment_id INTEGER UNIQUE REFERENCES agenda_payments(id) ON DELETE CASCADE,
+        amount DECIMAL(10,2) NOT NULL,
+        percentage DECIMAL(5,2),
+        paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        paid_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        paid_method VARCHAR(100),
+        paid_receipt_url TEXT,
+        paid_receipt_public_id TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_agenda_partner_commission_payments_partner
+      ON agenda_partner_commission_payments (partner_id);
+    `);
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS professional_statements (
         id SERIAL PRIMARY KEY,
@@ -3957,6 +3984,192 @@ app.put(
       res
         .status(500)
         .json({ message: "Erro ao vincular profissional ao parceiro" });
+    }
+  }
+);
+
+// ===== COMISSÕES DE UM PARCEIRO DA AGENDA (admin) =====
+// Cada pagamento de agenda APROVADO de um profissional vinculado ao parceiro é
+// uma "comissão" = valor pago × % do parceiro. As comissões são derivadas dos
+// agenda_payments (não há tabela de geração); a liquidação (marcar pago +
+// comprovante) fica em agenda_partner_commission_payments.
+app.get(
+  "/api/admin/agenda-partners/:partnerId/commissions",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const partnerId = Number.parseInt(req.params.partnerId, 10);
+      if (Number.isNaN(partnerId)) {
+        return res.status(400).json({ message: "Parceiro inválido" });
+      }
+
+      const commissionsResult = await pool.query(
+        `
+        SELECT
+          ap.id AS agenda_payment_id,
+          ap.created_at,
+          ap.amount AS base_amount,
+          prof.id AS professional_id,
+          prof.name AS professional_name,
+          partner.agenda_partner_percentage AS partner_percentage,
+          cp.id AS settlement_id,
+          cp.amount AS paid_amount,
+          cp.percentage AS paid_percentage,
+          cp.paid_at,
+          cp.paid_method,
+          cp.paid_receipt_url,
+          pb.name AS paid_by_name
+        FROM agenda_payments ap
+        JOIN users prof ON prof.id = ap.professional_id
+        JOIN users partner
+          ON partner.id = prof.agenda_partner_id
+          AND partner.is_agenda_partner = true
+        LEFT JOIN agenda_partner_commission_payments cp
+          ON cp.agenda_payment_id = ap.id
+        LEFT JOIN users pb ON pb.id = cp.paid_by_user_id
+        WHERE ap.status = 'approved'
+          AND partner.id = $1
+        ORDER BY ap.created_at DESC
+      `,
+        [partnerId]
+      );
+
+      const commissions = commissionsResult.rows.map((row) => {
+        const isPaid = row.settlement_id != null;
+        const baseAmount = Number(row.base_amount || 0);
+        // Comissão paga usa o valor liquidado (snapshot); pendente recalcula com
+        // a % atual do parceiro, refletindo qualquer ajuste recente.
+        const percentage = isPaid
+          ? Number(row.paid_percentage ?? row.partner_percentage ?? 0)
+          : Number(row.partner_percentage ?? 0);
+        const amount = isPaid
+          ? Number(row.paid_amount || 0)
+          : baseAmount * (percentage / 100);
+        return {
+          id: Number(row.agenda_payment_id),
+          agenda_payment_id: Number(row.agenda_payment_id),
+          created_at: row.created_at,
+          base_amount: baseAmount,
+          percentage,
+          amount,
+          status: isPaid ? "paid" : "pending",
+          professional_id: Number(row.professional_id),
+          professional_name: row.professional_name,
+          paid_at: row.paid_at,
+          paid_method: row.paid_method,
+          paid_receipt_url: row.paid_receipt_url,
+          paid_by_name: row.paid_by_name,
+        };
+      });
+
+      const totals = commissions.reduce(
+        (acc, c) => {
+          acc.total += c.amount;
+          if (c.status === "paid") acc.paid += c.amount;
+          else acc.pending += c.amount;
+          return acc;
+        },
+        { pending: 0, paid: 0, total: 0 }
+      );
+
+      res.json({ commissions, totals });
+    } catch (error) {
+      console.error("❌ Error fetching partner commissions:", error);
+      res
+        .status(500)
+        .json({ message: "Erro ao buscar comissões do parceiro" });
+    }
+  }
+);
+
+// Marca a comissão de um pagamento de agenda como paga (anexa comprovante).
+// A identidade da comissão é o agenda_payment_id; o valor é calculado no servidor
+// (valor do pagamento × % atual do parceiro) — não confiamos em valor do cliente.
+app.put(
+  "/api/admin/agenda-partners/commissions/:agendaPaymentId/pay",
+  authenticate,
+  authorize(["admin"]),
+  createReceiptUpload().single("receipt"),
+  async (req, res) => {
+    try {
+      const agendaPaymentId = Number.parseInt(req.params.agendaPaymentId, 10);
+      if (Number.isNaN(agendaPaymentId)) {
+        return res.status(400).json({ message: "Pagamento inválido" });
+      }
+
+      const { paid_method } = req.body;
+      const receiptUrl = req.file?.path || null;
+      const receiptPublicId = req.file?.filename || null;
+
+      const infoResult = await pool.query(
+        `
+        SELECT
+          ap.id,
+          ap.amount AS base_amount,
+          ap.status,
+          partner.id AS partner_id,
+          partner.agenda_partner_percentage AS percentage
+        FROM agenda_payments ap
+        JOIN users prof ON prof.id = ap.professional_id
+        JOIN users partner
+          ON partner.id = prof.agenda_partner_id
+          AND partner.is_agenda_partner = true
+        WHERE ap.id = $1
+      `,
+        [agendaPaymentId]
+      );
+
+      if (infoResult.rows.length === 0) {
+        return res.status(404).json({
+          message:
+            "Comissão não encontrada ou profissional sem parceiro vinculado",
+        });
+      }
+
+      const info = infoResult.rows[0];
+      if (info.status !== "approved") {
+        return res
+          .status(400)
+          .json({ message: "O pagamento da agenda ainda não foi aprovado" });
+      }
+
+      const percentage = Number(info.percentage ?? 0);
+      const amount = Number(info.base_amount || 0) * (percentage / 100);
+
+      const result = await pool.query(
+        `
+        INSERT INTO agenda_partner_commission_payments
+          (partner_id, agenda_payment_id, amount, percentage,
+           paid_by_user_id, paid_method, paid_receipt_url, paid_receipt_public_id)
+        VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), $7, $8)
+        ON CONFLICT (agenda_payment_id) DO UPDATE SET
+          paid_at = CURRENT_TIMESTAMP,
+          paid_by_user_id = EXCLUDED.paid_by_user_id,
+          paid_method = COALESCE(EXCLUDED.paid_method, agenda_partner_commission_payments.paid_method),
+          paid_receipt_url = COALESCE(EXCLUDED.paid_receipt_url, agenda_partner_commission_payments.paid_receipt_url),
+          paid_receipt_public_id = COALESCE(EXCLUDED.paid_receipt_public_id, agenda_partner_commission_payments.paid_receipt_public_id)
+        RETURNING *
+      `,
+        [
+          info.partner_id,
+          agendaPaymentId,
+          amount,
+          percentage,
+          req.user.id,
+          paid_method || "",
+          receiptUrl,
+          receiptPublicId,
+        ]
+      );
+
+      res.json(result.rows[0]);
+    } catch (error) {
+      console.error(
+        "❌ Error marking agenda partner commission as paid:",
+        error
+      );
+      res.status(500).json({ message: "Erro ao marcar comissão como paga" });
     }
   }
 );
