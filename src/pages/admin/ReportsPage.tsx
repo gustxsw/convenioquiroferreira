@@ -434,7 +434,7 @@ const ReportsPage: React.FC = () => {
             Profissionais por Cidade
           </button>
           <button
-            onClick={() => setActiveTab("agenda_financial")}
+            onClick={() => handleTabChange("agenda_financial")}
             className={`px-6 py-4 font-medium text-sm border-b-2 transition-colors ${
               activeTab === "agenda_financial"
                 ? "border-red-600 text-red-600"
