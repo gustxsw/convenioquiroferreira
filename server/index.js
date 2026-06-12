@@ -9352,6 +9352,11 @@ app.post(
       const preference = new Preference(client);
       const urls = getProductionUrls();
 
+      // A mesma referência vai para o MercadoPago (external_reference) e para a
+      // linha em agenda_payments (payment_reference), permitindo ao webhook
+      // aprovar exatamente a linha deste pagamento (e não todas as pendentes).
+      const paymentReference = `agenda_${req.user.professionalScopeId}_${duration_days}_${Date.now()}`;
+
       const preferenceData = {
         items: [
           {
@@ -9369,9 +9374,7 @@ app.post(
           pending: urls.agenda.pending,
         },
         notification_url: urls.webhook,
-        external_reference: `agenda_${
-          req.user.professionalScopeId
-        }_${duration_days}_${Date.now()}`,
+        external_reference: paymentReference,
         statement_descriptor: "QUIRO FERREIRA",
         expires: false,
         // Adicionar URLs de notificação alternativas para mobile
@@ -9417,7 +9420,7 @@ app.post(
           24.99,
           "pending",
           preferenceId,
-          `agenda_${req.user.professionalScopeId}_${duration_days}_${Date.now()}`,
+          paymentReference,
         ]
       );
 
@@ -9846,26 +9849,69 @@ async function processAgendaPayment(professionalId, payment) {
     console.log(`💰 [PAGAMENTO] Payment ID: ${payment.id}`);
     console.log(`💰 [PAGAMENTO] Valor: R$ ${payment.transaction_amount}`);
 
+    // 0. Idempotência: o MercadoPago reenvia webhooks. Se este mp_payment_id
+    //    já foi aprovado, não reprocessar — evita aprovar uma outra linha
+    //    pendente (criada por um novo clique em "pagar") e duplicar a receita
+    //    e a comissão dos parceiros da agenda.
+    const alreadyProcessed = await pool.query(
+      `SELECT id FROM agenda_payments WHERE mp_payment_id = $1 AND status = 'approved' LIMIT 1`,
+      [payment.id.toString()]
+    );
+    if (alreadyProcessed.rows.length > 0) {
+      console.log(
+        `ℹ️ [PAGAMENTO] Pagamento ${payment.id} já processado (linha #${alreadyProcessed.rows[0].id}), ignorando reenvio`
+      );
+      return;
+    }
+
     // 1. Atualizar status do pagamento. Gravamos o valor REAL pago
     //    (payment.transaction_amount, vindo do MercadoPago) como fonte da
     //    verdade — assim os relatórios e a comissão do parceiro refletem
     //    exatamente o que o profissional pagou, independente de o preço da
     //    agenda mudar no futuro. COALESCE mantém o valor atual se o gateway
     //    não enviar o transaction_amount por algum motivo.
-    await pool.query(
+    //    Aprovamos SOMENTE a linha deste pagamento (payment_reference ===
+    //    external_reference). Aprovar todas as pendentes do profissional
+    //    duplicava a receita quando havia mais de uma tentativa de pagamento.
+    const approvedByReference = await pool.query(
       `UPDATE agenda_payments
        SET status = $1,
            mp_payment_id = $2,
            amount = COALESCE($3, amount),
            processed_at = NOW()
-       WHERE professional_id = $4 AND status = 'pending'`,
+       WHERE payment_reference = $4 AND status = 'pending'`,
       [
         "approved",
         payment.id.toString(),
         payment.transaction_amount ?? null,
-        professionalId,
+        payment.external_reference,
       ]
     );
+
+    if (approvedByReference.rowCount === 0) {
+      // Linhas antigas têm payment_reference diferente do external_reference
+      // (eram dois Date.now() distintos). Fallback: aprova só a pendente mais
+      // recente do profissional — nunca todas.
+      await pool.query(
+        `UPDATE agenda_payments
+         SET status = $1,
+             mp_payment_id = $2,
+             amount = COALESCE($3, amount),
+             processed_at = NOW()
+         WHERE id = (
+           SELECT id FROM agenda_payments
+           WHERE professional_id = $4 AND status = 'pending'
+           ORDER BY created_at DESC, id DESC
+           LIMIT 1
+         )`,
+        [
+          "approved",
+          payment.id.toString(),
+          payment.transaction_amount ?? null,
+          professionalId,
+        ]
+      );
+    }
     console.log(`✅ [PAGAMENTO] Pagamento marcado como aprovado no banco`);
 
     // 2. Registro usado para calcular renovação (preferir acesso ainda válido; senão o mais recente)
@@ -10118,13 +10164,29 @@ async function updatePaymentStatusOnly(externalReference, status, paymentId) {
       const professionalId = Number.parseInt(
         externalReference.replace("agenda_", "")
       );
-      await pool.query(
+      // Atualiza só a linha desta tentativa de pagamento; com fallback para a
+      // pendente mais recente (linhas antigas têm referência não casada).
+      const updatedByReference = await pool.query(
         `UPDATE agenda_payments
          SET status = $1,
              mp_payment_id = $2
-         WHERE professional_id = $3 AND status = 'pending'`,
-        [status, paymentId.toString(), professionalId]
+         WHERE payment_reference = $3 AND status = 'pending'`,
+        [status, paymentId.toString(), externalReference]
       );
+      if (updatedByReference.rowCount === 0) {
+        await pool.query(
+          `UPDATE agenda_payments
+           SET status = $1,
+               mp_payment_id = $2
+           WHERE id = (
+             SELECT id FROM agenda_payments
+             WHERE professional_id = $3 AND status = 'pending'
+             ORDER BY created_at DESC, id DESC
+             LIMIT 1
+           )`,
+          [status, paymentId.toString(), professionalId]
+        );
+      }
     } else if (externalReference.startsWith("professional_")) {
       const professionalId = Number.parseInt(externalReference.split("_")[1]);
       await pool.query(
