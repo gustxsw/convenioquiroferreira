@@ -1478,6 +1478,25 @@ const initializeDatabase = async () => {
         EXECUTE FUNCTION update_updated_at_column();
     `);
 
+    // Padroniza cidades já gravadas (idempotente: só altera linhas divergentes)
+    const cityRows = await pool.query(
+      "SELECT id, city FROM users WHERE city IS NOT NULL"
+    );
+    let normalizedCityCount = 0;
+    for (const row of cityRows.rows) {
+      const normalized = normalizeCity(row.city);
+      if (normalized !== row.city) {
+        await pool.query("UPDATE users SET city = $1 WHERE id = $2", [
+          normalized,
+          row.id,
+        ]);
+        normalizedCityCount++;
+      }
+    }
+    if (normalizedCityCount > 0) {
+      console.log(`✅ ${normalizedCityCount} cidades padronizadas em users`);
+    }
+
     console.log("✅ Database tables initialized successfully");
   } catch (error) {
     console.error("❌ Error initializing database:", error);
@@ -1577,6 +1596,33 @@ const validateEmail = (email) => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
 };
+
+// Padroniza nome de cidade na gravação: trim, espaços únicos e capitalização
+// tipo título ("mogi guaçu " → "Mogi Guaçu"), mantendo conectivos em minúsculas
+const CITY_LOWERCASE_WORDS = new Set(["de", "da", "do", "das", "dos", "e"]);
+const normalizeCity = (value) => {
+  if (typeof value !== "string") return null;
+  const collapsed = value.trim().replace(/\s+/g, " ");
+  if (!collapsed) return null;
+  return collapsed
+    .toLocaleLowerCase("pt-BR")
+    .split(" ")
+    .map((word, index) =>
+      index > 0 && CITY_LOWERCASE_WORDS.has(word)
+        ? word
+        : word.charAt(0).toLocaleUpperCase("pt-BR") + word.slice(1)
+    )
+    .join(" ");
+};
+
+// Chave de agrupamento de cidade nos relatórios: ignora caixa, espaços e acentos,
+// para que "Mogi Guacu" e "mogi guaçu" contem como a mesma cidade
+const CITY_ACCENT_CHARS =
+  "áàâãäÁÀÂÃÄéèêëÉÈÊËíìîïÍÌÎÏóòôõöÓÒÔÕÖúùûüÚÙÛÜçÇñÑ";
+const CITY_PLAIN_CHARS =
+  "aaaaaaaaaaeeeeeeeeiiiiiiiioooooooooouuuuuuuuccnn";
+const cityGroupKeySql = (column) =>
+  `LOWER(TRANSLATE(TRIM(COALESCE(${column}, '')), '${CITY_ACCENT_CHARS}', '${CITY_PLAIN_CHARS}'))`;
 
 const normalizeBirthDateInput = (value) => {
   if (value === undefined) {
@@ -1842,7 +1888,7 @@ app.post("/api/auth/register", async (req, res) => {
         address_number?.trim() || null,
         address_complement?.trim() || null,
         neighborhood?.trim() || null,
-        city?.trim() || null,
+        normalizeCity(city),
         state || null,
         hashedPassword,
         [roleToRegister],
@@ -2888,7 +2934,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
         address_number?.trim() || null,
         address_complement?.trim() || null,
         neighborhood?.trim() || null,
-        city?.trim() || null,
+        normalizeCity(city),
         state || null,
         hashedPassword,
         roles,
@@ -3021,7 +3067,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
       updateData.address_complement = address_complement?.trim() || null;
     if (neighborhood !== undefined)
       updateData.neighborhood = neighborhood?.trim() || null;
-    if (city !== undefined) updateData.city = city?.trim() || null;
+    if (city !== undefined) updateData.city = normalizeCity(city);
     if (state !== undefined) updateData.state = state || null;
 
     // Admin-only fields
@@ -3922,7 +3968,7 @@ app.get(
       const result = await pool.query(
         `
         SELECT
-          COALESCE(city, 'Não informado') as city,
+          COALESCE(mode() WITHIN GROUP (ORDER BY NULLIF(TRIM(city), '')), 'Não informado') as city,
           COALESCE(state, '') as state,
           COUNT(*) as client_count,
           COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
@@ -3930,7 +3976,7 @@ app.get(
           COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
         FROM users
         WHERE 'client' = ANY(roles)
-        GROUP BY city, state
+        GROUP BY ${cityGroupKeySql("city")}, state
         ORDER BY client_count DESC
       `
       );
@@ -3958,7 +4004,7 @@ app.get(
       const result = await pool.query(
         `
         SELECT
-          COALESCE(u.city, 'Não informado') as city,
+          COALESCE(mode() WITHIN GROUP (ORDER BY NULLIF(TRIM(u.city), '')), 'Não informado') as city,
           COALESCE(u.state, '') as state,
           COUNT(*) as total_professionals,
           json_agg(
@@ -3969,7 +4015,7 @@ app.get(
           ) as categories
         FROM users u
         WHERE 'professional' = ANY(u.roles)
-        GROUP BY u.city, u.state
+        GROUP BY ${cityGroupKeySql("u.city")}, u.state
         ORDER BY total_professionals DESC
       `
       );
