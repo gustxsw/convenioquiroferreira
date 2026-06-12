@@ -61,6 +61,7 @@ type AgendaFinancialReport = {
   by_professional: Array<{
     professional_id: number;
     professional_name: string;
+    partner_name: string | null;
     payments_count: number;
     total_amount: number;
   }>;
@@ -1094,6 +1095,7 @@ const ReportsPage: React.FC = () => {
                       <thead>
                         <tr>
                           <th>Profissional</th>
+                          <th>Parceiro</th>
                           <th>Qtd. Pagamentos</th>
                           <th>Total</th>
                         </tr>
@@ -1102,6 +1104,13 @@ const ReportsPage: React.FC = () => {
                         {agendaFinancialReport.by_professional.map((item) => (
                           <tr key={item.professional_id}>
                             <td>{item.professional_name}</td>
+                            <td>
+                              {item.partner_name || (
+                                <span className="text-gray-400">
+                                  Sem parceiro
+                                </span>
+                              )}
+                            </td>
                             <td>{item.payments_count}</td>
                             <td>{formatCurrency(Number(item.total_amount) || 0)}</td>
                           </tr>

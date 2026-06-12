@@ -3676,14 +3676,16 @@ app.get(
         SELECT
           u.id AS professional_id,
           u.name AS professional_name,
+          partner.name AS partner_name,
           COUNT(ap.id)::int AS payments_count,
           COALESCE(SUM(ap.amount), 0) AS total_amount
         FROM agenda_payments ap
         JOIN users u ON u.id = ap.professional_id
+        LEFT JOIN users partner ON partner.id = u.agenda_partner_id
         WHERE ap.status = 'approved'
           AND ap.created_at BETWEEN $1::timestamptz AND $2::timestamptz
           ${partnerFilter}
-        GROUP BY u.id, u.name
+        GROUP BY u.id, u.name, partner.name
         ORDER BY total_amount DESC, payments_count DESC, u.name ASC
       `,
         params
@@ -3706,6 +3708,7 @@ app.get(
         by_professional: byProfessionalResult.rows.map((row) => ({
           professional_id: Number(row.professional_id),
           professional_name: row.professional_name,
+          partner_name: row.partner_name || null,
           payments_count: Number(row.payments_count || 0),
           total_amount: Number(row.total_amount || 0),
         })),
