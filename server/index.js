@@ -4229,19 +4229,23 @@ app.get(
     try {
       console.log("📊 Generating clients by city report");
 
+      // Clientes sem cidade caem todos no bucket "Não informado", independente
+      // do estado (state forçado a '' nesse caso), e esse bucket vai sempre por
+      // último na ordenação.
+      const noCityState = "CASE WHEN NULLIF(TRIM(city), '') IS NULL THEN '' ELSE COALESCE(state, '') END";
       const result = await pool.query(
         `
         SELECT
           COALESCE(mode() WITHIN GROUP (ORDER BY NULLIF(TRIM(city), '')), 'Não informado') as city,
-          COALESCE(state, '') as state,
+          ${noCityState} as state,
           COUNT(*) as client_count,
           COUNT(CASE WHEN subscription_status = 'active' THEN 1 END) as active_clients,
           COUNT(CASE WHEN subscription_status = 'pending' THEN 1 END) as pending_clients,
           COUNT(CASE WHEN subscription_status = 'expired' THEN 1 END) as expired_clients
         FROM users
         WHERE 'client' = ANY(roles)
-        GROUP BY ${cityGroupKeySql("city")}, state
-        ORDER BY client_count DESC
+        GROUP BY ${cityGroupKeySql("city")}, ${noCityState}
+        ORDER BY (${cityGroupKeySql("city")} = '') ASC, client_count DESC
       `
       );
 
