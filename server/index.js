@@ -377,6 +377,14 @@ const initializeDatabase = async () => {
           ALTER TABLE users ADD COLUMN agenda_partner_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
         END IF;
 
+        -- Chave Pix do parceiro (para o admin pagar a comissão dele)
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'agenda_partner_pix_key'
+        ) THEN
+          ALTER TABLE users ADD COLUMN agenda_partner_pix_key TEXT;
+        END IF;
+
         -- Hash SHA-256 do token tem 64 caracteres; VARCHAR curto quebra a redefinição de senha
         IF EXISTS (
           SELECT 1 FROM information_schema.columns
@@ -3601,12 +3609,12 @@ app.get(
       // parceiro. Um financeiro_agenda sem a flag de parceiro não enxerga nada
       // (evita que um usuário mal configurado veja o financeiro de todos).
       const params = [`${start_date}T00:00:00Z`, `${end_date}T23:59:59Z`];
-      let partnerInfo = { isPartner: false, percentage: 0, code: null };
+      let partnerInfo = { isPartner: false, percentage: 0, code: null, name: null };
       let partnerFilter = "";
 
       if (req.user.currentRole === "financeiro_agenda") {
         const meResult = await pool.query(
-          "SELECT is_agenda_partner, agenda_partner_percentage, agenda_partner_code FROM users WHERE id = $1",
+          "SELECT name, is_agenda_partner, agenda_partner_percentage, agenda_partner_code FROM users WHERE id = $1",
           [req.user.id]
         );
         const me = meResult.rows[0];
@@ -3615,12 +3623,37 @@ app.get(
             isPartner: true,
             percentage: Number(me.agenda_partner_percentage || 0),
             code: me.agenda_partner_code || null,
+            name: me.name || null,
           };
           params.push(req.user.id);
           partnerFilter = ` AND u.agenda_partner_id = $${params.length}`;
         } else {
           // Não é parceiro: não retorna nenhum dado.
           partnerFilter = " AND 1 = 0";
+        }
+      } else if (req.query.partner_id) {
+        // Admin filtrando por um parceiro específico: escopa o relatório aos
+        // profissionais vinculados a ele e calcula a comissão correspondente.
+        const partnerId = Number.parseInt(req.query.partner_id, 10);
+        if (!Number.isNaN(partnerId)) {
+          const partnerResult = await pool.query(
+            "SELECT name, agenda_partner_percentage, agenda_partner_code FROM users WHERE id = $1 AND is_agenda_partner = true",
+            [partnerId]
+          );
+          const p = partnerResult.rows[0];
+          if (p) {
+            partnerInfo = {
+              isPartner: true,
+              percentage: Number(p.agenda_partner_percentage || 0),
+              code: p.agenda_partner_code || null,
+              name: p.name || null,
+            };
+            params.push(partnerId);
+            partnerFilter = ` AND u.agenda_partner_id = $${params.length}`;
+          } else {
+            // partner_id inválido: não retorna dados em vez de cair na visão global.
+            partnerFilter = " AND 1 = 0";
+          }
         }
       }
 
@@ -3682,6 +3715,7 @@ app.get(
               percentage: partnerInfo.percentage,
               commission_amount: partnerCommission,
               code: partnerInfo.code || null,
+              name: partnerInfo.name || null,
             }
           : { is_partner: false },
       });
@@ -3722,6 +3756,7 @@ app.get(
           u.email,
           u.agenda_partner_code,
           u.agenda_partner_percentage,
+          u.agenda_partner_pix_key,
           (
             SELECT COUNT(*)::int FROM users p
             WHERE p.agenda_partner_id = u.id
@@ -3742,6 +3777,7 @@ app.get(
             row.agenda_partner_percentage == null
               ? null
               : Number(row.agenda_partner_percentage),
+          pix_key: row.agenda_partner_pix_key || null,
           professionals_count: Number(row.professionals_count || 0),
         }))
       );
@@ -3792,7 +3828,7 @@ app.put(
   async (req, res) => {
     try {
       const userId = Number.parseInt(req.params.userId, 10);
-      const { is_partner, percentage, code } = req.body;
+      const { is_partner, percentage, code, pix_key } = req.body;
 
       if (Number.isNaN(userId)) {
         return res.status(400).json({ message: "Usuário inválido" });
@@ -3851,16 +3887,22 @@ app.put(
         finalCode = generateAgendaPartnerCode(target.name);
       }
 
+      // pix_key ausente => mantém o atual; enviado (mesmo vazio) => atualiza,
+      // permitindo limpar a chave.
+      const pixProvided = pix_key !== undefined;
+      const pixValue = pixProvided ? (pix_key || "").trim() || null : null;
+
       try {
         const updated = await pool.query(
           `UPDATE users
            SET is_agenda_partner = true,
                agenda_partner_percentage = $1,
                agenda_partner_code = $2,
+               agenda_partner_pix_key = CASE WHEN $3::boolean THEN $4 ELSE agenda_partner_pix_key END,
                updated_at = CURRENT_TIMESTAMP
-           WHERE id = $3
-           RETURNING id, agenda_partner_percentage, agenda_partner_code`,
-          [parsedPercentage, finalCode, userId]
+           WHERE id = $5
+           RETURNING id, agenda_partner_percentage, agenda_partner_code, agenda_partner_pix_key`,
+          [parsedPercentage, finalCode, pixProvided, pixValue, userId]
         );
         const row = updated.rows[0];
         res.json({
@@ -3871,6 +3913,7 @@ app.put(
               ? null
               : Number(row.agenda_partner_percentage),
           code: row.agenda_partner_code,
+          pix_key: row.agenda_partner_pix_key || null,
         });
       } catch (err) {
         if (err.code === "23505") {

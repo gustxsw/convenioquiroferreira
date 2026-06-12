@@ -64,6 +64,19 @@ type AgendaFinancialReport = {
     payments_count: number;
     total_amount: number;
   }>;
+  partner?: {
+    is_partner: boolean;
+    percentage?: number | null;
+    commission_amount?: number;
+    code?: string | null;
+    name?: string | null;
+  };
+};
+
+type AgendaPartnerOption = {
+  id: number;
+  name: string;
+  percentage: number | null;
 };
 
 const ReportsPage: React.FC = () => {
@@ -82,6 +95,10 @@ const ReportsPage: React.FC = () => {
   >([]);
   const [agendaFinancialReport, setAgendaFinancialReport] =
     useState<AgendaFinancialReport | null>(null);
+  const [agendaPartners, setAgendaPartners] = useState<AgendaPartnerOption[]>(
+    []
+  );
+  const [selectedAgendaPartnerId, setSelectedAgendaPartnerId] = useState("");
 
   // Get default date range (current month)
   function getDefaultStartDate() {
@@ -241,7 +258,30 @@ const ReportsPage: React.FC = () => {
       fetchCityReports();
     }
     if (tab === "agenda_financial") {
+      fetchAgendaPartners();
       fetchAgendaFinancialReport();
+    }
+  };
+
+  const fetchAgendaPartners = async () => {
+    try {
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/admin/agenda-partners`
+      );
+      if (!response.ok) return;
+      const data = await response.json();
+      setAgendaPartners(
+        Array.isArray(data)
+          ? data.map((p: { id: number; name: string; percentage: number | null }) => ({
+              id: p.id,
+              name: p.name,
+              percentage: p.percentage,
+            }))
+          : []
+      );
+    } catch {
+      /* silencioso: o seletor de parceiro apenas fica vazio */
     }
   };
 
@@ -256,8 +296,11 @@ const ReportsPage: React.FC = () => {
       setError("");
 
       const apiUrl = getApiUrl();
+      const partnerParam = selectedAgendaPartnerId
+        ? `&partner_id=${selectedAgendaPartnerId}`
+        : "";
       const response = await fetchWithAuth(
-        `${apiUrl}/api/agenda-financial/summary?start_date=${startDate}&end_date=${endDate}`,
+        `${apiUrl}/api/agenda-financial/summary?start_date=${startDate}&end_date=${endDate}${partnerParam}`,
         {
           method: "GET",
           headers: {
@@ -911,7 +954,7 @@ const ReportsPage: React.FC = () => {
                 fetchAgendaFinancialReport();
               }}
             >
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <div>
                   <label
                     htmlFor="agendaStartDate"
@@ -946,6 +989,29 @@ const ReportsPage: React.FC = () => {
                   />
                 </div>
 
+                <div>
+                  <label
+                    htmlFor="agendaPartner"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
+                    Parceiro
+                  </label>
+                  <select
+                    id="agendaPartner"
+                    value={selectedAgendaPartnerId}
+                    onChange={(e) => setSelectedAgendaPartnerId(e.target.value)}
+                    className="input"
+                  >
+                    <option value="">Todos (visão geral)</option>
+                    {agendaPartners.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                        {p.percentage != null ? ` (${p.percentage}%)` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="flex items-end">
                   <button
                     type="submit"
@@ -969,7 +1035,13 @@ const ReportsPage: React.FC = () => {
 
           {agendaFinancialReport && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div
+                className={`grid grid-cols-1 gap-4 ${
+                  agendaFinancialReport.partner?.is_partner
+                    ? "md:grid-cols-3"
+                    : "md:grid-cols-2"
+                }`}
+              >
                 <div className="card">
                   <p className="text-gray-600 mb-1">Total Recebido (Agenda)</p>
                   <p className="text-3xl font-bold text-green-600">
@@ -984,11 +1056,30 @@ const ReportsPage: React.FC = () => {
                     {Number(agendaFinancialReport.summary.total_payments) || 0}
                   </p>
                 </div>
+                {agendaFinancialReport.partner?.is_partner && (
+                  <div className="card">
+                    <p className="text-gray-600 mb-1">
+                      Comissão do parceiro
+                      {agendaFinancialReport.partner.percentage != null
+                        ? ` (${agendaFinancialReport.partner.percentage}%)`
+                        : ""}
+                    </p>
+                    <p className="text-3xl font-bold text-red-600">
+                      {formatCurrency(
+                        Number(
+                          agendaFinancialReport.partner.commission_amount
+                        ) || 0
+                      )}
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="card">
                 <h3 className="text-lg font-semibold mb-4">
-                  Pagamentos por Profissional
+                  {agendaFinancialReport.partner?.is_partner
+                    ? "Pagamentos que geraram comissão"
+                    : "Pagamentos por Profissional"}
                 </h3>
 
                 {agendaFinancialReport.by_professional.length === 0 ? (

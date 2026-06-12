@@ -10,6 +10,8 @@ import {
   Trash2,
   Link2,
   DollarSign,
+  Upload,
+  FileText,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
@@ -19,6 +21,7 @@ type Partner = {
   email: string | null;
   code: string | null;
   percentage: number | null;
+  pix_key: string | null;
   professionals_count: number;
 };
 
@@ -75,6 +78,7 @@ const ManageAgendaPartnersPage: React.FC = () => {
   const [configUserId, setConfigUserId] = useState("");
   const [configPercentage, setConfigPercentage] = useState("");
   const [configCode, setConfigCode] = useState("");
+  const [configPix, setConfigPix] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   // Usuários financeiro_agenda para o seletor; editingName != null => edição
   const [eligibleUsers, setEligibleUsers] = useState<EligibleUser[]>([]);
@@ -106,6 +110,18 @@ const ManageAgendaPartnersPage: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState("Pix");
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [isPaying, setIsPaying] = useState(false);
+  const [copiedPix, setCopiedPix] = useState(false);
+
+  const copyPix = async (pix?: string | null) => {
+    if (!pix) return;
+    try {
+      await navigator.clipboard.writeText(pix);
+      setCopiedPix(true);
+      setTimeout(() => setCopiedPix(false), 2000);
+    } catch {
+      /* área de transferência indisponível: chave continua visível */
+    }
+  };
 
   useEffect(() => {
     fetchPartners();
@@ -148,6 +164,7 @@ const ManageAgendaPartnersPage: React.FC = () => {
     setConfigUserId(partner ? String(partner.id) : "");
     setConfigPercentage(partner?.percentage != null ? String(partner.percentage) : "");
     setConfigCode(partner?.code || "");
+    setConfigPix(partner?.pix_key || "");
     setEditingName(partner ? partner.name : null);
     setError("");
     setSuccess("");
@@ -161,6 +178,7 @@ const ManageAgendaPartnersPage: React.FC = () => {
     setConfigUserId("");
     setConfigPercentage("");
     setConfigCode("");
+    setConfigPix("");
     setEditingName(null);
   };
 
@@ -187,6 +205,7 @@ const ManageAgendaPartnersPage: React.FC = () => {
             is_partner: true,
             percentage: configPercentage === "" ? null : Number(configPercentage),
             code: configCode.trim() || null,
+            pix_key: configPix.trim() || null,
           }),
         }
       );
@@ -671,6 +690,23 @@ const ManageAgendaPartnersPage: React.FC = () => {
                 </p>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Chave Pix
+                </label>
+                <input
+                  type="text"
+                  value={configPix}
+                  onChange={(e) => setConfigPix(e.target.value)}
+                  className="input"
+                  placeholder="CPF, e-mail, telefone ou chave aleatória"
+                  disabled={isSaving}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Exibida ao pagar as comissões deste parceiro.
+                </p>
+              </div>
+
               {error && (
                 <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">
                   {error}
@@ -836,6 +872,37 @@ const ManageAgendaPartnersPage: React.FC = () => {
             </div>
 
             <div className="p-6 space-y-4">
+              {/* Chave Pix do parceiro */}
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-blue-700">
+                    Chave Pix do parceiro
+                  </p>
+                  <p className="text-sm text-blue-900 truncate">
+                    {commissionsPartner.pix_key || "Não cadastrada"}
+                  </p>
+                </div>
+                {commissionsPartner.pix_key && (
+                  <button
+                    type="button"
+                    onClick={() => copyPix(commissionsPartner.pix_key)}
+                    className="shrink-0 inline-flex items-center px-3 py-2 text-sm rounded-lg bg-white border border-blue-200 text-blue-700 hover:bg-blue-100"
+                  >
+                    {copiedPix ? (
+                      <>
+                        <Check className="h-4 w-4 mr-1" />
+                        Copiado!
+                      </>
+                    ) : (
+                      <>
+                        <Link2 className="h-4 w-4 mr-1" />
+                        Copiar
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+
               {/* Resumo */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-4 border rounded-lg">
@@ -877,14 +944,39 @@ const ManageAgendaPartnersPage: React.FC = () => {
                     <label className="block text-xs text-gray-500 mb-1">
                       Comprovante (opcional)
                     </label>
-                    <input
-                      type="file"
-                      accept="image/*,application/pdf"
-                      onChange={(e) =>
-                        setReceiptFile(e.target.files?.[0] || null)
-                      }
-                      className="w-full text-sm"
-                    />
+                    <label
+                      className={`flex items-center gap-2 w-full px-3 py-2 border rounded-lg text-sm cursor-pointer transition-colors ${
+                        receiptFile
+                          ? "border-green-300 bg-green-50 text-green-700"
+                          : "border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
+                      }`}
+                    >
+                      {receiptFile ? (
+                        <FileText className="h-4 w-4 shrink-0" />
+                      ) : (
+                        <Upload className="h-4 w-4 shrink-0" />
+                      )}
+                      <span className="truncate">
+                        {receiptFile ? receiptFile.name : "Anexar arquivo"}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        onChange={(e) =>
+                          setReceiptFile(e.target.files?.[0] || null)
+                        }
+                        className="hidden"
+                      />
+                    </label>
+                    {receiptFile && (
+                      <button
+                        type="button"
+                        onClick={() => setReceiptFile(null)}
+                        className="mt-1 text-xs text-gray-400 hover:text-red-600"
+                      >
+                        Remover arquivo
+                      </button>
+                    )}
                   </div>
                   <button
                     type="button"
