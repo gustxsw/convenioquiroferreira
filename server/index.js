@@ -32,6 +32,16 @@ import {
   formatToBrazilDate,
   formatToBrazilTimeOnly,
 } from "./utils/dateHelpers.js";
+import { getWorkingHours, isWithinWorkingHours } from "./utils/agenda.js";
+import {
+  verifyWebhook,
+  handleWebhookEvent,
+  getFunnelMetrics,
+  takeoverConversation,
+  releaseConversation,
+  sendOperatorMessage,
+  getConversation,
+} from "./whatsapp.js";
 import {
   scheduleExpiryCheck,
   checkExpiredSubscriptionsNow,
@@ -1531,6 +1541,46 @@ const initializeDatabase = async () => {
     if (normalizedCityCount > 0) {
       console.log(`✅ ${normalizedCityCount} cidades padronizadas em users`);
     }
+
+    // ===== WHATSAPP VIRTUAL SECRETARY TABLES =====
+    // Log completo de todas as mensagens (entrada/saída) do bot de WhatsApp.
+    // message_id UNIQUE garante idempotência contra reentregas da Meta.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_messages (
+        id SERIAL PRIMARY KEY,
+        phone TEXT,
+        message_id TEXT UNIQUE,
+        direction TEXT,
+        actor TEXT,
+        actor_id INTEGER,
+        intent TEXT,
+        step TEXT,
+        text TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    // Sessão de conversa persistida (substitui Map em memória). TTL via updated_at.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_sessions (
+        phone TEXT PRIMARY KEY,
+        session JSONB,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    // Auditoria de ações, identificando o ator (patient | ai | human).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_audit_log (
+        id SERIAL PRIMARY KEY,
+        phone TEXT,
+        actor TEXT,
+        actor_id INTEGER,
+        action TEXT,
+        detail JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
 
     console.log("✅ Database tables initialized successfully");
   } catch (error) {
@@ -4689,30 +4739,10 @@ app.get(
 );
 
 // ===== HORÁRIO DE TRABALHO (EXPEDIENTE) =====
+// getWorkingHours / isWithinWorkingHours foram extraídos para ./utils/agenda.js
+// (compartilhados com a Secretária Virtual). Importados no topo deste arquivo.
 
-const DEFAULT_WORKING_START = "07:00";
-const DEFAULT_WORKING_END = "18:00";
 const WORKING_TIME_REGEX = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
-
-// Busca o expediente do profissional (colunas em users), aplicando defaults se nulos
-async function getWorkingHours(professionalId) {
-  const result = await pool.query(
-    "SELECT agenda_start_time, agenda_end_time FROM users WHERE id = $1",
-    [professionalId]
-  );
-  const row = result.rows[0] || {};
-  return {
-    start: row.agenda_start_time || DEFAULT_WORKING_START,
-    end: row.agenda_end_time || DEFAULT_WORKING_END,
-  };
-}
-
-// Verifica se o horário (UTC) cai dentro do expediente, comparando no fuso do Brasil
-function isWithinWorkingHours(dateUTC, { start, end }) {
-  const time = formatToBrazilTimeOnly(dateUTC); // "HH:MM"
-  if (!time) return false;
-  return time >= start && time < end;
-}
 
 // Create new consultation (RegisterConsultationPage - no scheduling access required)
 app.post(
@@ -11723,6 +11753,100 @@ app.use((err, req, res, next) => {
     ...(process.env.NODE_ENV === "development" && { error: err.message }),
   });
 });
+
+// ===== WHATSAPP — SECRETÁRIA VIRTUAL =====
+
+// Verificação do webhook (Meta) e recebimento de mensagens.
+app.get("/webhook/whatsapp", verifyWebhook);
+app.post("/webhook/whatsapp", (req, res) => {
+  res.sendStatus(200); // ACK imediato para a Meta
+  handleWebhookEvent(req.body).catch((e) =>
+    process.stderr.write("[whatsapp] " + String(e) + "\n")
+  );
+});
+
+// Métricas de funil — protegidas por token fixo (header ou query).
+app.get("/webhook/whatsapp/metrics", async (req, res) => {
+  const token = req.get("x-metrics-token") || req.query.token;
+  if (!process.env.WHATSAPP_METRICS_TOKEN || token !== process.env.WHATSAPP_METRICS_TOKEN) {
+    return res.sendStatus(401);
+  }
+  try {
+    res.json(await getFunnelMetrics());
+  } catch (error) {
+    console.error("❌ [whatsapp-metrics]", error);
+    res.status(500).json({ message: "Erro ao calcular métricas" });
+  }
+});
+
+// Atendimento humano (handoff) — operador logado assume/devolve/envia.
+app.get(
+  "/webhook/whatsapp/conversation",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    const phone = String(req.query.phone || "").replace(/\D/g, "");
+    if (!phone) return res.status(400).json({ message: "phone é obrigatório" });
+    try {
+      res.json(await getConversation(phone));
+    } catch (error) {
+      console.error("❌ [whatsapp-conversation]", error);
+      res.status(500).json({ message: "Erro ao carregar conversa" });
+    }
+  }
+);
+
+app.post(
+  "/webhook/whatsapp/takeover",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    const phone = String(req.body?.phone || "").replace(/\D/g, "");
+    if (!phone) return res.status(400).json({ message: "phone é obrigatório" });
+    try {
+      res.json(await takeoverConversation(phone, req.user.id));
+    } catch (error) {
+      console.error("❌ [whatsapp-takeover]", error);
+      res.status(500).json({ message: "Erro ao assumir a conversa" });
+    }
+  }
+);
+
+app.post(
+  "/webhook/whatsapp/release",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    const phone = String(req.body?.phone || "").replace(/\D/g, "");
+    if (!phone) return res.status(400).json({ message: "phone é obrigatório" });
+    try {
+      res.json(await releaseConversation(phone, req.user.id));
+    } catch (error) {
+      console.error("❌ [whatsapp-release]", error);
+      res.status(500).json({ message: "Erro ao devolver a conversa ao bot" });
+    }
+  }
+);
+
+app.post(
+  "/webhook/whatsapp/send",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    const phone = String(req.body?.phone || "").replace(/\D/g, "");
+    const text = String(req.body?.text || "").trim();
+    if (!phone || !text) {
+      return res.status(400).json({ message: "phone e text são obrigatórios" });
+    }
+    try {
+      const result = await sendOperatorMessage(phone, text, req.user.id);
+      res.status(result.ok ? 200 : 502).json(result);
+    } catch (error) {
+      console.error("❌ [whatsapp-send]", error);
+      res.status(500).json({ message: "Erro ao enviar mensagem" });
+    }
+  }
+);
 
 // Serve React app for all non-API routes in production
 if (process.env.NODE_ENV === "production") {

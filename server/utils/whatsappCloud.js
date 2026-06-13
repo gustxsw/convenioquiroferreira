@@ -64,3 +64,53 @@ export async function sendWhatsappDocumentMessage({
   }
   return data;
 }
+
+/**
+ * Envia mensagem de texto simples via WhatsApp Cloud API.
+ * Usado pela Secretária Virtual (server/whatsapp.js).
+ * @param {object} opts
+ * @param {string} opts.toDigits E.164 sem + (ex.: 5511999999999)
+ * @param {string} opts.text corpo da mensagem
+ * @param {string} [opts.phoneNumberId] Phone Number ID de origem (multi-número);
+ *   default WHATSAPP_PHONE_NUMBER_ID
+ * @returns {Promise<object>} resposta da Meta (inclui messages[0].id)
+ */
+export async function sendWhatsappTextMessage({ toDigits, text, phoneNumberId }) {
+  const token = process.env.WHATSAPP_CLOUD_TOKEN?.trim();
+  const fromId =
+    (phoneNumberId && String(phoneNumberId).trim()) ||
+    process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
+  if (!token || !fromId) {
+    throw new Error(
+      "WhatsApp Cloud API não configurada (WHATSAPP_CLOUD_TOKEN / WHATSAPP_PHONE_NUMBER_ID)."
+    );
+  }
+
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${fromId}/messages`;
+  const body = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: String(toDigits).replace(/\D/g, ""),
+    type: "text",
+    text: { body: String(text).slice(0, 4096) },
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg =
+      data?.error?.message ||
+      data?.error?.error_user_msg ||
+      JSON.stringify(data);
+    throw new Error(msg || `WhatsApp API ${res.status}`);
+  }
+  return data;
+}
