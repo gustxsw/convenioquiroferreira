@@ -25,6 +25,17 @@ type AgendaFinancialResponse = {
   };
 };
 
+type Commission = {
+  id: number;
+  professional_name: string;
+  amount: number;
+  percentage: number;
+  status: "paid" | "pending";
+  paid_at: string | null;
+  paid_method: string | null;
+  paid_receipt_url: string | null;
+};
+
 const AgendaFinancialPage: React.FC = () => {
   const getDefaultStartDate = () => {
     const date = new Date();
@@ -39,6 +50,7 @@ const AgendaFinancialPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState<AgendaFinancialResponse | null>(null);
+  const [commissions, setCommissions] = useState<Commission[]>([]);
   const [copied, setCopied] = useState(false);
 
   const partnerLink = data?.partner?.code
@@ -82,8 +94,26 @@ const AgendaFinancialPage: React.FC = () => {
 
       const responseData = await response.json();
       setData(responseData);
+
+      // Parceiro também vê a lista de comissões (pendentes + pagas) com
+      // comprovante. Filtra pelo mesmo período selecionado.
+      if (responseData?.partner?.is_partner) {
+        const commissionsResponse = await fetchWithAuth(
+          `${apiUrl}/api/agenda-financial/commissions?start_date=${startDate}&end_date=${endDate}`,
+          { method: "GET" }
+        );
+        if (commissionsResponse.ok) {
+          const commissionsData = await commissionsResponse.json();
+          setCommissions(commissionsData.commissions || []);
+        } else {
+          setCommissions([]);
+        }
+      } else {
+        setCommissions([]);
+      }
     } catch (err) {
       setData(null);
+      setCommissions([]);
       setError(err instanceof Error ? err.message : "Erro ao carregar dados");
     } finally {
       setIsLoading(false);
@@ -257,6 +287,76 @@ const AgendaFinancialPage: React.FC = () => {
               </div>
             )}
           </div>
+
+          {data.partner?.is_partner && (
+            <div className="card">
+              <h3 className="text-lg font-semibold mb-4">Comissões</h3>
+              {commissions.length === 0 ? (
+                <p className="text-gray-600">Nenhuma comissão no período.</p>
+              ) : (
+                <div className="table-container">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Profissional</th>
+                        <th>Valor</th>
+                        <th>%</th>
+                        <th>Status</th>
+                        <th>Comprovante</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {commissions.map((commission) => (
+                        <tr key={commission.id}>
+                          <td>{commission.professional_name}</td>
+                          <td>{formatCurrency(commission.amount)}</td>
+                          <td>{commission.percentage}%</td>
+                          <td>
+                            <span
+                              className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
+                                commission.status === "paid"
+                                  ? "bg-green-100 text-green-800"
+                                  : "bg-yellow-100 text-yellow-800"
+                              }`}
+                            >
+                              {commission.status === "paid"
+                                ? "Pago"
+                                : "Pendente"}
+                            </span>
+                            {commission.status === "paid" &&
+                              commission.paid_at && (
+                                <span className="block text-xs text-gray-400 mt-1">
+                                  {new Date(
+                                    commission.paid_at
+                                  ).toLocaleDateString("pt-BR")}
+                                  {commission.paid_method
+                                    ? ` · ${commission.paid_method}`
+                                    : ""}
+                                </span>
+                              )}
+                          </td>
+                          <td>
+                            {commission.paid_receipt_url ? (
+                              <a
+                                href={commission.paid_receipt_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-blue-600 hover:text-blue-700"
+                              >
+                                Ver
+                              </a>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

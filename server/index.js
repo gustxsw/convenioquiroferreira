@@ -3731,6 +3731,63 @@ app.get(
   }
 );
 
+// Lista as comissões do próprio parceiro (pendentes + pagas) com comprovante,
+// para que o financeiro_agenda veja o que já foi pago quando o admin liquida.
+// Escopo SEMPRE no usuário logado (req.user.id) — o parceiro nunca informa o id
+// por parâmetro, evitando ver comissões de terceiros. Admin pode usar partner_id.
+app.get(
+  "/api/agenda-financial/commissions",
+  authenticate,
+  authorize(["admin", "financeiro_agenda"]),
+  async (req, res) => {
+    try {
+      const { start_date, end_date } = req.query;
+
+      if (!start_date || !end_date) {
+        return res
+          .status(400)
+          .json({ message: "Datas inicial e final são obrigatórias" });
+      }
+
+      let partnerId = null;
+
+      if (req.user.currentRole === "financeiro_agenda") {
+        const meResult = await pool.query(
+          "SELECT is_agenda_partner FROM users WHERE id = $1",
+          [req.user.id]
+        );
+        // Só parceiro de fato vê as comissões; caso contrário, lista vazia.
+        if (meResult.rows[0]?.is_agenda_partner) {
+          partnerId = req.user.id;
+        }
+      } else if (req.query.partner_id) {
+        const parsed = Number.parseInt(req.query.partner_id, 10);
+        if (!Number.isNaN(parsed)) {
+          partnerId = parsed;
+        }
+      }
+
+      if (partnerId == null) {
+        return res.json({
+          commissions: [],
+          totals: { pending: 0, paid: 0, total: 0 },
+        });
+      }
+
+      const result = await fetchPartnerCommissions(partnerId, {
+        startDate: start_date,
+        endDate: end_date,
+      });
+      res.json(result);
+    } catch (error) {
+      console.error("❌ Error fetching agenda partner commissions:", error);
+      res
+        .status(500)
+        .json({ message: "Erro ao buscar comissões do parceiro" });
+    }
+  }
+);
+
 // ===== PARCEIROS DA AGENDA (admin) =====
 
 // Gera um código de parceria curto e único a partir do nome
@@ -4039,6 +4096,91 @@ app.put(
 // uma "comissão" = valor pago × % do parceiro. As comissões são derivadas dos
 // agenda_payments (não há tabela de geração); a liquidação (marcar pago +
 // comprovante) fica em agenda_partner_commission_payments.
+
+// Busca as comissões de um parceiro (pendentes + pagas) com comprovante.
+// Reutilizada pela rota admin e pela rota do próprio parceiro (financeiro_agenda).
+// Filtro de período opcional sobre a data do pagamento de agenda.
+async function fetchPartnerCommissions(partnerId, { startDate, endDate } = {}) {
+  const params = [partnerId];
+  let periodFilter = "";
+  if (startDate && endDate) {
+    params.push(`${startDate}T00:00:00Z`, `${endDate}T23:59:59Z`);
+    periodFilter = ` AND ap.created_at BETWEEN $${params.length - 1}::timestamptz AND $${params.length}::timestamptz`;
+  }
+
+  const commissionsResult = await pool.query(
+    `
+    SELECT
+      ap.id AS agenda_payment_id,
+      ap.created_at,
+      ap.amount AS base_amount,
+      prof.id AS professional_id,
+      prof.name AS professional_name,
+      partner.agenda_partner_percentage AS partner_percentage,
+      cp.id AS settlement_id,
+      cp.amount AS paid_amount,
+      cp.percentage AS paid_percentage,
+      cp.paid_at,
+      cp.paid_method,
+      cp.paid_receipt_url,
+      pb.name AS paid_by_name
+    FROM agenda_payments ap
+    JOIN users prof ON prof.id = ap.professional_id
+    JOIN users partner
+      ON partner.id = prof.agenda_partner_id
+      AND partner.is_agenda_partner = true
+    LEFT JOIN agenda_partner_commission_payments cp
+      ON cp.agenda_payment_id = ap.id
+    LEFT JOIN users pb ON pb.id = cp.paid_by_user_id
+    WHERE ap.status = 'approved'
+      AND partner.id = $1
+      ${periodFilter}
+    ORDER BY ap.created_at DESC
+  `,
+    params
+  );
+
+  const commissions = commissionsResult.rows.map((row) => {
+    const isPaid = row.settlement_id != null;
+    const baseAmount = Number(row.base_amount || 0);
+    // Comissão paga usa o valor liquidado (snapshot); pendente recalcula com
+    // a % atual do parceiro, refletindo qualquer ajuste recente.
+    const percentage = isPaid
+      ? Number(row.paid_percentage ?? row.partner_percentage ?? 0)
+      : Number(row.partner_percentage ?? 0);
+    const amount = isPaid
+      ? Number(row.paid_amount || 0)
+      : baseAmount * (percentage / 100);
+    return {
+      id: Number(row.agenda_payment_id),
+      agenda_payment_id: Number(row.agenda_payment_id),
+      created_at: row.created_at,
+      base_amount: baseAmount,
+      percentage,
+      amount,
+      status: isPaid ? "paid" : "pending",
+      professional_id: Number(row.professional_id),
+      professional_name: row.professional_name,
+      paid_at: row.paid_at,
+      paid_method: row.paid_method,
+      paid_receipt_url: row.paid_receipt_url,
+      paid_by_name: row.paid_by_name,
+    };
+  });
+
+  const totals = commissions.reduce(
+    (acc, c) => {
+      acc.total += c.amount;
+      if (c.status === "paid") acc.paid += c.amount;
+      else acc.pending += c.amount;
+      return acc;
+    },
+    { pending: 0, paid: 0, total: 0 }
+  );
+
+  return { commissions, totals };
+}
+
 app.get(
   "/api/admin/agenda-partners/:partnerId/commissions",
   authenticate,
@@ -4050,76 +4192,8 @@ app.get(
         return res.status(400).json({ message: "Parceiro inválido" });
       }
 
-      const commissionsResult = await pool.query(
-        `
-        SELECT
-          ap.id AS agenda_payment_id,
-          ap.created_at,
-          ap.amount AS base_amount,
-          prof.id AS professional_id,
-          prof.name AS professional_name,
-          partner.agenda_partner_percentage AS partner_percentage,
-          cp.id AS settlement_id,
-          cp.amount AS paid_amount,
-          cp.percentage AS paid_percentage,
-          cp.paid_at,
-          cp.paid_method,
-          cp.paid_receipt_url,
-          pb.name AS paid_by_name
-        FROM agenda_payments ap
-        JOIN users prof ON prof.id = ap.professional_id
-        JOIN users partner
-          ON partner.id = prof.agenda_partner_id
-          AND partner.is_agenda_partner = true
-        LEFT JOIN agenda_partner_commission_payments cp
-          ON cp.agenda_payment_id = ap.id
-        LEFT JOIN users pb ON pb.id = cp.paid_by_user_id
-        WHERE ap.status = 'approved'
-          AND partner.id = $1
-        ORDER BY ap.created_at DESC
-      `,
-        [partnerId]
-      );
-
-      const commissions = commissionsResult.rows.map((row) => {
-        const isPaid = row.settlement_id != null;
-        const baseAmount = Number(row.base_amount || 0);
-        // Comissão paga usa o valor liquidado (snapshot); pendente recalcula com
-        // a % atual do parceiro, refletindo qualquer ajuste recente.
-        const percentage = isPaid
-          ? Number(row.paid_percentage ?? row.partner_percentage ?? 0)
-          : Number(row.partner_percentage ?? 0);
-        const amount = isPaid
-          ? Number(row.paid_amount || 0)
-          : baseAmount * (percentage / 100);
-        return {
-          id: Number(row.agenda_payment_id),
-          agenda_payment_id: Number(row.agenda_payment_id),
-          created_at: row.created_at,
-          base_amount: baseAmount,
-          percentage,
-          amount,
-          status: isPaid ? "paid" : "pending",
-          professional_id: Number(row.professional_id),
-          professional_name: row.professional_name,
-          paid_at: row.paid_at,
-          paid_method: row.paid_method,
-          paid_receipt_url: row.paid_receipt_url,
-          paid_by_name: row.paid_by_name,
-        };
-      });
-
-      const totals = commissions.reduce(
-        (acc, c) => {
-          acc.total += c.amount;
-          if (c.status === "paid") acc.paid += c.amount;
-          else acc.pending += c.amount;
-          return acc;
-        },
-        { pending: 0, paid: 0, total: 0 }
-      );
-
-      res.json({ commissions, totals });
+      const result = await fetchPartnerCommissions(partnerId);
+      res.json(result);
     } catch (error) {
       console.error("❌ Error fetching partner commissions:", error);
       res
