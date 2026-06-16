@@ -347,15 +347,19 @@ async function getBaseService(professionalId, priceProfile = "convenio") {
   return { service_id: s.service_id, value };
 }
 
-async function getNextActiveConsultation(clientId) {
+// Próxima consulta futura ativa do paciente — por user_id (conveniado) ou
+// private_patient_id (particular).
+async function getNextActiveConsultation({ userId = null, privatePatientId = null }) {
+  const column = privatePatientId != null ? "private_patient_id" : "user_id";
+  const id = privatePatientId != null ? privatePatientId : userId;
   const r = await pool.query(
     `SELECT c.id, c.date, c.professional_id, u.name AS professional_name
        FROM consultations c
        JOIN users u ON c.professional_id = u.id
-      WHERE c.user_id = $1 AND c.status != 'cancelled' AND c.date >= NOW()
+      WHERE c.${column} = $1 AND c.status != 'cancelled' AND c.date >= NOW()
       ORDER BY c.date ASC
       LIMIT 1`,
-    [clientId]
+    [id]
   );
   return r.rows[0] || null;
 }
@@ -702,14 +706,18 @@ async function handleReagendarCpf(session, phone, text) {
     await replyS(session, phone, "CPF inválido. Envie os *11 números* do seu CPF.");
     return;
   }
-  const client = await findClientByCpf(cpf);
-  if (!client) {
+  const patient = await identifyPatient(cpf, session.profissionalId);
+  if (!patient) {
     await replyS(session, phone, 'Não encontrei cadastro com esse CPF. Para marcar uma nova consulta, envie "agendar".');
     resetFlow(session);
     return;
   }
-  session.pacienteId = client.id;
-  const consulta = await getNextActiveConsultation(client.id);
+  session.pacienteId = patient.userId || null;
+  session.privatePatientId = patient.privatePatientId || null;
+  const consulta = await getNextActiveConsultation({
+    userId: patient.userId,
+    privatePatientId: patient.privatePatientId,
+  });
   if (!consulta) {
     await replyS(session, phone, 'Você não tem nenhuma consulta futura para remarcar. Para marcar uma nova, envie "agendar".');
     resetFlow(session);
@@ -768,14 +776,18 @@ async function handleCancelarCpf(session, phone, text) {
     await replyS(session, phone, "CPF inválido. Envie os *11 números* do seu CPF.");
     return;
   }
-  const client = await findClientByCpf(cpf);
-  if (!client) {
+  const patient = await identifyPatient(cpf, session.profissionalId);
+  if (!patient) {
     await replyS(session, phone, "Não encontrei cadastro com esse CPF.");
     resetFlow(session);
     return;
   }
-  session.pacienteId = client.id;
-  const consulta = await getNextActiveConsultation(client.id);
+  session.pacienteId = patient.userId || null;
+  session.privatePatientId = patient.privatePatientId || null;
+  const consulta = await getNextActiveConsultation({
+    userId: patient.userId,
+    privatePatientId: patient.privatePatientId,
+  });
   if (!consulta) {
     await replyS(session, phone, "Você não tem nenhuma consulta futura para cancelar.");
     resetFlow(session);
