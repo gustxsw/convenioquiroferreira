@@ -36,6 +36,7 @@ import ManageCouponsPage from "./pages/admin/ManageCouponsPage";
 import AffiliateFinancialReport from "./pages/admin/AffiliateFinancialReport";
 import AffiliateDashboard from "./pages/affiliate/AffiliateDashboard";
 import AgendaFinancialPage from "./pages/financeiro/AgendaFinancialPage";
+import AtendimentoPage from "./pages/atendimento/AtendimentoPage";
 
 // Route guards
 const ProtectedRoute = ({
@@ -187,6 +188,17 @@ function App() {
         }
       >
         <Route path="/financeiro/agenda" element={<AgendaFinancialPage />} />
+      </Route>
+
+      {/* Atendimento humano (WhatsApp) — secretária e admin */}
+      <Route
+        element={
+          <ProtectedRoute allowedRoles={["secretaria", "admin"]}>
+            <MainLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="/atendimento" element={<AtendimentoPage />} />
       </Route>
 
       {/* 🔥 CATCH-ALL - QUALQUER ROTA DESCONHECIDA VAI PARA LOGIN */}

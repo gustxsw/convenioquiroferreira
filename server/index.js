@@ -41,6 +41,7 @@ import {
   releaseConversation,
   sendOperatorMessage,
   getConversation,
+  listConversations,
 } from "./whatsapp.js";
 import {
   scheduleExpiryCheck,
@@ -11780,6 +11781,25 @@ app.get("/webhook/whatsapp/metrics", async (req, res) => {
 });
 
 // Atendimento humano (handoff) — operador logado assume/devolve/envia.
+
+// Lista de conversas ativas (48h) para o painel de Atendimento. Secretária só vê
+// as conversas do profissional vinculado; admin/profissional veem todas.
+app.get(
+  "/webhook/whatsapp/conversations",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    try {
+      const scopeProfessionalId =
+        req.user.currentRole === "secretaria" ? req.user.professionalScopeId : null;
+      res.json(await listConversations({ scopeProfessionalId }));
+    } catch (error) {
+      process.stdout.write("[whatsapp-conversations] " + String(error) + "\n");
+      res.status(500).json({ message: "Erro ao carregar conversas" });
+    }
+  }
+);
+
 app.get(
   "/webhook/whatsapp/conversation",
   authenticate,

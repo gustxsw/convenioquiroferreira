@@ -890,6 +890,88 @@ export async function getConversation(phone, limit = 50) {
   return r.rows.reverse();
 }
 
+// Casa o telefone do WhatsApp (dígitos, com DDI) com users.phone (formato livre),
+// comparando os últimos 11 dígitos (DDD + 9 + número). Retorna Map<phone, nome>.
+async function resolvePatientNames(phones) {
+  const map = new Map();
+  if (!phones.length) return map;
+
+  const localByPhone = new Map();
+  for (const p of phones) {
+    let d = onlyDigits(p);
+    if (d.length > 11 && d.startsWith("55")) d = d.slice(2); // remove DDI
+    localByPhone.set(p, d.slice(-11));
+  }
+  const locals = [...new Set([...localByPhone.values()])];
+
+  const r = await pool.query(
+    `SELECT name, right(regexp_replace(phone, '\\D', '', 'g'), 11) AS last11
+       FROM users
+      WHERE phone IS NOT NULL
+        AND right(regexp_replace(phone, '\\D', '', 'g'), 11) = ANY($1::text[])`,
+    [locals]
+  );
+  const nameByLast11 = new Map();
+  for (const row of r.rows) nameByLast11.set(row.last11, row.name);
+
+  for (const [phone, last11] of localByPhone) {
+    if (nameByLast11.has(last11)) map.set(phone, nameByLast11.get(last11));
+  }
+  return map;
+}
+
+// Lista as conversas ativas (mensagem nas últimas 48h) para o painel de
+// atendimento humano. `scopeProfessionalId` restringe ao profissional vinculado
+// (secretária); admin/profissional sem escopo recebem todas.
+export async function listConversations({ scopeProfessionalId = null } = {}) {
+  const r = await pool.query(
+    `WITH last_msgs AS (
+       SELECT DISTINCT ON (phone) phone, text AS last_message, created_at AS last_message_at
+         FROM whatsapp_messages
+        WHERE created_at > now() - interval '48 hours'
+        ORDER BY phone, created_at DESC
+     )
+     SELECT lm.phone, lm.last_message, lm.last_message_at,
+            s.session->>'mode' AS mode,
+            (s.session->>'profissionalId')::int AS professional_id,
+            (s.session->>'owner_operator_id')::int AS owner_operator_id
+       FROM last_msgs lm
+       LEFT JOIN whatsapp_sessions s ON s.phone = lm.phone
+      ORDER BY lm.last_message_at DESC`
+  );
+
+  let rows = r.rows;
+  if (scopeProfessionalId != null) {
+    rows = rows.filter((row) => row.professional_id === scopeProfessionalId);
+  }
+  if (rows.length === 0) return [];
+
+  // Resolve nomes de profissional e operador numa única consulta.
+  const userIds = [
+    ...new Set(
+      rows.flatMap((row) => [row.professional_id, row.owner_operator_id]).filter(Boolean)
+    ),
+  ];
+  const nameById = new Map();
+  if (userIds.length) {
+    const u = await pool.query(`SELECT id, name FROM users WHERE id = ANY($1::int[])`, [userIds]);
+    for (const row of u.rows) nameById.set(row.id, row.name);
+  }
+
+  const patientNames = await resolvePatientNames(rows.map((row) => row.phone));
+
+  return rows.map((row) => ({
+    phone: row.phone,
+    patient_name: patientNames.get(row.phone) || null,
+    professional_id: row.professional_id || null,
+    professional_name: row.professional_id ? nameById.get(row.professional_id) || null : null,
+    status: row.mode === "human" ? "human" : "pending",
+    last_message: row.last_message || "",
+    last_message_at: row.last_message_at,
+    assigned_to: row.owner_operator_id ? nameById.get(row.owner_operator_id) || null : null,
+  }));
+}
+
 // ===== MÉTRICAS DE FUNIL =====
 
 export async function getFunnelMetrics() {
