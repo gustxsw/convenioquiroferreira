@@ -110,6 +110,12 @@ function resetFlow(session) {
   session.professionals = null;
   session.serviceId = null;
   session.serviceValue = null;
+  // Perfil/particular e contexto da IA não persistem entre fluxos.
+  session.patientKind = null;
+  session.privatePatientId = null;
+  session.priceProfile = null;
+  session.newPatientKind = null;
+  session.convenioHistory = null;
   // Profissional volta a ser o do número (multi-número); se não houver, limpa.
   session.profissionalId = session.profFromNumber || null;
 }
@@ -260,6 +266,50 @@ async function createClient({ name, phone, cpf }) {
   return r.rows[0];
 }
 
+// Cadastra um paciente PARTICULAR do profissional, sem acesso ao painel (sem senha).
+async function createPrivatePatient({ name, phone, cpf, professionalId }) {
+  const r = await pool.query(
+    `INSERT INTO private_patients (professional_id, name, cpf, phone)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, name`,
+    [professionalId, name, cpf, onlyDigits(phone)]
+  );
+  return r.rows[0];
+}
+
+// Identifica o perfil do paciente pelo CPF, escopado ao profissional do número atual.
+//   users + assinatura ativa  -> conveniado (preço conveniado, agenda via user_id)
+//   users + assinatura inativa -> particular (preço particular, agenda via user_id)
+//   private_patients do prof.  -> particular (preço particular, agenda via private_patient_id)
+//   não encontrado             -> null (bot pergunta convênio ou particular)
+async function identifyPatient(cpf, professionalId) {
+  const u = await pool.query(
+    "SELECT id, name, subscription_status FROM users WHERE cpf = $1 AND 'client' = ANY(roles) LIMIT 1",
+    [cpf]
+  );
+  if (u.rows[0]) {
+    const row = u.rows[0];
+    return {
+      kind: "user",
+      userId: row.id,
+      name: row.name,
+      profile: row.subscription_status === "active" ? "convenio" : "particular",
+    };
+  }
+  if (professionalId) {
+    const p = await pool.query(
+      `SELECT id, name FROM private_patients
+        WHERE cpf = $1 AND professional_id = $2 AND is_active = true
+        ORDER BY id ASC LIMIT 1`,
+      [cpf, professionalId]
+    );
+    if (p.rows[0]) {
+      return { kind: "private", privatePatientId: p.rows[0].id, name: p.rows[0].name, profile: "particular" };
+    }
+  }
+  return null;
+}
+
 async function getProfessionalsWithBaseService() {
   const r = await pool.query(
     `SELECT u.id, u.name
@@ -276,17 +326,25 @@ async function getProfessionalName(professionalId) {
   return r.rows[0]?.name || "profissional";
 }
 
-// Serviço base do profissional (is_base_service tem prioridade) e seu valor.
-async function getBaseService(professionalId) {
+// Serviço base do profissional (is_base_service tem prioridade) e seu valor por perfil.
+//   convenio  -> price_member ?? base_price
+//   particular -> price_private ?? base_price
+async function getBaseService(professionalId, priceProfile = "convenio") {
   const r = await pool.query(
-    `SELECT id AS service_id, base_price AS value
+    `SELECT id AS service_id, base_price, price_member, price_private
        FROM services
       WHERE professional_id = $1
       ORDER BY is_base_service DESC NULLS LAST, id ASC
       LIMIT 1`,
     [professionalId]
   );
-  return r.rows[0] || null;
+  const s = r.rows[0];
+  if (!s) return null;
+  const value =
+    priceProfile === "convenio"
+      ? s.price_member ?? s.base_price
+      : s.price_private ?? s.base_price;
+  return { service_id: s.service_id, value };
 }
 
 async function getNextActiveConsultation(clientId) {
@@ -303,7 +361,7 @@ async function getNextActiveConsultation(clientId) {
 }
 
 // Replica a validação de expediente/conflito do POST /api/consultations.
-async function createConsultation({ professionalId, userId, serviceId, value, isoUTC }) {
+async function createConsultation({ professionalId, userId, privatePatientId, serviceId, value, isoUTC }) {
   const working = await getWorkingHours(professionalId);
   if (!isWithinWorkingHours(isoUTC, working)) {
     return { ok: false, message: "Esse horário está fora do expediente. Escolha outro, por favor." };
@@ -316,11 +374,12 @@ async function createConsultation({ professionalId, userId, serviceId, value, is
   if (conflict.rows.length > 0) {
     return { ok: false, message: "Esse horário acabou de ser ocupado. Escolha outro, por favor." };
   }
+  // CHECK no banco exige exatamente um entre user_id / dependent_id / private_patient_id.
   const r = await pool.query(
-    `INSERT INTO consultations (user_id, professional_id, service_id, value, date, status)
-     VALUES ($1, $2, $3, $4, $5, 'scheduled')
+    `INSERT INTO consultations (user_id, private_patient_id, professional_id, service_id, value, date, status)
+     VALUES ($1, $2, $3, $4, $5, $6, 'scheduled')
      RETURNING id`,
-    [userId, professionalId, serviceId, value, isoUTC]
+    [userId || null, privatePatientId || null, professionalId, serviceId, value, isoUTC]
   );
   return { ok: true, id: r.rows[0].id };
 }
@@ -366,7 +425,7 @@ async function cancelConsultation(consultationId) {
 
 // ===== IA (fluxo CONVENIO) =====
 
-async function callAnthropic(userText) {
+async function callAnthropic(messages) {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) return null;
   try {
@@ -381,7 +440,7 @@ async function callAnthropic(userText) {
         model: "claude-haiku-4-5-20251001",
         max_tokens: 512,
         system: CONVENIO_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: userText }],
+        messages,
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -439,6 +498,8 @@ async function continueFlow(session, phone, text) {
   switch (session.step) {
     case "agendar_cpf":
       return handleAgendarCpf(session, phone, text);
+    case "agendar_tipo_cadastro":
+      return handleAgendarTipoCadastro(session, phone, text);
     case "agendar_cadastro_nome":
       return handleAgendarCadastroNome(session, phone, text);
     case "agendar_escolha_profissional":
@@ -477,15 +538,36 @@ async function handleAgendarCpf(session, phone, text) {
     return;
   }
   session.cpf = cpf;
-  const client = await findClientByCpf(cpf);
-  if (client) {
-    session.pacienteId = client.id;
-    session.pacienteNome = client.name;
+  const patient = await identifyPatient(cpf, session.profissionalId);
+  if (patient) {
+    session.patientKind = patient.kind; // 'user' | 'private'
+    session.pacienteId = patient.userId || null;
+    session.privatePatientId = patient.privatePatientId || null;
+    session.pacienteNome = patient.name;
+    session.priceProfile = patient.profile; // 'convenio' | 'particular'
     await proceedToProfissional(session, phone);
   } else {
-    session.step = "agendar_cadastro_nome";
-    await replyS(session, phone, "Não encontrei seu cadastro. Qual é o seu *nome completo*?");
+    session.step = "agendar_tipo_cadastro";
+    await replyS(
+      session,
+      phone,
+      "Não encontrei seu cadastro. Você quer adquirir o plano do *Convênio Quiro Ferreira* ou é *paciente particular* do profissional? Responda *convênio* ou *particular*."
+    );
   }
+}
+
+async function handleAgendarTipoCadastro(session, phone, text) {
+  const n = normalize(text);
+  if (n.includes("conven")) {
+    session.newPatientKind = "convenio";
+  } else if (n.includes("particular")) {
+    session.newPatientKind = "private";
+  } else {
+    await replyS(session, phone, "Por favor, responda *convênio* ou *particular*.");
+    return;
+  }
+  session.step = "agendar_cadastro_nome";
+  await replyS(session, phone, "Certo! Qual é o seu *nome completo*?");
 }
 
 async function handleAgendarCadastroNome(session, phone, text) {
@@ -494,10 +576,29 @@ async function handleAgendarCadastroNome(session, phone, text) {
     await replyS(session, phone, "Por favor, envie seu *nome completo*.");
     return;
   }
-  const created = await createClient({ name: nome, phone, cpf: session.cpf });
-  session.pacienteId = created.id;
-  session.pacienteNome = created.name;
-  await audit({ phone, actor: "ai", action: "client_created", detail: { clientId: created.id } });
+  if (session.newPatientKind === "private") {
+    const created = await createPrivatePatient({
+      name: nome,
+      phone,
+      cpf: session.cpf,
+      professionalId: session.profissionalId,
+    });
+    session.patientKind = "private";
+    session.privatePatientId = created.id;
+    session.pacienteId = null;
+    session.pacienteNome = created.name;
+    session.priceProfile = "particular";
+    await audit({ phone, actor: "ai", action: "private_patient_created", detail: { privatePatientId: created.id } });
+  } else {
+    // Novo conveniado: ainda sem assinatura ativa, então o preço desta consulta é o particular.
+    const created = await createClient({ name: nome, phone, cpf: session.cpf });
+    session.patientKind = "user";
+    session.pacienteId = created.id;
+    session.privatePatientId = null;
+    session.pacienteNome = created.name;
+    session.priceProfile = "particular";
+    await audit({ phone, actor: "ai", action: "client_created", detail: { clientId: created.id } });
+  }
   await proceedToProfissional(session, phone);
 }
 
@@ -536,7 +637,7 @@ async function handleAgendarEscolhaProfissional(session, phone, text) {
 
 // Lista os próximos horários livres e aguarda a escolha (nextStep define o handler).
 async function proceedToSlots(session, phone, nextStep) {
-  const base = await getBaseService(session.profissionalId);
+  const base = await getBaseService(session.profissionalId, session.priceProfile || "convenio");
   if (!base) {
     await replyS(session, phone, "Esse profissional ainda não tem serviços configurados. Tente novamente mais tarde.");
     resetFlow(session);
@@ -568,6 +669,7 @@ async function handleAgendarEscolhaSlot(session, phone, text) {
   const result = await createConsultation({
     professionalId: session.profissionalId,
     userId: session.pacienteId,
+    privatePatientId: session.privatePatientId,
     serviceId: session.serviceId,
     value: session.serviceValue,
     isoUTC: slot.isoUTC,
@@ -719,8 +821,14 @@ async function handleConvenioChat(session, phone, text) {
     await replyS(session, phone, "Que ótimo! Para iniciar seu contrato, me informe seu *CPF* (somente números).");
     return;
   }
-  const aiText = await callAnthropic(text);
-  await replyS(session, phone, aiText || humanFallbackText());
+  // Mantém o contexto da conversa entre mensagens (últimas 10 trocas, p/ controlar custo).
+  const history = Array.isArray(session.convenioHistory) ? session.convenioHistory : [];
+  history.push({ role: "user", content: text });
+  const aiText = await callAnthropic(history.slice(-10));
+  const reply = aiText || humanFallbackText();
+  history.push({ role: "assistant", content: reply });
+  session.convenioHistory = history.slice(-10);
+  await replyS(session, phone, reply);
   // Permanece em convenio_chat para continuar a conversa.
   session.step = "convenio_chat";
 }
