@@ -19,6 +19,8 @@ type Service = {
   name: string;
   description: string;
   base_price: number;
+  price_member: number | null;
+  price_private: number | null;
   category_id: number | null;
   category_name: string | null;
   is_base_service: boolean;
@@ -50,7 +52,8 @@ const ManageServicesPage: React.FC = () => {
   // Form state
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [basePrice, setBasePrice] = useState("");
+  const [priceMember, setPriceMember] = useState("");
+  const [pricePrivate, setPricePrivate] = useState("");
   const [categoryId, setCategoryId] = useState<string>("");
   const [isBaseService, setIsBaseService] = useState(false);
 
@@ -154,7 +157,8 @@ const ManageServicesPage: React.FC = () => {
     setModalMode("create");
     setName("");
     setDescription("");
-    setBasePrice("");
+    setPriceMember("");
+    setPricePrivate("");
     setCategoryId("");
     setIsBaseService(false);
     setSelectedService(null);
@@ -165,7 +169,11 @@ const ManageServicesPage: React.FC = () => {
     setModalMode("edit");
     setName(service.name);
     setDescription(service.description);
-    setBasePrice(service.base_price.toString());
+    // Serviços legados só têm base_price: pré-preenche o conveniado com ele.
+    setPriceMember(
+      (service.price_member ?? service.base_price ?? "").toString()
+    );
+    setPricePrivate((service.price_private ?? "").toString());
     setCategoryId(service.category_id?.toString() || "");
     setIsBaseService(service.is_base_service);
     setSelectedService(service);
@@ -186,17 +194,29 @@ const ManageServicesPage: React.FC = () => {
     try {
       const apiUrl = getApiUrl();
 
-      // Validate base price
-      const priceValue = Number.parseFloat(basePrice);
-      if (isNaN(priceValue) || priceValue <= 0) {
-        setError("O preço base deve ser um valor numérico maior que zero");
+      // Preços por perfil: ao menos um deve ser informado e válido.
+      const parsePrice = (v: string) => (v.trim() === "" ? null : Number.parseFloat(v));
+      const memberValue = parsePrice(priceMember);
+      const privateValue = parsePrice(pricePrivate);
+
+      if (memberValue !== null && (isNaN(memberValue) || memberValue <= 0)) {
+        setError("O preço para conveniados deve ser um valor maior que zero");
+        return;
+      }
+      if (privateValue !== null && (isNaN(privateValue) || privateValue <= 0)) {
+        setError("O preço para pacientes particulares deve ser um valor maior que zero");
+        return;
+      }
+      if (memberValue === null && privateValue === null) {
+        setError("Informe ao menos um preço (conveniados ou particulares)");
         return;
       }
 
       const serviceData = {
         name,
         description,
-        base_price: priceValue,
+        price_member: memberValue,
+        price_private: privateValue,
         category_id: categoryId ? Number.parseInt(categoryId) : null,
         is_base_service: isBaseService,
       };
@@ -433,7 +453,7 @@ const ManageServicesPage: React.FC = () => {
                         </>
                       )}
                       <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
-                        Preço Base
+                        Preços
                       </th>
                       {!isProfessional && (
                         <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
@@ -487,7 +507,15 @@ const ManageServicesPage: React.FC = () => {
                           </>
                         )}
                         <td className="px-3 sm:px-6 py-4 text-xs sm:text-sm font-medium">
-                          {formatCurrency(service.base_price)}
+                          <div className="text-gray-800">
+                            Conv.: {formatCurrency(service.price_member ?? service.base_price)}
+                          </div>
+                          <div className="text-gray-500">
+                            Part.:{" "}
+                            {service.price_private != null
+                              ? formatCurrency(service.price_private)
+                              : "—"}
+                          </div>
                         </td>
                         {!isProfessional && (
                           <td className="hidden sm:table-cell px-6 py-4">
@@ -620,23 +648,41 @@ const ManageServicesPage: React.FC = () => {
                 </>
               )}
 
-              <div className="mb-4">
-                <label
-                  htmlFor="basePrice"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Preço Base (R$)
-                </label>
-                <input
-                  id="basePrice"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={basePrice}
-                  onChange={(e) => setBasePrice(e.target.value)}
-                  className="input"
-                  required
-                />
+              <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label
+                    htmlFor="priceMember"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
+                    Preço para conveniados (R$)
+                  </label>
+                  <input
+                    id="priceMember"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={priceMember}
+                    onChange={(e) => setPriceMember(e.target.value)}
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="pricePrivate"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
+                    Preço para pacientes particulares (R$)
+                  </label>
+                  <input
+                    id="pricePrivate"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={pricePrivate}
+                    onChange={(e) => setPricePrivate(e.target.value)}
+                    className="input"
+                  />
+                </div>
               </div>
 
               {!isProfessional && (

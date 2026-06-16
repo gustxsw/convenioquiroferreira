@@ -19,8 +19,18 @@ type Service = {
   id: number;
   name: string;
   base_price: number;
+  price_member: number | null;
+  price_private: number | null;
   category_name: string;
 };
+
+// Preço do serviço conforme o tipo de paciente, com fallback para base_price.
+const priceForPatient = (
+  service: Service,
+  patientType: "convenio" | "private"
+): number =>
+  (patientType === "convenio" ? service.price_member : service.price_private) ??
+  service.base_price;
 
 type AttendanceLocation = {
   id: number;
@@ -275,7 +285,7 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({
     if (service) {
       setFormData((prev) => ({
         ...prev,
-        value: service.base_price.toString(),
+        value: priceForPatient(service, patientType).toString(),
       }));
     }
   };

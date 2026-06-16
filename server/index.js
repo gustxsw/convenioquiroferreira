@@ -471,6 +471,13 @@ const initializeDatabase = async () => {
       END $$;
     `);
 
+    // Preço duplo: conveniado (price_member) e particular (price_private).
+    // base_price é mantido para compatibilidade e como fallback.
+    await pool.query(`
+      ALTER TABLE services ADD COLUMN IF NOT EXISTS price_member  DECIMAL(10,2);
+      ALTER TABLE services ADD COLUMN IF NOT EXISTS price_private DECIMAL(10,2);
+    `);
+
     // Dependents table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS dependents (
@@ -6798,28 +6805,46 @@ app.post(
   }
 );
 
+// Normaliza os preços de um serviço: aceita price_member/price_private (opcionais) e
+// deriva base_price (coluna de compatibilidade) com fallback
+// price_member ?? price_private ?? base_price — nunca deixa o campo legado nulo/zerado.
+function normalizeServicePrices({ base_price, price_member, price_private }) {
+  const parse = (v) => {
+    if (v === undefined || v === null || v === "") return null;
+    return Number.parseFloat(v);
+  };
+  const member = parse(price_member);
+  const priv = parse(price_private);
+  const base = parse(base_price);
+
+  if (member !== null && (Number.isNaN(member) || member <= 0))
+    return { error: "Preço para conveniados deve ser um número maior que zero" };
+  if (priv !== null && (Number.isNaN(priv) || priv <= 0))
+    return { error: "Preço para pacientes particulares deve ser um número maior que zero" };
+  if (base !== null && (Number.isNaN(base) || base <= 0))
+    return { error: "Preço base deve ser um número maior que zero" };
+
+  const derivedBase = member ?? priv ?? base;
+  if (derivedBase === null)
+    return { error: "Informe ao menos um preço (conveniado ou particular)" };
+
+  return { base_price: derivedBase, price_member: member, price_private: priv };
+}
+
 app.post(
   "/api/services",
   authenticate,
   authorize(["admin", "professional", "secretaria"]),
   async (req, res) => {
     try {
-      const { name, description, base_price, category_id, is_base_service } =
+      const { name, description, base_price, price_member, price_private, category_id, is_base_service } =
         req.body;
 
-      if (!name || !base_price) {
+      const prices = normalizeServicePrices({ base_price, price_member, price_private });
+      if (!name || prices.error) {
         return res
           .status(400)
-          .json({ message: "Nome e preço base são obrigatórios" });
-      }
-
-      if (
-        isNaN(Number.parseFloat(base_price)) ||
-        Number.parseFloat(base_price) <= 0
-      ) {
-        return res
-          .status(400)
-          .json({ message: "Preço base deve ser um número maior que zero" });
+          .json({ message: prices.error || "Nome é obrigatório" });
       }
 
       const isProfessional =
@@ -6829,14 +6854,16 @@ app.post(
 
       const serviceResult = await pool.query(
         `
-      INSERT INTO services (name, description, base_price, category_id, is_base_service, professional_id)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO services (name, description, base_price, price_member, price_private, category_id, is_base_service, professional_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
     `,
         [
           name.trim(),
           description?.trim() || null,
-          Number.parseFloat(base_price),
+          prices.base_price,
+          prices.price_member,
+          prices.price_private,
           category_id || null,
           isProfessional ? false : is_base_service || false,
           isProfessional ? (req.user.professionalScopeId ?? req.user.id) : null,
@@ -6865,7 +6892,7 @@ app.put(
   async (req, res) => {
     try {
       const { id } = req.params;
-      const { name, description, base_price, category_id, is_base_service } =
+      const { name, description, base_price, price_member, price_private, category_id, is_base_service } =
         req.body;
 
       // Get current service data
@@ -6890,32 +6917,26 @@ app.put(
         return res.status(403).json({ message: "Acesso negado" });
       }
 
-      if (!name || !base_price) {
+      const prices = normalizeServicePrices({ base_price, price_member, price_private });
+      if (!name || prices.error) {
         return res
           .status(400)
-          .json({ message: "Nome e preço base são obrigatórios" });
-      }
-
-      if (
-        isNaN(Number.parseFloat(base_price)) ||
-        Number.parseFloat(base_price) <= 0
-      ) {
-        return res
-          .status(400)
-          .json({ message: "Preço base deve ser um número maior que zero" });
+          .json({ message: prices.error || "Nome é obrigatório" });
       }
 
       const updatedServiceResult = await pool.query(
         `
-      UPDATE services 
-      SET name = $1, description = $2, base_price = $3, category_id = $4, is_base_service = $5
-      WHERE id = $6
+      UPDATE services
+      SET name = $1, description = $2, base_price = $3, price_member = $4, price_private = $5, category_id = $6, is_base_service = $7
+      WHERE id = $8
       RETURNING *
     `,
         [
           name.trim(),
           description?.trim() || null,
-          Number.parseFloat(base_price),
+          prices.base_price,
+          prices.price_member,
+          prices.price_private,
           category_id || null,
           isProfessional ? false : is_base_service || false,
           id,
