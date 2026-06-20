@@ -49,6 +49,7 @@ import {
   sendOperatorMessage,
   getConversation,
   listConversations,
+  getWhatsappReport,
 } from "./whatsapp.js";
 import {
   scheduleExpiryCheck,
@@ -1634,6 +1635,28 @@ const initializeDatabase = async () => {
         detail JSONB,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+    `);
+
+    // Relatórios de atendimento (Seções 7 e 8): atribuição por profissional e
+    // registro de uso da IA (tokens) para cálculo de custo.
+    await pool.query(`
+      ALTER TABLE whatsapp_messages  ADD COLUMN IF NOT EXISTS professional_id INTEGER;
+      ALTER TABLE whatsapp_audit_log ADD COLUMN IF NOT EXISTS professional_id INTEGER;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_ai_usage (
+        id SERIAL PRIMARY KEY,
+        phone TEXT,
+        professional_id INTEGER,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        model TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_ai_usage_created_at ON whatsapp_ai_usage(created_at);
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_ai_usage_professional ON whatsapp_ai_usage(professional_id);
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_professional ON whatsapp_messages(professional_id);
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_audit_professional ON whatsapp_audit_log(professional_id);
     `);
 
     console.log("✅ Database tables initialized successfully");
@@ -11912,6 +11935,82 @@ app.get("/webhook/whatsapp/metrics", async (req, res) => {
     res.status(500).json({ message: "Erro ao calcular métricas" });
   }
 });
+
+// Relatório de atendimento (Seções 7 e 8). Admin vê o agregado do convênio;
+// profissional/secretária veem apenas o próprio (escopo por professionalScopeId).
+function whatsappReportScope(req) {
+  return req.user.currentRole === "admin" ? null : req.user.professionalScopeId;
+}
+
+app.get(
+  "/api/whatsapp/reports",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    const start_date = String(req.query.start_date || "");
+    const end_date = String(req.query.end_date || "");
+    const granularity = String(req.query.granularity || "day");
+    if (!start_date || !end_date) {
+      return res.status(400).json({ message: "start_date e end_date são obrigatórios" });
+    }
+    if (start_date > end_date) {
+      return res.status(400).json({ message: "A data inicial não pode ser maior que a final" });
+    }
+    try {
+      const report = await getWhatsappReport({
+        startDate: start_date,
+        endDate: end_date,
+        granularity,
+        scopeProfessionalId: whatsappReportScope(req),
+      });
+      res.json(report);
+    } catch (error) {
+      console.error("❌ [whatsapp-reports]", error);
+      res.status(500).json({ message: "Erro ao gerar relatório de atendimento" });
+    }
+  }
+);
+
+// PDF do relatório — mesmo pipeline reportlab dos prontuários/documentos.
+app.get(
+  "/api/whatsapp/reports/pdf",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    const start_date = String(req.query.start_date || "");
+    const end_date = String(req.query.end_date || "");
+    const granularity = String(req.query.granularity || "day");
+    if (!start_date || !end_date) {
+      return res.status(400).json({ message: "start_date e end_date são obrigatórios" });
+    }
+    try {
+      const report = await getWhatsappReport({
+        startDate: start_date,
+        endDate: end_date,
+        granularity,
+        scopeProfessionalId: whatsappReportScope(req),
+      });
+      const payload = {
+        title: "Relatório de Atendimento — WhatsApp",
+        scope_label:
+          report.escopo === "convenio" ? "Convênio (agregado)" : req.user.name || "Profissional",
+        report,
+      };
+      const pdfBuffer = await renderPdfFromDocumentService("whatsapp_report", payload);
+      const safeName = `relatorio-atendimento-${start_date}_${end_date}.pdf`;
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`
+      );
+      res.setHeader("Content-Length", pdfBuffer.length);
+      res.send(pdfBuffer);
+    } catch (error) {
+      console.error("❌ [whatsapp-reports-pdf]", error);
+      res.status(500).json({ message: "Erro ao gerar PDF do relatório: " + error.message });
+    }
+  }
+);
 
 // Atendimento humano (handoff) — operador logado assume/devolve/envia.
 

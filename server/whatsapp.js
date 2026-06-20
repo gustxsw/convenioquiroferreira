@@ -147,38 +147,52 @@ function detectIntent(text) {
 // ===== PERSISTÊNCIA: MENSAGENS, SESSÃO, AUDITORIA =====
 
 // INSERT inbound com idempotência. Retorna true se a mensagem é nova.
-async function recordInbound({ phone, messageId, text, intent = null, step = null }) {
+async function recordInbound({ phone, messageId, text, intent = null, step = null, professionalId = null }) {
   const r = await pool.query(
-    `INSERT INTO whatsapp_messages (phone, message_id, direction, actor, intent, step, text)
-     VALUES ($1, $2, 'inbound', 'patient', $3, $4, $5)
+    `INSERT INTO whatsapp_messages (phone, message_id, direction, actor, intent, step, text, professional_id)
+     VALUES ($1, $2, 'inbound', 'patient', $3, $4, $5, $6)
      ON CONFLICT (message_id) DO NOTHING
      RETURNING id`,
-    [phone, messageId || null, intent, step, text || null]
+    [phone, messageId || null, intent, step, text || null, professionalId]
   );
   return r.rows.length > 0;
 }
 
-async function logOutbound({ phone, text, actor = "ai", actorId = null, intent = null, step = null, messageId = null }) {
+async function logOutbound({ phone, text, actor = "ai", actorId = null, intent = null, step = null, messageId = null, professionalId = null }) {
   try {
     await pool.query(
-      `INSERT INTO whatsapp_messages (phone, message_id, direction, actor, actor_id, intent, step, text)
-       VALUES ($1, $2, 'outbound', $3, $4, $5, $6, $7)`,
-      [phone, messageId, actor, actorId, intent, step, text]
+      `INSERT INTO whatsapp_messages (phone, message_id, direction, actor, actor_id, intent, step, text, professional_id)
+       VALUES ($1, $2, 'outbound', $3, $4, $5, $6, $7, $8)`,
+      [phone, messageId, actor, actorId, intent, step, text, professionalId]
     );
   } catch (e) {
     botLog("log_outbound_error", { error: String(e) });
   }
 }
 
-async function audit({ phone, actor, actorId = null, action, detail = null }) {
+async function audit({ phone, actor, actorId = null, action, detail = null, professionalId = null }) {
   try {
     await pool.query(
-      `INSERT INTO whatsapp_audit_log (phone, actor, actor_id, action, detail)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [phone, actor, actorId, action, detail ? JSON.stringify(detail) : null]
+      `INSERT INTO whatsapp_audit_log (phone, actor, actor_id, action, detail, professional_id)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [phone, actor, actorId, action, detail ? JSON.stringify(detail) : null, professionalId]
     );
   } catch (e) {
     botLog("audit_error", { error: String(e) });
+  }
+}
+
+// Registra o uso da IA (tokens) para o relatório de custo (Seção 7).
+async function recordAiUsage({ phone, professionalId = null, usage, model }) {
+  try {
+    if (!usage) return;
+    await pool.query(
+      `INSERT INTO whatsapp_ai_usage (phone, professional_id, input_tokens, output_tokens, model)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [phone, professionalId, usage.input_tokens || 0, usage.output_tokens || 0, model || null]
+    );
+  } catch (e) {
+    botLog("ai_usage_error", { error: String(e) });
   }
 }
 
@@ -211,7 +225,7 @@ async function saveSession(phone, session) {
 
 // ===== ENVIO + LOG =====
 
-async function reply(phone, text, { phoneNumberId, intent = null, step = null } = {}) {
+async function reply(phone, text, { phoneNumberId, intent = null, step = null, professionalId = null } = {}) {
   let messageId = null;
   try {
     const resp = await sendWhatsappTextMessage({ toDigits: phone, text, phoneNumberId });
@@ -219,8 +233,8 @@ async function reply(phone, text, { phoneNumberId, intent = null, step = null } 
   } catch (e) {
     botLog("send_error", { phone, error: String(e) });
   }
-  await logOutbound({ phone, text, actor: "ai", intent, step, messageId });
-  await audit({ phone, actor: "ai", action: "message_out", detail: { step } });
+  await logOutbound({ phone, text, actor: "ai", intent, step, messageId, professionalId });
+  await audit({ phone, actor: "ai", action: "message_out", detail: { step }, professionalId });
 }
 
 // Envia usando o contexto da sessão (phoneNumberId/intent/step atuais).
@@ -229,6 +243,7 @@ async function replyS(session, phone, text) {
     phoneNumberId: session.phoneNumberId,
     intent: session.intent,
     step: session.step,
+    professionalId: session.profissionalId || null,
   });
 }
 
@@ -435,6 +450,10 @@ async function cancelConsultation(consultationId) {
 
 // ===== IA (fluxo CONVENIO) =====
 
+const AI_MODEL = "claude-haiku-4-5-20251001";
+
+// Retorna { text, usage, model } ou null. `usage` traz input_tokens/output_tokens
+// (registrados para o relatório de custo da IA — Seção 7).
 async function callAnthropic(messages) {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) return null;
@@ -447,7 +466,7 @@ async function callAnthropic(messages) {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: AI_MODEL,
         max_tokens: 512,
         system: CONVENIO_SYSTEM_PROMPT,
         messages,
@@ -458,7 +477,9 @@ async function callAnthropic(messages) {
       botLog("anthropic_error", { status: res.status, data });
       return null;
     }
-    return data?.content?.[0]?.text?.trim() || null;
+    const text = data?.content?.[0]?.text?.trim() || null;
+    if (!text) return null;
+    return { text, usage: data?.usage || null, model: data?.model || AI_MODEL };
   } catch (e) {
     botLog("anthropic_exception", { error: String(e) });
     return null;
@@ -598,7 +619,7 @@ async function handleAgendarCadastroNome(session, phone, text) {
     session.pacienteId = null;
     session.pacienteNome = created.name;
     session.priceProfile = "particular";
-    await audit({ phone, actor: "ai", action: "private_patient_created", detail: { privatePatientId: created.id } });
+    await audit({ phone, actor: "ai", action: "private_patient_created", detail: { privatePatientId: created.id }, professionalId: session.profissionalId });
   } else {
     // Novo conveniado: ainda sem assinatura ativa, então o preço desta consulta é o particular.
     const created = await createClient({ name: nome, phone, cpf: session.cpf });
@@ -607,7 +628,7 @@ async function handleAgendarCadastroNome(session, phone, text) {
     session.privatePatientId = null;
     session.pacienteNome = created.name;
     session.priceProfile = "particular";
-    await audit({ phone, actor: "ai", action: "client_created", detail: { clientId: created.id } });
+    await audit({ phone, actor: "ai", action: "client_created", detail: { clientId: created.id }, professionalId: session.profissionalId });
   }
   await proceedToProfissional(session, phone);
 }
@@ -855,8 +876,11 @@ async function handleConvenioChat(session, phone, text) {
   // Mantém o contexto da conversa entre mensagens (últimas 10 trocas, p/ controlar custo).
   const history = Array.isArray(session.convenioHistory) ? session.convenioHistory : [];
   history.push({ role: "user", content: text });
-  const aiText = await callAnthropic(history.slice(-10));
-  const reply = aiText || humanFallbackText();
+  const ai = await callAnthropic(history.slice(-10));
+  if (ai?.usage) {
+    await recordAiUsage({ phone, professionalId: session.profissionalId, usage: ai.usage, model: ai.model });
+  }
+  const reply = ai?.text || humanFallbackText();
   history.push({ role: "assistant", content: reply });
   session.convenioHistory = history.slice(-10);
   await replyS(session, phone, reply);
@@ -888,7 +912,7 @@ async function handleConvenioCadastroNome(session, phone, text) {
     return;
   }
   const created = await createClient({ name: nome, phone, cpf: session.cpf });
-  await audit({ phone, actor: "ai", action: "client_created", detail: { clientId: created.id } });
+  await audit({ phone, actor: "ai", action: "client_created", detail: { clientId: created.id }, professionalId: session.profissionalId });
   await replyS(session, phone, "Cadastro iniciado! Vou te enviar o *link de pagamento* em seguida. Após a confirmação do pagamento você recebe o acesso ao painel.");
   resetFlow(session);
 }
@@ -899,7 +923,7 @@ async function routeMessage(session, phone, text) {
   if (!session.step) {
     const intent = detectIntent(text);
     session.intent = intent;
-    await audit({ phone, actor: "patient", action: "intent_detected", detail: { intent, text } });
+    await audit({ phone, actor: "patient", action: "intent_detected", detail: { intent, text }, professionalId: session.profissionalId });
     await startFlow(session, phone, text, intent);
   } else {
     await continueFlow(session, phone, text);
@@ -935,13 +959,17 @@ export async function handleWebhookEvent(body) {
 
   botLog("inbound", { phone, messageId, type });
 
+  // Multi-número: o número que recebeu define o profissional (resolvido cedo para
+  // atribuir as mensagens/auditoria ao profissional certo nos relatórios).
+  const mappedProf = resolveProfessionalFromNumber(phoneNumberId, displayNumber);
+
   // Idempotência: reentrega da Meta é registrada apenas uma vez.
-  const isNewMessage = await recordInbound({ phone, messageId, text: textBody });
+  const isNewMessage = await recordInbound({ phone, messageId, text: textBody, professionalId: mappedProf });
   if (!isNewMessage) {
     botLog("duplicate_ignored", { messageId });
     return;
   }
-  await audit({ phone, actor: "patient", action: "message_in", detail: { type } });
+  await audit({ phone, actor: "patient", action: "message_in", detail: { type }, professionalId: mappedProf });
 
   let session = (await loadSession(phone)) || newSession();
   session.phoneNumberId = phoneNumberId;
@@ -965,8 +993,7 @@ export async function handleWebhookEvent(body) {
     return;
   }
 
-  // Multi-número: o número que recebeu define o profissional.
-  const mappedProf = resolveProfessionalFromNumber(phoneNumberId, displayNumber);
+  // Aplica o profissional resolvido pelo número à sessão.
   if (mappedProf) {
     session.profFromNumber = mappedProf;
     session.profissionalId = mappedProf;
@@ -988,7 +1015,7 @@ export async function takeoverConversation(phone, operatorId) {
   session.mode = "human";
   session.owner_operator_id = operatorId;
   await saveSession(phone, session);
-  await audit({ phone, actor: "human", actorId: operatorId, action: "takeover" });
+  await audit({ phone, actor: "human", actorId: operatorId, action: "takeover", professionalId: session.profissionalId || null });
   botLog("takeover", { phone, operatorId });
   return { ok: true };
 }
@@ -1160,5 +1187,127 @@ export async function getFunnelMetrics() {
     reagendamentos_criados: rescheduled.rows[0].n,
     cancelamentos_criados: cancelled.rows[0].n,
     por_step,
+  };
+}
+
+// ===== RELATÓRIO DE ATENDIMENTO (Seções 7 e 8) =====
+
+// Tarifas do Claude Haiku 4.5 (USD por milhão de tokens), conforme o escopo.
+const HAIKU_INPUT_USD_PER_MTOK = 1;
+const HAIKU_OUTPUT_USD_PER_MTOK = 5;
+
+/**
+ * Relatório de atendimento do WhatsApp, agregado por período.
+ * @param {object} opts
+ * @param {string} opts.startDate "YYYY-MM-DD"
+ * @param {string} opts.endDate   "YYYY-MM-DD"
+ * @param {"day"|"week"|"month"} [opts.granularity="day"]
+ * @param {number|null} [opts.scopeProfessionalId] null = agregado (admin);
+ *   preenchido = escopado ao profissional.
+ */
+export async function getWhatsappReport({ startDate, endDate, granularity = "day", scopeProfessionalId = null }) {
+  const gran = ["day", "week", "month"].includes(granularity) ? granularity : "day";
+  const rate = Number(process.env.USD_BRL_RATE) || 5.2;
+
+  const params = [startDate, endDate];
+  let scopeSql = "";
+  if (scopeProfessionalId != null) {
+    params.push(scopeProfessionalId);
+    scopeSql = " AND professional_id = $3";
+  }
+  const dateSql = "created_at >= $1::date AND created_at < ($2::date + INTERVAL '1 day')";
+
+  const [total, serie, fluxo, pico, novos, transfer, ia] = await Promise.all([
+    pool.query(
+      `SELECT COUNT(DISTINCT phone)::int AS n FROM whatsapp_messages
+        WHERE direction = 'inbound' AND ${dateSql}${scopeSql}`,
+      params
+    ),
+    pool.query(
+      `SELECT date_trunc('${gran}', created_at AT TIME ZONE 'America/Sao_Paulo')::date AS bucket,
+              COUNT(DISTINCT phone)::int AS n
+         FROM whatsapp_messages
+        WHERE direction = 'inbound' AND ${dateSql}${scopeSql}
+        GROUP BY 1 ORDER BY 1`,
+      params
+    ),
+    pool.query(
+      `SELECT detail->>'intent' AS intent, COUNT(*)::int AS n
+         FROM whatsapp_audit_log
+        WHERE action = 'intent_detected' AND ${dateSql}${scopeSql}
+        GROUP BY 1 ORDER BY 2 DESC`,
+      params
+    ),
+    pool.query(
+      `SELECT EXTRACT(HOUR FROM created_at AT TIME ZONE 'America/Sao_Paulo')::int AS hour,
+              COUNT(*)::int AS n
+         FROM whatsapp_messages
+        WHERE direction = 'inbound' AND ${dateSql}${scopeSql}
+        GROUP BY 1 ORDER BY 1`,
+      params
+    ),
+    pool.query(
+      `SELECT action, COUNT(*)::int AS n
+         FROM whatsapp_audit_log
+        WHERE action IN ('client_created', 'private_patient_created') AND ${dateSql}${scopeSql}
+        GROUP BY 1`,
+      params
+    ),
+    pool.query(
+      `SELECT COALESCE(detail->>'reason', 'manual') AS reason, COUNT(*)::int AS n
+         FROM whatsapp_audit_log
+        WHERE action = 'takeover' AND ${dateSql}${scopeSql}
+        GROUP BY 1 ORDER BY 2 DESC`,
+      params
+    ),
+    pool.query(
+      `SELECT COALESCE(SUM(input_tokens), 0)::bigint AS input,
+              COALESCE(SUM(output_tokens), 0)::bigint AS output,
+              COUNT(*)::int AS conversas
+         FROM whatsapp_ai_usage
+        WHERE ${dateSql}${scopeSql}`,
+      params
+    ),
+  ]);
+
+  const totalFluxo = fluxo.rows.reduce((acc, r) => acc + r.n, 0);
+  const por_tipo_fluxo = fluxo.rows.map((r) => ({
+    intent: r.intent || "DESCONHECIDA",
+    n: r.n,
+    pct: totalFluxo ? +((r.n / totalFluxo) * 100).toFixed(1) : 0,
+  }));
+
+  const novosMap = Object.fromEntries(novos.rows.map((r) => [r.action, r.n]));
+  const transfer_total = transfer.rows.reduce((acc, r) => acc + r.n, 0);
+
+  const inputTokens = Number(ia.rows[0].input);
+  const outputTokens = Number(ia.rows[0].output);
+  const custo_usd =
+    (inputTokens / 1e6) * HAIKU_INPUT_USD_PER_MTOK +
+    (outputTokens / 1e6) * HAIKU_OUTPUT_USD_PER_MTOK;
+
+  return {
+    periodo: { start: startDate, end: endDate, granularity: gran },
+    escopo: scopeProfessionalId != null ? "professional" : "convenio",
+    total_atendimentos: total.rows[0].n,
+    serie_temporal: serie.rows.map((r) => ({ data: r.bucket, n: r.n })),
+    por_tipo_fluxo,
+    horario_pico: pico.rows.map((r) => ({ hora: r.hour, n: r.n })),
+    novos_pacientes: {
+      conveniados: novosMap.client_created || 0,
+      particulares: novosMap.private_patient_created || 0,
+    },
+    transferidos_humano: {
+      total: transfer_total,
+      por_motivo: transfer.rows.map((r) => ({ motivo: r.reason, n: r.n })),
+    },
+    custo_ia: {
+      conversas: ia.rows[0].conversas,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      custo_usd: +custo_usd.toFixed(4),
+      custo_brl: +(custo_usd * rate).toFixed(2),
+      usd_brl_rate: rate,
+    },
   };
 }

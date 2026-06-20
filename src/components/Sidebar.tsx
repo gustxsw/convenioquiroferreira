@@ -30,6 +30,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
         { to: '/professional/medical-records', icon: <Stethoscope size={20} />, label: 'Prontuários', color: 'text-rose-500' },
         { to: '/professional/documents', icon: <FileImage size={20} />, label: 'Documentos', color: 'text-cyan-500' },
         { to: '/professional/reports', icon: <BarChart2 size={20} />, label: 'Relatórios', color: 'text-indigo-500' },
+        { to: '/professional/whatsapp-reports', icon: <MessageCircle size={20} />, label: 'Relatório de Atendimento', color: 'text-teal-500' },
         { to: '/professional/profile', icon: <Settings size={20} />, label: 'Perfil', color: 'text-slate-500' },
       ];
     } else if (user?.currentRole === 'secretaria') {
@@ -42,6 +43,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
         { to: '/professional/medical-records', icon: <Stethoscope size={20} />, label: 'Prontuários', color: 'text-rose-500' },
         { to: '/professional/documents', icon: <FileImage size={20} />, label: 'Documentos', color: 'text-cyan-500' },
         { to: '/professional/reports', icon: <BarChart2 size={20} />, label: 'Relatórios', color: 'text-indigo-500' },
+        { to: '/professional/whatsapp-reports', icon: <MessageCircle size={20} />, label: 'Relatório de Atendimento', color: 'text-teal-500' },
         { to: '/professional/profile', icon: <Settings size={20} />, label: 'Perfil', color: 'text-slate-500' },
       ];
     } else if (user?.currentRole === 'admin') {
@@ -54,6 +56,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
         { to: '/admin/agenda-partners', icon: <UserCheck size={20} />, label: 'Parceiros da Agenda', color: 'text-orange-500' },
         { to: '/admin/coupons', icon: <Ticket size={20} />, label: 'Cupons', color: 'text-pink-500' },
         { to: '/admin/reports', icon: <BarChart2 size={20} />, label: 'Relatórios', color: 'text-indigo-500' },
+        { to: '/admin/whatsapp-reports', icon: <MessageCircle size={20} />, label: 'Relatório de Atendimento', color: 'text-teal-500' },
       ];
     } else if (user?.currentRole === 'vendedor') {
       return [

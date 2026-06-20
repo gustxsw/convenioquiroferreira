@@ -37,6 +37,7 @@ import AffiliateFinancialReport from "./pages/admin/AffiliateFinancialReport";
 import AffiliateDashboard from "./pages/affiliate/AffiliateDashboard";
 import AgendaFinancialPage from "./pages/financeiro/AgendaFinancialPage";
 import AtendimentoPage from "./pages/atendimento/AtendimentoPage";
+import WhatsappReportsPage from "./pages/WhatsappReportsPage";
 
 // Route guards
 const ProtectedRoute = ({
@@ -145,6 +146,7 @@ function App() {
         <Route path="/professional/documents" element={<DocumentsPage />} />
         <Route path="/professional/services" element={<ManageServicesPage />} />
         <Route path="/professional/reports" element={<ProfessionalReportsPage />} />
+        <Route path="/professional/whatsapp-reports" element={<WhatsappReportsPage />} />
         <Route path="/professional/profile" element={<ProfessionalProfilePage />} />
         <Route path="/professional/onboarding" element={<ProfessionalOnboardingPage />} />
         {/* Rota de registrar consulta removida do painel profissional */}
@@ -162,6 +164,7 @@ function App() {
         <Route path="/admin/users" element={<ManageUsersPage />} />
         <Route path="/admin/scheduling-access" element={<ManageSchedulingAccessPage />} />
         <Route path="/admin/reports" element={<ReportsPage />} />
+        <Route path="/admin/whatsapp-reports" element={<WhatsappReportsPage />} />
         <Route path="/admin/affiliates" element={<ManageAffiliatesPage />} />
         <Route path="/admin/agenda-partners" element={<ManageAgendaPartnersPage />} />
         <Route path="/admin/affiliates/financial-report" element={<AffiliateFinancialReport />} />
