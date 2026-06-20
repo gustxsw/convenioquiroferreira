@@ -17,6 +17,7 @@ import {
   MessageCircle,
   Briefcase,
   Phone,
+  Calendar,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 import { getProfessionalActorId } from "../../utils/professionalActor";
@@ -56,6 +57,13 @@ const ProfessionalProfilePage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // Google Agenda/Meet
+  const [googleStatus, setGoogleStatus] = useState<{ connected: boolean; email: string | null }>({
+    connected: false,
+    email: null,
+  });
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   const isAgendaOnlyProfile = user?.professionalType === "agenda_only";
   const convenioWhatsappHref = getConvenioWhatsappHref();
@@ -496,6 +504,67 @@ const ProfessionalProfilePage: React.FC = () => {
       return limitedValue.replace(/(\d{2})(\d{4})(\d{4})/, "($1) $2-$3");
     } else {
       return limitedValue.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3");
+    }
+  };
+
+  const fetchGoogleStatus = async () => {
+    try {
+      const response = await fetchWithAuth(`${getApiUrl()}/api/google/status`);
+      if (response.ok) setGoogleStatus(await response.json());
+    } catch {
+      /* silencioso: bloco apenas não aparece como conectado */
+    }
+  };
+
+  useEffect(() => {
+    fetchGoogleStatus();
+    const params = new URLSearchParams(location.search);
+    const google = params.get("google");
+    if (google === "ok") {
+      setSuccess("Google Agenda conectado com sucesso!");
+      fetchGoogleStatus();
+    } else if (google === "erro") {
+      setError("Não foi possível conectar ao Google Agenda. Tente novamente.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
+
+  const handleConnectGoogle = async () => {
+    setGoogleLoading(true);
+    setError("");
+    try {
+      const response = await fetchWithAuth(`${getApiUrl()}/api/google/connect`);
+      const data = await response.json();
+      if (response.ok && data.url) {
+        window.location.href = data.url;
+      } else {
+        setError(data.message || "Não foi possível iniciar a conexão com o Google.");
+        setGoogleLoading(false);
+      }
+    } catch {
+      setError("Erro ao conectar ao Google Agenda.");
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleDisconnectGoogle = async () => {
+    setGoogleLoading(true);
+    setError("");
+    setSuccess("");
+    try {
+      const response = await fetchWithAuth(`${getApiUrl()}/api/google/disconnect`, {
+        method: "POST",
+      });
+      if (response.ok) {
+        setSuccess("Google Agenda desconectado.");
+        await fetchGoogleStatus();
+      } else {
+        setError("Não foi possível desconectar o Google Agenda.");
+      }
+    } catch {
+      setError("Erro ao desconectar o Google Agenda.");
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -948,6 +1017,49 @@ const ProfessionalProfilePage: React.FC = () => {
                   Adicionar Logo
                 </button>
               </div>
+            )}
+          </div>
+
+          {/* Google Agenda / Meet */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <div className="flex items-center mb-4">
+              <Calendar className="h-6 w-6 text-red-600 mr-2" />
+              <h2 className="text-xl font-semibold">Google Agenda</h2>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Conecte seu Google Agenda para que suas consultas sejam sincronizadas
+              automaticamente. Consultas de serviços online geram link do Google Meet,
+              e compromissos criados no seu Google bloqueiam o horário na agenda.
+            </p>
+
+            {googleStatus.connected ? (
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-center text-green-700">
+                  <Check className="h-5 w-5 mr-2" />
+                  <span className="text-sm">
+                    Conectado{googleStatus.email ? ` como ${googleStatus.email}` : ""}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDisconnectGoogle}
+                  disabled={googleLoading}
+                  className="btn btn-secondary flex items-center text-red-600 hover:text-red-700"
+                >
+                  <X className="h-4 w-4 mr-1" />
+                  {googleLoading ? "Processando..." : "Desconectar"}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleConnectGoogle}
+                disabled={googleLoading}
+                className="btn btn-primary inline-flex items-center"
+              >
+                <Calendar className="h-5 w-5 mr-2" />
+                {googleLoading ? "Redirecionando..." : "Conectar Google Agenda"}
+              </button>
             )}
           </div>
 

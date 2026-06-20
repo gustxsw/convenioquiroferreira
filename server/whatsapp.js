@@ -26,6 +26,11 @@ import {
   formatToBrazilTimeOnly,
 } from "./utils/dateHelpers.js";
 import { sendWhatsappTextMessage } from "./utils/whatsappCloud.js";
+import {
+  syncCreateEvent,
+  syncUpdateEvent,
+  syncCancelEvent,
+} from "./utils/consultationSync.js";
 
 const SESSION_TTL_MINUTES = 15;
 
@@ -331,7 +336,8 @@ async function getProfessionalName(professionalId) {
 //   particular -> price_private ?? base_price
 async function getBaseService(professionalId, priceProfile = "convenio") {
   const r = await pool.query(
-    `SELECT id AS service_id, base_price, price_member, price_private
+    `SELECT id AS service_id, base_price, price_member, price_private,
+            COALESCE(is_online, false) AS is_online
        FROM services
       WHERE professional_id = $1
       ORDER BY is_base_service DESC NULLS LAST, id ASC
@@ -344,7 +350,7 @@ async function getBaseService(professionalId, priceProfile = "convenio") {
     priceProfile === "convenio"
       ? s.price_member ?? s.base_price
       : s.price_private ?? s.base_price;
-  return { service_id: s.service_id, value };
+  return { service_id: s.service_id, value, isOnline: s.is_online };
 }
 
 // Próxima consulta futura ativa do paciente — por user_id (conveniado) ou
@@ -649,6 +655,7 @@ async function proceedToSlots(session, phone, nextStep) {
   }
   session.serviceId = base.service_id;
   session.serviceValue = base.value;
+  session.serviceIsOnline = base.isOnline; // define se a consulta gera link Meet
 
   const slots = await getFreeSlots(session.profissionalId, { maxSlots: 5 });
   if (slots.length === 0) {
@@ -689,12 +696,22 @@ async function handleAgendarEscolhaSlot(session, phone, text) {
     action: "consultation_created",
     detail: { consultationId: result.id, professionalId: session.profissionalId, date: slot.isoUTC },
   });
+  // Sincroniza com o Google Agenda; se for consulta online, obtém o link do Meet.
+  let meetLink = null;
+  try {
+    meetLink = await syncCreateEvent(result.id);
+  } catch (e) {
+    botLog("sync_create_error", { error: String(e) });
+  }
   const profName = await getProfessionalName(session.profissionalId);
-  await replyS(
-    session,
-    phone,
-    `✅ Consulta agendada!\n\n📅 ${formatToBrazilDate(slot.isoUTC)} às ${slot.time}\n👨‍⚕️ ${profName}\n\nEm caso de imprevisto é só mandar mensagem aqui. Até lá! 😊`
-  );
+  let confirm = `✅ Consulta agendada!\n\n📅 ${formatToBrazilDate(slot.isoUTC)} às ${slot.time}\n👨‍⚕️ ${profName}`;
+  if (session.serviceIsOnline) {
+    confirm += meetLink
+      ? `\n🔗 Link da consulta online: ${meetLink}`
+      : `\n💻 Consulta online — o link da videochamada será enviado em seguida.`;
+  }
+  confirm += `\n\nEm caso de imprevisto é só mandar mensagem aqui. Até lá! 😊`;
+  await replyS(session, phone, confirm);
   resetFlow(session);
 }
 
@@ -764,6 +781,7 @@ async function handleReagendarEscolhaSlot(session, phone, text) {
     action: "consultation_rescheduled",
     detail: { consultationId: session.consultaId, date: slot.isoUTC },
   });
+  syncUpdateEvent(session.consultaId).catch((e) => botLog("sync_update_error", { error: String(e) }));
   await replyS(session, phone, `✅ Consulta remarcada para ${formatToBrazilDate(slot.isoUTC)} às ${slot.time}. Até lá! 😊`);
   resetFlow(session);
 }
@@ -812,6 +830,7 @@ async function handleCancelarConfirma(session, phone, text) {
         action: "consultation_cancelled",
         detail: { consultationId: session.consultaId },
       });
+      syncCancelEvent(session.consultaId).catch((e) => botLog("sync_cancel_error", { error: String(e) }));
       await replyS(session, phone, "✅ Consulta cancelada. Quando quiser reagendar é só mandar mensagem aqui.");
     } else {
       await replyS(session, phone, "Não consegui localizar a consulta para cancelar. Pode tentar novamente?");

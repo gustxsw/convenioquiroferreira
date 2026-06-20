@@ -24,6 +24,7 @@ type Service = {
   category_id: number | null;
   category_name: string | null;
   is_base_service: boolean;
+  is_online: boolean;
 };
 
 type Category = {
@@ -56,6 +57,7 @@ const ManageServicesPage: React.FC = () => {
   const [pricePrivate, setPricePrivate] = useState("");
   const [categoryId, setCategoryId] = useState<string>("");
   const [isBaseService, setIsBaseService] = useState(false);
+  const [isOnline, setIsOnline] = useState(false);
 
   // Category form state
   const [categoryName, setCategoryName] = useState("");
@@ -161,6 +163,7 @@ const ManageServicesPage: React.FC = () => {
     setPricePrivate("");
     setCategoryId("");
     setIsBaseService(false);
+    setIsOnline(false);
     setSelectedService(null);
     setIsModalOpen(true);
   };
@@ -176,6 +179,7 @@ const ManageServicesPage: React.FC = () => {
     setPricePrivate((service.price_private ?? "").toString());
     setCategoryId(service.category_id?.toString() || "");
     setIsBaseService(service.is_base_service);
+    setIsOnline(!!service.is_online);
     setSelectedService(service);
     setIsModalOpen(true);
   };
@@ -219,6 +223,7 @@ const ManageServicesPage: React.FC = () => {
         price_private: privateValue,
         category_id: categoryId ? Number.parseInt(categoryId) : null,
         is_base_service: isBaseService,
+        is_online: isOnline,
       };
 
       if (modalMode === "create") {
@@ -686,7 +691,7 @@ const ManageServicesPage: React.FC = () => {
               </div>
 
               {!isProfessional && (
-                <div className="mb-6">
+                <div className="mb-4">
                   <label className="flex items-center">
                     <input
                       type="checkbox"
@@ -700,6 +705,20 @@ const ManageServicesPage: React.FC = () => {
                   </label>
                 </div>
               )}
+
+              <div className="mb-6">
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={isOnline}
+                    onChange={(e) => setIsOnline(e.target.checked)}
+                    className="rounded border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50"
+                  />
+                  <span className="ml-2 text-sm text-gray-600">
+                    Atendimento online (gera link do Google Meet)
+                  </span>
+                </label>
+              </div>
 
               <div className="flex flex-col sm:flex-row justify-end gap-3">
                 <button

@@ -20,6 +20,7 @@ import { MercadoPagoConfig, Preference } from "mercadopago";
 import documentsRoutes from "./routes/documents.js";
 import pdfRoutes from "./routes/pdf.js";
 import affiliateTrackingRoutes from "./routes/affiliateTracking.js";
+import googleRoutes from "./routes/google.js";
 import {
   checkSchedulingAccess,
   getSchedulingAccessStatus,
@@ -33,6 +34,12 @@ import {
   formatToBrazilTimeOnly,
 } from "./utils/dateHelpers.js";
 import { getWorkingHours, isWithinWorkingHours } from "./utils/agenda.js";
+import {
+  syncCreateEvent,
+  syncUpdateEvent,
+  syncCancelEvent,
+  syncDeleteEventById,
+} from "./utils/consultationSync.js";
 import {
   verifyWebhook,
   handleWebhookEvent,
@@ -48,6 +55,7 @@ import {
   checkExpiredSubscriptionsNow,
 } from "./jobs/checkExpiredSubscriptions.js";
 import { scheduleMonthlyAgendaRevenueReport } from "./jobs/monthlyAgendaRevenueReport.js";
+import { scheduleGoogleWatchRenewal } from "./jobs/renewGoogleWatchChannels.js";
 import {
   normalizeProfessionalType,
   isAgendaOnlyProfessional,
@@ -168,6 +176,7 @@ app.use(cookieParser());
 app.use("/api/documents", documentsRoutes);
 app.use("/api/pdf", pdfRoutes);
 app.use("/api/affiliate-tracking", affiliateTrackingRoutes);
+app.use("/api/google", googleRoutes);
 
 // Public PDF endpoint — authenticated via short-lived JWT share token (no cookie/Bearer required)
 // Used for WhatsApp links shared with patients
@@ -478,6 +487,11 @@ const initializeDatabase = async () => {
       ALTER TABLE services ADD COLUMN IF NOT EXISTS price_private DECIMAL(10,2);
     `);
 
+    // Modalidade do serviço: online (gera link Google Meet) ou presencial.
+    await pool.query(`
+      ALTER TABLE services ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT false;
+    `);
+
     // Dependents table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS dependents (
@@ -592,6 +606,38 @@ const initializeDatabase = async () => {
         reason TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(professional_id, date, time_slot)
+      )
+    `);
+
+    // ===== Integração Google Agenda/Meet (bidirecional) =====
+    // Eventos externos do Google são ingeridos como blocked_slots; google_event_id
+    // permite atualizar/remover esses bloqueios quando o evento muda no Google.
+    await pool.query(`
+      ALTER TABLE blocked_slots ADD COLUMN IF NOT EXISTS google_event_id TEXT;
+      CREATE INDEX IF NOT EXISTS idx_blocked_slots_google_event_id ON blocked_slots(google_event_id);
+    `);
+
+    // Vínculo da consulta com o evento criado no Google Agenda + link do Meet.
+    await pool.query(`
+      ALTER TABLE consultations ADD COLUMN IF NOT EXISTS google_event_id TEXT;
+      ALTER TABLE consultations ADD COLUMN IF NOT EXISTS google_meet_link TEXT;
+    `);
+
+    // Credenciais OAuth do Google por profissional (refresh token recuperável) +
+    // estado de sincronização (syncToken) e canal de push (events.watch).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS google_oauth_tokens (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        refresh_token TEXT NOT NULL,
+        calendar_id TEXT DEFAULT 'primary',
+        email TEXT,
+        sync_token TEXT,
+        watch_channel_id TEXT,
+        watch_resource_id TEXT,
+        watch_token TEXT,
+        watch_expiration BIGINT,
+        connected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
@@ -4672,7 +4718,8 @@ app.get(
             WHEN c.private_patient_id IS NOT NULL THEN 'private'
             ELSE 'unknown'
           END AS patient_type,
-          COALESCE(NULLIF(TRIM(c.convenio), ''), NULLIF(TRIM(pp.convenio), '')) AS convenio
+          COALESCE(NULLIF(TRIM(c.convenio), ''), NULLIF(TRIM(pp.convenio), '')) AS convenio,
+          c.google_meet_link
         FROM consultations c
         LEFT JOIN services s ON c.service_id = s.id
         LEFT JOIN users u ON c.user_id = u.id
@@ -4751,6 +4798,21 @@ app.get(
 // (compartilhados com a Secretária Virtual). Importados no topo deste arquivo.
 
 const WORKING_TIME_REGEX = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
+
+// Verifica se o slot (UTC) está bloqueado para o profissional — bloqueio manual
+// ou evento externo do Google Agenda ingerido como blocked_slots. A tabela guarda
+// date (DATE) + time_slot (HH:MM) em horário de Brasília, na grade de 30 min.
+async function isSlotBlocked(professionalId, dateTimeUTC) {
+  const ymd = new Date(dateTimeUTC).toLocaleDateString("en-CA", {
+    timeZone: "America/Sao_Paulo",
+  });
+  const hm = formatToBrazilTimeOnly(dateTimeUTC); // "HH:MM" no fuso do Brasil
+  const r = await pool.query(
+    "SELECT 1 FROM blocked_slots WHERE professional_id = $1 AND date = $2 AND time_slot = $3 LIMIT 1",
+    [professionalId, ymd, hm]
+  );
+  return r.rows.length > 0;
+}
 
 // Create new consultation (RegisterConsultationPage - no scheduling access required)
 app.post(
@@ -4880,6 +4942,14 @@ app.post(
         });
       }
 
+      // Horário bloqueado (manual ou evento externo do Google Agenda).
+      if (await isSlotBlocked(req.user.professionalScopeId, dateTimeForStorage)) {
+        return res.status(409).json({
+          message: "Esse horário está bloqueado na agenda.",
+          conflict: true,
+        });
+      }
+
       const conflictCheck = await pool.query(
         `
       SELECT 
@@ -4961,6 +5031,9 @@ app.post(
       console.log("✅ Consultation created with date:", consultation.date);
       console.log("✅ Consultation created:", consultation.id);
       console.log("✅ Saved date:", consultation.date);
+
+      // Sincroniza com o Google Agenda (não-bloqueante).
+      syncCreateEvent(consultation.id).catch(() => {});
 
       res.status(201).json({
         message: "Consulta criada com sucesso",
@@ -5214,6 +5287,9 @@ app.post(
         createdConsultations.push(consultationResult.rows[0]);
       }
 
+      // Sincroniza cada ocorrência com o Google Agenda (não-bloqueante).
+      for (const c of createdConsultations) syncCreateEvent(c.id).catch(() => {});
+
       console.log(
         `✅ [RECURRING] Created ${createdConsultations.length} consultation(s)`
       );
@@ -5283,6 +5359,11 @@ app.put(
       }
 
       console.log("✅ Consultation status updated:", id);
+
+      // Se cancelada, remove o evento do Google Agenda (não-bloqueante).
+      if (status === "cancelled") {
+        syncCancelEvent(result.rows[0].id).catch(() => {});
+      }
 
       res.json({
         message: "Status da consulta atualizado com sucesso",
@@ -5379,6 +5460,14 @@ app.put(
           });
         }
 
+        // Horário bloqueado (manual ou evento externo do Google Agenda).
+        if (await isSlotBlocked(req.user.professionalScopeId, dateTimeForStorage)) {
+          return res.status(409).json({
+            message: "Esse horário está bloqueado na agenda.",
+            conflict: true,
+          });
+        }
+
         updateFields.push(`date = $${paramCount++}`);
         updateValues.push(dateTimeForStorage);
 
@@ -5434,6 +5523,16 @@ app.put(
       const result = await pool.query(updateQuery, updateValues);
 
       console.log("✅ Consultation updated:", id);
+
+      // Reflete no Google Agenda (não-bloqueante): cancelamento remove o evento;
+      // mudança de data/serviço atualiza horário e modalidade (Meet).
+      if (result.rows[0]) {
+        if (status === "cancelled") {
+          syncCancelEvent(result.rows[0].id).catch(() => {});
+        } else if (date !== undefined || service_id !== undefined) {
+          syncUpdateEvent(result.rows[0].id).catch(() => {});
+        }
+      }
 
       res.json({
         message: "Consulta atualizada com sucesso",
@@ -5927,6 +6026,9 @@ app.put(
 
       console.log("✅ Consultation cancelled:", id);
 
+      // Remove o evento do Google Agenda (não-bloqueante).
+      syncCancelEvent(result.rows[0].id).catch(() => {});
+
       res.json({
         message: "Consulta cancelada com sucesso",
         consultation: result.rows[0],
@@ -5965,6 +6067,14 @@ app.delete(
       }
 
       console.log("✅ Consultation deleted:", id);
+
+      // Remove o evento do Google Agenda (linha já não existe; usa o id do evento).
+      if (result.rows[0]?.google_event_id) {
+        syncDeleteEventById(
+          result.rows[0].professional_id,
+          result.rows[0].google_event_id
+        ).catch(() => {});
+      }
 
       res.json({ message: "Consulta excluída com sucesso" });
     } catch (error) {
@@ -6837,7 +6947,7 @@ app.post(
   authorize(["admin", "professional", "secretaria"]),
   async (req, res) => {
     try {
-      const { name, description, base_price, price_member, price_private, category_id, is_base_service } =
+      const { name, description, base_price, price_member, price_private, category_id, is_base_service, is_online } =
         req.body;
 
       const prices = normalizeServicePrices({ base_price, price_member, price_private });
@@ -6854,8 +6964,8 @@ app.post(
 
       const serviceResult = await pool.query(
         `
-      INSERT INTO services (name, description, base_price, price_member, price_private, category_id, is_base_service, professional_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO services (name, description, base_price, price_member, price_private, category_id, is_base_service, is_online, professional_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
     `,
         [
@@ -6866,6 +6976,7 @@ app.post(
           prices.price_private,
           category_id || null,
           isProfessional ? false : is_base_service || false,
+          is_online === true,
           isProfessional ? (req.user.professionalScopeId ?? req.user.id) : null,
         ]
       );
@@ -6892,7 +7003,7 @@ app.put(
   async (req, res) => {
     try {
       const { id } = req.params;
-      const { name, description, base_price, price_member, price_private, category_id, is_base_service } =
+      const { name, description, base_price, price_member, price_private, category_id, is_base_service, is_online } =
         req.body;
 
       // Get current service data
@@ -6927,8 +7038,8 @@ app.put(
       const updatedServiceResult = await pool.query(
         `
       UPDATE services
-      SET name = $1, description = $2, base_price = $3, price_member = $4, price_private = $5, category_id = $6, is_base_service = $7
-      WHERE id = $8
+      SET name = $1, description = $2, base_price = $3, price_member = $4, price_private = $5, category_id = $6, is_base_service = $7, is_online = $8
+      WHERE id = $9
       RETURNING *
     `,
         [
@@ -6939,6 +7050,7 @@ app.put(
           prices.price_private,
           category_id || null,
           isProfessional ? false : is_base_service || false,
+          is_online === true,
           id,
         ]
       );
@@ -11919,6 +12031,10 @@ const startServer = async () => {
     console.log("⏰ Setting up monthly agenda revenue report job...");
     scheduleMonthlyAgendaRevenueReport();
     console.log("✅ Monthly agenda revenue report job initialized");
+
+    console.log("⏰ Setting up Google Calendar watch renewal job...");
+    scheduleGoogleWatchRenewal();
+    console.log("✅ Google Calendar watch renewal job initialized");
 
     console.log(`🌐 Starting HTTP server on port ${PORT}...`);
     const server = app.listen(PORT, "0.0.0.0", () => {
