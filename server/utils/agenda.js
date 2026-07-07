@@ -58,25 +58,48 @@ function brazilDateTimeToUTC(ymd, time) {
   return new Date(`${ymd}T${time}:00${BRAZIL_UTC_OFFSET}`).toISOString();
 }
 
-/**
- * Gera os próximos horários livres do profissional.
- * @param {number} professionalId
- * @param {object} [opts]
- * @param {number} [opts.slotMinutes=30] duração de cada slot
- * @param {number} [opts.maxSlots=5] quantos slots retornar
- * @param {number} [opts.maxDays=14] horizonte de busca em dias
- * @returns {Promise<Array<{ dateBrazil: string, time: string, isoUTC: string }>>}
- */
-export async function getFreeSlots(
-  professionalId,
-  { slotMinutes = 30, maxSlots = 5, maxDays = 14 } = {}
-) {
-  const { start, end } = await getWorkingHours(professionalId);
-  const startMin = timeToMinutes(start);
-  const endMin = timeToMinutes(end);
-  const nowISO = new Date().toISOString();
+// Diferença em dias entre duas datas "YYYY-MM-DD" (b - a), ignorando fuso/horas.
+function daysBetween(a, b) {
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
+}
 
-  // Consultas ativas no horizonte → conjunto de instantes ocupados (ISO UTC)
+const WEEKDAYS = [
+  "Domingo",
+  "Segunda-feira",
+  "Terça-feira",
+  "Quarta-feira",
+  "Quinta-feira",
+  "Sexta-feira",
+  "Sábado",
+];
+
+// Rótulo amigável de um dia: "Hoje (07/07)", "Amanhã (08/07)", "Quinta-feira (10/07)".
+function dayLabel(ymd) {
+  const diff = daysBetween(todayInBrazil(), ymd);
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dm = `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
+  if (diff === 0) return `Hoje (${dm})`;
+  if (diff === 1) return `Amanhã (${dm})`;
+  const weekday = WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return `${weekday} (${dm})`;
+}
+
+// Lista de dias (YYYY-MM-DD, Brasil) a partir de hoje, horizonte = maxDays.
+function eachDayYmd(maxDays) {
+  const [y, m, d] = todayInBrazil().split("-").map(Number);
+  const days = [];
+  for (let off = 0; off < maxDays; off++) {
+    // Date.UTC lida com overflow de mês/ano ao somar dias
+    days.push(new Date(Date.UTC(y, m - 1, d + off)).toISOString().slice(0, 10));
+  }
+  return days;
+}
+
+// Carrega ocupação do profissional no horizonte: consultas ativas (instantes ISO UTC)
+// e bloqueios manuais/Google ("YYYY-MM-DD|HH:MM" em horário Brasil).
+async function loadOccupancy(professionalId, maxDays) {
   const occupied = new Set();
   const consultas = await pool.query(
     `SELECT date FROM consultations
@@ -90,7 +113,6 @@ export async function getFreeSlots(
     occupied.add(new Date(row.date).toISOString());
   }
 
-  // Horários bloqueados manualmente → conjunto "YYYY-MM-DD|HH:MM" (horário Brasil)
   const blocked = new Set();
   const bloqueios = await pool.query(
     `SELECT date, time_slot FROM blocked_slots
@@ -103,28 +125,65 @@ export async function getFreeSlots(
     blocked.add(`${ymd}|${time}`);
   }
 
-  const todayBR = todayInBrazil();
-  const [y, m, d] = todayBR.split("-").map(Number);
-  const slots = [];
+  return { occupied, blocked };
+}
 
-  for (let dayOffset = 0; dayOffset < maxDays; dayOffset++) {
-    // Date.UTC lida com overflow de mês/ano ao somar dias
-    const ymd = new Date(Date.UTC(y, m - 1, d + dayOffset))
-      .toISOString()
-      .slice(0, 10);
+// Gera os horários livres de um único dia (YYYY-MM-DD Brasil), dado o contexto
+// de expediente + ocupação já carregado.
+function slotsForDay(ymd, ctx) {
+  const { startMin, endMin, slotMinutes, nowISO, occupied, blocked } = ctx;
+  const out = [];
+  for (let minutes = startMin; minutes < endMin; minutes += slotMinutes) {
+    const time = minutesToTime(minutes);
+    const isoUTC = brazilDateTimeToUTC(ymd, time);
+    if (isoUTC <= nowISO) continue; // já passou
+    if (occupied.has(isoUTC)) continue; // já agendado
+    if (blocked.has(`${ymd}|${time}`)) continue; // bloqueado
+    out.push({ dateBrazil: ymd, time, isoUTC });
+  }
+  return out;
+}
 
-    for (let minutes = startMin; minutes < endMin; minutes += slotMinutes) {
-      const time = minutesToTime(minutes);
-      const isoUTC = brazilDateTimeToUTC(ymd, time);
+async function buildContext(professionalId, maxDays, slotMinutes) {
+  const { start, end } = await getWorkingHours(professionalId);
+  return {
+    startMin: timeToMinutes(start),
+    endMin: timeToMinutes(end),
+    slotMinutes,
+    nowISO: new Date().toISOString(),
+    ...(await loadOccupancy(professionalId, maxDays)),
+  };
+}
 
-      if (isoUTC <= nowISO) continue; // já passou
-      if (occupied.has(isoUTC)) continue; // já agendado
-      if (blocked.has(`${ymd}|${time}`)) continue; // bloqueado
-
-      slots.push({ dateBrazil: ymd, time, isoUTC });
-      if (slots.length >= maxSlots) return slots;
+/**
+ * Dias com pelo menos um horário livre, do mais próximo ao mais distante.
+ * @returns {Promise<Array<{ dateBrazil: string, label: string, freeCount: number }>>}
+ */
+export async function getAvailableDays(
+  professionalId,
+  { slotMinutes = 30, maxDays = 21, limit = 6 } = {}
+) {
+  const ctx = await buildContext(professionalId, maxDays, slotMinutes);
+  const result = [];
+  for (const ymd of eachDayYmd(maxDays)) {
+    const free = slotsForDay(ymd, ctx);
+    if (free.length > 0) {
+      result.push({ dateBrazil: ymd, label: dayLabel(ymd), freeCount: free.length });
+      if (result.length >= limit) break;
     }
   }
+  return result;
+}
 
-  return slots;
+/**
+ * Horários livres de um dia específico (YYYY-MM-DD, Brasil).
+ * @returns {Promise<Array<{ dateBrazil: string, time: string, isoUTC: string }>>}
+ */
+export async function getFreeSlotsForDay(
+  professionalId,
+  dateBrazil,
+  { slotMinutes = 30 } = {}
+) {
+  const ctx = await buildContext(professionalId, 21, slotMinutes);
+  return slotsForDay(dateBrazil, ctx);
 }

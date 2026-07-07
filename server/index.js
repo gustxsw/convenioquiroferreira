@@ -12152,6 +12152,16 @@ const startServer = async () => {
       }
       process.exit(1);
     });
+
+    // WhatsApp via Baileys (biblioteca não-oficial) — alternativa à Cloud API
+    // para testes. Ativado por WHATSAPP_PROVIDER=baileys.
+    if ((process.env.WHATSAPP_PROVIDER || "").toLowerCase() === "baileys") {
+      console.log("💬 Iniciando WhatsApp via Baileys...");
+      const { startBaileys } = await import("./utils/whatsappBaileys.js");
+      startBaileys().catch((e) =>
+        console.error("❌ Falha ao iniciar Baileys:", e)
+      );
+    }
   } catch (error) {
     console.error("❌ Failed to start server:", error);
     console.error("❌ Error stack:", error.stack);
