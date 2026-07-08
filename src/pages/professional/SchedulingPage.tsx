@@ -22,6 +22,7 @@ import {
   Search,
   Lock,
   Unlock,
+  CalendarClock,
 } from "lucide-react";
 import {
   format,
@@ -38,6 +39,7 @@ import {
 import { ptBR } from "date-fns/locale";
 import CancelConsultationModal from "../../components/CancelConsultationModal";
 import EditConsultationModal from "../../components/EditConsultationModal";
+import RescheduleConsultationModal from "../../components/RescheduleConsultationModal";
 import SlotCustomizationModal from "../../components/SlotCustomizationModal";
 import RecurringConsultationModal from "../../components/RecurringConsultationModal";
 import SchedulingAccessPayment from "../../components/SchedulingAccessPayment";
@@ -144,6 +146,13 @@ const SchedulingPage: React.FC = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [consultationToEdit, setConsultationToEdit] =
     useState<Consultation | null>(null);
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [consultationToReschedule, setConsultationToReschedule] =
+    useState<Consultation | null>(null);
+  const [rescheduleDefaults, setRescheduleDefaults] = useState<{
+    date: string;
+    time: string;
+  }>({ date: "", time: "" });
   const [showCancelModal, setShowCancelModal] = useState(false);
 
   // Agenda redesign UI state
@@ -1101,6 +1110,31 @@ const SchedulingPage: React.FC = () => {
     setConsultationToEdit(null);
   };
 
+  const openRescheduleModal = (
+    consultation: Consultation,
+    displayTime: string
+  ) => {
+    setConsultationToReschedule(consultation);
+    // Usa a data/hora EXIBIDAS (as mesmas que aparecem na agenda), evitando
+    // reconversão de fuso. displayTime é o slot da linha; a data é a do dia aberto.
+    setRescheduleDefaults({
+      date: format(selectedDate, "yyyy-MM-dd"),
+      time: displayTime,
+    });
+    setShowRescheduleModal(true);
+  };
+
+  const closeRescheduleModal = () => {
+    setShowRescheduleModal(false);
+    setConsultationToReschedule(null);
+  };
+
+  const handleRescheduleSuccess = () => {
+    fetchData();
+    setSuccess("Consulta remarcada com sucesso!");
+    setTimeout(() => setSuccess(""), 3000);
+  };
+
   const handleEditSuccess = () => {
     fetchData();
     setSuccess("Consulta editada com sucesso!");
@@ -1483,21 +1517,22 @@ const SchedulingPage: React.FC = () => {
             </button>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 w-full sm:w-auto sm:flex-shrink-0">
             <button
               onClick={() => setShowRecurringModal(true)}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-[#d1cdcc] bg-white text-[13px] font-semibold text-[#35302f] hover:bg-[#faf8f7] transition-colors"
+              className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg border border-[#d1cdcc] bg-white text-[13px] font-semibold text-[#35302f] hover:bg-[#faf8f7] transition-colors flex-1 sm:flex-none"
             >
-              <Repeat className="h-4 w-4" />
+              <Repeat className="h-4 w-4 flex-shrink-0" />
               <span className="hidden sm:inline">Consultas Recorrentes</span>
               <span className="sm:hidden">Recorrentes</span>
             </button>
             <button
               onClick={() => setShowNewModal(true)}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#b32228] text-[13px] font-bold text-white hover:bg-[#9c1d22] transition-colors shadow-sm"
+              className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg bg-[#b32228] text-[13px] font-bold text-white hover:bg-[#9c1d22] transition-colors shadow-sm flex-1 sm:flex-none whitespace-nowrap"
             >
-              <Plus className="h-4 w-4" />
-              Agendar Consulta
+              <Plus className="h-4 w-4 flex-shrink-0" />
+              <span className="hidden sm:inline">Agendar Consulta</span>
+              <span className="sm:hidden">Agendar</span>
             </button>
           </div>
         </div>
@@ -1617,7 +1652,7 @@ const SchedulingPage: React.FC = () => {
                               handleSlotClick(timeSlot);
                             }
                           }}
-                          className={`flex items-center gap-3 sm:gap-4 px-3 sm:px-5 py-3 transition-colors ${
+                          className={`flex flex-wrap items-center gap-x-3 gap-y-2 sm:gap-4 px-3 sm:px-5 py-3 transition-colors ${
                             consultation
                               ? ""
                               : isBlocked
@@ -1679,7 +1714,7 @@ const SchedulingPage: React.FC = () => {
                                 )}
                               </div>
 
-                              <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0">
+                              <div className="flex items-center gap-1 sm:gap-1.5 w-full sm:w-auto justify-end sm:flex-shrink-0">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1689,6 +1724,17 @@ const SchedulingPage: React.FC = () => {
                                   title="Enviar mensagem no WhatsApp"
                                 >
                                   <MessageCircle className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openRescheduleModal(consultation, timeSlot);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-medium border border-[#d1cdcc] text-[#585454] hover:bg-black/5 transition-colors"
+                                  title="Remarcar consulta (mudar data/horário)"
+                                >
+                                  <CalendarClock className="h-3.5 w-3.5" />
+                                  Remarcar
                                 </button>
                                 <button
                                   onClick={(e) => {
@@ -2723,6 +2769,17 @@ const SchedulingPage: React.FC = () => {
           consultation={consultationToEdit}
           onClose={closeEditModal}
           onSuccess={handleEditSuccess}
+        />
+
+        {/* Reschedule Consultation Modal */}
+        <RescheduleConsultationModal
+          isOpen={showRescheduleModal}
+          consultation={consultationToReschedule}
+          defaultDate={rescheduleDefaults.date}
+          defaultTime={rescheduleDefaults.time}
+          slotDuration={slotDuration}
+          onClose={closeRescheduleModal}
+          onSuccess={handleRescheduleSuccess}
         />
 
         {/* Cancel Consultation Modal */}

@@ -32,7 +32,9 @@
       "Bash(Format-Table -AutoSize)",
       "Bash(grep -E \"\\\\.\\(ts|tsx|py\\)$\")",
       "Bash(Select-Object -First 80)",
-      "Bash(xargs grep -l \"CREATE TABLE\\\\|ALTER TABLE\\\\|users\\\\|affiliates\\\\|leaders\")"
+      "Bash(xargs grep -l \"CREATE TABLE\\\\|ALTER TABLE\\\\|users\\\\|affiliates\\\\|leaders\")",
+      "PowerShell(netsh interface *)",
+      "PowerShell(Get-Process *)"
     ]
   }
 }
