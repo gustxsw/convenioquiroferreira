@@ -5565,6 +5565,36 @@ app.put(
           });
         }
 
+        // Verificar conflito com outra consulta no mesmo horário (excluindo a própria).
+        const conflictCheck = await pool.query(
+          `SELECT c.id,
+                  CASE
+                    WHEN c.user_id IS NOT NULL THEN u.name
+                    WHEN c.dependent_id IS NOT NULL THEN d.name
+                    WHEN c.private_patient_id IS NOT NULL THEN pp.name
+                    ELSE 'Paciente não identificado'
+                  END AS client_name
+             FROM consultations c
+             LEFT JOIN users u ON c.user_id = u.id
+             LEFT JOIN dependents d ON c.dependent_id = d.id
+             LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
+            WHERE c.professional_id = $1
+              AND c.date = $2::timestamptz
+              AND c.status != 'cancelled'
+              AND c.id != $3`,
+          [req.user.professionalScopeId, dateTimeForStorage, id]
+        );
+
+        if (conflictCheck.rows.length > 0) {
+          const conflict = conflictCheck.rows[0];
+          const formattedDate = formatToBrazilDate(dateTimeForStorage);
+          const formattedTime = formatToBrazilTimeOnly(dateTimeForStorage);
+          return res.status(409).json({
+            message: `O horário ${formattedTime} do dia ${formattedDate} já está agendado para ${conflict.client_name}.`,
+            conflict: true,
+          });
+        }
+
         updateFields.push(`date = $${paramCount++}`);
         updateValues.push(dateTimeForStorage);
 
