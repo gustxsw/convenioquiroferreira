@@ -175,7 +175,7 @@ const INTENT_KEYWORDS = [
   ["CANCELAR", ["cancel", "desmarc", "nao vou poder", "nao consigo ir", "nao poderei", "nao vou conseguir"]],
   ["REAGENDAR", ["remarc", "reagend", "mudar o horario", "mudar horario", "trocar o horario", "trocar horario", "mudar a data", "mudar data", "trocar a data", "trocar data", "mudar de dia", "outro dia", "outro horario", "adiar", "antecipar"]],
   ["CONVENIO", ["convenio", "carteirinha", "cobertura", "preco", "valor", "como funciona", "quanto custa", "plano", "beneficio", "contratar", "mensalidade", "assinatura", "quero contratar"]],
-  ["AGENDAR", ["agend", "marc", "horario", "atendimento", "quero marcar", "queria marcar", "quero uma consulta", "preciso de uma consulta", "nova consulta", "quero agendar"]],
+  ["AGENDAR", ["agend", "marc", "consulta", "horario", "atendimento", "quero marcar", "queria marcar", "quero uma consulta", "preciso de uma consulta", "nova consulta", "quero agendar"]],
 ];
 
 export function detectIntent(text) {
