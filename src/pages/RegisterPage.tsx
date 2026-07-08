@@ -92,6 +92,11 @@ const RegisterPage: React.FC = () => {
 
   // Get API URL - PRODUCTION READY
   const getApiUrl = () => {
+    const fromEnv = import.meta.env.VITE_API_URL as string | undefined;
+    if (fromEnv && String(fromEnv).trim()) {
+      return String(fromEnv).trim().replace(/\/$/, "");
+    }
+
     if (
       window.location.hostname === "cartaoquiroferreira.com.br" ||
       window.location.hostname === "www.cartaoquiroferreira.com.br"

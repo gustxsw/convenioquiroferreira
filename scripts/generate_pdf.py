@@ -360,6 +360,118 @@ def render_generic(story: list, styles: dict, payload: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Relatorio de Atendimento (WhatsApp) — Secoes 7 e 8
+# ---------------------------------------------------------------------------
+
+_INTENT_LABELS = {
+    "AGENDAR": "Agendamento",
+    "REAGENDAR": "Reagendamento",
+    "CANCELAR": "Cancelamento",
+    "CONVENIO": "Duvida (convenio)",
+    "SAUDACAO": "Saudacao",
+    "DESCONHECIDA": "Desconhecida",
+}
+
+
+def _report_table(story: list, header: list, rows: list) -> None:
+    data = [header] + (rows if rows else [["Sem dados", ""][: len(header)]])
+    table = Table(data, hAlign="LEFT")
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#7f1d1d")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cccccc")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f5f5f5")]),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    story.append(table)
+    story.append(Spacer(1, 0.3 * cm))
+
+
+def render_whatsapp_report(story: list, styles: dict, payload: dict) -> None:
+    report = payload.get("report") or {}
+    periodo = report.get("periodo") or {}
+    scope_label = ascii_safe(payload.get("scope_label") or "Convenio (agregado)")
+
+    story.append(
+        Paragraph(
+            f"Periodo: {ascii_safe(periodo.get('start'))} a {ascii_safe(periodo.get('end'))} "
+            f"&nbsp;|&nbsp; Escopo: {scope_label}",
+            styles["subtitle"],
+        )
+    )
+    story.append(Spacer(1, 0.3 * cm))
+
+    story.append(Paragraph(f"<b>Total de atendimentos:</b> {report.get('total_atendimentos', 0)}", styles["normal"]))
+    novos = report.get("novos_pacientes") or {}
+    story.append(
+        Paragraph(
+            f"<b>Novos pacientes captados:</b> {novos.get('conveniados', 0)} conveniado(s), "
+            f"{novos.get('particulares', 0)} particular(es)",
+            styles["normal"],
+        )
+    )
+    story.append(Spacer(1, 0.3 * cm))
+
+    # Conversas por tipo de fluxo
+    story.append(Paragraph("Conversas por tipo de fluxo", styles["h2"]))
+    _report_table(
+        story,
+        ["Tipo", "Qtd", "%"],
+        [
+            [_INTENT_LABELS.get(r.get("intent"), ascii_safe(r.get("intent"))), str(r.get("n", 0)), f"{r.get('pct', 0)}%"]
+            for r in report.get("por_tipo_fluxo") or []
+        ],
+    )
+
+    # Horario de pico
+    story.append(Paragraph("Horario de pico (mensagens recebidas por hora)", styles["h2"]))
+    _report_table(
+        story,
+        ["Hora", "Mensagens"],
+        [[f"{int(r.get('hora', 0)):02d}h", str(r.get("n", 0))] for r in report.get("horario_pico") or []],
+    )
+
+    # Conversas transferidas para humano
+    transf = report.get("transferidos_humano") or {}
+    story.append(Paragraph(f"Conversas transferidas para humano (total: {transf.get('total', 0)})", styles["h2"]))
+    _report_table(
+        story,
+        ["Motivo", "Qtd"],
+        [[ascii_safe(r.get("motivo")), str(r.get("n", 0))] for r in transf.get("por_motivo") or []],
+    )
+
+    # Custo da IA
+    custo = report.get("custo_ia") or {}
+    story.append(Paragraph("Custo da Inteligencia Artificial", styles["h2"]))
+    _report_table(
+        story,
+        ["Indicador", "Valor"],
+        [
+            ["Conversas com IA", str(custo.get("conversas", 0))],
+            ["Tokens de entrada", str(custo.get("input_tokens", 0))],
+            ["Tokens de saida", str(custo.get("output_tokens", 0))],
+            ["Custo (US$)", f"US$ {custo.get('custo_usd', 0):.4f}"],
+            ["Custo (R$)", f"R$ {custo.get('custo_brl', 0):.2f}".replace(".", ",")],
+            ["Cotacao USD->BRL usada", str(custo.get("usd_brl_rate", "—"))],
+        ],
+    )
+    story.append(
+        Paragraph(
+            "* O custo em reais e uma estimativa baseada na cotacao configurada.",
+            styles["small"],
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -400,11 +512,15 @@ def main() -> None:
     story: list = []
 
     render_header(story, styles, payload, title)
-    render_patient_block(story, styles, payload)
+    if document_type != "whatsapp_report":
+        render_patient_block(story, styles, payload)
 
     skip_footer = False
 
-    if document_type == "medical_record":
+    if document_type == "whatsapp_report":
+        render_whatsapp_report(story, styles, payload)
+        skip_footer = True
+    elif document_type == "medical_record":
         render_medical_record(story, styles, payload)
     elif document_type == "certificate":
         render_certificate(story, styles, payload)

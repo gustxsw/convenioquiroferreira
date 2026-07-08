@@ -21,3 +21,6 @@ node_modules
 *.sln
 *.sw?
 .env
+
+# Sessão local do WhatsApp (Baileys)
+server/.baileys_auth/

@@ -1,8 +1,9 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Home, Users, FileText, BarChart2, Calendar, UserPlus, CalendarDays, UserCheck, Stethoscope, FileImage, Settings, Clock, DollarSign, Ticket } from 'lucide-react';
+import { Home, Users, FileText, BarChart2, Calendar, UserPlus, CalendarDays, UserCheck, Stethoscope, FileImage, Settings, Clock, DollarSign, Ticket, MessageCircle } from 'lucide-react';
 import { getSpecialtyLabelPt } from '../config/specialtyTemplates';
+import { usePendingCount } from '../hooks/usePendingCount';
 
 type SidebarProps = {
   onItemClick?: () => void;
@@ -10,6 +11,7 @@ type SidebarProps = {
 
 const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
   const { user } = useAuth();
+  const pendingCount = usePendingCount();
 
   // Navigation links based on user current role. Cada item tem uma cor própria
   // de ícone (decisão do dono do convênio: navbar mais colorida).
@@ -28,28 +30,33 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
         { to: '/professional/medical-records', icon: <Stethoscope size={20} />, label: 'Prontuários', color: 'text-rose-500' },
         { to: '/professional/documents', icon: <FileImage size={20} />, label: 'Documentos', color: 'text-cyan-500' },
         { to: '/professional/reports', icon: <BarChart2 size={20} />, label: 'Relatórios', color: 'text-indigo-500' },
+        { to: '/professional/whatsapp-reports', icon: <MessageCircle size={20} />, label: 'Relatório de Atendimento', color: 'text-teal-500' },
         { to: '/professional/profile', icon: <Settings size={20} />, label: 'Perfil', color: 'text-slate-500' },
       ];
     } else if (user?.currentRole === 'secretaria') {
       return [
         { to: '/professional', icon: <Home size={20} />, label: 'Início', color: 'text-blue-500' },
+        { to: '/atendimento', icon: <MessageCircle size={20} />, label: 'Atendimento', color: 'text-cyan-500' },
         { to: '/professional/scheduling', icon: <CalendarDays size={20} />, label: 'Agenda', color: 'text-purple-500' },
         { to: '/professional/private-patients', icon: <UserCheck size={20} />, label: 'Pacientes Particulares', color: 'text-emerald-500' },
         { to: '/professional/services', icon: <FileText size={20} />, label: 'Meus Serviços', color: 'text-amber-500' },
         { to: '/professional/medical-records', icon: <Stethoscope size={20} />, label: 'Prontuários', color: 'text-rose-500' },
         { to: '/professional/documents', icon: <FileImage size={20} />, label: 'Documentos', color: 'text-cyan-500' },
         { to: '/professional/reports', icon: <BarChart2 size={20} />, label: 'Relatórios', color: 'text-indigo-500' },
+        { to: '/professional/whatsapp-reports', icon: <MessageCircle size={20} />, label: 'Relatório de Atendimento', color: 'text-teal-500' },
         { to: '/professional/profile', icon: <Settings size={20} />, label: 'Perfil', color: 'text-slate-500' },
       ];
     } else if (user?.currentRole === 'admin') {
       return [
         { to: '/admin', icon: <Home size={20} />, label: 'Início', color: 'text-blue-500' },
+        { to: '/atendimento', icon: <MessageCircle size={20} />, label: 'Atendimento', color: 'text-cyan-500' },
         { to: '/admin/users', icon: <Users size={20} />, label: 'Usuários', color: 'text-emerald-500' },
         { to: '/admin/scheduling-access', icon: <Clock size={20} />, label: 'Acesso à Agenda', color: 'text-purple-500' },
         { to: '/admin/affiliates', icon: <DollarSign size={20} />, label: 'Afiliados', color: 'text-green-500' },
         { to: '/admin/agenda-partners', icon: <UserCheck size={20} />, label: 'Parceiros da Agenda', color: 'text-orange-500' },
         { to: '/admin/coupons', icon: <Ticket size={20} />, label: 'Cupons', color: 'text-pink-500' },
         { to: '/admin/reports', icon: <BarChart2 size={20} />, label: 'Relatórios', color: 'text-indigo-500' },
+        { to: '/admin/whatsapp-reports', icon: <MessageCircle size={20} />, label: 'Relatório de Atendimento', color: 'text-teal-500' },
       ];
     } else if (user?.currentRole === 'vendedor') {
       return [
@@ -100,6 +107,11 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
             >
               {React.cloneElement(link.icon, { className: `${link.color} shrink-0` })}
               <span className="ml-3">{link.label}</span>
+              {link.to === '/atendimento' && pendingCount > 0 && (
+                <span className="ml-auto rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+                  {pendingCount}
+                </span>
+              )}
             </NavLink>
           ))}
         </div>

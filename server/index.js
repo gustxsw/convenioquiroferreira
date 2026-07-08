@@ -20,6 +20,7 @@ import { MercadoPagoConfig, Preference } from "mercadopago";
 import documentsRoutes from "./routes/documents.js";
 import pdfRoutes from "./routes/pdf.js";
 import affiliateTrackingRoutes from "./routes/affiliateTracking.js";
+import googleRoutes from "./routes/google.js";
 import {
   checkSchedulingAccess,
   getSchedulingAccessStatus,
@@ -32,11 +33,30 @@ import {
   formatToBrazilDate,
   formatToBrazilTimeOnly,
 } from "./utils/dateHelpers.js";
+import { getWorkingHours, isWithinWorkingHours } from "./utils/agenda.js";
+import {
+  syncCreateEvent,
+  syncUpdateEvent,
+  syncCancelEvent,
+  syncDeleteEventById,
+} from "./utils/consultationSync.js";
+import {
+  verifyWebhook,
+  handleWebhookEvent,
+  getFunnelMetrics,
+  takeoverConversation,
+  releaseConversation,
+  sendOperatorMessage,
+  getConversation,
+  listConversations,
+  getWhatsappReport,
+} from "./whatsapp.js";
 import {
   scheduleExpiryCheck,
   checkExpiredSubscriptionsNow,
 } from "./jobs/checkExpiredSubscriptions.js";
 import { scheduleMonthlyAgendaRevenueReport } from "./jobs/monthlyAgendaRevenueReport.js";
+import { scheduleGoogleWatchRenewal } from "./jobs/renewGoogleWatchChannels.js";
 import {
   normalizeProfessionalType,
   isAgendaOnlyProfessional,
@@ -157,6 +177,7 @@ app.use(cookieParser());
 app.use("/api/documents", documentsRoutes);
 app.use("/api/pdf", pdfRoutes);
 app.use("/api/affiliate-tracking", affiliateTrackingRoutes);
+app.use("/api/google", googleRoutes);
 
 // Public PDF endpoint — authenticated via short-lived JWT share token (no cookie/Bearer required)
 // Used for WhatsApp links shared with patients
@@ -460,6 +481,18 @@ const initializeDatabase = async () => {
       END $$;
     `);
 
+    // Preço duplo: conveniado (price_member) e particular (price_private).
+    // base_price é mantido para compatibilidade e como fallback.
+    await pool.query(`
+      ALTER TABLE services ADD COLUMN IF NOT EXISTS price_member  DECIMAL(10,2);
+      ALTER TABLE services ADD COLUMN IF NOT EXISTS price_private DECIMAL(10,2);
+    `);
+
+    // Modalidade do serviço: online (gera link Google Meet) ou presencial.
+    await pool.query(`
+      ALTER TABLE services ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT false;
+    `);
+
     // Dependents table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS dependents (
@@ -574,6 +607,38 @@ const initializeDatabase = async () => {
         reason TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(professional_id, date, time_slot)
+      )
+    `);
+
+    // ===== Integração Google Agenda/Meet (bidirecional) =====
+    // Eventos externos do Google são ingeridos como blocked_slots; google_event_id
+    // permite atualizar/remover esses bloqueios quando o evento muda no Google.
+    await pool.query(`
+      ALTER TABLE blocked_slots ADD COLUMN IF NOT EXISTS google_event_id TEXT;
+      CREATE INDEX IF NOT EXISTS idx_blocked_slots_google_event_id ON blocked_slots(google_event_id);
+    `);
+
+    // Vínculo da consulta com o evento criado no Google Agenda + link do Meet.
+    await pool.query(`
+      ALTER TABLE consultations ADD COLUMN IF NOT EXISTS google_event_id TEXT;
+      ALTER TABLE consultations ADD COLUMN IF NOT EXISTS google_meet_link TEXT;
+    `);
+
+    // Credenciais OAuth do Google por profissional (refresh token recuperável) +
+    // estado de sincronização (syncToken) e canal de push (events.watch).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS google_oauth_tokens (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        refresh_token TEXT NOT NULL,
+        calendar_id TEXT DEFAULT 'primary',
+        email TEXT,
+        sync_token TEXT,
+        watch_channel_id TEXT,
+        watch_resource_id TEXT,
+        watch_token TEXT,
+        watch_expiration BIGINT,
+        connected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
@@ -1531,6 +1596,68 @@ const initializeDatabase = async () => {
     if (normalizedCityCount > 0) {
       console.log(`✅ ${normalizedCityCount} cidades padronizadas em users`);
     }
+
+    // ===== WHATSAPP VIRTUAL SECRETARY TABLES =====
+    // Log completo de todas as mensagens (entrada/saída) do bot de WhatsApp.
+    // message_id UNIQUE garante idempotência contra reentregas da Meta.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_messages (
+        id SERIAL PRIMARY KEY,
+        phone TEXT,
+        message_id TEXT UNIQUE,
+        direction TEXT,
+        actor TEXT,
+        actor_id INTEGER,
+        intent TEXT,
+        step TEXT,
+        text TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    // Sessão de conversa persistida (substitui Map em memória). TTL via updated_at.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_sessions (
+        phone TEXT PRIMARY KEY,
+        session JSONB,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    // Auditoria de ações, identificando o ator (patient | ai | human).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_audit_log (
+        id SERIAL PRIMARY KEY,
+        phone TEXT,
+        actor TEXT,
+        actor_id INTEGER,
+        action TEXT,
+        detail JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    // Relatórios de atendimento (Seções 7 e 8): atribuição por profissional e
+    // registro de uso da IA (tokens) para cálculo de custo.
+    await pool.query(`
+      ALTER TABLE whatsapp_messages  ADD COLUMN IF NOT EXISTS professional_id INTEGER;
+      ALTER TABLE whatsapp_audit_log ADD COLUMN IF NOT EXISTS professional_id INTEGER;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_ai_usage (
+        id SERIAL PRIMARY KEY,
+        phone TEXT,
+        professional_id INTEGER,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        model TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_ai_usage_created_at ON whatsapp_ai_usage(created_at);
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_ai_usage_professional ON whatsapp_ai_usage(professional_id);
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_professional ON whatsapp_messages(professional_id);
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_audit_professional ON whatsapp_audit_log(professional_id);
+    `);
 
     console.log("✅ Database tables initialized successfully");
   } catch (error) {
@@ -4688,7 +4815,8 @@ app.get(
             WHEN c.private_patient_id IS NOT NULL THEN 'private'
             ELSE 'unknown'
           END AS patient_type,
-          COALESCE(NULLIF(TRIM(c.convenio), ''), NULLIF(TRIM(pp.convenio), '')) AS convenio
+          COALESCE(NULLIF(TRIM(c.convenio), ''), NULLIF(TRIM(pp.convenio), '')) AS convenio,
+          c.google_meet_link
         FROM consultations c
         LEFT JOIN services s ON c.service_id = s.id
         LEFT JOIN users u ON c.user_id = u.id
@@ -4763,29 +4891,24 @@ app.get(
 );
 
 // ===== HORÁRIO DE TRABALHO (EXPEDIENTE) =====
+// getWorkingHours / isWithinWorkingHours foram extraídos para ./utils/agenda.js
+// (compartilhados com a Secretária Virtual). Importados no topo deste arquivo.
 
-const DEFAULT_WORKING_START = "07:00";
-const DEFAULT_WORKING_END = "18:00";
 const WORKING_TIME_REGEX = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
 
-// Busca o expediente do profissional (colunas em users), aplicando defaults se nulos
-async function getWorkingHours(professionalId) {
-  const result = await pool.query(
-    "SELECT agenda_start_time, agenda_end_time FROM users WHERE id = $1",
-    [professionalId]
+// Verifica se o slot (UTC) está bloqueado para o profissional — bloqueio manual
+// ou evento externo do Google Agenda ingerido como blocked_slots. A tabela guarda
+// date (DATE) + time_slot (HH:MM) em horário de Brasília, na grade de 30 min.
+async function isSlotBlocked(professionalId, dateTimeUTC) {
+  const ymd = new Date(dateTimeUTC).toLocaleDateString("en-CA", {
+    timeZone: "America/Sao_Paulo",
+  });
+  const hm = formatToBrazilTimeOnly(dateTimeUTC); // "HH:MM" no fuso do Brasil
+  const r = await pool.query(
+    "SELECT 1 FROM blocked_slots WHERE professional_id = $1 AND date = $2 AND time_slot = $3 LIMIT 1",
+    [professionalId, ymd, hm]
   );
-  const row = result.rows[0] || {};
-  return {
-    start: row.agenda_start_time || DEFAULT_WORKING_START,
-    end: row.agenda_end_time || DEFAULT_WORKING_END,
-  };
-}
-
-// Verifica se o horário (UTC) cai dentro do expediente, comparando no fuso do Brasil
-function isWithinWorkingHours(dateUTC, { start, end }) {
-  const time = formatToBrazilTimeOnly(dateUTC); // "HH:MM"
-  if (!time) return false;
-  return time >= start && time < end;
+  return r.rows.length > 0;
 }
 
 // Create new consultation (RegisterConsultationPage - no scheduling access required)
@@ -4916,6 +5039,14 @@ app.post(
         });
       }
 
+      // Horário bloqueado (manual ou evento externo do Google Agenda).
+      if (await isSlotBlocked(req.user.professionalScopeId, dateTimeForStorage)) {
+        return res.status(409).json({
+          message: "Esse horário está bloqueado na agenda.",
+          conflict: true,
+        });
+      }
+
       const conflictCheck = await pool.query(
         `
       SELECT 
@@ -4997,6 +5128,9 @@ app.post(
       console.log("✅ Consultation created with date:", consultation.date);
       console.log("✅ Consultation created:", consultation.id);
       console.log("✅ Saved date:", consultation.date);
+
+      // Sincroniza com o Google Agenda (não-bloqueante).
+      syncCreateEvent(consultation.id).catch(() => {});
 
       res.status(201).json({
         message: "Consulta criada com sucesso",
@@ -5250,6 +5384,9 @@ app.post(
         createdConsultations.push(consultationResult.rows[0]);
       }
 
+      // Sincroniza cada ocorrência com o Google Agenda (não-bloqueante).
+      for (const c of createdConsultations) syncCreateEvent(c.id).catch(() => {});
+
       console.log(
         `✅ [RECURRING] Created ${createdConsultations.length} consultation(s)`
       );
@@ -5319,6 +5456,11 @@ app.put(
       }
 
       console.log("✅ Consultation status updated:", id);
+
+      // Se cancelada, remove o evento do Google Agenda (não-bloqueante).
+      if (status === "cancelled") {
+        syncCancelEvent(result.rows[0].id).catch(() => {});
+      }
 
       res.json({
         message: "Status da consulta atualizado com sucesso",
@@ -5415,6 +5557,14 @@ app.put(
           });
         }
 
+        // Horário bloqueado (manual ou evento externo do Google Agenda).
+        if (await isSlotBlocked(req.user.professionalScopeId, dateTimeForStorage)) {
+          return res.status(409).json({
+            message: "Esse horário está bloqueado na agenda.",
+            conflict: true,
+          });
+        }
+
         updateFields.push(`date = $${paramCount++}`);
         updateValues.push(dateTimeForStorage);
 
@@ -5470,6 +5620,16 @@ app.put(
       const result = await pool.query(updateQuery, updateValues);
 
       console.log("✅ Consultation updated:", id);
+
+      // Reflete no Google Agenda (não-bloqueante): cancelamento remove o evento;
+      // mudança de data/serviço atualiza horário e modalidade (Meet).
+      if (result.rows[0]) {
+        if (status === "cancelled") {
+          syncCancelEvent(result.rows[0].id).catch(() => {});
+        } else if (date !== undefined || service_id !== undefined) {
+          syncUpdateEvent(result.rows[0].id).catch(() => {});
+        }
+      }
 
       res.json({
         message: "Consulta atualizada com sucesso",
@@ -5963,6 +6123,9 @@ app.put(
 
       console.log("✅ Consultation cancelled:", id);
 
+      // Remove o evento do Google Agenda (não-bloqueante).
+      syncCancelEvent(result.rows[0].id).catch(() => {});
+
       res.json({
         message: "Consulta cancelada com sucesso",
         consultation: result.rows[0],
@@ -6001,6 +6164,14 @@ app.delete(
       }
 
       console.log("✅ Consultation deleted:", id);
+
+      // Remove o evento do Google Agenda (linha já não existe; usa o id do evento).
+      if (result.rows[0]?.google_event_id) {
+        syncDeleteEventById(
+          result.rows[0].professional_id,
+          result.rows[0].google_event_id
+        ).catch(() => {});
+      }
 
       res.json({ message: "Consulta excluída com sucesso" });
     } catch (error) {
@@ -6841,28 +7012,46 @@ app.post(
   }
 );
 
+// Normaliza os preços de um serviço: aceita price_member/price_private (opcionais) e
+// deriva base_price (coluna de compatibilidade) com fallback
+// price_member ?? price_private ?? base_price — nunca deixa o campo legado nulo/zerado.
+function normalizeServicePrices({ base_price, price_member, price_private }) {
+  const parse = (v) => {
+    if (v === undefined || v === null || v === "") return null;
+    return Number.parseFloat(v);
+  };
+  const member = parse(price_member);
+  const priv = parse(price_private);
+  const base = parse(base_price);
+
+  if (member !== null && (Number.isNaN(member) || member <= 0))
+    return { error: "Preço para conveniados deve ser um número maior que zero" };
+  if (priv !== null && (Number.isNaN(priv) || priv <= 0))
+    return { error: "Preço para pacientes particulares deve ser um número maior que zero" };
+  if (base !== null && (Number.isNaN(base) || base <= 0))
+    return { error: "Preço base deve ser um número maior que zero" };
+
+  const derivedBase = member ?? priv ?? base;
+  if (derivedBase === null)
+    return { error: "Informe ao menos um preço (conveniado ou particular)" };
+
+  return { base_price: derivedBase, price_member: member, price_private: priv };
+}
+
 app.post(
   "/api/services",
   authenticate,
   authorize(["admin", "professional", "secretaria"]),
   async (req, res) => {
     try {
-      const { name, description, base_price, category_id, is_base_service } =
+      const { name, description, base_price, price_member, price_private, category_id, is_base_service, is_online } =
         req.body;
 
-      if (!name || !base_price) {
+      const prices = normalizeServicePrices({ base_price, price_member, price_private });
+      if (!name || prices.error) {
         return res
           .status(400)
-          .json({ message: "Nome e preço base são obrigatórios" });
-      }
-
-      if (
-        isNaN(Number.parseFloat(base_price)) ||
-        Number.parseFloat(base_price) <= 0
-      ) {
-        return res
-          .status(400)
-          .json({ message: "Preço base deve ser um número maior que zero" });
+          .json({ message: prices.error || "Nome é obrigatório" });
       }
 
       const isProfessional =
@@ -6872,16 +7061,19 @@ app.post(
 
       const serviceResult = await pool.query(
         `
-      INSERT INTO services (name, description, base_price, category_id, is_base_service, professional_id)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO services (name, description, base_price, price_member, price_private, category_id, is_base_service, is_online, professional_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
     `,
         [
           name.trim(),
           description?.trim() || null,
-          Number.parseFloat(base_price),
+          prices.base_price,
+          prices.price_member,
+          prices.price_private,
           category_id || null,
           isProfessional ? false : is_base_service || false,
+          is_online === true,
           isProfessional ? (req.user.professionalScopeId ?? req.user.id) : null,
         ]
       );
@@ -6908,7 +7100,7 @@ app.put(
   async (req, res) => {
     try {
       const { id } = req.params;
-      const { name, description, base_price, category_id, is_base_service } =
+      const { name, description, base_price, price_member, price_private, category_id, is_base_service, is_online } =
         req.body;
 
       // Get current service data
@@ -6933,34 +7125,29 @@ app.put(
         return res.status(403).json({ message: "Acesso negado" });
       }
 
-      if (!name || !base_price) {
+      const prices = normalizeServicePrices({ base_price, price_member, price_private });
+      if (!name || prices.error) {
         return res
           .status(400)
-          .json({ message: "Nome e preço base são obrigatórios" });
-      }
-
-      if (
-        isNaN(Number.parseFloat(base_price)) ||
-        Number.parseFloat(base_price) <= 0
-      ) {
-        return res
-          .status(400)
-          .json({ message: "Preço base deve ser um número maior que zero" });
+          .json({ message: prices.error || "Nome é obrigatório" });
       }
 
       const updatedServiceResult = await pool.query(
         `
-      UPDATE services 
-      SET name = $1, description = $2, base_price = $3, category_id = $4, is_base_service = $5
-      WHERE id = $6
+      UPDATE services
+      SET name = $1, description = $2, base_price = $3, price_member = $4, price_private = $5, category_id = $6, is_base_service = $7, is_online = $8
+      WHERE id = $9
       RETURNING *
     `,
         [
           name.trim(),
           description?.trim() || null,
-          Number.parseFloat(base_price),
+          prices.base_price,
+          prices.price_member,
+          prices.price_private,
           category_id || null,
           isProfessional ? false : is_base_service || false,
+          is_online === true,
           id,
         ]
       );
@@ -11798,6 +11985,195 @@ app.use((err, req, res, next) => {
   });
 });
 
+// ===== WHATSAPP — SECRETÁRIA VIRTUAL =====
+
+// Verificação do webhook (Meta) e recebimento de mensagens.
+app.get("/webhook/whatsapp", verifyWebhook);
+app.post("/webhook/whatsapp", (req, res) => {
+  res.sendStatus(200); // ACK imediato para a Meta
+  handleWebhookEvent(req.body).catch((e) =>
+    process.stderr.write("[whatsapp] " + String(e) + "\n")
+  );
+});
+
+// Métricas de funil — protegidas por token fixo (header ou query).
+app.get("/webhook/whatsapp/metrics", async (req, res) => {
+  const token = req.get("x-metrics-token") || req.query.token;
+  if (!process.env.WHATSAPP_METRICS_TOKEN || token !== process.env.WHATSAPP_METRICS_TOKEN) {
+    return res.sendStatus(401);
+  }
+  try {
+    res.json(await getFunnelMetrics());
+  } catch (error) {
+    console.error("❌ [whatsapp-metrics]", error);
+    res.status(500).json({ message: "Erro ao calcular métricas" });
+  }
+});
+
+// Relatório de atendimento (Seções 7 e 8). Admin vê o agregado do convênio;
+// profissional/secretária veem apenas o próprio (escopo por professionalScopeId).
+function whatsappReportScope(req) {
+  return req.user.currentRole === "admin" ? null : req.user.professionalScopeId;
+}
+
+app.get(
+  "/api/whatsapp/reports",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    const start_date = String(req.query.start_date || "");
+    const end_date = String(req.query.end_date || "");
+    const granularity = String(req.query.granularity || "day");
+    if (!start_date || !end_date) {
+      return res.status(400).json({ message: "start_date e end_date são obrigatórios" });
+    }
+    if (start_date > end_date) {
+      return res.status(400).json({ message: "A data inicial não pode ser maior que a final" });
+    }
+    try {
+      const report = await getWhatsappReport({
+        startDate: start_date,
+        endDate: end_date,
+        granularity,
+        scopeProfessionalId: whatsappReportScope(req),
+      });
+      res.json(report);
+    } catch (error) {
+      console.error("❌ [whatsapp-reports]", error);
+      res.status(500).json({ message: "Erro ao gerar relatório de atendimento" });
+    }
+  }
+);
+
+// PDF do relatório — mesmo pipeline reportlab dos prontuários/documentos.
+app.get(
+  "/api/whatsapp/reports/pdf",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    const start_date = String(req.query.start_date || "");
+    const end_date = String(req.query.end_date || "");
+    const granularity = String(req.query.granularity || "day");
+    if (!start_date || !end_date) {
+      return res.status(400).json({ message: "start_date e end_date são obrigatórios" });
+    }
+    try {
+      const report = await getWhatsappReport({
+        startDate: start_date,
+        endDate: end_date,
+        granularity,
+        scopeProfessionalId: whatsappReportScope(req),
+      });
+      const payload = {
+        title: "Relatório de Atendimento — WhatsApp",
+        scope_label:
+          report.escopo === "convenio" ? "Convênio (agregado)" : req.user.name || "Profissional",
+        report,
+      };
+      const pdfBuffer = await renderPdfFromDocumentService("whatsapp_report", payload);
+      const safeName = `relatorio-atendimento-${start_date}_${end_date}.pdf`;
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`
+      );
+      res.setHeader("Content-Length", pdfBuffer.length);
+      res.send(pdfBuffer);
+    } catch (error) {
+      console.error("❌ [whatsapp-reports-pdf]", error);
+      res.status(500).json({ message: "Erro ao gerar PDF do relatório: " + error.message });
+    }
+  }
+);
+
+// Atendimento humano (handoff) — operador logado assume/devolve/envia.
+
+// Lista de conversas ativas (48h) para o painel de Atendimento. Secretária só vê
+// as conversas do profissional vinculado; admin/profissional veem todas.
+app.get(
+  "/webhook/whatsapp/conversations",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    try {
+      const scopeProfessionalId =
+        req.user.currentRole === "secretaria" ? req.user.professionalScopeId : null;
+      res.json(await listConversations({ scopeProfessionalId }));
+    } catch (error) {
+      process.stdout.write("[whatsapp-conversations] " + String(error) + "\n");
+      res.status(500).json({ message: "Erro ao carregar conversas" });
+    }
+  }
+);
+
+app.get(
+  "/webhook/whatsapp/conversation",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    const phone = String(req.query.phone || "").replace(/\D/g, "");
+    if (!phone) return res.status(400).json({ message: "phone é obrigatório" });
+    try {
+      res.json(await getConversation(phone));
+    } catch (error) {
+      console.error("❌ [whatsapp-conversation]", error);
+      res.status(500).json({ message: "Erro ao carregar conversa" });
+    }
+  }
+);
+
+app.post(
+  "/webhook/whatsapp/takeover",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    const phone = String(req.body?.phone || "").replace(/\D/g, "");
+    if (!phone) return res.status(400).json({ message: "phone é obrigatório" });
+    try {
+      res.json(await takeoverConversation(phone, req.user.id));
+    } catch (error) {
+      console.error("❌ [whatsapp-takeover]", error);
+      res.status(500).json({ message: "Erro ao assumir a conversa" });
+    }
+  }
+);
+
+app.post(
+  "/webhook/whatsapp/release",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    const phone = String(req.body?.phone || "").replace(/\D/g, "");
+    if (!phone) return res.status(400).json({ message: "phone é obrigatório" });
+    try {
+      res.json(await releaseConversation(phone, req.user.id));
+    } catch (error) {
+      console.error("❌ [whatsapp-release]", error);
+      res.status(500).json({ message: "Erro ao devolver a conversa ao bot" });
+    }
+  }
+);
+
+app.post(
+  "/webhook/whatsapp/send",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    const phone = String(req.body?.phone || "").replace(/\D/g, "");
+    const text = String(req.body?.text || "").trim();
+    if (!phone || !text) {
+      return res.status(400).json({ message: "phone e text são obrigatórios" });
+    }
+    try {
+      const result = await sendOperatorMessage(phone, text, req.user.id);
+      res.status(result.ok ? 200 : 502).json(result);
+    } catch (error) {
+      console.error("❌ [whatsapp-send]", error);
+      res.status(500).json({ message: "Erro ao enviar mensagem" });
+    }
+  }
+);
+
 // Serve React app for all non-API routes in production
 if (process.env.NODE_ENV === "production") {
   app.get("*", (req, res) => {
@@ -11829,6 +12205,10 @@ const startServer = async () => {
     scheduleMonthlyAgendaRevenueReport();
     console.log("✅ Monthly agenda revenue report job initialized");
 
+    console.log("⏰ Setting up Google Calendar watch renewal job...");
+    scheduleGoogleWatchRenewal();
+    console.log("✅ Google Calendar watch renewal job initialized");
+
     console.log(`🌐 Starting HTTP server on port ${PORT}...`);
     const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on port ${PORT}`);
@@ -11846,6 +12226,16 @@ const startServer = async () => {
       }
       process.exit(1);
     });
+
+    // WhatsApp via Baileys (biblioteca não-oficial) — alternativa à Cloud API
+    // para testes. Ativado por WHATSAPP_PROVIDER=baileys.
+    if ((process.env.WHATSAPP_PROVIDER || "").toLowerCase() === "baileys") {
+      console.log("💬 Iniciando WhatsApp via Baileys...");
+      const { startBaileys } = await import("./utils/whatsappBaileys.js");
+      startBaileys().catch((e) =>
+        console.error("❌ Falha ao iniciar Baileys:", e)
+      );
+    }
   } catch (error) {
     console.error("❌ Failed to start server:", error);
     console.error("❌ Error stack:", error.stack);

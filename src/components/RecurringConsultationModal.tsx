@@ -10,7 +10,17 @@ type Service = {
   id: number;
   name: string;
   base_price: number;
+  price_member: number | null;
+  price_private: number | null;
 };
+
+// Preço do serviço conforme o tipo de paciente, com fallback para base_price.
+const priceForPatient = (
+  service: Service,
+  patientType: "convenio" | "private"
+): number =>
+  (patientType === "convenio" ? service.price_member : service.price_private) ??
+  service.base_price;
 
 type AttendanceLocation = {
   id: number;
@@ -324,7 +334,7 @@ const RecurringConsultationModal: React.FC<RecurringConsultationModalProps> = ({
 
     const service = services.find((s) => s.id.toString() === selectedServiceId);
     if (service) {
-      setValue(service.base_price.toString());
+      setValue(priceForPatient(service, patientType).toString());
     }
   };
 

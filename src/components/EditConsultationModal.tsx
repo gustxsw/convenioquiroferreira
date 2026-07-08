@@ -26,6 +26,7 @@ type Consultation = {
   location_name?: string;
   payment_method?: string;
   convenio?: string;
+  google_meet_link?: string | null;
 };
 
 type AttendanceLocation = {
@@ -257,6 +258,19 @@ const EditConsultationModal: React.FC<EditConsultationModalProps> = ({
               {getStatusInfo(consultation.status).text}
             </span>
           </p>
+          {consultation.google_meet_link && (
+            <p className="text-sm text-gray-600">
+              <strong>Link da videochamada:</strong>{" "}
+              <a
+                href={consultation.google_meet_link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-red-600 hover:underline break-all"
+              >
+                {consultation.google_meet_link}
+              </a>
+            </p>
+          )}
         </div>
 
         {error && (
