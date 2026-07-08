@@ -515,6 +515,7 @@ async function getProfessionalsWithBaseService() {
     `SELECT u.id, u.name
        FROM users u
       WHERE 'professional' = ANY(u.roles)
+        AND (u.is_agenda_partner IS NULL OR u.is_agenda_partner = false)
         AND EXISTS (SELECT 1 FROM services s WHERE s.professional_id = u.id)
       ORDER BY u.name`
   );
@@ -751,8 +752,6 @@ async function continueFlow(session, phone, text) {
       return handleAgendarTipoCadastro(session, phone, text);
     case "agendar_cadastro_nome":
       return handleAgendarCadastroNome(session, phone, text);
-    case "agendar_escolha_profissional":
-      return handleAgendarEscolhaProfissional(session, phone, text);
     case "escolha_dia":
       return handleEscolhaDia(session, phone, text);
     case "escolha_hora":
@@ -874,15 +873,14 @@ async function proceedToProfissional(session, phone) {
     resetFlow(session);
     return;
   }
-  if (profs.length === 1) {
-    session.profissionalId = profs[0].id;
-    await proceedToDays(session, phone);
-    return;
+  // Número exclusivo por profissional: nunca exibe lista ao paciente.
+  // Se houver mais de um profissional principal sem mapeamento de número
+  // configurado em WHATSAPP_NUMBERS, usa o primeiro e registra aviso.
+  if (profs.length > 1) {
+    botLog("warn_multiple_professionals_no_mapping", { phone, count: profs.length });
   }
-  session.professionals = profs;
-  session.step = "agendar_escolha_profissional";
-  const list = profs.map((p, i) => `*${i + 1}.* ${p.name}`).join("\n");
-  await replyS(session, phone, `Com qual profissional você gostaria de ser atendido(a)?\n\n${list}\n\nÉ só me responder com o *número*. 🙂`);
+  session.profissionalId = profs[0].id;
+  await proceedToDays(session, phone);
 }
 
 async function handleAgendarEscolhaProfissional(session, phone, text) {
