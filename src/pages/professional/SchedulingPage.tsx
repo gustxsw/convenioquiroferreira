@@ -316,6 +316,54 @@ const SchedulingPage: React.FC = () => {
     fetchData();
   }, [selectedDate]);
 
+  // Atualização silenciosa: recarrega só as consultas e bloqueios do dia
+  // selecionado, sem alternar o loading nem exibir erros. Usada pelo polling
+  // para refletir agendamentos da Secretária Virtual (WhatsApp) em tempo real.
+  const silentRefresh = async () => {
+    try {
+      const apiUrl = getApiUrl();
+      const dateStr = format(selectedDate, "yyyy-MM-dd");
+      const [consultationsResponse, blockedSlotsResponse] = await Promise.all([
+        fetchWithAuth(`${apiUrl}/api/consultations/agenda?date=${dateStr}`, {
+          headers: { "Content-Type": "application/json" },
+        }),
+        fetchWithAuth(`${apiUrl}/api/blocked-slots?date=${dateStr}`, {
+          headers: { "Content-Type": "application/json" },
+        }),
+      ]);
+      if (consultationsResponse.ok) {
+        const data = await consultationsResponse.json();
+        if (Array.isArray(data)) setConsultations(data);
+      }
+      if (blockedSlotsResponse.ok) {
+        const data = await blockedSlotsResponse.json();
+        setBlockedSlots(Array.isArray(data) ? data : []);
+      }
+    } catch {
+      // Silencioso: uma falha pontual de rede não deve poluir a agenda.
+    }
+  };
+
+  // Auto-atualização da agenda enquanto a página está aberta, para que os
+  // agendamentos feitos pelo WhatsApp apareçam sozinhos (ótimo em demonstrações
+  // ao vivo). Só atualiza com a aba visível; e atualiza na hora ao reabrir a aba.
+  useEffect(() => {
+    if (!hasSchedulingAccess) return;
+    const REFRESH_MS = 4000;
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") silentRefresh();
+    }, REFRESH_MS);
+    const onFocus = () => silentRefresh();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, hasSchedulingAccess]);
+
   useEffect(() => {
     fetchWorkingHours();
   }, []);
