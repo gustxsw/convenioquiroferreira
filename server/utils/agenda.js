@@ -53,6 +53,28 @@ function todayInBrazil() {
   });
 }
 
+// Exportado para a interpretação livre de datas na Secretária Virtual.
+export function todayInBrazilYmd() {
+  return todayInBrazil();
+}
+
+// Soma (ou subtrai) dias a um "YYYY-MM-DD", tratando overflow de mês/ano.
+export function addDaysYmd(ymd, n) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+// Dia da semana (0=Domingo … 6=Sábado) de um "YYYY-MM-DD".
+export function weekdayOfYmd(ymd) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+// Diferença em dias (ymd - hoje), no fuso do Brasil.
+export function daysAheadOf(ymd) {
+  return daysBetween(todayInBrazil(), ymd);
+}
+
 // Converte um dia (YYYY-MM-DD, Brasil) + hora (HH:MM, Brasil) para ISO UTC
 function brazilDateTimeToUTC(ymd, time) {
   return new Date(`${ymd}T${time}:00${BRAZIL_UTC_OFFSET}`).toISOString();
@@ -76,7 +98,7 @@ const WEEKDAYS = [
 ];
 
 // Rótulo amigável de um dia: "Hoje (07/07)", "Amanhã (08/07)", "Quinta-feira (10/07)".
-function dayLabel(ymd) {
+export function dayLabel(ymd) {
   const diff = daysBetween(todayInBrazil(), ymd);
   const [y, m, d] = ymd.split("-").map(Number);
   const dm = `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
@@ -184,6 +206,10 @@ export async function getFreeSlotsForDay(
   dateBrazil,
   { slotMinutes = 30 } = {}
 ) {
-  const ctx = await buildContext(professionalId, 21, slotMinutes);
+  const today = todayInBrazil();
+  if (dateBrazil < today) return []; // dia no passado: nada disponível
+  // Horizonte de ocupação precisa cobrir o dia pedido (datas distantes: próximo mês).
+  const horizon = Math.min(366, Math.max(21, daysBetween(today, dateBrazil) + 1));
+  const ctx = await buildContext(professionalId, horizon, slotMinutes);
   return slotsForDay(dateBrazil, ctx);
 }

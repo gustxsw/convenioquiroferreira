@@ -25,6 +25,11 @@ import {
   isWithinWorkingHours,
   getAvailableDays,
   getFreeSlotsForDay,
+  todayInBrazilYmd,
+  addDaysYmd,
+  weekdayOfYmd,
+  daysAheadOf,
+  dayLabel,
 } from "./utils/agenda.js";
 import {
   formatToBrazilDate,
@@ -141,6 +146,7 @@ function resetFlow(session) {
   session.pacienteId = null;
   session.pacienteNome = null;
   session.consultaId = null;
+  session.consultasList = null;
   session.days = null;
   session.chosenDay = null;
   session.slots = null;
@@ -159,21 +165,144 @@ function resetFlow(session) {
 
 // ===== DETECÇÃO DE INTENÇÃO (palavra-chave, sem IA) =====
 
+// Casamos por RADICAL (substring do texto normalizado), não pela palavra exata,
+// para tolerar variações: "agendamento", "marcação", "remarquei", "cancelamento".
+// A ordem importa: CANCELAR/REAGENDAR/CONVENIO são testados antes de AGENDAR
+// (ex.: "remarcar" e "desmarcar" contêm "marc", mas devem cair em REAGENDAR/CANCELAR).
 const INTENT_KEYWORDS = [
-  // Ordem importa: CANCELAR/REAGENDAR/CONVENIO antes de AGENDAR para que
-  // "cancelar consulta" ou "remarcar" não caiam em AGENDAR (que casa "consulta").
-  ["CANCELAR", ["cancelar", "desmarcar", "cancelar consulta", "nao vou poder ir", "nao consigo ir"]],
-  ["REAGENDAR", ["remarcar", "reagendar", "mudar horario", "trocar horario", "mudar data"]],
-  ["CONVENIO", ["convenio", "carteirinha", "cobertura", "preco", "valor", "como funciona", "quanto custa", "plano", "beneficio", "contratar", "quero contratar"]],
-  ["AGENDAR", ["agendar", "marcar", "marcacao", "consulta", "quero consulta", "queria agendar", "preciso de uma consulta", "nova consulta"]],
+  ["CANCELAR", ["cancel", "desmarc", "nao vou poder", "nao consigo ir", "nao poderei", "nao vou conseguir"]],
+  ["REAGENDAR", ["remarc", "reagend", "mudar o horario", "mudar horario", "trocar o horario", "trocar horario", "mudar a data", "mudar data", "trocar a data", "trocar data", "mudar de dia", "outro dia", "outro horario", "adiar", "antecipar"]],
+  ["CONVENIO", ["convenio", "carteirinha", "cobertura", "preco", "valor", "como funciona", "quanto custa", "plano", "beneficio", "contratar", "mensalidade", "assinatura", "quero contratar"]],
+  ["AGENDAR", ["agend", "marc", "consulta", "horario", "atendimento", "quero marcar", "queria marcar", "quero uma consulta", "preciso de uma consulta", "nova consulta", "quero agendar"]],
 ];
 
-function detectIntent(text) {
+export function detectIntent(text) {
   const n = normalize(text);
   for (const [intent, words] of INTENT_KEYWORDS) {
     if (words.some((w) => n.includes(w))) return intent;
   }
   return "SAUDACAO";
+}
+
+// ===== INTERPRETAÇÃO LIVRE DE DATA/HORA (PT-BR) =====
+// Extrai uma data (ymd) e/ou um horário (HH:MM) de um texto livre, para que o
+// paciente possa dizer "08/07 às 14h", "amanhã", "próxima segunda", "dia 15 do
+// mês que vem" etc. — sem precisar escolher número de lista.
+
+const WEEKDAY_MAP = {
+  domingo: 0, segunda: 1, terca: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6,
+};
+const MONTH_MAP = {
+  janeiro: 1, fevereiro: 2, marco: 3, abril: 4, maio: 5, junho: 6, julho: 7,
+  agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12,
+};
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function isValidDMY(y, m, d) {
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+// Resolve dia/mês (ano opcional) para um "YYYY-MM-DD" hoje ou no futuro. Sem ano,
+// escolhe o ano que mantém a data no futuro. Retorna null se inválida/passada.
+function resolveDMY(d, m, y) {
+  const today = todayInBrazilYmd();
+  const ty = Number(today.slice(0, 4));
+  if (y == null) {
+    for (const cand of [ty, ty + 1]) {
+      if (isValidDMY(cand, m, d)) {
+        const ymd = `${cand}-${pad2(m)}-${pad2(d)}`;
+        if (ymd >= today) return ymd;
+      }
+    }
+    return null;
+  }
+  if (y < 100) y += 2000;
+  if (!isValidDMY(y, m, d)) return null;
+  const ymd = `${y}-${pad2(m)}-${pad2(d)}`;
+  return ymd >= today ? ymd : null;
+}
+
+// "dia N": neste mês; se já passou (ou nextMonth), vai para o mês seguinte.
+function resolveDayOfMonth(day, nextMonth) {
+  const today = todayInBrazilYmd();
+  let y = Number(today.slice(0, 4));
+  let m = Number(today.slice(5, 7));
+  if (nextMonth) { m++; if (m > 12) { m = 1; y++; } }
+  if (!isValidDMY(y, m, day)) return null;
+  let ymd = `${y}-${pad2(m)}-${pad2(day)}`;
+  if (!nextMonth && ymd < today) {
+    m++; if (m > 12) { m = 1; y++; }
+    if (!isValidDMY(y, m, day)) return null;
+    ymd = `${y}-${pad2(m)}-${pad2(day)}`;
+  }
+  return ymd;
+}
+
+// Próxima ocorrência de um dia da semana (se hoje for o dia, vai para a semana seguinte).
+function nextWeekdayYmd(targetDow) {
+  const today = todayInBrazilYmd();
+  let diff = (targetDow - weekdayOfYmd(today) + 7) % 7;
+  if (diff === 0) diff = 7;
+  return addDaysYmd(today, diff);
+}
+
+function clampHM(h, mm) {
+  if (h < 0 || h > 23 || mm < 0 || mm > 59) return null;
+  return `${pad2(h)}:${pad2(mm)}`;
+}
+
+export function parseWhen(text) {
+  const n = normalize(text);
+  let ymd = null;
+  let time = null;
+
+  // dd/mm[/yyyy] (aceita / . -)
+  let m = n.match(/(?:^|\D)(\d{1,2})[\/.\-](\d{1,2})(?:[\/.\-](\d{2,4}))?(?:\D|$)/);
+  if (m) ymd = resolveDMY(+m[1], +m[2], m[3] != null ? +m[3] : null);
+
+  // "15 de agosto" / "15 agosto"
+  if (!ymd) {
+    const mm = n.match(/(\d{1,2})\s*(?:de\s+)?(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)/);
+    if (mm) ymd = resolveDMY(+mm[1], MONTH_MAP[mm[2]], null);
+  }
+
+  // relativos
+  if (!ymd) {
+    if (/\bdepois de amanha\b/.test(n)) ymd = addDaysYmd(todayInBrazilYmd(), 2);
+    else if (/\bamanha\b/.test(n)) ymd = addDaysYmd(todayInBrazilYmd(), 1);
+    else if (/\bhoje\b/.test(n)) ymd = todayInBrazilYmd();
+  }
+
+  // dia da semana ("segunda", "terça-feira", "próxima sexta")
+  if (!ymd) {
+    for (const [word, dow] of Object.entries(WEEKDAY_MAP)) {
+      if (new RegExp(`\\b${word}(?:-?\\s*feira)?\\b`).test(n)) {
+        ymd = nextWeekdayYmd(dow);
+        break;
+      }
+    }
+  }
+
+  // "dia N" (opcionalmente do mês que vem)
+  if (!ymd) {
+    const md = n.match(/\bdia\s+(\d{1,2})\b/);
+    if (md) ymd = resolveDayOfMonth(+md[1], /(prox|que vem|seguinte)/.test(n));
+  }
+
+  // horário: 14:30 / 14h30 / 14h / às 14 / 14 horas
+  let t = n.match(/\b(\d{1,2})[:h](\d{2})\b/);
+  if (t) time = clampHM(+t[1], +t[2]);
+  if (!time) {
+    t = n.match(/\b(\d{1,2})\s*h(?:oras?)?\b/) || n.match(/\b(?:as|às)\s+(\d{1,2})\b/);
+    if (t) time = clampHM(+t[1], 0);
+  }
+
+  return { ymd, time };
 }
 
 // ===== PERSISTÊNCIA: MENSAGENS, SESSÃO, AUDITORIA =====
@@ -421,9 +550,9 @@ async function getBaseService(professionalId, priceProfile = "convenio") {
   return { service_id: s.service_id, value, isOnline: s.is_online };
 }
 
-// Próxima consulta futura ativa do paciente — por user_id (conveniado) ou
-// private_patient_id (particular).
-async function getNextActiveConsultation({ userId = null, privatePatientId = null }) {
+// Todas as consultas futuras ativas do paciente (para remarcar/cancelar quando
+// houver mais de uma — aí perguntamos qual, em vez de assumir a mais próxima).
+async function getActiveConsultations({ userId = null, privatePatientId = null }, limit = 8) {
   const column = privatePatientId != null ? "private_patient_id" : "user_id";
   const id = privatePatientId != null ? privatePatientId : userId;
   const r = await pool.query(
@@ -432,10 +561,25 @@ async function getNextActiveConsultation({ userId = null, privatePatientId = nul
        JOIN users u ON c.professional_id = u.id
       WHERE c.${column} = $1 AND c.status != 'cancelled' AND c.date >= NOW()
       ORDER BY c.date ASC
-      LIMIT 1`,
-    [id]
+      LIMIT $2`,
+    [id, limit]
   );
-  return r.rows[0] || null;
+  return r.rows;
+}
+
+// Escolhe uma consulta da lista pelo número (1-based) ou pela data digitada.
+function pickConsultation(list, text) {
+  const t = String(text || "").trim();
+  const plain = /^\d{1,2}$/.test(t) ? parseInt(t, 10) : NaN;
+  if (!isNaN(plain) && plain >= 1 && plain <= list.length) return list[plain - 1];
+  const { ymd } = parseWhen(t);
+  if (ymd) {
+    const found = list.find(
+      (c) => new Date(c.date).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) === ymd
+    );
+    if (found) return found;
+  }
+  return null;
 }
 
 // Replica a validação de expediente/conflito do POST /api/consultations.
@@ -602,10 +746,14 @@ async function continueFlow(session, phone, text) {
       return handleEscolhaHora(session, phone, text);
     case "reagendar_cpf":
       return handleReagendarCpf(session, phone, text);
+    case "reagendar_escolha":
+      return handleReagendarEscolha(session, phone, text);
     case "reagendar_confirma":
       return handleReagendarConfirma(session, phone, text);
     case "cancelar_cpf":
       return handleCancelarCpf(session, phone, text);
+    case "cancelar_escolha":
+      return handleCancelarEscolha(session, phone, text);
     case "cancelar_confirma":
       return handleCancelarConfirma(session, phone, text);
     case "convenio_chat":
@@ -745,72 +893,148 @@ async function ensureBaseService(session, phone) {
   return true;
 }
 
-// Oferece os dias com horário livre e aguarda a escolha do paciente.
+// Pergunta abertamente o dia/horário (texto livre), com alguns dias como sugestão.
 async function proceedToDays(session, phone) {
   if (!(await ensureBaseService(session, phone))) return;
 
-  const days = await getAvailableDays(session.profissionalId, { limit: 6 });
-  if (days.length === 0) {
-    await replyS(session, phone, `${personal(session)}não encontrei horários livres nos próximos dias. 😕 Pode tentar mais tarde ou me chamar de novo em outra data.`);
-    resetFlow(session);
-    return;
-  }
-  session.days = days;
+  const days = await getAvailableDays(session.profissionalId, { limit: 4 });
+  session.days = days; // apenas sugestões; pode estar vazio
   session.chosenDay = null;
   session.slots = null;
   session.step = "escolha_dia";
-  const list = days.map((d, i) => `*${i + 1}.* ${d.label}`).join("\n");
-  await replyS(
-    session,
-    phone,
-    `${personal(session)}para qual *dia* fica melhor pra você? Estes são os dias com horário disponível:\n\n${list}\n\nResponda com o *número* do dia. 📅`
-  );
+
+  let msg =
+    `${personal(session)}me diz o *dia* (e o horário, se já souber) que fica melhor pra você. 😊\n` +
+    `Pode falar do seu jeito — por exemplo: *"amanhã 14h"*, *"08/07 às 15h"*, *"próxima segunda"* ou *"dia 15 do mês que vem"*.`;
+  if (days.length > 0) {
+    const list = days.map((d, i) => `*${i + 1}.* ${d.label}`).join("\n");
+    msg += `\n\nSe preferir, já tenho horário livre nesses dias:\n${list}\n_(responda com o número, ou digite a data que quiser)_`;
+  }
+  await replyS(session, phone, msg);
+}
+
+// Monta uma sugestão de horários livres de um dia, em frase (sem lista numerada).
+function suggestTimes(slots) {
+  const times = slots.slice(0, 6).map((s) => s.time);
+  const extra = slots.length > times.length ? " (e mais)" : "";
+  return `tenho estes horários livres: *${times.join(", ")}*${extra}. Qual fica bom? É só me dizer a *hora* (ex.: ${times[0]}).`;
+}
+
+// Abre um dia específico: valida, e se veio um horário tenta agendar direto;
+// senão sugere os horários livres daquele dia.
+async function openDay(session, phone, ymd, time) {
+  const today = todayInBrazilYmd();
+  if (ymd < today) {
+    await replyS(session, phone, `${personal(session)}essa data já passou 🙂. Me diz outro dia, por favor.`);
+    session.step = "escolha_dia";
+    return;
+  }
+  if (daysAheadOf(ymd) > 120) {
+    await replyS(session, phone, `${personal(session)}consigo agendar até uns 4 meses à frente. Escolhe uma data um pouco mais próxima, tá? 🙂`);
+    session.step = "escolha_dia";
+    return;
+  }
+
+  const slots = await getFreeSlotsForDay(session.profissionalId, ymd);
+  if (slots.length === 0) {
+    const next = await getAvailableDays(session.profissionalId, { limit: 1 });
+    const hint = next.length ? ` O dia mais próximo com horário livre é *${next[0].label}*.` : "";
+    await replyS(session, phone, `${personal(session)}não tenho horário livre em *${dayLabel(ymd)}*. 😕${hint} Quer tentar outra data?`);
+    session.step = "escolha_dia";
+    return;
+  }
+
+  session.chosenDay = { dateBrazil: ymd, label: dayLabel(ymd) };
+  session.slots = slots;
+  session.step = "escolha_hora";
+
+  if (time) {
+    const match = slots.find((s) => s.time === time);
+    if (match) {
+      await finalizeSlot(session, phone, match);
+      return;
+    }
+    await replyS(session, phone, `${personal(session)}às *${time}* em ${dayLabel(ymd)} não está livre. ${suggestTimes(slots)}`);
+    return;
+  }
+  await replyS(session, phone, `Boa! Para *${dayLabel(ymd)}*, ${suggestTimes(slots)}`);
 }
 
 async function handleEscolhaDia(session, phone, text) {
   const days = session.days || [];
-  const idx = parseInt(onlyDigits(text), 10) - 1;
-  if (isNaN(idx) || idx < 0 || idx >= days.length) {
-    await replyS(session, phone, "Não consegui identificar o dia. Pode responder com o *número* de um dos dias da lista? 🙂");
+  const t = text.trim();
+  const { ymd, time } = parseWhen(t);
+
+  // Número puro (e não uma data digitada) escolhe uma das sugestões.
+  const plain = /^\d{1,2}$/.test(t) ? parseInt(t, 10) : NaN;
+  if (!ymd && !isNaN(plain) && plain >= 1 && plain <= days.length) {
+    await openDay(session, phone, days[plain - 1].dateBrazil, null);
     return;
   }
-  const day = days[idx];
-  const slots = await getFreeSlotsForDay(session.profissionalId, day.dateBrazil);
-  if (slots.length === 0) {
-    // Alguém pode ter ocupado o último horário desse dia nesse meio-tempo.
-    await replyS(session, phone, "Puxa, os horários desse dia acabaram de ser preenchidos. Vou te mostrar os dias disponíveis de novo:");
-    await proceedToDays(session, phone);
+
+  if (ymd) {
+    await openDay(session, phone, ymd, time);
     return;
   }
-  session.chosenDay = day;
-  session.slots = slots;
-  session.step = "escolha_hora";
-  // Lista até 12 horários para não ficar gigante; costuma cobrir o dia todo.
-  const shown = slots.slice(0, 12);
-  const list = shown.map((s, i) => `*${i + 1}.* ${s.time}`).join("\n");
-  const extra = slots.length > shown.length ? "\n\n(Se preferir outro horário, me diga que eu mostro mais.)" : "";
-  await replyS(
-    session,
-    phone,
-    `Ótimo! Para *${day.label}*, tenho estes horários livres:\n\n${list}\n\nQual deles fica bom? Responda com o *número* do horário. ⏰${extra}`
-  );
+
+  if (time) {
+    await replyS(session, phone, `${personal(session)}pra qual *dia* seria esse horário? Me diz a data (ex.: *08/07*) ou algo como *amanhã* ou *próxima terça*. 🙂`);
+    return;
+  }
+
+  await replyS(session, phone, `${personal(session)}me diz o *dia* que prefere (pode ser *"amanhã"*, *"08/07"*, *"próxima segunda"*…). Se já souber o horário, manda junto. 🙂`);
 }
 
 async function handleEscolhaHora(session, phone, text) {
   const n = normalize(text);
+  const t = text.trim();
   // Deixa o paciente voltar e escolher outro dia.
-  if (n.includes("voltar") || n.includes("outro dia") || n.includes("outra data")) {
+  if (n.includes("voltar") || n.includes("outro dia") || n.includes("outra data") || n.includes("mudar")) {
     await proceedToDays(session, phone);
     return;
   }
-  const slots = session.slots || [];
-  const shown = slots.slice(0, 12);
-  const idx = parseInt(onlyDigits(text), 10) - 1;
-  if (isNaN(idx) || idx < 0 || idx >= shown.length) {
-    await replyS(session, phone, 'Não peguei o horário. Responda com o *número* da lista, ou diga *"outro dia"* para trocar a data. 🙂');
+
+  const { ymd, time } = parseWhen(t);
+  // Trocou de data no meio do caminho.
+  if (ymd) {
+    await openDay(session, phone, ymd, time);
     return;
   }
-  const slot = shown[idx];
+
+  const slots = session.slots || [];
+  if (time) {
+    const match = slots.find((s) => s.time === time);
+    if (match) {
+      await finalizeSlot(session, phone, match);
+      return;
+    }
+    await replyS(session, phone, `${personal(session)}esse horário não está livre nesse dia. ${suggestTimes(slots)}`);
+    return;
+  }
+
+  // Número puro: tenta como HORA (ex.: "15" → 15:00) e, se não houver, como índice.
+  const plain = /^\d{1,2}$/.test(t) ? parseInt(t, 10) : NaN;
+  if (!isNaN(plain)) {
+    const byHour =
+      slots.find((s) => s.time === clampHM(plain, 0)) ||
+      slots.find((s) => s.time.startsWith(`${pad2(plain)}:`));
+    if (byHour) {
+      await finalizeSlot(session, phone, byHour);
+      return;
+    }
+    const shown = slots.slice(0, 12);
+    if (plain >= 1 && plain <= shown.length) {
+      await finalizeSlot(session, phone, shown[plain - 1]);
+      return;
+    }
+  }
+
+  const first = slots[0]?.time || "14:00";
+  await replyS(session, phone, `${personal(session)}não peguei o horário 🙂. Me diga a *hora* (ex.: ${first}) ou *"outro dia"* pra trocar a data.`);
+}
+
+// Direciona para criar ou remarcar, conforme o fluxo atual.
+async function finalizeSlot(session, phone, slot) {
   if (session.flow === "reagendar") {
     await finalizeReagendamento(session, phone, slot);
   } else {
@@ -879,23 +1103,51 @@ async function handleReagendarCpf(session, phone, text) {
   session.privatePatientId = patient.privatePatientId || null;
   session.pacienteNome = patient.name;
   session.priceProfile = patient.profile;
-  const consulta = await getNextActiveConsultation({
+  const consultas = await getActiveConsultations({
     userId: patient.userId,
     privatePatientId: patient.privatePatientId,
   });
-  if (!consulta) {
+  if (consultas.length === 0) {
     await replyS(session, phone, `${personal(session)}não encontrei nenhuma consulta futura pra remarcar. Se quiser marcar uma nova, é só mandar *"agendar"*. 🙂`);
     resetFlow(session);
     return;
   }
-  session.consultaId = consulta.id;
-  session.profissionalId = consulta.professional_id;
-  session.step = "reagendar_confirma";
+  if (consultas.length === 1) {
+    const c = consultas[0];
+    session.consultaId = c.id;
+    session.profissionalId = c.professional_id;
+    session.step = "reagendar_confirma";
+    await replyS(
+      session,
+      phone,
+      `${personal(session)}encontrei sua consulta:\n\n📅 ${formatToBrazilDate(c.date)} às ${formatToBrazilTimeOnly(c.date)}\n👨‍⚕️ ${c.professional_name}\n\nÉ essa que você quer remarcar? Responda *Sim* ou *Não*.`
+    );
+    return;
+  }
+  // Mais de uma consulta futura: pergunta qual (evita remarcar a errada).
+  session.consultasList = consultas;
+  session.step = "reagendar_escolha";
+  const list = consultas
+    .map((c, i) => `*${i + 1}.* ${formatToBrazilDate(c.date)} às ${formatToBrazilTimeOnly(c.date)} — ${c.professional_name}`)
+    .join("\n");
   await replyS(
     session,
     phone,
-    `${personal(session)}encontrei sua consulta:\n\n📅 ${formatToBrazilDate(consulta.date)} às ${formatToBrazilTimeOnly(consulta.date)}\n👨‍⚕️ ${consulta.professional_name}\n\nÉ essa que você quer remarcar? Responda *Sim* ou *Não*.`
+    `${personal(session)}você tem mais de uma consulta marcada. Qual delas quer *remarcar*?\n\n${list}\n\nResponda com o *número* (ou a *data*). 🙂`
   );
+}
+
+async function handleReagendarEscolha(session, phone, text) {
+  const list = session.consultasList || [];
+  const chosen = pickConsultation(list, text);
+  if (!chosen) {
+    await replyS(session, phone, "Não identifiquei qual consulta. Responda com o *número* da lista (ou a *data* dela). 🙂");
+    return;
+  }
+  session.consultaId = chosen.id;
+  session.profissionalId = chosen.professional_id || session.profissionalId;
+  await replyS(session, phone, `Perfeito! Vamos remarcar a consulta de *${formatToBrazilDate(chosen.date)} às ${formatToBrazilTimeOnly(chosen.date)}*.`);
+  await proceedToDays(session, phone);
 }
 
 async function handleReagendarConfirma(session, phone, text) {
@@ -949,21 +1201,54 @@ async function handleCancelarCpf(session, phone, text) {
   session.pacienteId = patient.userId || null;
   session.privatePatientId = patient.privatePatientId || null;
   session.pacienteNome = patient.name;
-  const consulta = await getNextActiveConsultation({
+  const consultas = await getActiveConsultations({
     userId: patient.userId,
     privatePatientId: patient.privatePatientId,
   });
-  if (!consulta) {
+  if (consultas.length === 0) {
     await replyS(session, phone, `${personal(session)}você não tem nenhuma consulta futura pra cancelar. 🙂`);
     resetFlow(session);
     return;
   }
-  session.consultaId = consulta.id;
+  if (consultas.length === 1) {
+    const c = consultas[0];
+    session.consultaId = c.id;
+    session.profissionalId = c.professional_id;
+    session.step = "cancelar_confirma";
+    await replyS(
+      session,
+      phone,
+      `${personal(session)}encontrei sua consulta:\n\n📅 ${formatToBrazilDate(c.date)} às ${formatToBrazilTimeOnly(c.date)}\n👨‍⚕️ ${c.professional_name}\n\nPosso confirmar o cancelamento? Responda *Sim* ou *Não*.`
+    );
+    return;
+  }
+  // Mais de uma consulta futura: pergunta qual cancelar.
+  session.consultasList = consultas;
+  session.step = "cancelar_escolha";
+  const list = consultas
+    .map((c, i) => `*${i + 1}.* ${formatToBrazilDate(c.date)} às ${formatToBrazilTimeOnly(c.date)} — ${c.professional_name}`)
+    .join("\n");
+  await replyS(
+    session,
+    phone,
+    `${personal(session)}você tem mais de uma consulta marcada. Qual delas quer *cancelar*?\n\n${list}\n\nResponda com o *número* (ou a *data*). 🙂`
+  );
+}
+
+async function handleCancelarEscolha(session, phone, text) {
+  const list = session.consultasList || [];
+  const chosen = pickConsultation(list, text);
+  if (!chosen) {
+    await replyS(session, phone, "Não identifiquei qual consulta. Responda com o *número* da lista (ou a *data* dela). 🙂");
+    return;
+  }
+  session.consultaId = chosen.id;
+  session.profissionalId = chosen.professional_id || session.profissionalId;
   session.step = "cancelar_confirma";
   await replyS(
     session,
     phone,
-    `${personal(session)}encontrei sua consulta:\n\n📅 ${formatToBrazilDate(consulta.date)} às ${formatToBrazilTimeOnly(consulta.date)}\n👨‍⚕️ ${consulta.professional_name}\n\nPosso confirmar o cancelamento? Responda *Sim* ou *Não*.`
+    `${personal(session)}vou cancelar a consulta de *${formatToBrazilDate(chosen.date)} às ${formatToBrazilTimeOnly(chosen.date)}*. Posso confirmar? Responda *Sim* ou *Não*.`
   );
 }
 
