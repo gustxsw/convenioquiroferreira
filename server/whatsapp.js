@@ -167,21 +167,25 @@ function resetFlow(session) {
 
 // Casamos por RADICAL (substring do texto normalizado), não pela palavra exata,
 // para tolerar variações: "agendamento", "marcação", "remarquei", "cancelamento".
-// A ordem importa: AGRADECIMENTO antes de AGENDAR (evita "obrigada pela consulta"
-// disparar agendamento). CANCELAR/REAGENDAR antes de AGENDAR pois "remarcar" e
-// "desmarcar" contêm "marc".
+// A ordem importa: RECONHECIMENTO e AGRADECIMENTO antes de qualquer fluxo para
+// evitar que "ok obrigada" ou "tá bom" disparem agendamento ou saudação.
+// CANCELAR/REAGENDAR antes de AGENDAR pois "remarcar"/"desmarcar" contêm "marc".
 const INTENT_KEYWORDS = [
+  ["RECONHECIMENTO", ["^ok$", "^ok!$", "^certo$", "^entendi$", "^entendido$", "^tudo bem$", "^tudo certo$", "^ta$", "^ta bom$", "^ta ok$", "^combinado$", "^perfeito$", "^otimo$", "^legal$", "^show$", "^blz$", "^beleza$", "^tá$", "^tá bom$", "^tá ok$", "^tá certo$", "^pode ser$", "^sim ok$", "^ok sim$", "^sim, ok$", "^ok, sim$"]],
   ["AGRADECIMENTO", ["obrigad", "valeu", "agradec", "grato", "grata", "obg", "obd", "vlw", "mto obg", "mt obg", "thank", "gracias", "grazie", "merci", "tmj", "foi otimo", "foi incrivel", "foi perfeito", "adorei", "amei o atendimento", "atendimento incrivel", "atendimento otimo", "atendimento perfeito", "excelente atendimento"]],
   ["CANCELAR", ["cancel", "desmarc", "nao vou poder", "nao consigo ir", "nao poderei", "nao vou conseguir"]],
   ["REAGENDAR", ["remarc", "reagend", "mudar o horario", "mudar horario", "trocar o horario", "trocar horario", "mudar a data", "mudar data", "trocar a data", "trocar data", "mudar de dia", "outro dia", "outro horario", "adiar", "antecipar"]],
   ["CONVENIO", ["convenio", "carteirinha", "cobertura", "preco", "valor", "como funciona", "quanto custa", "plano", "beneficio", "contratar", "mensalidade", "assinatura", "quero contratar"]],
-  ["AGENDAR", ["agend", "marc", "consulta", "horario", "atendimento", "quero marcar", "queria marcar", "quero uma consulta", "preciso de uma consulta", "nova consulta", "quero agendar"]],
+  ["AGENDAR", ["agend", "marc", "consulta", "horario", "atendimento", "retorno", "quero marcar", "queria marcar", "quero uma consulta", "preciso de uma consulta", "nova consulta", "quero agendar"]],
 ];
 
 export function detectIntent(text) {
   const n = normalize(text);
   for (const [intent, words] of INTENT_KEYWORDS) {
-    if (words.some((w) => n.includes(w))) return intent;
+    if (words.some((w) => {
+      if (w.startsWith("^")) return new RegExp(w).test(n);
+      return n.includes(w);
+    })) return intent;
   }
   return "SAUDACAO";
 }
@@ -704,6 +708,10 @@ function humanFallbackText() {
 
 async function startFlow(session, phone, text, intent) {
   switch (intent) {
+    case "RECONHECIMENTO":
+      session.step = null;
+      // Mensagem de puro reconhecimento ("ok", "certo", "entendi"): não responde.
+      break;
     case "AGRADECIMENTO":
       session.step = null;
       await replyS(session, phone, "De nada! 😊 Se precisar de mais alguma coisa é só chamar.");
