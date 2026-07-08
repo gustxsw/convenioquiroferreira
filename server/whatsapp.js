@@ -301,6 +301,13 @@ export function parseWhen(text) {
     t = n.match(/\b(\d{1,2})\s*h(?:oras?)?\b/) || n.match(/\b(?:as|às)\s+(\d{1,2})\b/);
     if (t) time = clampHM(+t[1], 0);
   }
+  // "meio dia" / "meio-dia" → 12:00
+  if (!time && /\bmeio[\s-]?dia\b/.test(n)) time = "12:00";
+  // "8 e 10" / "oito e dez" → hora e minutos em linguagem natural (ex.: 8:10)
+  if (!time) {
+    t = n.match(/\b(\d{1,2})\s+e\s+(\d{1,2})\b/);
+    if (t) time = clampHM(+t[1], +t[2]);
+  }
 
   return { ymd, time };
 }
@@ -792,7 +799,7 @@ async function handleAgendarCpf(session, phone, text) {
     await replyS(
       session,
       phone,
-      "Não localizei um cadastro com esse CPF. Sem problema! Você prefere adquirir o plano do *Convênio Quiro Ferreira* ou seguir como *paciente particular*? É só responder *convênio* ou *particular*."
+      "Não localizei um cadastro com esse CPF. Você gostaria de continuar como *paciente particular*? É só responder *sim* para prosseguir."
     );
   }
 }
@@ -800,11 +807,18 @@ async function handleAgendarCpf(session, phone, text) {
 async function handleAgendarTipoCadastro(session, phone, text) {
   const n = normalize(text);
   if (n.includes("conven")) {
-    session.newPatientKind = "convenio";
-  } else if (n.includes("particular")) {
+    // Contratação do convênio via WhatsApp ainda não disponível
+    await replyS(
+      session,
+      phone,
+      "A contratação do Convênio Quiro Ferreira pelo WhatsApp ainda não está disponível. Em breve você poderá fazer tudo por aqui! Para mais informações, entre em contato diretamente com a clínica. 😊"
+    );
+    resetFlow(session);
+    return;
+  } else if (n.includes("particular") || n.includes("sim") || n.includes("quero") || n.includes("pode")) {
     session.newPatientKind = "private";
   } else {
-    await replyS(session, phone, "Só pra eu entender direitinho: você quer *convênio* ou *particular*?");
+    await replyS(session, phone, "Pode responder *sim* para continuar como paciente particular, ou *convênio* para saber mais sobre o plano.");
     return;
   }
   session.step = "agendar_cadastro_nome";

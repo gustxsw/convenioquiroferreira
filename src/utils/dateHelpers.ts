@@ -20,8 +20,8 @@ export function toUTCString(date: string | Date, time?: string): string {
 
   if (typeof date === "string") {
     if (time) {
-      // Combine date and time
-      dateObj = new Date(`${date}T${time}:00`);
+      // Interpreta o horário como hora de Brasília (UTC-3), não como hora local.
+      dateObj = new Date(`${date}T${time}:00-03:00`);
     } else {
       dateObj = new Date(date);
     }

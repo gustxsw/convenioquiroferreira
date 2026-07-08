@@ -211,16 +211,12 @@ const SchedulingPage: React.FC = () => {
 
   // 🔥 FUNÇÃO ÚNICA PARA CONVERSÃO DE TIMEZONE
   const formatTime = (utcDateString: string): string => {
-    console.log("🔄 [TIMEZONE] Converting UTC to Brazil time:", utcDateString);
-    const utcDate = new Date(utcDateString);
-    const brazilDate = new Date(utcDate.getTime() - 3 * 60 * 60 * 1000);
-    const timeString = brazilDate.toLocaleTimeString("pt-BR", {
+    return new Date(utcDateString).toLocaleTimeString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
     });
-    console.log("✅ [TIMEZONE] Result:", timeString);
-    return timeString;
   };
 
   // Check for payment feedback on component mount
@@ -1289,15 +1285,8 @@ const SchedulingPage: React.FC = () => {
 
   const timeSlots = generateTimeSlots(slotDuration, workingStart, workingEnd);
 
-  // 🔥 FIXED: Group consultations by time - WITH PROPER TIMEZONE CONVERSION
   const consultationsByTime = consultations.reduce((acc, consultation) => {
-    const timeSlot = formatTime(consultation.date);
-
-    console.log("🔄 [GROUPING] Consultation:", consultation.client_name);
-    console.log("🔄 [GROUPING] Date from backend (UTC):", consultation.date);
-    console.log("🔄 [GROUPING] Time slot (Brazil):", timeSlot);
-
-    acc[timeSlot] = consultation;
+    acc[formatTime(consultation.date)] = consultation;
     return acc;
   }, {} as Record<string, Consultation>);
 
