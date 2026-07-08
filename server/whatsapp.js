@@ -174,9 +174,9 @@ const INTENT_KEYWORDS = [
   ["RECONHECIMENTO", ["^ok$", "^ok!$", "^certo$", "^entendi$", "^entendido$", "^tudo bem$", "^tudo certo$", "^ta$", "^ta bom$", "^ta ok$", "^combinado$", "^perfeito$", "^otimo$", "^legal$", "^show$", "^blz$", "^beleza$", "^tá$", "^tá bom$", "^tá ok$", "^tá certo$", "^pode ser$", "^sim ok$", "^ok sim$", "^sim, ok$", "^ok, sim$"]],
   ["AGRADECIMENTO", ["obrigad", "valeu", "agradec", "grato", "grata", "obg", "obd", "vlw", "mto obg", "mt obg", "thank", "gracias", "grazie", "merci", "tmj", "foi otimo", "foi incrivel", "foi perfeito", "adorei", "amei o atendimento", "atendimento incrivel", "atendimento otimo", "atendimento perfeito", "excelente atendimento"]],
   ["CANCELAR", ["cancel", "desmarc", "nao vou poder", "nao consigo ir", "nao poderei", "nao vou conseguir"]],
-  ["REAGENDAR", ["remarc", "reagend", "mudar o horario", "mudar horario", "trocar o horario", "trocar horario", "mudar a data", "mudar data", "trocar a data", "trocar data", "mudar de dia", "outro dia", "outro horario", "adiar", "antecipar"]],
+  ["REAGENDAR", ["remarc", "reagend", "retorno", "mudar o horario", "mudar horario", "trocar o horario", "trocar horario", "mudar a data", "mudar data", "trocar a data", "trocar data", "mudar de dia", "outro dia", "outro horario", "adiar", "antecipar"]],
   ["CONVENIO", ["convenio", "carteirinha", "cobertura", "preco", "valor", "como funciona", "quanto custa", "plano", "beneficio", "contratar", "mensalidade", "assinatura", "quero contratar"]],
-  ["AGENDAR", ["agend", "marc", "consulta", "horario", "atendimento", "retorno", "quero marcar", "queria marcar", "quero uma consulta", "preciso de uma consulta", "nova consulta", "quero agendar"]],
+  ["AGENDAR", ["agend", "marc", "consulta", "horario", "atendimento", "quero marcar", "queria marcar", "quero uma consulta", "preciso de uma consulta", "nova consulta", "quero agendar"]],
 ];
 
 export function detectIntent(text) {
