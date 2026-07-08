@@ -171,7 +171,7 @@ function resetFlow(session) {
 // disparar agendamento). CANCELAR/REAGENDAR antes de AGENDAR pois "remarcar" e
 // "desmarcar" contêm "marc".
 const INTENT_KEYWORDS = [
-  ["AGRADECIMENTO", ["obrigad", "muito obrigad", "valeu", "agradeco", "agradec", "grato", "grata", "thankyou", "thank you", "obg"]],
+  ["AGRADECIMENTO", ["obrigad", "valeu", "agradec", "grato", "grata", "obg", "obd", "vlw", "mto obg", "mt obg", "thank", "gracias", "grazie", "merci", "tmj", "foi otimo", "foi incrivel", "foi perfeito", "adorei", "amei o atendimento", "atendimento incrivel", "atendimento otimo", "atendimento perfeito", "excelente atendimento"]],
   ["CANCELAR", ["cancel", "desmarc", "nao vou poder", "nao consigo ir", "nao poderei", "nao vou conseguir"]],
   ["REAGENDAR", ["remarc", "reagend", "mudar o horario", "mudar horario", "trocar o horario", "trocar horario", "mudar a data", "mudar data", "trocar a data", "trocar data", "mudar de dia", "outro dia", "outro horario", "adiar", "antecipar"]],
   ["CONVENIO", ["convenio", "carteirinha", "cobertura", "preco", "valor", "como funciona", "quanto custa", "plano", "beneficio", "contratar", "mensalidade", "assinatura", "quero contratar"]],
