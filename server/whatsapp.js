@@ -167,13 +167,15 @@ function resetFlow(session) {
 
 // Casamos por RADICAL (substring do texto normalizado), não pela palavra exata,
 // para tolerar variações: "agendamento", "marcação", "remarquei", "cancelamento".
-// A ordem importa: CANCELAR/REAGENDAR/CONVENIO são testados antes de AGENDAR
-// (ex.: "remarcar" e "desmarcar" contêm "marc", mas devem cair em REAGENDAR/CANCELAR).
+// A ordem importa: AGRADECIMENTO antes de AGENDAR (evita "obrigada pela consulta"
+// disparar agendamento). CANCELAR/REAGENDAR antes de AGENDAR pois "remarcar" e
+// "desmarcar" contêm "marc".
 const INTENT_KEYWORDS = [
+  ["AGRADECIMENTO", ["obrigad", "muito obrigad", "valeu", "agradeco", "agradec", "grato", "grata", "thankyou", "thank you", "obg"]],
   ["CANCELAR", ["cancel", "desmarc", "nao vou poder", "nao consigo ir", "nao poderei", "nao vou conseguir"]],
   ["REAGENDAR", ["remarc", "reagend", "mudar o horario", "mudar horario", "trocar o horario", "trocar horario", "mudar a data", "mudar data", "trocar a data", "trocar data", "mudar de dia", "outro dia", "outro horario", "adiar", "antecipar"]],
   ["CONVENIO", ["convenio", "carteirinha", "cobertura", "preco", "valor", "como funciona", "quanto custa", "plano", "beneficio", "contratar", "mensalidade", "assinatura", "quero contratar"]],
-  ["AGENDAR", ["agend", "marc", "consulta", "horario", "atendimento", "quero marcar", "queria marcar", "quero uma consulta", "preciso de uma consulta", "nova consulta", "quero agendar"]],
+  ["AGENDAR", ["agend", "marc", "horario", "atendimento", "quero marcar", "queria marcar", "quero uma consulta", "preciso de uma consulta", "nova consulta", "quero agendar"]],
 ];
 
 export function detectIntent(text) {
@@ -701,6 +703,10 @@ function humanFallbackText() {
 
 async function startFlow(session, phone, text, intent) {
   switch (intent) {
+    case "AGRADECIMENTO":
+      session.step = null;
+      await replyS(session, phone, "De nada! 😊 Se precisar de mais alguma coisa é só chamar.");
+      break;
     case "AGENDAR":
       session.flow = "agendar";
       session.step = "agendar_cpf";
