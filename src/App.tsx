@@ -38,6 +38,7 @@ import AffiliateDashboard from "./pages/affiliate/AffiliateDashboard";
 import AgendaFinancialPage from "./pages/financeiro/AgendaFinancialPage";
 import AtendimentoPage from "./pages/atendimento/AtendimentoPage";
 import WhatsappReportsPage from "./pages/WhatsappReportsPage";
+import CancelledConsultationsPage from "./pages/professional/CancelledConsultationsPage";
 
 // Route guards
 const ProtectedRoute = ({
@@ -131,7 +132,7 @@ function App() {
         <Route path="/client/professionals" element={<ProfessionalsPage />} />
       </Route>
 
-      {/* Professional routes */}
+      {/* Professional + secretaria shared routes */}
       <Route
         element={
           <ProtectedRoute allowedRoles={["professional", "secretaria"]}>
@@ -142,14 +143,24 @@ function App() {
         <Route path="/professional" element={<ProfessionalHomePage />} />
         <Route path="/professional/scheduling" element={<SchedulingPage />} />
         <Route path="/professional/private-patients" element={<PrivatePatientsPage />} />
+        <Route path="/professional/services" element={<ManageServicesPage />} />
+      </Route>
+
+      {/* Professional-only routes */}
+      <Route
+        element={
+          <ProtectedRoute allowedRoles={["professional"]}>
+            <MainLayout />
+          </ProtectedRoute>
+        }
+      >
         <Route path="/professional/medical-records" element={<MedicalRecordsPage />} />
         <Route path="/professional/documents" element={<DocumentsPage />} />
-        <Route path="/professional/services" element={<ManageServicesPage />} />
         <Route path="/professional/reports" element={<ProfessionalReportsPage />} />
         <Route path="/professional/whatsapp-reports" element={<WhatsappReportsPage />} />
+        <Route path="/professional/cancelled-consultations" element={<CancelledConsultationsPage />} />
         <Route path="/professional/profile" element={<ProfessionalProfilePage />} />
         <Route path="/professional/onboarding" element={<ProfessionalOnboardingPage />} />
-        {/* Rota de registrar consulta removida do painel profissional */}
       </Route>
 
       {/* Admin routes */}
@@ -165,6 +176,7 @@ function App() {
         <Route path="/admin/scheduling-access" element={<ManageSchedulingAccessPage />} />
         <Route path="/admin/reports" element={<ReportsPage />} />
         <Route path="/admin/whatsapp-reports" element={<WhatsappReportsPage />} />
+        <Route path="/admin/cancelled-consultations" element={<CancelledConsultationsPage />} />
         <Route path="/admin/affiliates" element={<ManageAffiliatesPage />} />
         <Route path="/admin/agenda-partners" element={<ManageAgendaPartnersPage />} />
         <Route path="/admin/affiliates/financial-report" element={<AffiliateFinancialReport />} />
@@ -193,10 +205,10 @@ function App() {
         <Route path="/financeiro/agenda" element={<AgendaFinancialPage />} />
       </Route>
 
-      {/* Atendimento humano (WhatsApp) — secretária e admin */}
+      {/* Atendimento humano (WhatsApp) — secretária e professional */}
       <Route
         element={
-          <ProtectedRoute allowedRoles={["secretaria", "admin"]}>
+          <ProtectedRoute allowedRoles={["secretaria", "professional"]}>
             <MainLayout />
           </ProtectedRoute>
         }

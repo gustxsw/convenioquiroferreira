@@ -18,53 +18,46 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
   const getNavLinks = () => {
     if (user?.currentRole === 'client') {
       return [
-        { to: '/client', icon: <Home size={20} />, label: 'Início', color: 'text-blue-500' },
-        { to: '/client/professionals', icon: <Users size={20} />, label: 'Profissionais', color: 'text-emerald-500' },
+        { to: '/client', icon: <Home size={20} />, label: 'Início', color: 'text-red-400' },
+        { to: '/client/professionals', icon: <Users size={20} />, label: 'Profissionais', color: 'text-red-400' },
       ];
     } else if (user?.currentRole === 'professional') {
       return [
-        { to: '/professional', icon: <Home size={20} />, label: 'Início', color: 'text-blue-500' },
-        { to: '/professional/scheduling', icon: <CalendarDays size={20} />, label: 'Agenda', color: 'text-purple-500' },
-        { to: '/professional/private-patients', icon: <UserCheck size={20} />, label: 'Pacientes Particulares', color: 'text-emerald-500' },
-        { to: '/professional/services', icon: <FileText size={20} />, label: 'Meus Serviços', color: 'text-amber-500' },
-        { to: '/professional/medical-records', icon: <Stethoscope size={20} />, label: 'Prontuários', color: 'text-rose-500' },
-        { to: '/professional/documents', icon: <FileImage size={20} />, label: 'Documentos', color: 'text-cyan-500' },
-        { to: '/professional/reports', icon: <BarChart2 size={20} />, label: 'Relatórios', color: 'text-indigo-500' },
-        { to: '/professional/whatsapp-reports', icon: <MessageCircle size={20} />, label: 'Relatório de Atendimento', color: 'text-teal-500' },
-        { to: '/professional/profile', icon: <Settings size={20} />, label: 'Perfil', color: 'text-slate-500' },
+        { to: '/professional', icon: <Home size={20} />, label: 'Início', color: 'text-red-400' },
+        { to: '/professional/scheduling', icon: <CalendarDays size={20} />, label: 'Agenda', color: 'text-red-400' },
+        { to: '/atendimento', icon: <MessageCircle size={20} />, label: 'Atendimento', color: 'text-red-400' },
+        { to: '/professional/private-patients', icon: <UserCheck size={20} />, label: 'Pacientes Particulares', color: 'text-red-400' },
+        { to: '/professional/services', icon: <FileText size={20} />, label: 'Meus Serviços', color: 'text-red-400' },
+        { to: '/professional/medical-records', icon: <Stethoscope size={20} />, label: 'Prontuários', color: 'text-red-400' },
+        { to: '/professional/documents', icon: <FileImage size={20} />, label: 'Documentos', color: 'text-red-400' },
+        { to: '/professional/reports', icon: <BarChart2 size={20} />, label: 'Relatórios', color: 'text-red-400' },
+        { to: '/professional/profile', icon: <Settings size={20} />, label: 'Perfil', color: 'text-red-400' },
       ];
     } else if (user?.currentRole === 'secretaria') {
       return [
-        { to: '/professional', icon: <Home size={20} />, label: 'Início', color: 'text-blue-500' },
-        { to: '/atendimento', icon: <MessageCircle size={20} />, label: 'Atendimento', color: 'text-cyan-500' },
-        { to: '/professional/scheduling', icon: <CalendarDays size={20} />, label: 'Agenda', color: 'text-purple-500' },
-        { to: '/professional/private-patients', icon: <UserCheck size={20} />, label: 'Pacientes Particulares', color: 'text-emerald-500' },
-        { to: '/professional/services', icon: <FileText size={20} />, label: 'Meus Serviços', color: 'text-amber-500' },
-        { to: '/professional/medical-records', icon: <Stethoscope size={20} />, label: 'Prontuários', color: 'text-rose-500' },
-        { to: '/professional/documents', icon: <FileImage size={20} />, label: 'Documentos', color: 'text-cyan-500' },
-        { to: '/professional/reports', icon: <BarChart2 size={20} />, label: 'Relatórios', color: 'text-indigo-500' },
-        { to: '/professional/whatsapp-reports', icon: <MessageCircle size={20} />, label: 'Relatório de Atendimento', color: 'text-teal-500' },
-        { to: '/professional/profile', icon: <Settings size={20} />, label: 'Perfil', color: 'text-slate-500' },
+        { to: '/professional', icon: <Home size={20} />, label: 'Início', color: 'text-red-400' },
+        { to: '/atendimento', icon: <MessageCircle size={20} />, label: 'Atendimento', color: 'text-red-400' },
+        { to: '/professional/scheduling', icon: <CalendarDays size={20} />, label: 'Agenda', color: 'text-red-400' },
+        { to: '/professional/private-patients', icon: <UserCheck size={20} />, label: 'Pacientes Particulares', color: 'text-red-400' },
+        { to: '/professional/services', icon: <FileText size={20} />, label: 'Meus Serviços', color: 'text-red-400' },
       ];
     } else if (user?.currentRole === 'admin') {
       return [
-        { to: '/admin', icon: <Home size={20} />, label: 'Início', color: 'text-blue-500' },
-        { to: '/atendimento', icon: <MessageCircle size={20} />, label: 'Atendimento', color: 'text-cyan-500' },
-        { to: '/admin/users', icon: <Users size={20} />, label: 'Usuários', color: 'text-emerald-500' },
-        { to: '/admin/scheduling-access', icon: <Clock size={20} />, label: 'Acesso à Agenda', color: 'text-purple-500' },
-        { to: '/admin/affiliates', icon: <DollarSign size={20} />, label: 'Afiliados', color: 'text-green-500' },
-        { to: '/admin/agenda-partners', icon: <UserCheck size={20} />, label: 'Parceiros da Agenda', color: 'text-orange-500' },
-        { to: '/admin/coupons', icon: <Ticket size={20} />, label: 'Cupons', color: 'text-pink-500' },
-        { to: '/admin/reports', icon: <BarChart2 size={20} />, label: 'Relatórios', color: 'text-indigo-500' },
-        { to: '/admin/whatsapp-reports', icon: <MessageCircle size={20} />, label: 'Relatório de Atendimento', color: 'text-teal-500' },
+        { to: '/admin', icon: <Home size={20} />, label: 'Início', color: 'text-red-400' },
+        { to: '/admin/users', icon: <Users size={20} />, label: 'Usuários', color: 'text-red-400' },
+        { to: '/admin/scheduling-access', icon: <Clock size={20} />, label: 'Acesso à Agenda', color: 'text-red-400' },
+        { to: '/admin/affiliates', icon: <DollarSign size={20} />, label: 'Afiliados', color: 'text-red-400' },
+        { to: '/admin/agenda-partners', icon: <UserCheck size={20} />, label: 'Parceiros da Agenda', color: 'text-red-400' },
+        { to: '/admin/coupons', icon: <Ticket size={20} />, label: 'Cupons', color: 'text-red-400' },
+        { to: '/admin/reports', icon: <BarChart2 size={20} />, label: 'Relatórios', color: 'text-red-400' },
       ];
     } else if (user?.currentRole === 'vendedor') {
       return [
-        { to: '/affiliate', icon: <Home size={20} />, label: 'Painel', color: 'text-blue-500' },
+        { to: '/affiliate', icon: <Home size={20} />, label: 'Painel', color: 'text-red-400' },
       ];
     } else if (user?.currentRole === 'financeiro_agenda') {
       return [
-        { to: '/financeiro/agenda', icon: <DollarSign size={20} />, label: 'Financeiro Agenda', color: 'text-green-500' },
+        { to: '/financeiro/agenda', icon: <DollarSign size={20} />, label: 'Financeiro Agenda', color: 'text-red-400' },
       ];
     }
 

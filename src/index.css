@@ -47,6 +47,9 @@ body {
   @apply bg-white rounded-xl shadow-sm border border-gray-100 p-6 transition-all duration-200 hover:shadow-md;
 }
 
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
 .navbar {
   @apply bg-white text-gray-800 shadow-lg border-b border-gray-200;
 }

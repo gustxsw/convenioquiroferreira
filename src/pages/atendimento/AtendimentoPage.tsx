@@ -11,6 +11,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
+import { useAuth } from "../../contexts/AuthContext";
 
 type Conversation = {
   phone: string;
@@ -67,6 +68,8 @@ const actorLabel = (actor: string) => {
 };
 
 const AtendimentoPage: React.FC = () => {
+  const { user } = useAuth();
+  const isProfessional = user?.currentRole === "professional";
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -194,6 +197,7 @@ const AtendimentoPage: React.FC = () => {
 
   const pending = conversations.filter((c) => c.status === "pending");
   const inService = conversations.filter((c) => c.status === "human");
+  const botActive = conversations.filter((c) => c.status === "bot");
 
   const displayName = (c: Conversation) => c.patient_name || formatPhone(c.phone);
 
@@ -271,6 +275,7 @@ const AtendimentoPage: React.FC = () => {
             <>
               {renderList("Pendentes", pending, "Nenhuma conversa pendente.")}
               {renderList("Em atendimento", inService, "Nenhuma conversa em atendimento.")}
+              {isProfessional && renderList("Atendidas pelo bot", botActive, "Nenhuma conversa ativa pelo bot.")}
             </>
           )}
         </div>

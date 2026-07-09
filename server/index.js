@@ -90,6 +90,11 @@ if (process.env.NODE_ENV === "production") {
  * Permite busca direta no banco e evita falhas por espaços/encoding no link do e-mail.
  * Tokens antigos gerados com bcrypt ainda são aceitos no reset (fallback).
  */
+function toTitleCase(str) {
+  if (!str || typeof str !== "string") return str;
+  return str.trim().replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
 function hashPasswordResetToken(plainToken) {
   const normalized = normalizeResetToken(plainToken);
   return crypto.createHash("sha256").update(normalized, "utf8").digest("hex");
@@ -2046,7 +2051,7 @@ app.post("/api/auth/register", async (req, res) => {
       RETURNING id, name, cpf, email, roles, subscription_status
     `,
       [
-        name.trim(),
+        toTitleCase(name),
         cleanCPF,
         email?.trim() || null,
         phone?.replace(/\D/g, "") || null,
@@ -3092,7 +3097,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
       RETURNING id, name, cpf, email, roles, linked_professional_id
     `,
       [
-        name.trim(),
+        toTitleCase(name),
         cleanCpf,
         email?.trim() || null,
         cleanPhone,
@@ -3221,7 +3226,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
     }
 
     // Update other fields
-    if (name !== undefined) updateData.name = name.trim();
+    if (name !== undefined) updateData.name = toTitleCase(name);
     if (email !== undefined) updateData.email = email?.trim() || null;
     if (phone !== undefined)
       updateData.phone = phone?.replace(/\D/g, "") || null;
@@ -3472,26 +3477,27 @@ app.get(
       );
 
       let query = `
-      SELECT 
+      SELECT
         c.id,
         c.date,
         c.value,
         c.status,
         c.notes,
         c.created_at,
+        c.google_meet_link,
         s.name as service_name,
         al.name as location_name,
-        CASE 
+        CASE
           WHEN c.user_id IS NOT NULL THEN u.name
           WHEN c.dependent_id IS NOT NULL THEN d.name
           WHEN c.private_patient_id IS NOT NULL THEN pp.name
           ELSE 'Paciente não identificado'
         END as client_name,
-        CASE 
+        CASE
           WHEN c.dependent_id IS NOT NULL THEN true
           ELSE false
         END as is_dependent,
-        CASE 
+        CASE
           WHEN c.private_patient_id IS NOT NULL THEN 'private'
           ELSE 'convenio'
         END as patient_type
@@ -4886,6 +4892,81 @@ app.get(
     } catch (error) {
       console.error("❌ Error generating analytics report:", error);
       res.status(500).json({ message: "Erro ao gerar relatório analítico" });
+    }
+  }
+);
+
+// ===== RELATÓRIO DE CONSULTAS CANCELADAS =====
+app.get(
+  "/api/reports/cancelled-consultations",
+  authenticate,
+  authorize(["professional", "secretaria", "admin"]),
+  async (req, res) => {
+    try {
+      const { start_date, end_date } = req.query;
+
+      if (!start_date || !end_date) {
+        return res.status(400).json({ message: "Datas inicial e final são obrigatórias" });
+      }
+
+      const isAdmin = req.user.roles?.includes("admin");
+      const professionalId = req.user.professionalScopeId;
+
+      const params = [
+        `${start_date}T00:00:00-03:00`,
+        `${end_date}T23:59:59-03:00`,
+      ];
+      const professionalFilter = isAdmin ? "" : `AND c.professional_id = $${params.push(professionalId)}`;
+      const agendaOnlyFilter =
+        !isAdmin && isAgendaOnlyProfessional(req)
+          ? "AND c.private_patient_id IS NOT NULL"
+          : "";
+
+      const result = await pool.query(
+        `
+        SELECT
+          c.id,
+          c.date,
+          c.value,
+          COALESCE(c.cancelled_at, c.updated_at) AS cancelled_at,
+          c.cancellation_reason,
+          CASE
+            WHEN c.private_patient_id IS NOT NULL THEN pp.name
+            WHEN c.dependent_id IS NOT NULL THEN d.name
+            WHEN c.user_id IS NOT NULL THEN uc.name
+            ELSE 'Desconhecido'
+          END AS patient_name,
+          CASE
+            WHEN c.private_patient_id IS NOT NULL THEN 'private'
+            ELSE 'convenio'
+          END AS patient_type,
+          CASE WHEN c.dependent_id IS NOT NULL THEN true ELSE false END AS is_dependent,
+          COALESCE(ucb.name, 'Secretária Virtual') AS cancelled_by_name,
+          up.name AS professional_name,
+          s.name AS service_name,
+          al.name AS location_name
+        FROM consultations c
+        LEFT JOIN users up ON c.professional_id = up.id
+        LEFT JOIN users uc ON c.user_id = uc.id
+        LEFT JOIN dependents d ON c.dependent_id = d.id
+        LEFT JOIN private_patients pp ON c.private_patient_id = pp.id
+        LEFT JOIN users ucb ON c.cancelled_by = ucb.id
+        LEFT JOIN services s ON c.service_id = s.id
+        LEFT JOIN attendance_locations al ON c.location_id = al.id
+        WHERE c.status = 'cancelled'
+          AND COALESCE(c.cancelled_at, c.updated_at) BETWEEN $1::timestamptz AND $2::timestamptz
+          ${professionalFilter}
+          ${agendaOnlyFilter}
+        ORDER BY COALESCE(c.cancelled_at, c.updated_at) DESC
+        `,
+        params
+      );
+
+      console.log(`✅ Cancelled consultations report: ${result.rows.length} records`);
+      res.json(result.rows);
+    } catch (error) {
+      console.error("❌ Error generating cancelled consultations report:", error);
+      res.status(500).json({ message: "Erro ao gerar relatório de cancelamentos" });
     }
   }
 );
@@ -6675,7 +6756,7 @@ app.post("/api/dependents", authenticate, async (req, res) => {
        RETURNING *`,
       [
         client_id,
-        name.trim(),
+        toTitleCase(name),
         cleanCPF,
         normalizedBirthDate.value,
         phone?.trim() || null,
@@ -6734,7 +6815,7 @@ app.put(
       RETURNING *
     `,
         [
-          name.trim(),
+          toTitleCase(name),
           normalizedBirthDate.value,
           phone?.trim() || null,
           id,
@@ -7794,7 +7875,7 @@ app.post(
     `,
         [
           req.user.professionalScopeId,
-          name.trim(),
+          toTitleCase(name),
           cleanCPF,
           email?.trim() || null,
           phone?.replace(/\D/g, "") || null,
@@ -7884,7 +7965,7 @@ app.put(
       RETURNING *
     `,
         [
-          name.trim(),
+          toTitleCase(name),
           email?.trim() || null,
           phone?.replace(/\D/g, "") || null,
           normalizedBirthDate.value,
@@ -8419,7 +8500,7 @@ app.post(
         [
           req.user.professionalScopeId,
           private_patient_id || null,
-          patient_name?.trim() || null,
+          toTitleCase(patient_name) || null,
           patient_cpf?.replace(/\D/g, "") || null,
           patient_type,
           chief_complaint?.trim() || null,
@@ -8560,7 +8641,7 @@ app.put(
     `,
         [
           patient_type || null,
-          patient_name?.trim() || null,
+          toTitleCase(patient_name) || null,
           patient_cpf?.trim() || null,
           private_patient_id || null,
           chief_complaint?.trim() || null,
@@ -9128,7 +9209,7 @@ app.post(
           [
             professionalId,
             private_patient_id || null,
-            patientData.name,
+            toTitleCase(patientData.name),
             patientData.cpf || null,
             title,
             document_type,
@@ -10936,7 +11017,7 @@ app.post(
 
       const userResult = await pool.query(
         "INSERT INTO users (name, cpf, email, password, roles) VALUES ($1, $2, $3, $4, ARRAY['vendedor']) RETURNING id",
-        [name, cpfClean, email || null, hashedPassword]
+        [toTitleCase(name), cpfClean, email || null, hashedPassword]
       );
 
       const userId = userResult.rows[0].id;
@@ -11550,7 +11631,7 @@ app.post("/api/affiliate/affiliates", authenticate, async (req, res) => {
 
     const createdUserResult = await pool.query(
       "INSERT INTO users (name, cpf, email, password, roles) VALUES ($1, $2, $3, $4, ARRAY['vendedor']) RETURNING id",
-      [name, cpfClean, email || null, hashedPassword]
+      [toTitleCase(name), cpfClean, email || null, hashedPassword]
     );
 
     const userId = createdUserResult.rows[0].id;
@@ -12127,7 +12208,7 @@ app.get(
   async (req, res) => {
     try {
       const scopeProfessionalId =
-        req.user.currentRole === "secretaria" ? req.user.professionalScopeId : null;
+        req.user.currentRole === "admin" ? null : req.user.professionalScopeId;
       res.json(await listConversations({ scopeProfessionalId }));
     } catch (error) {
       process.stdout.write("[whatsapp-conversations] " + String(error) + "\n");

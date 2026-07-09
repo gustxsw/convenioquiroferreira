@@ -23,12 +23,14 @@ import {
   Lock,
   Unlock,
   CalendarClock,
+  Video,
 } from "lucide-react";
 import {
   format,
   addDays,
   subDays,
   startOfMonth,
+  startOfWeek,
   addMonths,
   subMonths,
   isSameDay,
@@ -60,6 +62,7 @@ type Consultation = {
   is_dependent: boolean;
   patient_type: "convenio" | "private";
   location_name?: string;
+  google_meet_link?: string | null;
 };
 
 type Service = {
@@ -157,6 +160,12 @@ const SchedulingPage: React.FC = () => {
 
   // Agenda redesign UI state
   const [viewTab, setViewTab] = useState<"horario" | "consultas">("horario");
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
   const [calendarMonth, setCalendarMonth] = useState<Date>(
     startOfMonth(new Date())
   );
@@ -1478,6 +1487,51 @@ const SchedulingPage: React.FC = () => {
           </div>
         )}
 
+        {/* Faixa de dias — mobile/tablet apenas */}
+        <div className="lg:hidden mb-4">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setSelectedDate(subDays(selectedDate, 7))}
+              className="p-2 rounded-lg text-[#585454] hover:bg-black/5 transition-colors flex-shrink-0"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <div className="flex-1 flex gap-1 overflow-x-auto no-scrollbar">
+              {Array.from({ length: 7 }, (_, i) => {
+                const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 });
+                const day = addDays(weekStart, i);
+                const isSel = isSameDay(day, selectedDate);
+                const isToday = isSameDay(day, new Date());
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setSelectedDate(day)}
+                    className={`flex flex-col items-center flex-shrink-0 w-11 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                      isSel
+                        ? "text-white"
+                        : isToday
+                        ? "text-[#b32228] hover:bg-black/5"
+                        : "text-[#585454] hover:bg-black/5"
+                    }`}
+                    style={isSel ? { background: "#b32228" } : undefined}
+                  >
+                    <span className="text-[10px] uppercase">
+                      {format(day, "EEE", { locale: ptBR })}
+                    </span>
+                    <span className="text-base leading-tight">{day.getDate()}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => setSelectedDate(addDays(selectedDate, 7))}
+              className="p-2 rounded-lg text-[#585454] hover:bg-black/5 transition-colors flex-shrink-0"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
         {/* Barra de data + ações */}
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-3">
           <div className="flex items-center gap-1.5">
@@ -1553,8 +1607,8 @@ const SchedulingPage: React.FC = () => {
 
         {/* Cartão da agenda */}
         <div className="bg-white rounded-xl border border-[#e4e0e0] shadow-[0_2px_10px_rgba(60,40,30,0.05)] overflow-hidden">
-          {/* Abas */}
-          <div className="flex items-center border-b border-[#efeceb] px-2">
+          {/* Abas — ocultas no mobile (sempre mostra só consultas) */}
+          <div className="hidden sm:flex items-center border-b border-[#efeceb] px-2">
             <button
               onClick={() => setViewTab("horario")}
               className={`relative px-4 py-3 text-sm font-semibold transition-colors ${
@@ -1602,7 +1656,7 @@ const SchedulingPage: React.FC = () => {
             <div>
               {(() => {
                 const rows =
-                  viewTab === "horario"
+                  viewTab === "horario" && !isMobile
                     ? timeSlots
                     : timeSlots.filter((t) => !!consultationsByTime[t]);
 
@@ -1714,6 +1768,18 @@ const SchedulingPage: React.FC = () => {
                                 >
                                   <MessageCircle className="h-4 w-4" />
                                 </button>
+                                {consultation.google_meet_link && (
+                                  <a
+                                    href={consultation.google_meet_link}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                    title="Entrar no Google Meet"
+                                  >
+                                    <Video className="h-4 w-4" />
+                                  </a>
+                                )}
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1796,8 +1862,8 @@ const SchedulingPage: React.FC = () => {
         {/* ===== Fim da coluna principal ===== */}
         </div>
 
-        {/* ===== Barra lateral: calendário + resumo ===== */}
-        <aside className="w-full lg:w-[320px] flex-shrink-0 space-y-4">
+        {/* ===== Barra lateral: calendário + resumo — desktop apenas ===== */}
+        <aside className="hidden lg:block lg:w-[320px] flex-shrink-0 space-y-4">
           {/* Mini calendário */}
           <div className="bg-white rounded-xl border border-[#e4e0e0] shadow-[0_2px_10px_rgba(60,40,30,0.05)] p-4">
             <div className="flex items-center justify-between mb-3">

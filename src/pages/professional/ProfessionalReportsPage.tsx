@@ -8,8 +8,12 @@ import {
   Users,
   FileText,
   Activity,
+  XCircle,
+  MessageCircle,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
+import CancelledConsultationsPage from "./CancelledConsultationsPage";
+import WhatsappReportsPage from "../WhatsappReportsPage";
 
 type DetailedReport = {
   summary: {
@@ -55,6 +59,7 @@ type AnalyticsReport = {
 };
 
 const ProfessionalReportsPage: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<"consultas" | "cancelamentos" | "atendimento">("consultas");
   const [startDate, setStartDate] = useState(getDefaultStartDate());
   const [endDate, setEndDate] = useState(getDefaultEndDate());
   const [report, setReport] = useState<DetailedReport | null>(null);
@@ -229,13 +234,53 @@ const ProfessionalReportsPage: React.FC = () => {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Relatórios Profissionais
-        </h1>
-        <p className="text-gray-600">
-          Visualize dados detalhados de suas consultas e faturamento
-        </p>
+        <h1 className="text-2xl font-bold text-gray-900">Relatórios</h1>
+        <p className="text-gray-600">Consultas, cancelamentos e atendimentos via WhatsApp</p>
       </div>
+
+      {/* Tab bar */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
+        <div className="flex border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab("consultas")}
+            className={`flex items-center gap-2 px-6 py-4 font-medium text-sm border-b-2 transition-colors ${
+              activeTab === "consultas"
+                ? "border-red-600 text-red-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <BarChart2 size={16} />
+            Consultas
+          </button>
+          <button
+            onClick={() => setActiveTab("cancelamentos")}
+            className={`flex items-center gap-2 px-6 py-4 font-medium text-sm border-b-2 transition-colors ${
+              activeTab === "cancelamentos"
+                ? "border-red-600 text-red-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <XCircle size={16} />
+            Cancelamentos
+          </button>
+          <button
+            onClick={() => setActiveTab("atendimento")}
+            className={`flex items-center gap-2 px-6 py-4 font-medium text-sm border-b-2 transition-colors ${
+              activeTab === "atendimento"
+                ? "border-red-600 text-red-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <MessageCircle size={16} />
+            Atendimento WhatsApp
+          </button>
+        </div>
+      </div>
+
+      {activeTab === "cancelamentos" && <CancelledConsultationsPage />}
+      {activeTab === "atendimento" && <WhatsappReportsPage />}
+      {activeTab === "consultas" && (
+      <div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6 space-y-4">
         <div className="flex items-center mb-2">
@@ -1048,6 +1093,8 @@ const ProfessionalReportsPage: React.FC = () => {
               </div>
             )}
         </div>
+      )}
+      </div>
       )}
     </div>
   );

@@ -45,6 +45,11 @@ import {
 
 const SESSION_TTL_MINUTES = 15;
 
+function toTitleCase(str) {
+  if (!str || typeof str !== "string") return str;
+  return str.trim().replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
 // Persona da secretária, personalizada por profissional (multi-número): cada
 // profissional tem seu próprio número, então a IA se apresenta como secretária
 // DELE. O Convênio Quiro Ferreira é um assunto secundário que ela também domina.
@@ -474,7 +479,7 @@ async function createClient({ name, phone, cpf }) {
     `INSERT INTO users (name, cpf, phone, password, roles)
      VALUES ($1, $2, $3, $4, ARRAY['client'])
      RETURNING id, name`,
-    [name, cpf, onlyDigits(phone), hash]
+    [toTitleCase(name), cpf, onlyDigits(phone), hash]
   );
   return r.rows[0];
 }
@@ -485,7 +490,7 @@ async function createPrivatePatient({ name, phone, cpf, professionalId }) {
     `INSERT INTO private_patients (professional_id, name, cpf, phone)
      VALUES ($1, $2, $3, $4)
      RETURNING id, name`,
-    [professionalId, name, cpf, onlyDigits(phone)]
+    [professionalId, toTitleCase(name), cpf, onlyDigits(phone)]
   );
   return r.rows[0];
 }
@@ -709,8 +714,8 @@ async function callAnthropic(messages, professionalName) {
 function humanFallbackText() {
   const human = onlyDigits(process.env.WHATSAPP_HUMAN_FALLBACK || "");
   return human
-    ? `Prefiro não responder no chute. Nossa equipe pode te ajudar: https://wa.me/${human}`
-    : "Prefiro confirmar antes de te responder. Vou verificar e já retorno.";
+    ? `Esta pergunta merece uma resposta precisa — deixa eu encaminhar para nossa equipe: https://wa.me/${human}`
+    : "Esta pergunta merece uma verificação antes de te responder. Vou confirmar e já retorno.";
 }
 
 // ===== FLUXOS =====
@@ -852,10 +857,13 @@ async function handleAgendarCpf(session, phone, text) {
 async function handleAgendarTipoCadastro(session, phone, text) {
   const n = normalize(text);
   if (n.includes("conven")) {
-    // Contratação do convênio via WhatsApp ainda não disponível
-    await replyS(session, phone,
-      "No momento, a contratação do Convênio Quiro Ferreira pelo WhatsApp não está disponível. Para mais informações, entre em contato diretamente com a clínica."
-    );
+    const profNomeTipo = await professionalDisplayName(session);
+    const profRefTipo = profNomeTipo ? firstName(profNomeTipo) : "o profissional";
+    session.mode = "pending";
+    await replyS(session, phone, pick([
+      `Para o Convênio Quiro Ferreira, ${profRefTipo} vai te enviar o link de cadastro pessoalmente. Você acessa, cria sua conta e o pagamento é feito pelo próprio painel. Vou avisá-lo agora.`,
+      `A contratação do convênio é feita pelo painel: ${profRefTipo} te passa o link de cadastro diretamente. Após o cadastro, o pagamento é realizado pelo painel. Estou avisando ${profRefTipo} agora.`,
+    ]));
     resetFlow(session);
     return;
   } else if (n.includes("particular") || n.includes("sim") || n.includes("quero") || n.includes("pode")) {
@@ -866,8 +874,8 @@ async function handleAgendarTipoCadastro(session, phone, text) {
   }
   session.step = "agendar_cadastro_nome";
   await replyS(session, phone, pick([
-    "Combinado! Qual é o seu *nome completo*?",
     "Perfeito! Para registrar seu cadastro, qual é o seu *nome completo*?",
+    "Ótimo! Me informa seu *nome completo*, por favor.",
   ]));
 }
 
@@ -1136,11 +1144,12 @@ async function finalizeSlot(session, phone, slot) {
     session.pendingSlot = slot;
     session.step = "confirma_agendamento";
     const profName = await getProfessionalName(session.profissionalId);
+    const profFirst = firstName(profName);
     const dayLabel0 = session.chosenDay?.label?.split(" ")[0] || "";
     await replyS(session, phone, pick([
-      `Ficaria *${formatToBrazilDate(slot.isoUTC)} (${dayLabel0}) às ${slot.time}* com ${profName}. Posso confirmar o agendamento?`,
-      `Tudo certo até aqui: *${formatToBrazilDate(slot.isoUTC)} (${dayLabel0}) às ${slot.time}* com ${profName}. Confirma?`,
-      `Vou reservar *${formatToBrazilDate(slot.isoUTC)} (${dayLabel0}) às ${slot.time}* com ${profName}. Confirma o agendamento?`,
+      `Ficaria *${formatToBrazilDate(slot.isoUTC)}${dayLabel0 ? ` (${dayLabel0})` : ""} às ${slot.time}* com ${profFirst}. Posso confirmar o agendamento?`,
+      `Tudo certo até aqui: *${formatToBrazilDate(slot.isoUTC)}${dayLabel0 ? ` (${dayLabel0})` : ""} às ${slot.time}* com ${profFirst}. Confirma?`,
+      `Vou reservar *${formatToBrazilDate(slot.isoUTC)}${dayLabel0 ? ` (${dayLabel0})` : ""} às ${slot.time}* com ${profFirst}. Confirma o agendamento?`,
     ]));
   }
 }
@@ -1504,12 +1513,13 @@ async function routeMessage(session, phone, text) {
   // SAIR e ATENDENTE interrompem qualquer fluxo ativo.
   const globalIntent = detectIntent(text);
   if (globalIntent === "SAIR") {
+    const sairNome = firstName(session.pacienteNome);
     resetFlow(session);
     session.mode = "bot";
     await replyS(session, phone, pick([
-      "Até logo! Sempre que precisar, estarei por aqui.",
-      "Foi um prazer te atender. Se precisar de algo, é só chamar.",
-      "Até mais! Qualquer coisa, estou à disposição.",
+      `Até logo${sairNome ? `, ${sairNome}` : ""}! Sempre que precisar, estarei por aqui.`,
+      `Foi um prazer te atender${sairNome ? `, ${sairNome}` : ""}. Se precisar de algo, é só chamar.`,
+      `Até mais${sairNome ? `, ${sairNome}` : ""}! Qualquer coisa, estou à disposição.`,
     ]));
     await saveSession(phone, session);
     return;

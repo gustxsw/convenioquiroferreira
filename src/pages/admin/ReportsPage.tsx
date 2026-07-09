@@ -9,8 +9,12 @@ import {
   MapPin,
   Users,
   Building,
+  XCircle,
+  MessageCircle,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
+import CancelledConsultationsPage from "../professional/CancelledConsultationsPage";
+import WhatsappReportsPage from "../WhatsappReportsPage";
 
 type RevenueReport = {
   total_revenue: number;
@@ -82,7 +86,7 @@ type AgendaPartnerOption = {
 
 const ReportsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
-    "revenue" | "clients" | "professionals" | "agenda_financial"
+    "revenue" | "clients" | "professionals" | "agenda_financial" | "cancelled" | "whatsapp"
   >("revenue");
   const [startDate, setStartDate] = useState(getDefaultStartDate());
   const [endDate, setEndDate] = useState(getDefaultEndDate());
@@ -444,6 +448,28 @@ const ReportsPage: React.FC = () => {
           >
             <BarChart2 className="h-5 w-5 inline mr-2" />
             Financeiro da Agenda
+          </button>
+          <button
+            onClick={() => handleTabChange("cancelled")}
+            className={`px-6 py-4 font-medium text-sm border-b-2 transition-colors ${
+              activeTab === "cancelled"
+                ? "border-red-600 text-red-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <XCircle className="h-5 w-5 inline mr-2" />
+            Cancelamentos
+          </button>
+          <button
+            onClick={() => handleTabChange("whatsapp")}
+            className={`px-6 py-4 font-medium text-sm border-b-2 transition-colors ${
+              activeTab === "whatsapp"
+                ? "border-red-600 text-red-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <MessageCircle className="h-5 w-5 inline mr-2" />
+            Atendimento WhatsApp
           </button>
         </div>
       </div>
@@ -1124,6 +1150,9 @@ const ReportsPage: React.FC = () => {
           )}
         </>
       )}
+
+      {activeTab === "cancelled" && <CancelledConsultationsPage />}
+      {activeTab === "whatsapp" && <WhatsappReportsPage />}
     </div>
   );
 };
