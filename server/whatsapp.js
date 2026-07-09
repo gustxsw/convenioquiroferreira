@@ -134,6 +134,11 @@ function personal(session) {
   return n ? `${n}, ` : "";
 }
 
+// Seleciona aleatoriamente uma variação de frase para evitar respostas sempre idênticas.
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
 function newSession() {
   return { step: null, mode: "bot" };
 }
@@ -718,22 +723,36 @@ async function startFlow(session, phone, text, intent) {
       break;
     case "AGRADECIMENTO":
       session.step = null;
-      await replyS(session, phone, "De nada! 😊 Se precisar de mais alguma coisa é só chamar.");
+      await replyS(session, phone, pick([
+        "Foi um prazer! 😊 Se precisar de mais alguma coisa, estou por aqui.",
+        "Imagina, é para isso que estou aqui. 😊 Qualquer coisa é só me chamar.",
+        "De nada! Fico feliz em poder ajudar. 😊 Se surgir alguma dúvida, pode me chamar a qualquer momento.",
+      ]));
       break;
     case "AGENDAR":
       session.flow = "agendar";
       session.step = "agendar_cpf";
-      await replyS(session, phone, "Que bom que você quer marcar uma consulta! 😊 Pra começar, me confirma seu *CPF*? Pode mandar do jeito que estiver, com ou sem pontos.\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_");
+      await replyS(session, phone, pick([
+        "Com prazer! Para começar, preciso confirmar o seu *CPF*. Pode enviar com ou sem pontos, não tem problema. 😊\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_",
+        "Claro! Me informa o seu *CPF* para eu localizar seu cadastro? Pode enviar do jeito que quiser — com ou sem pontos.\n\n_(Escreva *sair* para encerrar ou *atendente* para falar com nossa equipe a qualquer momento.)_",
+        "Ótimo! Vamos agendar sua consulta. Para isso, preciso do seu *CPF*. Pode enviar com ou sem pontos. 😊\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_",
+      ]));
       break;
     case "REAGENDAR":
       session.flow = "reagendar";
       session.step = "reagendar_cpf";
-      await replyS(session, phone, "Sem problema, vamos achar um novo horário pra você. 🙂 Me passa seu *CPF*? Pode mandar com ou sem pontos.\n\n_(Escreva *sair* para encerrar ou *atendente* para falar com nossa equipe a qualquer momento.)_");
+      await replyS(session, phone, pick([
+        "Sem problema, vamos encontrar um novo horário para você. 🙂 Me informa o seu *CPF*? Pode enviar com ou sem pontos.\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_",
+        "Claro! Vamos resolver isso. Me passa o seu *CPF* para localizar sua consulta? Pode enviar com ou sem pontos.\n\n_(Escreva *sair* para encerrar ou *atendente* para falar com nossa equipe a qualquer momento.)_",
+      ]));
       break;
     case "CANCELAR":
       session.flow = "cancelar";
       session.step = "cancelar_cpf";
-      await replyS(session, phone, "Tudo bem, posso cuidar disso pra você. Me informa seu *CPF*, por favor? Pode mandar com ou sem pontos.\n\n_(Escreva *sair* para encerrar ou *atendente* para falar com nossa equipe a qualquer momento.)_");
+      await replyS(session, phone, pick([
+        "Entendido. Vou cuidar disso para você. Me informa o seu *CPF*, por favor? Pode enviar com ou sem pontos.\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_",
+        "Tudo bem, cuido disso agora mesmo. Para localizar sua consulta, preciso do seu *CPF*. Pode enviar com ou sem pontos.\n\n_(Escreva *sair* para encerrar ou *atendente* para falar com nossa equipe a qualquer momento.)_",
+      ]));
       break;
     case "CONVENIO":
       session.step = "convenio_chat";
@@ -746,11 +765,11 @@ async function startFlow(session, phone, text, intent) {
       const quem = profNome
         ? `a secretária virtual de *${firstName(profNome)}*`
         : "a secretária virtual do seu atendimento";
-      await replyS(
-        session,
-        phone,
-        `Oi! 👋 Aqui é ${quem}. Fico feliz em te ajudar! Posso *marcar*, *remarcar* ou *cancelar* uma consulta, ou tirar suas dúvidas sobre o *convênio*. Como posso te ajudar hoje?`
-      );
+      await replyS(session, phone, pick([
+        `Olá! 😊 Aqui é ${quem}. Como posso te ajudar? Posso *marcar*, *remarcar* ou *cancelar* uma consulta, ou tirar dúvidas sobre o *convênio*.`,
+        `Oi, tudo bem? Sou ${quem}. 😊 Estou aqui para te ajudar com agendamentos e dúvidas sobre o convênio. O que você precisa?`,
+        `Olá! Seja bem-vindo. Sou ${quem}. 😊 Posso *agendar*, *remarcar* ou *cancelar* consultas, e também esclarecer dúvidas sobre o *convênio*. Como posso ajudar?`,
+      ]));
       break;
     }
   }
@@ -800,7 +819,10 @@ async function continueFlow(session, phone, text) {
 async function handleAgendarCpf(session, phone, text) {
   const cpf = onlyDigits(text);
   if (cpf.length !== 11) {
-    await replyS(session, phone, "Hmm, esse CPF não parece completo. São *11 números* — pode mandar do jeito que estiver, com ou sem pontos.");
+    await replyS(session, phone, pick([
+      "Esse CPF parece incompleto — são *11 números* no total. Pode reenviar, com ou sem pontos?",
+      "Não consegui identificar esse CPF. São *11 dígitos* — pode verificar e tentar novamente?",
+    ]));
     return;
   }
   session.cpf = cpf;
@@ -811,15 +833,18 @@ async function handleAgendarCpf(session, phone, text) {
     session.privatePatientId = patient.privatePatientId || null;
     session.pacienteNome = patient.name;
     session.priceProfile = patient.profile; // 'convenio' | 'particular'
-    await replyS(session, phone, `Achei seu cadastro, ${firstName(patient.name)}! 😊`);
+    await replyS(session, phone, pick([
+      `Cadastro encontrado, ${firstName(patient.name)}! 😊`,
+      `Olá, ${firstName(patient.name)}! Encontrei seu cadastro. 😊`,
+      `Tudo certo, ${firstName(patient.name)}! Cadastro localizado com sucesso. 😊`,
+    ]));
     await proceedToProfissional(session, phone);
   } else {
     session.step = "agendar_tipo_cadastro";
-    await replyS(
-      session,
-      phone,
-      "Não localizei um cadastro com esse CPF. Você gostaria de continuar como *paciente particular*? É só responder *sim* para prosseguir."
-    );
+    await replyS(session, phone, pick([
+      "Não encontrei nenhum cadastro com esse CPF. Gostaria de continuar como *paciente particular*? É só responder *sim*.",
+      "Esse CPF não está cadastrado no sistema. Posso registrá-lo como *paciente particular* — quer prosseguir? Responda *sim*.",
+    ]));
   }
 }
 
@@ -827,10 +852,8 @@ async function handleAgendarTipoCadastro(session, phone, text) {
   const n = normalize(text);
   if (n.includes("conven")) {
     // Contratação do convênio via WhatsApp ainda não disponível
-    await replyS(
-      session,
-      phone,
-      "A contratação do Convênio Quiro Ferreira pelo WhatsApp ainda não está disponível. Em breve você poderá fazer tudo por aqui! Para mais informações, entre em contato diretamente com a clínica. 😊"
+    await replyS(session, phone,
+      "No momento, a contratação do Convênio Quiro Ferreira pelo WhatsApp não está disponível. Para mais informações, entre em contato diretamente com a clínica. 😊"
     );
     resetFlow(session);
     return;
@@ -841,13 +864,16 @@ async function handleAgendarTipoCadastro(session, phone, text) {
     return;
   }
   session.step = "agendar_cadastro_nome";
-  await replyS(session, phone, "Combinado! E qual é o seu *nome completo*?");
+  await replyS(session, phone, pick([
+    "Combinado! Qual é o seu *nome completo*?",
+    "Perfeito! Para registrar seu cadastro, qual é o seu *nome completo*?",
+  ]));
 }
 
 async function handleAgendarCadastroNome(session, phone, text) {
   const nome = text.trim();
   if (nome.length < 3) {
-    await replyS(session, phone, "Pode me enviar seu *nome completo*? Assim já deixo tudo certinho no cadastro.");
+    await replyS(session, phone, "Pode me informar o seu *nome completo*, por favor? Assim fica tudo certinho no cadastro.");
     return;
   }
   if (session.newPatientKind === "private") {
@@ -883,7 +909,7 @@ async function proceedToProfissional(session, phone) {
   }
   const profs = await getProfessionalsWithBaseService();
   if (profs.length === 0) {
-    await replyS(session, phone, "Poxa, no momento não há profissionais com agenda aberta. Tenta de novo daqui a pouco, tá?");
+    await replyS(session, phone, "No momento não há profissionais com agenda disponível. Por favor, tente novamente em instantes.");
     resetFlow(session);
     return;
   }
@@ -935,12 +961,15 @@ async function proceedToDays(session, phone) {
   session.slots = null;
   session.step = "escolha_dia";
 
-  let msg =
-    `${personal(session)}me diz o *dia* (e o horário, se já souber) que fica melhor pra você. 😊\n` +
-    `Pode falar do seu jeito — por exemplo: *"amanhã 14h"*, *"08/07 às 15h"*, *"próxima segunda"* ou *"dia 15 do mês que vem"*.`;
+  const introDay = pick([
+    `${personal(session)}qual dia fica melhor para você? Pode me dizer do seu jeito — por exemplo: *"amanhã 14h"*, *"08/07 às 15h"*, *"próxima segunda"* ou *"dia 15"*. 😊`,
+    `${personal(session)}me informe o dia (e o horário, se já souber) que prefere. Pode ser algo como *"amanhã"*, *"08/07 às 14h"* ou *"próxima terça"*. 😊`,
+    `${personal(session)}que dia fica melhor para a sua consulta? Pode falar do seu jeito — por exemplo: *"amanhã 14h"*, *"08/07"* ou *"próxima quinta"*. 😊`,
+  ]);
+  let msg = introDay;
   if (days.length > 0) {
     const list = days.map((d, i) => `*${i + 1}.* ${d.label}`).join("\n");
-    msg += `\n\nSe preferir, já tenho horário livre nesses dias:\n${list}\n_(responda com o número, ou digite a data que quiser)_`;
+    msg += `\n\nCaso prefira, já tenho horários disponíveis nesses dias:\n${list}\n_(responda com o número ou informe outra data)_`;
   }
   await replyS(session, phone, msg);
 }
@@ -948,8 +977,13 @@ async function proceedToDays(session, phone) {
 // Monta uma sugestão de horários livres de um dia, em frase (sem lista numerada).
 function suggestTimes(slots) {
   const times = slots.slice(0, 6).map((s) => s.time);
-  const extra = slots.length > times.length ? " (e mais)" : "";
-  return `tenho estes horários livres: *${times.join(", ")}*${extra}. Qual fica bom? É só me dizer a *hora* (ex.: ${times[0]}).`;
+  const extra = slots.length > times.length ? " e outros" : "";
+  const ex = times[0];
+  return pick([
+    `os horários disponíveis são: *${times.join(", ")}*${extra}. Qual prefere? (ex.: ${ex})`,
+    `tenho *${times.join(", ")}*${extra} disponíveis. Qual fica melhor para você? (ex.: ${ex})`,
+    `os horários livres são: *${times.join(", ")}*${extra}. Me diga qual prefere. (ex.: ${ex})`,
+  ]);
 }
 
 // Abre um dia específico: valida, e se veio um horário tenta agendar direto;
@@ -957,12 +991,18 @@ function suggestTimes(slots) {
 async function openDay(session, phone, ymd, time) {
   const today = todayInBrazilYmd();
   if (ymd < today) {
-    await replyS(session, phone, `${personal(session)}essa data já passou 🙂. Me diz outro dia, por favor.`);
+    await replyS(session, phone, pick([
+      `${personal(session)}essa data já passou. Me informe outro dia, por favor. 😊`,
+      `${personal(session)}esse dia já ficou para trás. Qual outra data você prefere?`,
+    ]));
     session.step = "escolha_dia";
     return;
   }
   if (daysAheadOf(ymd) > 120) {
-    await replyS(session, phone, `${personal(session)}consigo agendar até uns 4 meses à frente. Escolhe uma data um pouco mais próxima, tá? 🙂`);
+    await replyS(session, phone, pick([
+      `${personal(session)}consigo agendar com até 4 meses de antecedência. Você pode escolher uma data um pouco mais próxima? 😊`,
+      `${personal(session)}no momento, agendo até 4 meses à frente. Me informe uma data dentro desse período. 🙂`,
+    ]));
     session.step = "escolha_dia";
     return;
   }
@@ -970,8 +1010,11 @@ async function openDay(session, phone, ymd, time) {
   const slots = await getFreeSlotsForDay(session.profissionalId, ymd);
   if (slots.length === 0) {
     const next = await getAvailableDays(session.profissionalId, { limit: 1 });
-    const hint = next.length ? ` O dia mais próximo com horário livre é *${next[0].label}*.` : "";
-    await replyS(session, phone, `${personal(session)}não tenho horário livre em *${dayLabel(ymd)}*. 😕${hint} Quer tentar outra data?`);
+    const hint = next.length ? ` O dia mais próximo com horários disponíveis é *${next[0].label}*.` : "";
+    await replyS(session, phone, pick([
+      `${personal(session)}infelizmente, *${dayLabel(ymd)}* não tem horários disponíveis.${hint} Você prefere tentar outra data?`,
+      `${personal(session)}não há horários livres em *${dayLabel(ymd)}*.${hint} Posso verificar outro dia para você?`,
+    ]));
     session.step = "escolha_dia";
     return;
   }
@@ -986,10 +1029,16 @@ async function openDay(session, phone, ymd, time) {
       await finalizeSlot(session, phone, match);
       return;
     }
-    await replyS(session, phone, `${personal(session)}às *${time}* em ${dayLabel(ymd)} não está livre. ${suggestTimes(slots)}`);
+    await replyS(session, phone, pick([
+      `${personal(session)}o horário das *${time}* em ${dayLabel(ymd)} não está disponível. ${suggestTimes(slots)}`,
+      `${personal(session)}às *${time}* já está ocupado em ${dayLabel(ymd)}. ${suggestTimes(slots)}`,
+    ]));
     return;
   }
-  await replyS(session, phone, `Boa! Para *${dayLabel(ymd)}*, ${suggestTimes(slots)}`);
+  await replyS(session, phone, pick([
+    `Para *${dayLabel(ymd)}*, ${suggestTimes(slots)}`,
+    `Em *${dayLabel(ymd)}*, ${suggestTimes(slots)}`,
+  ]));
 }
 
 async function handleEscolhaDia(session, phone, text) {
@@ -1010,11 +1059,17 @@ async function handleEscolhaDia(session, phone, text) {
   }
 
   if (time) {
-    await replyS(session, phone, `${personal(session)}pra qual *dia* seria esse horário? Me diz a data (ex.: *08/07*) ou algo como *amanhã* ou *próxima terça*. 🙂`);
+    await replyS(session, phone, pick([
+      `${personal(session)}para qual *dia* seria esse horário? Me informe a data (ex.: *08/07*) ou algo como *"amanhã"* ou *"próxima terça"*. 🙂`,
+      `${personal(session)}o horário você já me informou — agora preciso saber o *dia*. Pode ser *"amanhã"*, *"08/07"* ou o dia da semana. 🙂`,
+    ]));
     return;
   }
 
-  await replyS(session, phone, `${personal(session)}me diz o *dia* que prefere (pode ser *"amanhã"*, *"08/07"*, *"próxima segunda"*…). Se já souber o horário, manda junto. 🙂`);
+  await replyS(session, phone, pick([
+    `${personal(session)}me informe o *dia* que prefere. Pode ser *"amanhã"*, *"08/07"*, *"próxima segunda"*… Se já tiver horário em mente, manda junto. 🙂`,
+    `${personal(session)}não consegui identificar a data. Me diga o *dia* que prefere — pode ser *"amanhã"*, uma data como *"08/07"* ou o dia da semana. 🙂`,
+  ]));
 }
 
 async function handleEscolhaHora(session, phone, text) {
@@ -1040,7 +1095,10 @@ async function handleEscolhaHora(session, phone, text) {
       await finalizeSlot(session, phone, match);
       return;
     }
-    await replyS(session, phone, `${personal(session)}esse horário não está livre nesse dia. ${suggestTimes(slots)}`);
+    await replyS(session, phone, pick([
+      `${personal(session)}esse horário não está disponível nesse dia. ${suggestTimes(slots)}`,
+      `${personal(session)}esse horário já está ocupado. ${suggestTimes(slots)}`,
+    ]));
     return;
   }
 
@@ -1062,7 +1120,10 @@ async function handleEscolhaHora(session, phone, text) {
   }
 
   const first = slots[0]?.time || "14:00";
-  await replyS(session, phone, `${personal(session)}não peguei o horário 🙂. Me diga a *hora* (ex.: ${first}) ou *"outro dia"* pra trocar a data.`);
+  await replyS(session, phone, pick([
+    `${personal(session)}não consegui identificar o horário. Me diga a *hora* (ex.: ${first}) ou *"outro dia"* para escolhermos outra data. 🙂`,
+    `${personal(session)}pode me informar o *horário* que prefere (ex.: ${first})? Ou, se preferir, diga *"outro dia"* para escolhermos outra data. 🙂`,
+  ]));
 }
 
 // Direciona para criar ou remarcar, conforme o fluxo atual.
@@ -1074,11 +1135,12 @@ async function finalizeSlot(session, phone, slot) {
     session.pendingSlot = slot;
     session.step = "confirma_agendamento";
     const profName = await getProfessionalName(session.profissionalId);
-    await replyS(
-      session,
-      phone,
-      `Então ficaria *${formatToBrazilDate(slot.isoUTC)} (${session.chosenDay?.label?.split(" ")[0] || ""}) às ${slot.time}* com ${profName}. Confirma? 😊`
-    );
+    const dayLabel0 = session.chosenDay?.label?.split(" ")[0] || "";
+    await replyS(session, phone, pick([
+      `Ficaria *${formatToBrazilDate(slot.isoUTC)} (${dayLabel0}) às ${slot.time}* com ${profName}. Posso confirmar o agendamento? 😊`,
+      `Tudo certo até aqui: *${formatToBrazilDate(slot.isoUTC)} (${dayLabel0}) às ${slot.time}* com ${profName}. Confirma?`,
+      `Vou reservar *${formatToBrazilDate(slot.isoUTC)} (${dayLabel0}) às ${slot.time}* com ${profName}. Confirma o agendamento? 😊`,
+    ]));
   }
 }
 
@@ -1096,7 +1158,7 @@ async function handleConfirmaAgendamento(session, phone, text) {
     session.pendingSlot = null;
     await proceedToDays(session, phone);
   } else {
-    await replyS(session, phone, "Pode responder *sim* para confirmar ou *não* para escolher outro horário. 🙂");
+    await replyS(session, phone, "Pode confirmar respondendo *sim* ou escolher outro horário respondendo *não*. 🙂");
   }
 }
 
@@ -1110,7 +1172,10 @@ async function finalizeAgendamento(session, phone, slot) {
     isoUTC: slot.isoUTC,
   });
   if (!result.ok) {
-    await replyS(session, phone, result.message || "Esse horário escapou por segundos! 😅 Vamos escolher outro:");
+    await replyS(session, phone, result.message || pick([
+      "Esse horário acabou de ser reservado por outra pessoa. 😅 Vamos escolher outro:",
+      "Ops, esse horário foi ocupado agora mesmo. 😅 Vamos ver outra opção:",
+    ]));
     await proceedToDays(session, phone); // recarrega dias/horários
     return;
   }
@@ -1129,16 +1194,19 @@ async function finalizeAgendamento(session, phone, slot) {
     botLog("sync_create_error", { error: String(e) });
   }
   const profName = await getProfessionalName(session.profissionalId);
-  let confirm =
-    `Prontinho, ${firstName(session.pacienteNome) || "sua consulta está marcada"}! ✅\n\n` +
-    `📅 ${formatToBrazilDate(slot.isoUTC)} (${session.chosenDay?.label?.split(" ")[0] || ""}) às ${slot.time}\n` +
-    `👨‍⚕️ ${profName}`;
+  const pNomeAg = firstName(session.pacienteNome);
+  const bookingDayLabel = session.chosenDay?.label?.split(" ")[0] || "";
+  let confirm = pick([
+    `Perfeito${pNomeAg ? `, ${pNomeAg}` : ""}! Sua consulta está agendada. ✅\n\n📅 ${formatToBrazilDate(slot.isoUTC)} (${bookingDayLabel}) às ${slot.time}\n👨‍⚕️ ${profName}`,
+    `Prontinho${pNomeAg ? `, ${pNomeAg}` : ""}! Consulta marcada com sucesso. ✅\n\n📅 ${formatToBrazilDate(slot.isoUTC)} (${bookingDayLabel}) às ${slot.time}\n👨‍⚕️ ${profName}`,
+    `Feito${pNomeAg ? `, ${pNomeAg}` : ""}! Aqui estão os detalhes da sua consulta. ✅\n\n📅 ${formatToBrazilDate(slot.isoUTC)} (${bookingDayLabel}) às ${slot.time}\n👨‍⚕️ ${profName}`,
+  ]);
   if (session.serviceIsOnline) {
     confirm += meetLink
       ? `\n🔗 Link da sua consulta online: ${meetLink}`
       : `\n💻 É uma consulta online — te envio o link da videochamada em seguida.`;
   }
-  confirm += `\n\nSe surgir qualquer imprevisto, é só me chamar aqui que a gente reorganiza. Até lá! 😊`;
+  confirm += `\n\nSe precisar de qualquer alteração, é só me chamar — estarei por aqui. 😊`;
   await replyS(session, phone, confirm);
   resetFlow(session);
 }
@@ -1148,12 +1216,15 @@ async function finalizeAgendamento(session, phone, slot) {
 async function handleReagendarCpf(session, phone, text) {
   const cpf = onlyDigits(text);
   if (cpf.length !== 11) {
-    await replyS(session, phone, "Esse CPF não parece completo. São *11 números* — pode mandar com ou sem pontos.");
+    await replyS(session, phone, pick([
+      "Esse CPF parece incompleto — são *11 números* no total. Pode reenviar, com ou sem pontos?",
+      "Não consegui identificar esse CPF. São *11 dígitos* — pode verificar e tentar novamente?",
+    ]));
     return;
   }
   const patient = await identifyPatient(cpf, session.profissionalId);
   if (!patient) {
-    await replyS(session, phone, 'Não localizei um cadastro com esse CPF. Se quiser marcar uma consulta nova, é só me mandar *"agendar"*. 🙂');
+    await replyS(session, phone, "Não encontrei nenhum cadastro com esse CPF. Se quiser agendar uma consulta, é só me dizer *\"agendar\"*. 🙂");
     resetFlow(session);
     return;
   }
@@ -1166,7 +1237,7 @@ async function handleReagendarCpf(session, phone, text) {
     privatePatientId: patient.privatePatientId,
   });
   if (consultas.length === 0) {
-    await replyS(session, phone, `${personal(session)}não encontrei nenhuma consulta futura pra remarcar. Se quiser marcar uma nova, é só mandar *"agendar"*. 🙂`);
+    await replyS(session, phone, `${personal(session)}não encontrei nenhuma consulta futura para remarcar. Se quiser agendar uma nova, é só me dizer *"agendar"*. 🙂`);
     resetFlow(session);
     return;
   }
@@ -1175,11 +1246,10 @@ async function handleReagendarCpf(session, phone, text) {
     session.consultaId = c.id;
     session.profissionalId = c.professional_id;
     session.step = "reagendar_confirma";
-    await replyS(
-      session,
-      phone,
-      `${personal(session)}encontrei sua consulta:\n\n📅 ${formatToBrazilDate(c.date)} às ${formatToBrazilTimeOnly(c.date)}\n👨‍⚕️ ${c.professional_name}\n\nÉ essa que você quer remarcar? Responda *Sim* ou *Não*.`
-    );
+    await replyS(session, phone, pick([
+      `${personal(session)}encontrei sua consulta:\n\n📅 ${formatToBrazilDate(c.date)} às ${formatToBrazilTimeOnly(c.date)}\n👨‍⚕️ ${c.professional_name}\n\nÉ essa que deseja remarcar? Responda *Sim* ou *Não*.`,
+      `${personal(session)}localizei sua consulta:\n\n📅 ${formatToBrazilDate(c.date)} às ${formatToBrazilTimeOnly(c.date)}\n👨‍⚕️ ${c.professional_name}\n\nPodemos remarcar essa? Responda *Sim* ou *Não*.`,
+    ]));
     return;
   }
   // Mais de uma consulta futura: pergunta qual (evita remarcar a errada).
@@ -1188,10 +1258,8 @@ async function handleReagendarCpf(session, phone, text) {
   const list = consultas
     .map((c, i) => `*${i + 1}.* ${formatToBrazilDate(c.date)} às ${formatToBrazilTimeOnly(c.date)} — ${c.professional_name}`)
     .join("\n");
-  await replyS(
-    session,
-    phone,
-    `${personal(session)}você tem mais de uma consulta marcada. Qual delas quer *remarcar*?\n\n${list}\n\nResponda com o *número* (ou a *data*). 🙂`
+  await replyS(session, phone,
+    `${personal(session)}você tem mais de uma consulta marcada. Qual delas gostaria de *remarcar*?\n\n${list}\n\nResponda com o *número* ou a *data* da consulta. 🙂`
   );
 }
 
@@ -1199,12 +1267,15 @@ async function handleReagendarEscolha(session, phone, text) {
   const list = session.consultasList || [];
   const chosen = pickConsultation(list, text);
   if (!chosen) {
-    await replyS(session, phone, "Não identifiquei qual consulta. Responda com o *número* da lista (ou a *data* dela). 🙂");
+    await replyS(session, phone, "Não identifiquei qual consulta. Pode responder com o *número* da lista ou a *data* da consulta? 🙂");
     return;
   }
   session.consultaId = chosen.id;
   session.profissionalId = chosen.professional_id || session.profissionalId;
-  await replyS(session, phone, `Perfeito! Vamos remarcar a consulta de *${formatToBrazilDate(chosen.date)} às ${formatToBrazilTimeOnly(chosen.date)}*.`);
+  await replyS(session, phone, pick([
+    `Entendido! Vamos remarcar a consulta de *${formatToBrazilDate(chosen.date)} às ${formatToBrazilTimeOnly(chosen.date)}*.`,
+    `Certo! Vamos encontrar um novo horário para a consulta de *${formatToBrazilDate(chosen.date)} às ${formatToBrazilTimeOnly(chosen.date)}*.`,
+  ]));
   await proceedToDays(session, phone);
 }
 
@@ -1212,17 +1283,23 @@ async function handleReagendarConfirma(session, phone, text) {
   if (isYes(text)) {
     await proceedToDays(session, phone);
   } else if (isNo(text)) {
-    await replyS(session, phone, "Sem problema, deixei sua consulta do jeito que estava. 🙂 Precisa de mais alguma coisa?");
+    await replyS(session, phone, pick([
+      "Tudo bem! Sua consulta continua como estava. 😊 Se precisar remarcar depois, é só me chamar.",
+      "Sem problema, deixei tudo como estava. 😊 Qualquer coisa, estou à disposição.",
+    ]));
     resetFlow(session);
   } else {
-    await replyS(session, phone, "Só me confirma com *Sim* ou *Não*, por favor. 🙂");
+    await replyS(session, phone, "Por favor, responda *Sim* para confirmar ou *Não* para manter como está. 🙂");
   }
 }
 
 async function finalizeReagendamento(session, phone, slot) {
   const res = await rescheduleConsultation(session.consultaId, slot.isoUTC, session.profissionalId);
   if (!res.ok) {
-    await replyS(session, phone, res.message || "Esse horário escapou por segundos! 😅 Vamos escolher outro:");
+    await replyS(session, phone, res.message || pick([
+      "Esse horário acabou de ser reservado por outra pessoa. 😅 Vamos escolher outro:",
+      "Ops, esse horário foi ocupado agora mesmo. 😅 Vamos ver outra opção:",
+    ]));
     await proceedToDays(session, phone);
     return;
   }
@@ -1234,11 +1311,11 @@ async function finalizeReagendamento(session, phone, slot) {
     professionalId: session.profissionalId,
   });
   syncUpdateEvent(session.consultaId).catch((e) => botLog("sync_update_error", { error: String(e) }));
-  await replyS(
-    session,
-    phone,
-    `Prontinho, ${firstName(session.pacienteNome) || "está remarcada"}! ✅ Sua consulta agora é *${formatToBrazilDate(slot.isoUTC)} às ${slot.time}*. Te espero lá! 😊`
-  );
+  const pNomeRe = firstName(session.pacienteNome);
+  await replyS(session, phone, pick([
+    `Prontinho${pNomeRe ? `, ${pNomeRe}` : ""}! Sua consulta foi remarcada. ✅ Nova data: *${formatToBrazilDate(slot.isoUTC)} às ${slot.time}*. Até lá! 😊`,
+    `Feito${pNomeRe ? `, ${pNomeRe}` : ""}! Consulta remarcada com sucesso. ✅ *${formatToBrazilDate(slot.isoUTC)} às ${slot.time}*. Estamos te esperando! 😊`,
+  ]));
   resetFlow(session);
 }
 
@@ -1247,12 +1324,15 @@ async function finalizeReagendamento(session, phone, slot) {
 async function handleCancelarCpf(session, phone, text) {
   const cpf = onlyDigits(text);
   if (cpf.length !== 11) {
-    await replyS(session, phone, "Esse CPF não parece completo. São *11 números* — pode mandar com ou sem pontos.");
+    await replyS(session, phone, pick([
+      "Esse CPF parece incompleto — são *11 números* no total. Pode reenviar, com ou sem pontos?",
+      "Não consegui identificar esse CPF. São *11 dígitos* — pode verificar e tentar novamente?",
+    ]));
     return;
   }
   const patient = await identifyPatient(cpf, session.profissionalId);
   if (!patient) {
-    await replyS(session, phone, "Não localizei um cadastro com esse CPF. Confere pra mim se digitou certinho?");
+    await replyS(session, phone, "Não encontrei nenhum cadastro com esse CPF. Pode verificar se está correto?");
     resetFlow(session);
     return;
   }
@@ -1264,7 +1344,10 @@ async function handleCancelarCpf(session, phone, text) {
     privatePatientId: patient.privatePatientId,
   });
   if (consultas.length === 0) {
-    await replyS(session, phone, `${personal(session)}você não tem nenhuma consulta futura pra cancelar. 🙂`);
+    await replyS(session, phone, pick([
+      `${personal(session)}não encontrei nenhuma consulta futura para cancelar. 😊`,
+      `${personal(session)}não há consultas futuras registradas para cancelar. 😊`,
+    ]));
     resetFlow(session);
     return;
   }
@@ -1273,11 +1356,10 @@ async function handleCancelarCpf(session, phone, text) {
     session.consultaId = c.id;
     session.profissionalId = c.professional_id;
     session.step = "cancelar_confirma";
-    await replyS(
-      session,
-      phone,
-      `${personal(session)}encontrei sua consulta:\n\n📅 ${formatToBrazilDate(c.date)} às ${formatToBrazilTimeOnly(c.date)}\n👨‍⚕️ ${c.professional_name}\n\nPosso confirmar o cancelamento? Responda *Sim* ou *Não*.`
-    );
+    await replyS(session, phone, pick([
+      `${personal(session)}encontrei sua consulta:\n\n📅 ${formatToBrazilDate(c.date)} às ${formatToBrazilTimeOnly(c.date)}\n👨‍⚕️ ${c.professional_name}\n\nConfirmo o cancelamento? Responda *Sim* ou *Não*.`,
+      `${personal(session)}localizei sua consulta:\n\n📅 ${formatToBrazilDate(c.date)} às ${formatToBrazilTimeOnly(c.date)}\n👨‍⚕️ ${c.professional_name}\n\nDeseja confirmar o cancelamento? Responda *Sim* ou *Não*.`,
+    ]));
     return;
   }
   // Mais de uma consulta futura: pergunta qual cancelar.
@@ -1286,10 +1368,8 @@ async function handleCancelarCpf(session, phone, text) {
   const list = consultas
     .map((c, i) => `*${i + 1}.* ${formatToBrazilDate(c.date)} às ${formatToBrazilTimeOnly(c.date)} — ${c.professional_name}`)
     .join("\n");
-  await replyS(
-    session,
-    phone,
-    `${personal(session)}você tem mais de uma consulta marcada. Qual delas quer *cancelar*?\n\n${list}\n\nResponda com o *número* (ou a *data*). 🙂`
+  await replyS(session, phone,
+    `${personal(session)}você tem mais de uma consulta marcada. Qual delas deseja *cancelar*?\n\n${list}\n\nResponda com o *número* ou a *data* da consulta. 🙂`
   );
 }
 
@@ -1297,17 +1377,16 @@ async function handleCancelarEscolha(session, phone, text) {
   const list = session.consultasList || [];
   const chosen = pickConsultation(list, text);
   if (!chosen) {
-    await replyS(session, phone, "Não identifiquei qual consulta. Responda com o *número* da lista (ou a *data* dela). 🙂");
+    await replyS(session, phone, "Não identifiquei qual consulta. Pode responder com o *número* da lista ou a *data* da consulta? 🙂");
     return;
   }
   session.consultaId = chosen.id;
   session.profissionalId = chosen.professional_id || session.profissionalId;
   session.step = "cancelar_confirma";
-  await replyS(
-    session,
-    phone,
-    `${personal(session)}vou cancelar a consulta de *${formatToBrazilDate(chosen.date)} às ${formatToBrazilTimeOnly(chosen.date)}*. Posso confirmar? Responda *Sim* ou *Não*.`
-  );
+  await replyS(session, phone, pick([
+    `${personal(session)}encontrei a consulta de *${formatToBrazilDate(chosen.date)} às ${formatToBrazilTimeOnly(chosen.date)}*. Posso confirmar o cancelamento? Responda *Sim* ou *Não*.`,
+    `${personal(session)}vou cancelar a consulta de *${formatToBrazilDate(chosen.date)} às ${formatToBrazilTimeOnly(chosen.date)}*. Confirma? Responda *Sim* ou *Não*.`,
+  ]));
 }
 
 async function handleCancelarConfirma(session, phone, text) {
@@ -1322,16 +1401,23 @@ async function handleCancelarConfirma(session, phone, text) {
         professionalId: session.profissionalId,
       });
       syncCancelEvent(session.consultaId).catch((e) => botLog("sync_cancel_error", { error: String(e) }));
-      await replyS(session, phone, "Pronto, sua consulta foi cancelada. 🙂 Quando quiser remarcar, é só me chamar aqui — vai ser um prazer te atender!");
+      await replyS(session, phone, pick([
+        "Consulta cancelada com sucesso. 🙂 Se quiser agendar novamente no futuro, é só me chamar — será um prazer te atender!",
+        "Pronto, sua consulta foi cancelada. 😊 Quando quiser marcar de novo, estou por aqui!",
+        "Cancelamento realizado. 😊 Se precisar agendar novamente, é só me chamar a qualquer momento.",
+      ]));
     } else {
-      await replyS(session, phone, "Hmm, não consegui localizar a consulta pra cancelar agora. Pode tentar de novo em instantes?");
+      await replyS(session, phone, "Não consegui localizar a consulta para cancelar no momento. Por favor, tente novamente em instantes.");
     }
     resetFlow(session);
   } else if (isNo(text)) {
-    await replyS(session, phone, "Perfeito, mantive sua consulta como estava. 😊");
+    await replyS(session, phone, pick([
+      "Ótimo, mantive sua consulta como estava. 😊 Se precisar de mais alguma coisa, é só me chamar.",
+      "Tudo bem! Sua consulta continua como estava. 😊 Pode contar comigo se precisar de algo.",
+    ]));
     resetFlow(session);
   } else {
-    await replyS(session, phone, "Só me confirma com *Sim* ou *Não*, por favor. 🙂");
+    await replyS(session, phone, "Por favor, responda *Sim* para confirmar o cancelamento ou *Não* para manter como está. 🙂");
   }
 }
 
@@ -1340,7 +1426,10 @@ async function handleCancelarConfirma(session, phone, text) {
 async function handleConvenioChat(session, phone, text) {
   if (normalize(text).includes("contratar")) {
     session.step = "convenio_cpf";
-    await replyS(session, phone, "Que alegria ter você com a gente! 🎉 Pra iniciar seu contrato, me informa seu *CPF*? Pode mandar com ou sem pontos.");
+    await replyS(session, phone, pick([
+      "Ótimo! Para iniciar, preciso do seu *CPF*. Pode enviar com ou sem pontos. 😊",
+      "Com prazer! Me informa o seu *CPF* para eu verificar seu cadastro? Pode enviar com ou sem pontos.",
+    ]));
     return;
   }
   // Mantém o contexto da conversa entre mensagens (últimas 10 trocas, p/ controlar custo).
@@ -1364,30 +1453,42 @@ async function handleConvenioChat(session, phone, text) {
 async function handleConvenioCpf(session, phone, text) {
   const cpf = onlyDigits(text);
   if (cpf.length !== 11) {
-    await replyS(session, phone, "Esse CPF não parece completo. São *11 números* — pode mandar com ou sem pontos.");
+    await replyS(session, phone, pick([
+      "Esse CPF parece incompleto — são *11 números* no total. Pode reenviar, com ou sem pontos?",
+      "Não consegui identificar esse CPF. São *11 dígitos* — pode verificar e tentar novamente?",
+    ]));
     return;
   }
   session.cpf = cpf;
   const client = await findClientByCpf(cpf);
   if (client) {
     session.pacienteNome = client.name;
-    await replyS(session, phone, `Achei seu cadastro, ${firstName(client.name)}! 😊 Já te envio o *link de pagamento* em seguida. Assim que o pagamento for confirmado, você recebe o acesso ao painel.`);
+    await replyS(session, phone, pick([
+      `Cadastro encontrado, ${firstName(client.name)}! 😊 Vou te enviar o *link de pagamento* em seguida. Após a confirmação, você recebe o acesso ao painel.`,
+      `Encontrei seu cadastro, ${firstName(client.name)}. 😊 O *link de pagamento* seguirá em instantes. Depois da confirmação, seu acesso estará liberado.`,
+    ]));
     resetFlow(session);
   } else {
     session.step = "convenio_cadastro_nome";
-    await replyS(session, phone, "Ainda não tem cadastro por aqui — vamos criar rapidinho! Qual é o seu *nome completo*?");
+    await replyS(session, phone, pick([
+      "Ainda não tenho seu cadastro aqui. Vamos criar juntos! Qual é o seu *nome completo*?",
+      "Não encontrei um cadastro com esse CPF. Posso criar agora mesmo — qual é o seu *nome completo*?",
+    ]));
   }
 }
 
 async function handleConvenioCadastroNome(session, phone, text) {
   const nome = text.trim();
   if (nome.length < 3) {
-    await replyS(session, phone, "Pode me enviar seu *nome completo*? 🙂");
+    await replyS(session, phone, "Pode me informar o seu *nome completo*, por favor? 🙂");
     return;
   }
   const created = await createClient({ name: nome, phone, cpf: session.cpf });
   await audit({ phone, actor: "ai", action: "client_created", detail: { clientId: created.id }, professionalId: session.profissionalId });
-  await replyS(session, phone, `Prontinho, ${firstName(nome)}! Seu cadastro foi iniciado. 🎉 Já te envio o *link de pagamento* em seguida — depois da confirmação, você recebe o acesso ao painel.`);
+  await replyS(session, phone, pick([
+    `Perfeito, ${firstName(nome)}! Cadastro criado com sucesso. 😊 O *link de pagamento* seguirá em instantes — após a confirmação, você recebe o acesso ao painel.`,
+    `Prontinho, ${firstName(nome)}! Seu cadastro foi iniciado. 🎉 Vou te enviar o *link de pagamento* — assim que confirmar, você recebe o acesso ao painel.`,
+  ]));
   resetFlow(session);
 }
 
@@ -1399,14 +1500,21 @@ async function routeMessage(session, phone, text) {
   if (globalIntent === "SAIR") {
     resetFlow(session);
     session.mode = "bot";
-    await replyS(session, phone, "Tudo bem! 😊 Se precisar de mais alguma coisa é só chamar. Até logo!");
+    await replyS(session, phone, pick([
+      "Até logo! 😊 Sempre que precisar, estarei por aqui.",
+      "Foi um prazer te atender! 😊 Se precisar de algo, é só chamar.",
+      "Até mais! 😊 Qualquer coisa, estou à disposição.",
+    ]));
     await saveSession(phone, session);
     return;
   }
   if (globalIntent === "ATENDENTE") {
     resetFlow(session);
     session.mode = "pending";
-    await replyS(session, phone, "Entendido! 😊 Vou avisar nossa equipe e em breve alguém entrará em contato com você.");
+    await replyS(session, phone, pick([
+      "Entendido! Vou comunicar nossa equipe e em breve alguém entrará em contato com você. 😊",
+      "Claro! Estou avisando nossa equipe agora. Em breve alguém retornará o contato. 😊",
+    ]));
     await saveSession(phone, session);
     return;
   }
@@ -1489,12 +1597,18 @@ export async function processInbound({ phone, messageId, type, textBody = "", ph
 
   // Áudio (e demais tipos não-texto): não processa, pede texto.
   if (type === "audio") {
-    await replyS(session, phone, "Ainda não consigo ouvir áudios por aqui 🙈, mas pode me escrever o que precisa que eu te ajudo na hora!");
+    await replyS(session, phone, pick([
+      "No momento, não consigo processar áudios por aqui. Pode me escrever o que precisa? Respondo na hora! 😊",
+      "Por aqui só consigo ler mensagens de texto, mas é só me escrever que respondo rapidinho! 😊",
+    ]));
     await saveSession(phone, session);
     return;
   }
   if (type !== "text") {
-    await replyS(session, phone, "Recebi seu envio! 🙂 Mas por aqui só consigo ler *mensagens de texto*. Pode me escrever o que precisa?");
+    await replyS(session, phone, pick([
+      "Recebi seu envio, mas por aqui só consigo ler *mensagens de texto*. Pode me escrever o que precisa? 😊",
+      "Por aqui funciona apenas com *mensagens de texto*. Pode me escrever o que precisa? 🙂",
+    ]));
     await saveSession(phone, session);
     return;
   }
@@ -1509,7 +1623,10 @@ export async function processInbound({ phone, messageId, type, textBody = "", ph
     await routeMessage(session, phone, textBody.trim());
   } catch (e) {
     botLog("route_error", { phone, error: String(e), stack: e?.stack });
-    await replyS(session, phone, "Ops, tive um probleminha aqui do meu lado. 😅 Pode mandar de novo, por favor?");
+    await replyS(session, phone, pick([
+      "Desculpe, ocorreu um problema do meu lado. 😅 Pode me enviar a mensagem novamente, por favor?",
+      "Ops, tive uma pequena falha aqui. 😅 Pode repetir a mensagem, por favor?",
+    ]));
     await saveSession(phone, session);
   }
 }
