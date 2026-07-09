@@ -167,16 +167,18 @@ function resetFlow(session) {
 
 // Casamos por RADICAL (substring do texto normalizado), não pela palavra exata,
 // para tolerar variações: "agendamento", "marcação", "remarquei", "cancelamento".
-// A ordem importa: RECONHECIMENTO e AGRADECIMENTO antes de qualquer fluxo para
-// evitar que "ok obrigada" ou "tá bom" disparem agendamento ou saudação.
+// A ordem importa: SAIR/ATENDENTE interceptam qualquer step ativo.
+// RECONHECIMENTO e AGRADECIMENTO antes de AGENDAR para evitar falsos positivos.
 // CANCELAR/REAGENDAR antes de AGENDAR pois "remarcar"/"desmarcar" contêm "marc".
 const INTENT_KEYWORDS = [
-  ["RECONHECIMENTO", ["^ok$", "^ok!$", "^certo$", "^entendi$", "^entendido$", "^tudo bem$", "^tudo certo$", "^ta$", "^ta bom$", "^ta ok$", "^combinado$", "^perfeito$", "^otimo$", "^legal$", "^show$", "^blz$", "^beleza$", "^tá$", "^tá bom$", "^tá ok$", "^tá certo$", "^pode ser$", "^sim ok$", "^ok sim$", "^sim, ok$", "^ok, sim$"]],
+  ["SAIR",         ["^sair$", "^encerrar$", "^tchau$", "^ate mais$", "^ate logo$", "^bye$", "^encerrar atendimento$", "^finalizar$", "^encerrar conversa$", "^nao preciso mais$", "^nao preciso de mais nada$", "^pode encerrar$"]],
+  ["ATENDENTE",    ["atendente", "falar com atendente", "falar com humano", "quero falar com alguem", "quero falar com uma pessoa", "pessoa real", "operador", "quero um humano", "preciso de um atendente", "me chama um atendente", "chamar atendente"]],
+  ["RECONHECIMENTO", ["^ok$", "^ok!$", "^certo$", "^entendi$", "^entendido$", "^tudo bem$", "^tudo certo$", "^ta$", "^ta bom$", "^ta ok$", "^combinado$", "^perfeito$", "^otimo$", "^legal$", "^show$", "^blz$", "^beleza$", "^tá$", "^tá bom$", "^tá ok$", "^tá certo$", "^pode ser$", "^sim ok$", "^ok sim$"]],
   ["AGRADECIMENTO", ["obrigad", "valeu", "agradec", "grato", "grata", "obg", "obd", "vlw", "mto obg", "mt obg", "thank", "gracias", "grazie", "merci", "tmj", "foi otimo", "foi incrivel", "foi perfeito", "adorei", "amei o atendimento", "atendimento incrivel", "atendimento otimo", "atendimento perfeito", "excelente atendimento"]],
-  ["CANCELAR", ["cancel", "desmarc", "nao vou poder", "nao consigo ir", "nao poderei", "nao vou conseguir"]],
-  ["REAGENDAR", ["remarc", "reagend", "retorno", "mudar o horario", "mudar horario", "trocar o horario", "trocar horario", "mudar a data", "mudar data", "trocar a data", "trocar data", "mudar de dia", "outro dia", "outro horario", "adiar", "antecipar"]],
-  ["CONVENIO", ["convenio", "carteirinha", "cobertura", "preco", "valor", "como funciona", "quanto custa", "plano", "beneficio", "contratar", "mensalidade", "assinatura", "quero contratar"]],
-  ["AGENDAR", ["agend", "marc", "consulta", "horario", "atendimento", "quero marcar", "queria marcar", "quero uma consulta", "preciso de uma consulta", "nova consulta", "quero agendar"]],
+  ["CANCELAR",     ["cancel", "desmarc", "nao vou poder", "nao consigo ir", "nao poderei", "nao vou conseguir"]],
+  ["REAGENDAR",    ["remarc", "reagend", "retorno", "mudar o horario", "mudar horario", "trocar o horario", "trocar horario", "mudar a data", "mudar data", "trocar a data", "trocar data", "mudar de dia", "outro dia", "outro horario", "adiar", "antecipar"]],
+  ["CONVENIO",     ["convenio", "carteirinha", "cobertura", "preco", "valor", "como funciona", "quanto custa", "plano", "beneficio", "contratar", "mensalidade", "assinatura", "quero contratar"]],
+  ["AGENDAR",      ["agend", "marc", "consulta", "horario", "atendimento", "quero marcar", "queria marcar", "quero uma consulta", "preciso de uma consulta", "nova consulta", "quero agendar"]],
 ];
 
 export function detectIntent(text) {
@@ -708,9 +710,10 @@ function humanFallbackText() {
 
 async function startFlow(session, phone, text, intent) {
   switch (intent) {
+    case "SAIR":
+    case "ATENDENTE":
     case "RECONHECIMENTO":
-      session.step = null;
-      // Mensagem de puro reconhecimento ("ok", "certo", "entendi"): não responde.
+      // Tratados antes de chegar aqui (routeMessage). Se chegarem: silêncio.
       break;
     case "AGRADECIMENTO":
       session.step = null;
@@ -1319,7 +1322,9 @@ async function handleConvenioChat(session, phone, text) {
   if (ai?.usage) {
     await recordAiUsage({ phone, professionalId: session.profissionalId, usage: ai.usage, model: ai.model });
   }
+  const fallback = !ai?.text;
   const reply = ai?.text || humanFallbackText();
+  if (fallback) session.mode = "pending";
   history.push({ role: "assistant", content: reply });
   session.convenioHistory = history.slice(-10);
   await replyS(session, phone, reply);
@@ -1360,11 +1365,27 @@ async function handleConvenioCadastroNome(session, phone, text) {
 // ===== ROTEAMENTO =====
 
 async function routeMessage(session, phone, text) {
+  // SAIR e ATENDENTE interrompem qualquer fluxo ativo.
+  const globalIntent = detectIntent(text);
+  if (globalIntent === "SAIR") {
+    resetFlow(session);
+    session.mode = "bot";
+    await replyS(session, phone, "Tudo bem! 😊 Se precisar de mais alguma coisa é só chamar. Até logo!");
+    await saveSession(phone, session);
+    return;
+  }
+  if (globalIntent === "ATENDENTE") {
+    resetFlow(session);
+    session.mode = "pending";
+    await replyS(session, phone, "Entendido! 😊 Vou avisar nossa equipe e em breve alguém entrará em contato com você.");
+    await saveSession(phone, session);
+    return;
+  }
+
   if (!session.step) {
-    const intent = detectIntent(text);
-    session.intent = intent;
-    await audit({ phone, actor: "patient", action: "intent_detected", detail: { intent, text }, professionalId: session.profissionalId });
-    await startFlow(session, phone, text, intent);
+    session.intent = globalIntent;
+    await audit({ phone, actor: "patient", action: "intent_detected", detail: { intent: globalIntent, text }, professionalId: session.profissionalId });
+    await startFlow(session, phone, text, globalIntent);
   } else {
     await continueFlow(session, phone, text);
   }
@@ -1587,7 +1608,7 @@ export async function listConversations({ scopeProfessionalId = null } = {}) {
     patient_name: patientNames.get(row.phone) || null,
     professional_id: row.professional_id || null,
     professional_name: row.professional_id ? nameById.get(row.professional_id) || null : null,
-    status: row.mode === "human" ? "human" : "pending",
+    status: row.mode === "human" ? "human" : row.mode === "pending" ? "pending" : "bot",
     last_message: row.last_message || "",
     last_message_at: row.last_message_at,
     assigned_to: row.owner_operator_id ? nameById.get(row.owner_operator_id) || null : null,
