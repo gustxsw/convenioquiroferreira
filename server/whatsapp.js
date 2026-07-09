@@ -150,6 +150,7 @@ function resetFlow(session) {
   session.days = null;
   session.chosenDay = null;
   session.slots = null;
+  session.pendingSlot = null;
   session.professionals = null;
   session.serviceId = null;
   session.serviceValue = null;
@@ -722,17 +723,17 @@ async function startFlow(session, phone, text, intent) {
     case "AGENDAR":
       session.flow = "agendar";
       session.step = "agendar_cpf";
-      await replyS(session, phone, "Que bom que você quer marcar uma consulta! 😊 Pra começar, me confirma seu *CPF* (só os números)?");
+      await replyS(session, phone, "Que bom que você quer marcar uma consulta! 😊 Pra começar, me confirma seu *CPF*? Pode mandar do jeito que estiver, com ou sem pontos.\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_");
       break;
     case "REAGENDAR":
       session.flow = "reagendar";
       session.step = "reagendar_cpf";
-      await replyS(session, phone, "Sem problema, vamos achar um novo horário pra você. 🙂 Me passa seu *CPF* (só os números)?");
+      await replyS(session, phone, "Sem problema, vamos achar um novo horário pra você. 🙂 Me passa seu *CPF*? Pode mandar com ou sem pontos.\n\n_(Escreva *sair* para encerrar ou *atendente* para falar com nossa equipe a qualquer momento.)_");
       break;
     case "CANCELAR":
       session.flow = "cancelar";
       session.step = "cancelar_cpf";
-      await replyS(session, phone, "Tudo bem, posso cuidar disso pra você. Me informa seu *CPF* (só os números), por favor?");
+      await replyS(session, phone, "Tudo bem, posso cuidar disso pra você. Me informa seu *CPF*, por favor? Pode mandar com ou sem pontos.\n\n_(Escreva *sair* para encerrar ou *atendente* para falar com nossa equipe a qualquer momento.)_");
       break;
     case "CONVENIO":
       session.step = "convenio_chat";
@@ -767,6 +768,8 @@ async function continueFlow(session, phone, text) {
       return handleEscolhaDia(session, phone, text);
     case "escolha_hora":
       return handleEscolhaHora(session, phone, text);
+    case "confirma_agendamento":
+      return handleConfirmaAgendamento(session, phone, text);
     case "reagendar_cpf":
       return handleReagendarCpf(session, phone, text);
     case "reagendar_escolha":
@@ -797,7 +800,7 @@ async function continueFlow(session, phone, text) {
 async function handleAgendarCpf(session, phone, text) {
   const cpf = onlyDigits(text);
   if (cpf.length !== 11) {
-    await replyS(session, phone, "Hmm, esse CPF não parece completo. Pode me mandar os *11 números*, sem pontos nem traços?");
+    await replyS(session, phone, "Hmm, esse CPF não parece completo. São *11 números* — pode mandar do jeito que estiver, com ou sem pontos.");
     return;
   }
   session.cpf = cpf;
@@ -1063,11 +1066,37 @@ async function handleEscolhaHora(session, phone, text) {
 }
 
 // Direciona para criar ou remarcar, conforme o fluxo atual.
+// No agendamento novo, pede confirmação antes de criar.
 async function finalizeSlot(session, phone, slot) {
   if (session.flow === "reagendar") {
     await finalizeReagendamento(session, phone, slot);
   } else {
+    session.pendingSlot = slot;
+    session.step = "confirma_agendamento";
+    const profName = await getProfessionalName(session.profissionalId);
+    await replyS(
+      session,
+      phone,
+      `Então ficaria *${formatToBrazilDate(slot.isoUTC)} (${session.chosenDay?.label?.split(" ")[0] || ""}) às ${slot.time}* com ${profName}. Confirma? 😊`
+    );
+  }
+}
+
+async function handleConfirmaAgendamento(session, phone, text) {
+  const slot = session.pendingSlot;
+  if (!slot) {
+    resetFlow(session);
+    await startFlow(session, phone, text, "SAUDACAO");
+    return;
+  }
+  if (isYes(text)) {
+    session.pendingSlot = null;
     await finalizeAgendamento(session, phone, slot);
+  } else if (isNo(text)) {
+    session.pendingSlot = null;
+    await proceedToDays(session, phone);
+  } else {
+    await replyS(session, phone, "Pode responder *sim* para confirmar ou *não* para escolher outro horário. 🙂");
   }
 }
 
@@ -1119,7 +1148,7 @@ async function finalizeAgendamento(session, phone, slot) {
 async function handleReagendarCpf(session, phone, text) {
   const cpf = onlyDigits(text);
   if (cpf.length !== 11) {
-    await replyS(session, phone, "Esse CPF não parece completo. Pode me mandar os *11 números*, por favor?");
+    await replyS(session, phone, "Esse CPF não parece completo. São *11 números* — pode mandar com ou sem pontos.");
     return;
   }
   const patient = await identifyPatient(cpf, session.profissionalId);
@@ -1218,7 +1247,7 @@ async function finalizeReagendamento(session, phone, slot) {
 async function handleCancelarCpf(session, phone, text) {
   const cpf = onlyDigits(text);
   if (cpf.length !== 11) {
-    await replyS(session, phone, "Esse CPF não parece completo. Pode me mandar os *11 números*, por favor?");
+    await replyS(session, phone, "Esse CPF não parece completo. São *11 números* — pode mandar com ou sem pontos.");
     return;
   }
   const patient = await identifyPatient(cpf, session.profissionalId);
@@ -1311,7 +1340,7 @@ async function handleCancelarConfirma(session, phone, text) {
 async function handleConvenioChat(session, phone, text) {
   if (normalize(text).includes("contratar")) {
     session.step = "convenio_cpf";
-    await replyS(session, phone, "Que alegria ter você com a gente! 🎉 Pra iniciar seu contrato, me informa seu *CPF* (só os números)?");
+    await replyS(session, phone, "Que alegria ter você com a gente! 🎉 Pra iniciar seu contrato, me informa seu *CPF*? Pode mandar com ou sem pontos.");
     return;
   }
   // Mantém o contexto da conversa entre mensagens (últimas 10 trocas, p/ controlar custo).
@@ -1335,7 +1364,7 @@ async function handleConvenioChat(session, phone, text) {
 async function handleConvenioCpf(session, phone, text) {
   const cpf = onlyDigits(text);
   if (cpf.length !== 11) {
-    await replyS(session, phone, "CPF inválido. Envie os *11 números* do seu CPF.");
+    await replyS(session, phone, "Esse CPF não parece completo. São *11 números* — pode mandar com ou sem pontos.");
     return;
   }
   session.cpf = cpf;
