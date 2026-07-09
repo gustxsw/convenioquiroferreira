@@ -65,10 +65,11 @@ Informações do Convênio Quiro Ferreira:
 - Especialidades disponíveis: conforme profissionais ativos no sistema
 
 Quando o paciente quiser contratar o convênio:
-1. Peça o CPF
-2. Se não encontrar cadastro: colete nome e telefone
-3. Informe que o link de pagamento será enviado em seguida
-4. Encerre com: "Após a confirmação do pagamento você recebe o acesso ao painel."
+Explique que a contratação é feita pelo painel do Quiro Ferreira,
+acessando pelo link de cadastro que ${prof} enviará pessoalmente.
+Não mencione nenhum link de pagamento pelo WhatsApp — o pagamento
+é realizado pelo próprio painel após o cadastro. Informe que você
+vai avisar ${prof} para entrar em contato e enviar o link.
 
 Nunca invente informações. Se não souber algo, diga que vai verificar e que em breve retorna.
 
@@ -1425,10 +1426,13 @@ async function handleCancelarConfirma(session, phone, text) {
 
 async function handleConvenioChat(session, phone, text) {
   if (normalize(text).includes("contratar")) {
-    session.step = "convenio_cpf";
+    session.mode = "pending";
+    session.step = "convenio_chat";
+    const profNomeContr = await professionalDisplayName(session);
+    const profRef = profNomeContr ? firstName(profNomeContr) : "o profissional";
     await replyS(session, phone, pick([
-      "Ótimo! Para iniciar, preciso do seu *CPF*. Pode enviar com ou sem pontos. 😊",
-      "Com prazer! Me informa o seu *CPF* para eu verificar seu cadastro? Pode enviar com ou sem pontos.",
+      `Para contratar o Convênio Quiro Ferreira, o processo é feito pelo painel: ${profRef} vai te enviar o link de cadastro pessoalmente. Você acessa, cria sua conta e o pagamento é realizado pelo próprio painel. Vou avisar ${profRef} agora! 😊`,
+      `A contratação é bem simples! ${profRef} vai te passar o link de cadastro diretamente. Você se cadastra e efetua o pagamento pelo painel — tudo em um só lugar. Estou avisando ${profRef} agora. 😊`,
     ]));
     return;
   }
@@ -1463,9 +1467,10 @@ async function handleConvenioCpf(session, phone, text) {
   const client = await findClientByCpf(cpf);
   if (client) {
     session.pacienteNome = client.name;
+    session.mode = "pending";
     await replyS(session, phone, pick([
-      `Cadastro encontrado, ${firstName(client.name)}! 😊 Vou te enviar o *link de pagamento* em seguida. Após a confirmação, você recebe o acesso ao painel.`,
-      `Encontrei seu cadastro, ${firstName(client.name)}. 😊 O *link de pagamento* seguirá em instantes. Depois da confirmação, seu acesso estará liberado.`,
+      `Cadastro encontrado, ${firstName(client.name)}! 😊 Vou avisar o profissional para te enviar o link de cadastro do convênio.`,
+      `Encontrei seu cadastro, ${firstName(client.name)}. 😊 O profissional vai te passar o link de cadastro do convênio em breve.`,
     ]));
     resetFlow(session);
   } else {
@@ -1485,9 +1490,10 @@ async function handleConvenioCadastroNome(session, phone, text) {
   }
   const created = await createClient({ name: nome, phone, cpf: session.cpf });
   await audit({ phone, actor: "ai", action: "client_created", detail: { clientId: created.id }, professionalId: session.profissionalId });
+  session.mode = "pending";
   await replyS(session, phone, pick([
-    `Perfeito, ${firstName(nome)}! Cadastro criado com sucesso. 😊 O *link de pagamento* seguirá em instantes — após a confirmação, você recebe o acesso ao painel.`,
-    `Prontinho, ${firstName(nome)}! Seu cadastro foi iniciado. 🎉 Vou te enviar o *link de pagamento* — assim que confirmar, você recebe o acesso ao painel.`,
+    `Perfeito, ${firstName(nome)}! Cadastro criado. 😊 O profissional vai te enviar o link de cadastro do convênio para você finalizar pelo painel.`,
+    `Prontinho, ${firstName(nome)}! Seu cadastro foi iniciado. 😊 O profissional vai te passar o link de acesso para você concluir o cadastro e efetuar o pagamento pelo painel.`,
   ]));
   resetFlow(session);
 }
