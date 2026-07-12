@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Home, Users, FileText, BarChart2, Calendar, UserPlus, CalendarDays, UserCheck, Stethoscope, FileImage, Settings, Clock, DollarSign, Ticket, MessageCircle } from 'lucide-react';
+import { Home, Users, FileText, BarChart2, Calendar, UserPlus, CalendarDays, UserCheck, Stethoscope, FileImage, Settings, Clock, DollarSign, Ticket, MessageCircle, Shield } from 'lucide-react';
 import { getSpecialtyLabelPt } from '../config/specialtyTemplates';
 import { usePendingCount } from '../hooks/usePendingCount';
 
@@ -28,6 +28,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
         { to: '/atendimento', icon: <MessageCircle size={20} />, label: 'Atendimento', color: 'text-red-400' },
         { to: '/professional/private-patients', icon: <UserCheck size={20} />, label: 'Pacientes Particulares', color: 'text-red-400' },
         { to: '/professional/services', icon: <FileText size={20} />, label: 'Meus Serviços', color: 'text-red-400' },
+        { to: '/professional/insurances', icon: <Shield size={20} />, label: 'Convênios Aceitos', color: 'text-red-400' },
         { to: '/professional/medical-records', icon: <Stethoscope size={20} />, label: 'Prontuários', color: 'text-red-400' },
         { to: '/professional/documents', icon: <FileImage size={20} />, label: 'Documentos', color: 'text-red-400' },
         { to: '/professional/reports', icon: <BarChart2 size={20} />, label: 'Relatórios', color: 'text-red-400' },
@@ -40,6 +41,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
         { to: '/professional/scheduling', icon: <CalendarDays size={20} />, label: 'Agenda', color: 'text-red-400' },
         { to: '/professional/private-patients', icon: <UserCheck size={20} />, label: 'Pacientes Particulares', color: 'text-red-400' },
         { to: '/professional/services', icon: <FileText size={20} />, label: 'Meus Serviços', color: 'text-red-400' },
+        { to: '/professional/insurances', icon: <Shield size={20} />, label: 'Convênios Aceitos', color: 'text-red-400' },
       ];
     } else if (user?.currentRole === 'admin') {
       return [

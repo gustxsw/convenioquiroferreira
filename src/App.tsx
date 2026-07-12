@@ -39,6 +39,7 @@ import AgendaFinancialPage from "./pages/financeiro/AgendaFinancialPage";
 import AtendimentoPage from "./pages/atendimento/AtendimentoPage";
 import WhatsappReportsPage from "./pages/WhatsappReportsPage";
 import CancelledConsultationsPage from "./pages/professional/CancelledConsultationsPage";
+import InsurancesPage from "./pages/professional/InsurancesPage";
 
 // Route guards
 const ProtectedRoute = ({
@@ -144,6 +145,7 @@ function App() {
         <Route path="/professional/scheduling" element={<SchedulingPage />} />
         <Route path="/professional/private-patients" element={<PrivatePatientsPage />} />
         <Route path="/professional/services" element={<ManageServicesPage />} />
+        <Route path="/professional/insurances" element={<InsurancesPage />} />
       </Route>
 
       {/* Professional-only routes */}

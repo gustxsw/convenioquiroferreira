@@ -30,7 +30,9 @@ import {
   addDays,
   subDays,
   startOfMonth,
+  endOfMonth,
   startOfWeek,
+  endOfWeek,
   addMonths,
   subMonths,
   isSameDay,
@@ -160,6 +162,11 @@ const SchedulingPage: React.FC = () => {
 
   // Agenda redesign UI state
   const [viewTab, setViewTab] = useState<"horario" | "consultas">("horario");
+  const [viewMode, setViewMode] = useState<"dia" | "semana" | "mes">("dia");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [defaultView, setDefaultView] = useState<"dia" | "semana" | "mes">("dia");
+  const [defaultDayTab, setDefaultDayTab] = useState<"horario" | "consultas">("horario");
+  const [weekConsultations, setWeekConsultations] = useState<Record<string, Consultation[]>>({});
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 640);
@@ -333,6 +340,48 @@ const SchedulingPage: React.FC = () => {
     checkSchedulingAccess();
     fetchData();
   }, [selectedDate]);
+
+  // Fetch consultations for week or month view
+  useEffect(() => {
+    if (viewMode === "dia") return;
+    const fetchRangeData = async () => {
+      try {
+        const apiUrl = getApiUrl();
+        let start: Date;
+        let end: Date;
+        if (viewMode === "semana") {
+          start = startOfWeek(selectedDate, { weekStartsOn: 0 });
+          end = endOfWeek(selectedDate, { weekStartsOn: 0 });
+        } else {
+          start = startOfMonth(selectedDate);
+          end = endOfMonth(selectedDate);
+        }
+        const days: Date[] = [];
+        let cur = start;
+        while (cur <= end) {
+          days.push(cur);
+          cur = addDays(cur, 1);
+        }
+        const results = await Promise.all(
+          days.map(async (d) => {
+            const dateStr = format(d, "yyyy-MM-dd");
+            try {
+              const res = await fetchWithAuth(`${apiUrl}/api/consultations/agenda?date=${dateStr}`);
+              if (res.ok) {
+                const data = await res.json();
+                return { dateStr, data: Array.isArray(data) ? data : [] };
+              }
+            } catch { /* silent */ }
+            return { dateStr, data: [] };
+          })
+        );
+        const map: Record<string, Consultation[]> = {};
+        results.forEach(({ dateStr, data }) => { map[dateStr] = data; });
+        setWeekConsultations(map);
+      } catch { /* silent */ }
+    };
+    fetchRangeData();
+  }, [viewMode, selectedDate]);
 
   // Atualização silenciosa: recarrega só as consultas e bloqueios do dia
   // selecionado, sem alternar o loading nem exibir erros. Usada pelo polling
@@ -1536,42 +1585,76 @@ const SchedulingPage: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-3">
           <div className="flex items-center gap-1.5">
             <button
-              onClick={() => setSelectedDate(subDays(selectedDate, 1))}
+              onClick={() => {
+                if (viewMode === "dia") setSelectedDate(subDays(selectedDate, 1));
+                else if (viewMode === "semana") setSelectedDate(subDays(selectedDate, 7));
+                else setSelectedDate(subMonths(selectedDate, 1));
+              }}
               className="p-1.5 rounded-lg text-[#585454] hover:bg-black/5 transition-colors"
-              title="Dia anterior"
+              title="Anterior"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
             <div>
               <h2 className="text-lg sm:text-xl font-bold text-[#26201f] leading-tight first-letter:uppercase">
-                {format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                {viewMode === "dia"
+                  ? format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })
+                  : viewMode === "semana"
+                  ? (() => {
+                      const ws = startOfWeek(selectedDate, { weekStartsOn: 0 });
+                      const we = endOfWeek(selectedDate, { weekStartsOn: 0 });
+                      return isSameMonth(ws, we)
+                        ? `${format(ws, "dd")} – ${format(we, "dd 'de' MMMM", { locale: ptBR })}`
+                        : `${format(ws, "dd 'de' MMM", { locale: ptBR })} – ${format(we, "dd 'de' MMM", { locale: ptBR })}`;
+                    })()
+                  : format(selectedDate, "MMMM yyyy", { locale: ptBR })}
               </h2>
               <p className="text-xs text-[#747070] mt-0.5">
-                Slots de {slotDuration} min · {consultations.length}{" "}
-                {consultations.length === 1 ? "consulta" : "consultas"} hoje
+                {viewMode === "dia"
+                  ? `Slots de ${slotDuration} min · ${consultations.length} ${consultations.length === 1 ? "consulta" : "consultas"} hoje`
+                  : viewMode === "semana"
+                  ? `${Object.values(weekConsultations).reduce((s, a) => s + a.length, 0)} consultas na semana`
+                  : `${Object.values(weekConsultations).reduce((s, a) => s + a.length, 0)} consultas no mês`}
               </p>
             </div>
             <button
-              onClick={() => setSelectedDate(addDays(selectedDate, 1))}
+              onClick={() => {
+                if (viewMode === "dia") setSelectedDate(addDays(selectedDate, 1));
+                else if (viewMode === "semana") setSelectedDate(addDays(selectedDate, 7));
+                else setSelectedDate(addMonths(selectedDate, 1));
+              }}
               className="p-1.5 rounded-lg text-[#585454] hover:bg-black/5 transition-colors"
-              title="Próximo dia"
+              title="Próximo"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto sm:flex-shrink-0">
+          <div className="flex items-center gap-2 w-full sm:w-auto sm:flex-shrink-0 flex-wrap">
+            {/* View mode tabs */}
+            <div className="flex bg-white border border-[#e2dedc] rounded-xl p-1 gap-0.5">
+              {(["dia", "semana", "mes"] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setViewMode(v)}
+                  className={`px-4 py-1.5 rounded-lg text-[13px] font-semibold transition-colors ${
+                    viewMode === v ? "bg-[#b32228] text-white" : "text-[#585454] hover:bg-black/5"
+                  }`}
+                >
+                  {v === "dia" ? "Dia" : v === "semana" ? "Semana" : "Mês"}
+                </button>
+              ))}
+            </div>
             <button
               onClick={() => setShowRecurringModal(true)}
-              className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg border border-[#d1cdcc] bg-white text-[13px] font-semibold text-[#35302f] hover:bg-[#faf8f7] transition-colors flex-1 sm:flex-none"
+              className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg border border-[#d1cdcc] bg-white text-[13px] font-semibold text-[#35302f] hover:bg-[#faf8f7] transition-colors sm:flex-none"
             >
               <Repeat className="h-4 w-4 flex-shrink-0" />
-              <span className="hidden sm:inline">Consultas Recorrentes</span>
-              <span className="sm:hidden">Recorrentes</span>
+              <span className="hidden sm:inline">Recorrentes</span>
             </button>
             <button
               onClick={() => setShowNewModal(true)}
-              className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg bg-[#b32228] text-[13px] font-bold text-white hover:bg-[#9c1d22] transition-colors shadow-sm flex-1 sm:flex-none whitespace-nowrap"
+              className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg bg-[#b32228] text-[13px] font-bold text-white hover:bg-[#9c1d22] transition-colors shadow-sm sm:flex-none whitespace-nowrap"
             >
               <Plus className="h-4 w-4 flex-shrink-0" />
               <span className="hidden sm:inline">Agendar Consulta</span>
@@ -1636,9 +1719,9 @@ const SchedulingPage: React.FC = () => {
               )}
             </button>
             <button
-              onClick={() => setShowSlotModal(true)}
+              onClick={() => setSettingsOpen(true)}
               className="ml-auto mr-1 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-[#8b8785] hover:text-[#585454] hover:bg-black/5 transition-colors"
-              title="Personalizar duração dos slots e expediente"
+              title="Configurações da agenda"
             >
               <Settings className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">
@@ -1651,6 +1734,131 @@ const SchedulingPage: React.FC = () => {
             <div className="text-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
               <p className="text-gray-600">Carregando agenda...</p>
+            </div>
+          ) : viewMode === "semana" ? (
+            <div className="overflow-x-auto">
+              <div className="grid grid-cols-7 min-w-[560px]">
+                {(() => {
+                  const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 });
+                  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+                  return days.map((day) => {
+                    const dateStr = format(day, "yyyy-MM-dd");
+                    const dayConsultations = weekConsultations[dateStr] || [];
+                    const isToday = isSameDay(day, new Date());
+                    const isSel = isSameDay(day, selectedDate);
+                    return (
+                      <div
+                        key={dateStr}
+                        className="border-r border-[#f0eeed] last:border-r-0 cursor-pointer"
+                        onClick={() => { setSelectedDate(day); setViewMode("dia"); }}
+                      >
+                        <div
+                          className={`text-center py-2 text-xs font-bold border-b border-[#f0eeed] ${
+                            isToday ? "text-[#b32228]" : isSel ? "text-[#b32228]" : "text-[#585454]"
+                          }`}
+                          style={isToday ? { background: "#fff5f5" } : undefined}
+                        >
+                          <div className="uppercase text-[10px]">
+                            {format(day, "EEE", { locale: ptBR })}
+                          </div>
+                          <div
+                            className={`text-base mx-auto w-7 h-7 rounded-full flex items-center justify-center ${
+                              isToday ? "bg-[#b32228] text-white" : ""
+                            }`}
+                          >
+                            {day.getDate()}
+                          </div>
+                        </div>
+                        <div className="p-1 space-y-1 min-h-[120px]">
+                          {dayConsultations.length === 0 ? (
+                            <p className="text-[10px] text-[#cfcac8] italic text-center mt-3">Livre</p>
+                          ) : (
+                            dayConsultations.map((c) => {
+                              const theme = getConsultationTheme(c);
+                              return (
+                                <div
+                                  key={c.id}
+                                  className="rounded px-1.5 py-1 text-[10px] font-medium truncate"
+                                  style={{ background: theme.badgeBg, color: theme.badgeText, borderLeft: `3px solid ${theme.border}` }}
+                                  title={`${c.client_name} — ${c.service_name}`}
+                                >
+                                  <div className="font-semibold truncate">{formatTime(c.date)}</div>
+                                  <div className="truncate">{c.client_name}</div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          ) : viewMode === "mes" ? (
+            <div className="p-4">
+              {(() => {
+                const monthStart = startOfMonth(selectedDate);
+                const monthEnd = endOfMonth(selectedDate);
+                const gridStart = startOfWeek(monthStart, { weekStartsOn: 0 });
+                const gridEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
+                const gridDays: (Date | null)[] = [];
+                let cur = gridStart;
+                while (cur <= gridEnd) { gridDays.push(cur); cur = addDays(cur, 1); }
+                return (
+                  <>
+                    <div className="grid grid-cols-7 mb-1">
+                      {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((d) => (
+                        <div key={d} className="text-[11px] font-semibold text-[#8b8785] text-center py-1">{d}</div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7 gap-1">
+                      {gridDays.map((day, idx) => {
+                        if (!day) return <div key={`e-${idx}`} />;
+                        const dateStr = format(day, "yyyy-MM-dd");
+                        const dayConsults = weekConsultations[dateStr] || [];
+                        const isToday = isSameDay(day, new Date());
+                        const isCurMonth = isSameMonth(day, selectedDate);
+                        return (
+                          <div
+                            key={dateStr}
+                            onClick={() => { setSelectedDate(day); setViewMode("dia"); }}
+                            className={`rounded-lg p-1.5 cursor-pointer border transition-colors min-h-[64px] ${
+                              isToday
+                                ? "border-[#b32228] bg-red-50"
+                                : isCurMonth
+                                ? "border-[#f0eeed] hover:border-[#d4cfce] bg-white"
+                                : "border-transparent bg-[#faf8f7] opacity-50"
+                            }`}
+                          >
+                            <div className={`text-xs font-bold mb-1 ${isToday ? "text-[#b32228]" : isCurMonth ? "text-[#26201f]" : "text-[#a8a4a2]"}`}>
+                              {day.getDate()}
+                            </div>
+                            <div className="flex flex-wrap gap-0.5">
+                              {dayConsults.slice(0, 3).map((c) => {
+                                const theme = getConsultationTheme(c);
+                                return (
+                                  <span
+                                    key={c.id}
+                                    className="w-2 h-2 rounded-full"
+                                    style={{ background: theme.border }}
+                                    title={c.client_name}
+                                  />
+                                );
+                              })}
+                            </div>
+                            {dayConsults.length > 0 && (
+                              <div className="text-[9px] text-[#747070] mt-0.5 font-medium">
+                                {dayConsults.length} consulta{dayConsults.length > 1 ? "s" : ""}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           ) : (
             <div>
@@ -1859,11 +2067,79 @@ const SchedulingPage: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* ===== Settings Modal ===== */}
+        {settingsOpen && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setSettingsOpen(false)}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-lg font-bold text-[#26201f]">Configurações da Agenda</h2>
+                <button onClick={() => setSettingsOpen(false)} className="p-1.5 rounded-lg text-[#8b8785] hover:bg-black/5"><X className="h-5 w-5" /></button>
+              </div>
+              <div className="space-y-5">
+                <div>
+                  <label className="block text-sm font-semibold text-[#35302f] mb-2">Visualização padrão</label>
+                  <div className="flex gap-2">
+                    {(["dia", "semana", "mes"] as const).map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => setDefaultView(v)}
+                        className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors ${defaultView === v ? "bg-[#b32228] text-white border-[#b32228]" : "border-[#e2dedc] text-[#585454] hover:bg-black/5"}`}
+                      >
+                        {v === "dia" ? "Dia" : v === "semana" ? "Semana" : "Mês"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-[#35302f] mb-2">Ao abrir visão Dia, mostrar</label>
+                  <div className="flex gap-2">
+                    {(["horario", "consultas"] as const).map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => setDefaultDayTab(v)}
+                        className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors ${defaultDayTab === v ? "bg-[#b32228] text-white border-[#b32228]" : "border-[#e2dedc] text-[#585454] hover:bg-black/5"}`}
+                      >
+                        {v === "horario" ? "Horário" : "Consultas"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-[#35302f] mb-2">Tamanho dos slots</label>
+                  <div className="flex gap-2">
+                    {([15, 30, 60] as const).map((d) => (
+                      <button
+                        key={d}
+                        onClick={() => handleSlotDurationChange(d)}
+                        className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors ${slotDuration === d ? "bg-[#b32228] text-white border-[#b32228]" : "border-[#e2dedc] text-[#585454] hover:bg-black/5"}`}
+                      >
+                        {d} min
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="border-t border-[#f0eeed] pt-4">
+                  <label className="block text-sm font-semibold text-[#35302f] mb-1">Integração Google</label>
+                  <p className="text-xs text-[#747070] mb-3">Sincronize consultas com o Google Agenda e gere links do Google Meet.</p>
+                  <button
+                    onClick={() => { setSettingsOpen(false); window.location.href = "/professional/profile"; }}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[#e2dedc] text-sm text-[#585454] hover:bg-black/5 transition-colors"
+                  >
+                    <Settings className="h-4 w-4" />
+                    Gerenciar no Perfil
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ===== Fim da coluna principal ===== */}
         </div>
 
-        {/* ===== Barra lateral: calendário + resumo — desktop apenas ===== */}
-        <aside className="hidden lg:block lg:w-[320px] flex-shrink-0 space-y-4">
+        {/* ===== Barra lateral: calendário + resumo — desktop apenas, somente na view Dia ===== */}
+        <aside className={`lg:w-[320px] flex-shrink-0 space-y-4 ${viewMode === "dia" ? "hidden lg:block" : "hidden"}`}>
           {/* Mini calendário */}
           <div className="bg-white rounded-xl border border-[#e4e0e0] shadow-[0_2px_10px_rgba(60,40,30,0.05)] p-4">
             <div className="flex items-center justify-between mb-3">
