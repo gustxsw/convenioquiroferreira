@@ -5831,16 +5831,7 @@ app.get(
         time: formattedTime,
       });
 
-      const message = `Olá ${
-        consultation.patient_name
-      }, gostaria de confirmar o seu agendamento com o profissional ${
-        req.user.name
-      } no dia ${formattedDate} às ${new Date(
-        new Date("1970-01-01T" + formattedTime + ":00Z").getTime() -
-          3 * 60 * 60 * 1000
-      )
-        .toISOString()
-        .substring(11, 16)}`;
+      const message = `Olá ${consultation.patient_name}, gostaria de confirmar o seu agendamento com o profissional ${req.user.name} no dia ${formattedDate} às ${formattedTime}`;
 
       const encodedMessage = encodeURIComponent(message);
 

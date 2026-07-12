@@ -571,7 +571,11 @@ async function getProfessionalName(professionalId) {
 async function getProfessionalConvenioInfo(professionalId) {
   if (!professionalId) return { professionalType: "convenio", affiliateCode: null };
   const r = await pool.query(
-    "SELECT professional_type, affiliate_code FROM users WHERE id = $1",
+    `SELECT u.professional_type, a.code AS affiliate_code
+       FROM users u
+       LEFT JOIN affiliates a ON a.user_id = u.id AND a.status = 'active'
+      WHERE u.id = $1
+      LIMIT 1`,
     [professionalId]
   );
   const row = r.rows[0];
@@ -1784,20 +1788,20 @@ async function handleConvenioChat(session, phone, text) {
 
   if (/contratar|quero.*convenio|assinar|me cadastrar|me inscrever|como faço para|como contrato|quero fazer parte/.test(n)) {
     msg = pick([
-      `Para contratar o Convênio Quiro Ferreira, basta acessar o link abaixo, criar sua conta e efetuar o pagamento pelo próprio painel — rápido e simples!\n\n🔗 ${refLink}`,
-      `É bem fácil! Acesse o link de cadastro, crie sua conta e o pagamento é feito pelo painel. Tudo em um só lugar.\n\n🔗 ${refLink}`,
+      `Ótima escolha! 🎉 Com o Convênio você garante consultas com desconto com ${profFirst} e toda a rede Quiro Ferreira — e ainda pode incluir sua família por apenas R$ 100/ano por dependente.\n\nAcesse o link, crie sua conta e ative pelo próprio painel:\n🔗 ${refLink}`,
+      `Boa decisão! 💪 Ao entrar para o Convênio Quiro Ferreira você tem acesso a consultas com desconto com ${profFirst} e outros profissionais da rede, além de incluir esposa, filhos e familiares por R$ 100/ano cada.\n\nCadastre-se aqui:\n🔗 ${refLink}`,
     ]);
   } else if (/quanto custa|preco|valor|mensalidade|assinatura|anuidade|custo/.test(n)) {
-    msg = `O Convênio Quiro Ferreira tem plano *anual de R$ 600,00* para o titular (pagamento único).\n\nPara cada dependente (filho, cônjuge, etc.) o valor é *R$ 100,00/ano*.\n\nQuer contratar?\n🔗 ${refLink}`;
+    msg = `O Convênio Quiro Ferreira é *R$ 600,00/ano* para o titular — menos de R$ 50 por mês para consultas com desconto com ${profFirst} e toda a rede de profissionais.\n\n👨‍👩‍👧 Dependentes (esposa, filhos…): *R$ 100,00/ano cada*\n\nUm plano de saúde para a família inteira por um valor acessível. Quer contratar?\n🔗 ${refLink}`;
   } else if (/dependente|filho|filha|conjuge|esposa|marido|familiar|adicionar.*plano|incluir.*plano/.test(n)) {
-    msg = `Sim! Você pode adicionar dependentes no convênio pelo valor de *R$ 100,00 por dependente/ano*.\n\nO cadastro dos dependentes é feito pelo painel após a contratação do titular.\n\n🔗 ${refLink}`;
+    msg = `Sim, e essa é uma das maiores vantagens! 👨‍👩‍👧 Você pode incluir *esposa, filhos e outros familiares* por apenas *R$ 100,00/ano cada*.\n\nToda a família com acesso a consultas com desconto na rede Quiro Ferreira. O cadastro dos dependentes é feito pelo painel após a contratação do titular.\n\n🔗 ${refLink}`;
   } else if (/beneficio|vantagem|o que inclui|o que tem|o que ganha|desconto|prioridade/.test(n)) {
-    msg = `Com o *Convênio Quiro Ferreira* você tem:\n\n✅ Consultas com desconto\n✅ Prioridade no agendamento\n✅ Dependentes por R$ 100/ano cada\n✅ Acesso ao painel: cartaoquiroferreira.com.br\n\nQuer contratar?\n🔗 ${refLink}`;
+    msg = `Com o *Convênio Quiro Ferreira* você e sua família têm:\n\n✅ Consultas com desconto com ${profFirst} e toda a rede de profissionais\n✅ Prioridade no agendamento\n✅ Inclusão de dependentes por R$ 100/ano cada\n✅ Painel exclusivo para gerenciar tudo\n\nQuer contratar?\n🔗 ${refLink}`;
   } else if (/acesso|painel|entrar|login|senha|site|portal|minha conta/.test(n)) {
-    msg = `O acesso ao painel é pelo site *cartaoquiroferreira.com.br* — login com CPF e senha cadastrada.\n\nAinda não tem cadastro?\n🔗 ${refLink}`;
+    msg = `O acesso ao painel é pelo site *cartaoquiroferreira.com.br* — login com CPF e senha cadastrada. Por lá você agenda consultas, gerencia seus dependentes e acompanha tudo.\n\nAinda não tem cadastro?\n🔗 ${refLink}`;
   } else {
     // Resposta geral sobre o convênio
-    msg = `O *Convênio Quiro Ferreira* é um plano anual que garante consultas com desconto com ${profFirst} e outros profissionais da rede.\n\n💰 *Titular:* R$ 600,00/ano\n👨‍👩‍👧 *Dependente:* R$ 100,00/ano\n✅ Prioridade no agendamento\n✅ Acesso ao painel: cartaoquiroferreira.com.br\n\nPara contratar ou saber mais:\n🔗 ${refLink}\n\nTem alguma dúvida específica? É só perguntar!`;
+    msg = `O *Convênio Quiro Ferreira* é um plano anual de saúde para você e sua família. Com ele, você tem acesso a consultas com desconto não só com ${profFirst}, mas com toda a rede de profissionais credenciados.\n\n💰 *Titular:* R$ 600,00/ano (menos de R$ 50/mês)\n👨‍👩‍👧 *Dependentes:* R$ 100,00/ano cada\n✅ Prioridade no agendamento\n\nPara contratar ou saber mais:\n🔗 ${refLink}\n\nTem alguma dúvida? É só perguntar!`;
   }
 
   await replyS(session, phone, msg);

@@ -1690,8 +1690,8 @@ const SchedulingPage: React.FC = () => {
 
         {/* Cartão da agenda */}
         <div className="bg-white rounded-xl border border-[#e4e0e0] shadow-[0_2px_10px_rgba(60,40,30,0.05)] overflow-hidden">
-          {/* Abas — ocultas no mobile (sempre mostra só consultas) */}
-          <div className="hidden sm:flex items-center border-b border-[#efeceb] px-2">
+          {/* Abas HORÁRIO/CONSULTAS — apenas na view Dia e desktop */}
+          <div className={`${viewMode === "dia" ? "hidden sm:flex" : "hidden"} items-center border-b border-[#efeceb] px-2`}>
             <button
               onClick={() => setViewTab("horario")}
               className={`relative px-4 py-3 text-sm font-semibold transition-colors ${
@@ -2972,14 +2972,12 @@ const SchedulingPage: React.FC = () => {
                   <p className="text-xs sm:text-sm text-gray-600 mb-1">
                     <strong>Data/Hora:</strong>{" "}
                     {(() => {
-                      const utcDate = new Date(selectedConsultation.date);
-                      const brazilDate = new Date(
-                        utcDate.getTime() - 3 * 60 * 60 * 1000
-                      );
+                      const d = new Date(selectedConsultation.date);
                       return (
-                        brazilDate.toLocaleDateString("pt-BR") +
+                        d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) +
                         " às " +
-                        brazilDate.toLocaleTimeString("pt-BR", {
+                        d.toLocaleTimeString("pt-BR", {
+                          timeZone: "America/Sao_Paulo",
                           hour: "2-digit",
                           minute: "2-digit",
                           hour12: false,
