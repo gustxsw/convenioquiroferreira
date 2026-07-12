@@ -114,6 +114,19 @@ function onlyDigits(s) {
   return String(s || "").replace(/\D/g, "");
 }
 
+// Extrai um CPF (exatamente 11 dígitos) de um texto livre.
+// Aceita formatado (000.000.000-00) ou sequência pura sem dígitos adjacentes.
+function extractCpfFromText(text) {
+  const formatted = text.match(/\b\d{3}[.\-]\d{3}[.\-]\d{3}[.\-]\d{2}\b/);
+  if (formatted) {
+    const d = onlyDigits(formatted[0]);
+    if (d.length === 11) return d;
+  }
+  const bare = text.match(/(?<!\d)(\d{11})(?!\d)/);
+  if (bare) return bare[1];
+  return null;
+}
+
 function isYes(t) {
   const n = normalize(t);
   return (
@@ -171,6 +184,10 @@ function resetFlow(session) {
   session.priceProfile = null;
   session.newPatientKind = null;
   session.convenioHistory = null;
+  session.pendingYmd = null;
+  session.pendingTime = null;
+  session.convenioNome = null;
+  session.insuranceList = null;
   // Profissional volta a ser o do número (multi-número); se não houver, limpa.
   session.profissionalId = session.profFromNumber || null;
 }
@@ -189,7 +206,10 @@ const INTENT_KEYWORDS = [
   ["AGRADECIMENTO", ["obrigad", "valeu", "agradec", "grato", "grata", "obg", "obd", "vlw", "mto obg", "mt obg", "thank", "gracias", "grazie", "merci", "tmj", "foi otimo", "foi incrivel", "foi perfeito", "adorei", "amei o atendimento", "atendimento incrivel", "atendimento otimo", "atendimento perfeito", "excelente atendimento"]],
   ["CANCELAR",     ["cancel", "desmarc", "nao vou poder", "nao consigo ir", "nao poderei", "nao vou conseguir"]],
   ["REAGENDAR",    ["remarc", "reagend", "retorno", "mudar o horario", "mudar horario", "trocar o horario", "trocar horario", "mudar a data", "mudar data", "trocar a data", "trocar data", "mudar de dia", "outro dia", "outro horario", "adiar", "antecipar"]],
-  ["CONVENIO",     ["convenio", "carteirinha", "cobertura", "preco", "valor", "como funciona", "quanto custa", "plano", "beneficio", "contratar", "mensalidade", "assinatura", "quero contratar"]],
+  ["INFO_SERVICO",  ["quanto custa", "qual o valor", "quais os valores", "preco", "o que inclui", "sobre o servico", "sobre o atendimento", "detalhes do servico", "detalhes do atendimento", "o que voces", "quais servicos", "tabela de", "valor da consul", "o que e a consul", "o que e o servico", "o que e o atendimento", "me fala sobre o servico", "me fala sobre o atendimento"]],
+  ["CONVENIO",     ["convenio", "carteirinha", "cobertura", "como funciona", "plano", "beneficio", "contratar", "mensalidade", "assinatura", "quero contratar"]],
+  ["CONSULTAR_CONVENIO", ["meu plano", "pelo plano", "tem cobertura", "credenciado", "aceita meu", "pelo convenio", "passa pelo", "atende pelo", "faz pelo", "cobertura", "atende unimed", "aceita unimed", "atende bradesco", "aceita bradesco", "atende amil", "aceita amil", "atende sulamerica", "aceita sulamerica", "tem algum convenio", "quais convenios", "que convenios"]],
+  ["CONSULTAR_HORARIO", ["tem horario", "ha horario", "tem vaga", "esta disponivel", "esta livre", "tem disponibilidade", "quais horarios", "que horarios", "horarios disponiveis", "dias disponiveis", "tem agenda", "ver horarios", "verificar horario", "quando tem horario", "qual horario disponivel", "quando voces atendem", "dias vocês atendem", "dias voces atendem"]],
   ["AGENDAR",      ["agend", "marc", "consulta", "horario", "atendimento", "quero marcar", "queria marcar", "quero uma consulta", "preciso de uma consulta", "nova consulta", "quero agendar"]],
 ];
 
@@ -545,6 +565,34 @@ async function getProfessionalName(professionalId) {
   return r.rows[0]?.name || "profissional";
 }
 
+// Retorna o tipo do profissional e seu código de afiliado para montar o link de indicação.
+// professional_type = 'agenda_only' → só usa agenda, nunca fala de convênio Quiro.
+// professional_type = 'convenio' (ou null/default) → usa o convênio completo.
+async function getProfessionalConvenioInfo(professionalId) {
+  if (!professionalId) return { professionalType: "convenio", affiliateCode: null };
+  const r = await pool.query(
+    "SELECT professional_type, affiliate_code FROM users WHERE id = $1",
+    [professionalId]
+  );
+  const row = r.rows[0];
+  if (!row) return { professionalType: "convenio", affiliateCode: null };
+  return {
+    professionalType: row.professional_type === "agenda_only" ? "agenda_only" : "convenio",
+    affiliateCode: row.affiliate_code || null,
+  };
+}
+
+// Retorna os planos/convênios aceitos pelo profissional (ativos), em ordem alfabética.
+async function getProfessionalInsurances(professionalId) {
+  if (!professionalId) return [];
+  const r = await pool.query(
+    `SELECT name FROM professional_insurances
+      WHERE professional_id = $1 AND is_active = true ORDER BY name ASC`,
+    [professionalId]
+  );
+  return r.rows.map((row) => row.name);
+}
+
 // Nome do profissional dono do número, para personalizar a persona da secretária.
 // Cacheado na sessão para evitar uma consulta a cada mensagem. Retorna null quando
 // o número não está mapeado a um profissional (WHATSAPP_NUMBERS).
@@ -561,7 +609,7 @@ async function professionalDisplayName(session) {
 //   particular -> price_private ?? base_price
 async function getBaseService(professionalId, priceProfile = "convenio") {
   const r = await pool.query(
-    `SELECT id AS service_id, base_price, price_member, price_private,
+    `SELECT id AS service_id, name, description, base_price, price_member, price_private,
             COALESCE(is_online, false) AS is_online
        FROM services
       WHERE professional_id = $1
@@ -575,7 +623,15 @@ async function getBaseService(professionalId, priceProfile = "convenio") {
     priceProfile === "convenio"
       ? s.price_member ?? s.base_price
       : s.price_private ?? s.base_price;
-  return { service_id: s.service_id, value, isOnline: s.is_online };
+  return {
+    service_id: s.service_id,
+    name: s.name || null,
+    description: s.description || null,
+    value,
+    priceMember: s.price_member ?? s.base_price ?? null,
+    pricePrivate: s.price_private ?? s.base_price ?? null,
+    isOnline: s.is_online,
+  };
 }
 
 // Todas as consultas futuras ativas do paciente (para remarcar/cancelar quando
@@ -611,7 +667,7 @@ function pickConsultation(list, text) {
 }
 
 // Replica a validação de expediente/conflito do POST /api/consultations.
-async function createConsultation({ professionalId, userId, privatePatientId, serviceId, value, isoUTC }) {
+async function createConsultation({ professionalId, userId, privatePatientId, serviceId, value, isoUTC, convenio = null }) {
   const working = await getWorkingHours(professionalId);
   if (!isWithinWorkingHours(isoUTC, working)) {
     return { ok: false, message: "Esse horário está fora do expediente. Escolha outro, por favor." };
@@ -626,10 +682,10 @@ async function createConsultation({ professionalId, userId, privatePatientId, se
   }
   // CHECK no banco exige exatamente um entre user_id / dependent_id / private_patient_id.
   const r = await pool.query(
-    `INSERT INTO consultations (user_id, private_patient_id, professional_id, service_id, value, date, status)
-     VALUES ($1, $2, $3, $4, $5, $6, 'scheduled')
+    `INSERT INTO consultations (user_id, private_patient_id, professional_id, service_id, value, date, status, convenio)
+     VALUES ($1, $2, $3, $4, $5, $6, 'scheduled', $7)
      RETURNING id`,
-    [userId || null, privatePatientId || null, professionalId, serviceId, value, isoUTC]
+    [userId || null, privatePatientId || null, professionalId, serviceId, value, isoUTC, convenio || null]
   );
   return { ok: true, id: r.rows[0].id };
 }
@@ -720,6 +776,230 @@ function humanFallbackText() {
 
 // ===== FLUXOS =====
 
+// Exibe nome + descrição + preços do serviço base do profissional.
+// Se o paciente perguntar especificamente sobre o convênio no mesmo texto, redireciona.
+async function handleInfoServico(session, phone, text) {
+  const n = normalize(text);
+  if (/\b(convenio|carteirinha|plano|mensalidade|assinatura|beneficio)\b/.test(n)) {
+    session.step = "convenio_chat";
+    await handleConvenioChat(session, phone, text);
+    return;
+  }
+  const base = await getBaseService(session.profissionalId, "convenio");
+  if (!base) {
+    session.step = null;
+    await replyS(session, phone,
+      "No momento não tenho os detalhes do serviço disponíveis. Se quiser, pode *agendar* sua consulta ou perguntar sobre o *convênio*."
+    );
+    return;
+  }
+
+  let msg = base.name ? `*${base.name}*` : "*Consulta*";
+  if (base.description) msg += `\n\n${base.description}`;
+
+  const mem = base.priceMember ? `R$ ${Number(base.priceMember).toFixed(2).replace(".", ",")}` : null;
+  const priv = base.pricePrivate ? `R$ ${Number(base.pricePrivate).toFixed(2).replace(".", ",")}` : null;
+  const hasDiscount = mem && priv && mem !== priv;
+  if (hasDiscount) {
+    msg += `\n\n💰 *Conveniado:* ${mem}\n💰 *Particular:* ${priv}`;
+  } else if (mem || priv) {
+    msg += `\n\n💰 *Valor:* ${mem || priv}`;
+  }
+
+  msg += `\n\nSe quiser *agendar* sua consulta, é só me dizer!`;
+  if (hasDiscount) {
+    msg += `\nQuer saber mais sobre o *convênio* e pagar menos? É só perguntar!`;
+  }
+  session.step = null;
+  await replyS(session, phone, msg);
+}
+
+// Responde dúvidas de disponibilidade sem exigir CPF.
+// Cenários: data+hora (horário específico livre?), só data (quais horários?),
+// nem data nem hora (quais os próximos dias?).
+async function handleConsultarHorario(session, phone, text) {
+  const { ymd, time } = parseWhen(text);
+  const today = todayInBrazilYmd();
+
+  if (!ymd && !time) {
+    // Sem data e sem hora: mostra próximos dias disponíveis.
+    const days = await getAvailableDays(session.profissionalId, { limit: 5 });
+    if (days.length === 0) {
+      await replyS(session, phone,
+        "No momento não há horários disponíveis na agenda. Tente novamente em breve ou fale com nossa equipe."
+      );
+      return;
+    }
+    const list = days.map((d) => `• *${d.label}*`).join("\n");
+    await replyS(session, phone,
+      `Esses são os próximos dias com horários disponíveis:\n\n${list}\n\nQuer saber os horários de algum dia em específico? É só me dizer!`
+    );
+    return;
+  }
+
+  if (ymd && ymd < today) {
+    await replyS(session, phone,
+      "Essa data já passou. Me informe outro dia para verificar a disponibilidade."
+    );
+    return;
+  }
+
+  if (ymd && time) {
+    // Data + hora: verifica se aquele slot específico está livre.
+    const slots = await getFreeSlotsForDay(session.profissionalId, ymd);
+    const match = slots.find((s) => s.time === time);
+    if (match) {
+      await replyS(session, phone, pick([
+        `Sim! *${dayLabel(ymd)} às ${time}* está disponível. Quer *agendar* esse horário?`,
+        `Está livre sim! *${dayLabel(ymd)} às ${time}* está disponível na agenda. Quer *agendar*?`,
+      ]));
+    } else if (slots.length > 0) {
+      await replyS(session, phone, pick([
+        `O horário das *${time}* em *${dayLabel(ymd)}* não está disponível. ${suggestTimes(slots)}`,
+        `Infelizmente *${time}* já está ocupado em *${dayLabel(ymd)}*. ${suggestTimes(slots)}`,
+      ]));
+    } else {
+      const next = await getAvailableDays(session.profissionalId, { limit: 1 });
+      const hint = next.length ? ` O próximo dia disponível é *${next[0].label}*.` : "";
+      await replyS(session, phone,
+        `Não há horários disponíveis em *${dayLabel(ymd)}* no momento.${hint}`
+      );
+    }
+    return;
+  }
+
+  if (ymd && !time) {
+    // Só data: lista todos os horários livres naquele dia.
+    const slots = await getFreeSlotsForDay(session.profissionalId, ymd);
+    if (slots.length === 0) {
+      const next = await getAvailableDays(session.profissionalId, { limit: 1 });
+      const hint = next.length ? ` O próximo dia disponível é *${next[0].label}*.` : "";
+      await replyS(session, phone,
+        `Não há horários disponíveis em *${dayLabel(ymd)}* no momento.${hint} Quer verificar outro dia?`
+      );
+      return;
+    }
+    const times = slots.map((s) => s.time).join("  |  ");
+    await replyS(session, phone, pick([
+      `Em *${dayLabel(ymd)}*, os horários disponíveis são:\n\n*${times}*\n\nQuer *agendar* algum desses?`,
+      `Os horários livres em *${dayLabel(ymd)}* são:\n\n*${times}*\n\nGostaria de *agendar* um deles?`,
+    ]));
+    return;
+  }
+
+  // Só hora, sem data: pede o dia.
+  await replyS(session, phone, pick([
+    `Para qual *dia* seria esse horário das ${time}? Pode ser *"amanhã"*, *"08/07"* ou o dia da semana.`,
+    `O horário você já me informou! Agora me diz o *dia* — pode ser *"amanhã"*, uma data como *"08/07"* ou o dia da semana.`,
+  ]));
+}
+
+// Responde se o profissional atende determinado convênio.
+// Para profissionais Quiro: responde sobre o convênio Quiro + lista outros planos cadastrados.
+// Para agenda_only: responde apenas com a lista de planos cadastrados (sem mencionar Quiro).
+async function handleConsultarConvenio(session, phone, text) {
+  const convenioInfo = await getProfessionalConvenioInfo(session.profissionalId);
+  const insurances = await getProfessionalInsurances(session.profissionalId);
+  const n = normalize(text);
+
+  // Tenta extrair nome do plano perguntado no texto
+  const knownPlans = [...insurances];
+  if (convenioInfo.professionalType === "convenio") knownPlans.push("Quiro Ferreira", "quiroferreira");
+  let askedPlan = null;
+  for (const plan of knownPlans) {
+    if (n.includes(normalize(plan))) { askedPlan = plan; break; }
+  }
+  // Planos comuns não cadastrados — detecta pelo nome no texto
+  const commonNames = ["unimed", "bradesco", "amil", "sulamerica", "hapvida", "notredame", "gndi", "fusex", "ipsemg", "cassi", "geap", "prevent senior", "porto seguro"];
+  if (!askedPlan) {
+    for (const p of commonNames) {
+      if (n.includes(p)) { askedPlan = p; break; }
+    }
+  }
+
+  if (askedPlan) {
+    const normalAsked = normalize(askedPlan);
+    const acceptedByQuiro = convenioInfo.professionalType === "convenio" &&
+      (normalAsked.includes("quiro") || normalAsked.includes("quiroferreira"));
+    const acceptedByList = insurances.some((ins) => normalize(ins).includes(normalAsked) || normalAsked.includes(normalize(ins)));
+
+    if (acceptedByQuiro || acceptedByList) {
+      await replyS(session, phone, pick([
+        `Sim! Atendemos pelo *${askedPlan}*. Quer *agendar* uma consulta?`,
+        `Sim, atendemos pelo *${askedPlan}*! Para marcar, é só me dizer.`,
+      ]));
+    } else {
+      const allPlans = [
+        ...(convenioInfo.professionalType === "convenio" ? ["Quiro Ferreira"] : []),
+        ...insurances,
+      ];
+      const listMsg = allPlans.length > 0
+        ? `\n\nAtendemos pelos seguintes planos: *${allPlans.join(", ")}* e também pacientes particulares.`
+        : "\n\nNo momento atendemos apenas pacientes *particulares*.";
+      await replyS(session, phone, `Infelizmente não atendemos pelo *${askedPlan}*.${listMsg}`);
+    }
+  } else {
+    // Pergunta genérica sobre convênios
+    const allPlans = [
+      ...(convenioInfo.professionalType === "convenio" ? ["Quiro Ferreira"] : []),
+      ...insurances,
+    ];
+    if (allPlans.length === 0) {
+      await replyS(session, phone, "No momento atendemos apenas pacientes *particulares*. Quer *agendar* uma consulta?");
+    } else {
+      await replyS(session, phone,
+        `Atendemos pelos seguintes planos:\n\n${allPlans.map((p) => `• *${p}*`).join("\n")}\n\nTambém atendemos particulares. Quer *agendar* uma consulta?`
+      );
+    }
+  }
+  session.step = null;
+}
+
+// Pergunta ao paciente particular qual o seu convênio, se o profissional aceitar planos.
+// Pacientes conveniados Quiro já têm o convênio definido; esse step só aparece para particulares.
+async function proceedToConvenio(session, phone) {
+  // Conveniado Quiro: pula a pergunta
+  if (session.priceProfile === "convenio") {
+    session.convenioNome = "Quiro Ferreira";
+    await proceedToProfissional(session, phone);
+    return;
+  }
+  const insurances = await getProfessionalInsurances(session.profissionalId);
+  if (insurances.length === 0) {
+    // Sem planos cadastrados: vai direto
+    await proceedToProfissional(session, phone);
+    return;
+  }
+  session.insuranceList = insurances;
+  session.step = "escolha_convenio";
+  const list = ["Particular", ...insurances].map((p, i) => `*${i + 1}.* ${p}`).join("\n");
+  await replyS(session, phone,
+    `${personal(session)}qual é o seu convênio ou forma de pagamento?\n\n${list}\n\nResponda com o *número* ou o *nome* do plano.`
+  );
+}
+
+async function handleEscolhaConvenio(session, phone, text) {
+  const insurances = session.insuranceList || [];
+  const options = ["Particular", ...insurances];
+  const n = normalize(text);
+  const plain = /^\d+$/.test(text.trim()) ? parseInt(text.trim(), 10) : NaN;
+
+  let chosen = null;
+  if (!isNaN(plain) && plain >= 1 && plain <= options.length) {
+    chosen = options[plain - 1];
+  } else {
+    chosen = options.find((o) => normalize(o).includes(n) || n.includes(normalize(o))) || null;
+  }
+
+  if (!chosen) {
+    const list = options.map((p, i) => `*${i + 1}.* ${p}`).join("\n");
+    await replyS(session, phone, `Não identifiquei. Responda com o *número* ou nome do plano:\n\n${list}`);
+    return;
+  }
+  session.convenioNome = chosen === "Particular" ? null : chosen;
+  await proceedToProfissional(session, phone);
+}
+
 async function startFlow(session, phone, text, intent) {
   switch (intent) {
     case "SAIR":
@@ -735,15 +1015,38 @@ async function startFlow(session, phone, text, intent) {
         "De nada! Fico feliz em poder ajudar. Se surgir alguma dúvida, pode me chamar a qualquer momento.",
       ]));
       break;
-    case "AGENDAR":
+    case "INFO_SERVICO":
+      await handleInfoServico(session, phone, text);
+      break;
+    case "CONSULTAR_CONVENIO":
+      await handleConsultarConvenio(session, phone, text);
+      break;
+    case "CONSULTAR_HORARIO":
+      await handleConsultarHorario(session, phone, text);
+      break;
+    case "AGENDAR": {
       session.flow = "agendar";
       session.step = "agendar_cpf";
-      await replyS(session, phone, pick([
-        "Com prazer! Para começar, preciso confirmar o seu *CPF*. Pode enviar com ou sem pontos.\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_",
-        "Claro! Me informa o seu *CPF* para eu localizar seu cadastro? Pode enviar do jeito que quiser — com ou sem pontos.\n\n_(Escreva *sair* para encerrar ou *atendente* para falar com nossa equipe a qualquer momento.)_",
-        "Ótimo! Vamos agendar sua consulta. Para isso, preciso do seu *CPF*. Pode enviar com ou sem pontos.\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_",
-      ]));
+      const fastCpf = extractCpfFromText(text);
+      if (fastCpf) {
+        // Fast-track: CPF já veio na primeira mensagem — extrai data/hora também.
+        const { ymd: fYmd, time: fTime } = parseWhen(text);
+        if (fYmd) session.pendingYmd = fYmd;
+        if (fTime) session.pendingTime = fTime;
+        await handleAgendarCpf(session, phone, fastCpf);
+      } else {
+        // Sem CPF, mas guarda data/hora se já vieram — usadas quando o CPF chegar.
+        const { ymd: fYmd, time: fTime } = parseWhen(text);
+        if (fYmd) session.pendingYmd = fYmd;
+        if (fTime) session.pendingTime = fTime;
+        await replyS(session, phone, pick([
+          "Com prazer! Para começar, preciso confirmar o seu *CPF*. Pode enviar com ou sem pontos.\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_",
+          "Claro! Me informa o seu *CPF* para eu localizar seu cadastro? Pode enviar do jeito que quiser — com ou sem pontos.\n\n_(Escreva *sair* para encerrar ou *atendente* para falar com nossa equipe a qualquer momento.)_",
+          "Ótimo! Vamos agendar sua consulta. Para isso, preciso do seu *CPF*. Pode enviar com ou sem pontos.\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_",
+        ]));
+      }
       break;
+    }
     case "REAGENDAR":
       session.flow = "reagendar";
       session.step = "reagendar_cpf";
@@ -791,6 +1094,8 @@ async function continueFlow(session, phone, text) {
       return handleAgendarCadastroNome(session, phone, text);
     case "escolha_dia":
       return handleEscolhaDia(session, phone, text);
+    case "escolha_convenio":
+      return handleEscolhaConvenio(session, phone, text);
     case "escolha_hora":
       return handleEscolhaHora(session, phone, text);
     case "confirma_agendamento":
@@ -823,13 +1128,23 @@ async function continueFlow(session, phone, text) {
 // --- AGENDAR ---
 
 async function handleAgendarCpf(session, phone, text) {
-  const cpf = onlyDigits(text);
+  let cpf = onlyDigits(text);
+  if (cpf.length !== 11) {
+    // Tenta extrair CPF quando o paciente mandou mais coisas junto (ex.: "meu cpf é 12345678901 amanhã às 10")
+    cpf = extractCpfFromText(text) || cpf;
+  }
   if (cpf.length !== 11) {
     await replyS(session, phone, pick([
       "Esse CPF parece incompleto — são *11 números* no total. Pode reenviar, com ou sem pontos?",
       "Não consegui identificar esse CPF. São *11 dígitos* — pode verificar e tentar novamente?",
     ]));
     return;
+  }
+  // Captura data/hora da mesma mensagem para fast-track (não sobrescreve se já veio do startFlow)
+  if (!session.pendingYmd) {
+    const { ymd, time } = parseWhen(text);
+    if (ymd) session.pendingYmd = ymd;
+    if (time) session.pendingTime = time;
   }
   session.cpf = cpf;
   const patient = await identifyPatient(cpf, session.profissionalId);
@@ -844,7 +1159,7 @@ async function handleAgendarCpf(session, phone, text) {
       `Olá, ${firstName(patient.name)}! Encontrei seu cadastro.`,
       `Tudo certo, ${firstName(patient.name)}! Cadastro localizado.`,
     ]));
-    await proceedToProfissional(session, phone);
+    await proceedToConvenio(session, phone);
   } else {
     session.step = "agendar_tipo_cadastro";
     await replyS(session, phone, pick([
@@ -908,7 +1223,7 @@ async function handleAgendarCadastroNome(session, phone, text) {
     session.priceProfile = "particular";
     await audit({ phone, actor: "ai", action: "client_created", detail: { clientId: created.id }, professionalId: session.profissionalId });
   }
-  await proceedToProfissional(session, phone);
+  await proceedToConvenio(session, phone);
 }
 
 async function proceedToProfissional(session, phone) {
@@ -963,6 +1278,17 @@ async function ensureBaseService(session, phone) {
 // Pergunta abertamente o dia/horário (texto livre), com alguns dias como sugestão.
 async function proceedToDays(session, phone) {
   if (!(await ensureBaseService(session, phone))) return;
+
+  // Fast-track: se data/hora já foram extraídas de uma mensagem anterior, pula a pergunta.
+  if (session.pendingYmd) {
+    const ymd = session.pendingYmd;
+    const time = session.pendingTime || null;
+    session.pendingYmd = null;
+    session.pendingTime = null;
+    session.step = "escolha_dia";
+    await openDay(session, phone, ymd, time);
+    return;
+  }
 
   const days = await getAvailableDays(session.profissionalId, { limit: 4 });
   session.days = days; // apenas sugestões; pode estar vazio
@@ -1180,6 +1506,7 @@ async function finalizeAgendamento(session, phone, slot) {
     serviceId: session.serviceId,
     value: session.serviceValue,
     isoUTC: slot.isoUTC,
+    convenio: session.convenioNome || null,
   });
   if (!result.ok) {
     await replyS(session, phone, result.message || pick([
@@ -1434,33 +1761,67 @@ async function handleCancelarConfirma(session, phone, text) {
 // --- CONVENIO (IA) ---
 
 async function handleConvenioChat(session, phone, text) {
-  if (normalize(text).includes("contratar")) {
-    session.mode = "pending";
-    session.step = "convenio_chat";
-    const profNomeContr = await professionalDisplayName(session);
-    const profRef = profNomeContr ? firstName(profNomeContr) : "o profissional";
+  // Verifica se o profissional usa o convênio. Profissionais agenda_only (só secretária
+  // virtual de agenda) nunca recebem mensagens sobre convênio.
+  const convenioInfo = await getProfessionalConvenioInfo(session.profissionalId);
+  if (convenioInfo.professionalType === "agenda_only") {
+    session.step = null;
     await replyS(session, phone, pick([
-      `Para contratar o Convênio Quiro Ferreira, o processo é feito pelo painel: ${profRef} vai te enviar o link de cadastro pessoalmente. Você acessa, cria sua conta e o pagamento é realizado pelo próprio painel. Vou avisar ${profRef} agora.`,
-      `A contratação é bem simples. ${profRef} vai te passar o link de cadastro diretamente. Você se cadastra e efetua o pagamento pelo painel — tudo em um só lugar. Estou avisando ${profRef} agora.`,
+      "Por aqui cuido dos agendamentos de consultas. Para informações sobre convênios, fale diretamente com nossa equipe.",
+      "Esse número é exclusivo para agendamentos. Para dúvidas sobre convênio, entre em contato com nossa equipe.",
     ]));
     return;
   }
-  // Mantém o contexto da conversa entre mensagens (últimas 10 trocas, p/ controlar custo).
-  const history = Array.isArray(session.convenioHistory) ? session.convenioHistory : [];
-  history.push({ role: "user", content: text });
-  const professionalName = await professionalDisplayName(session);
-  const ai = await callAnthropic(history.slice(-10), professionalName);
-  if (ai?.usage) {
-    await recordAiUsage({ phone, professionalId: session.profissionalId, usage: ai.usage, model: ai.model });
+
+  const profNome = await professionalDisplayName(session);
+  const profFirst = profNome ? firstName(profNome) : "nosso profissional";
+  const refLink = convenioInfo.affiliateCode
+    ? `https://cartaoquiroferreira.com.br/register?ref=${convenioInfo.affiliateCode}`
+    : "https://cartaoquiroferreira.com.br/register";
+
+  const n = normalize(text);
+  let msg;
+
+  if (/contratar|quero.*convenio|assinar|me cadastrar|me inscrever|como faço para|como contrato|quero fazer parte/.test(n)) {
+    msg = pick([
+      `Para contratar o Convênio Quiro Ferreira, basta acessar o link abaixo, criar sua conta e efetuar o pagamento pelo próprio painel — rápido e simples!\n\n🔗 ${refLink}`,
+      `É bem fácil! Acesse o link de cadastro, crie sua conta e o pagamento é feito pelo painel. Tudo em um só lugar.\n\n🔗 ${refLink}`,
+    ]);
+  } else if (/quanto custa|preco|valor|mensalidade|assinatura|anuidade|custo/.test(n)) {
+    msg = `O Convênio Quiro Ferreira tem plano *anual de R$ 600,00* para o titular (pagamento único).\n\nPara cada dependente (filho, cônjuge, etc.) o valor é *R$ 100,00/ano*.\n\nQuer contratar?\n🔗 ${refLink}`;
+  } else if (/dependente|filho|filha|conjuge|esposa|marido|familiar|adicionar.*plano|incluir.*plano/.test(n)) {
+    msg = `Sim! Você pode adicionar dependentes no convênio pelo valor de *R$ 100,00 por dependente/ano*.\n\nO cadastro dos dependentes é feito pelo painel após a contratação do titular.\n\n🔗 ${refLink}`;
+  } else if (/beneficio|vantagem|o que inclui|o que tem|o que ganha|desconto|prioridade/.test(n)) {
+    msg = `Com o *Convênio Quiro Ferreira* você tem:\n\n✅ Consultas com desconto\n✅ Prioridade no agendamento\n✅ Dependentes por R$ 100/ano cada\n✅ Acesso ao painel: cartaoquiroferreira.com.br\n\nQuer contratar?\n🔗 ${refLink}`;
+  } else if (/acesso|painel|entrar|login|senha|site|portal|minha conta/.test(n)) {
+    msg = `O acesso ao painel é pelo site *cartaoquiroferreira.com.br* — login com CPF e senha cadastrada.\n\nAinda não tem cadastro?\n🔗 ${refLink}`;
+  } else {
+    // Resposta geral sobre o convênio
+    msg = `O *Convênio Quiro Ferreira* é um plano anual que garante consultas com desconto com ${profFirst} e outros profissionais da rede.\n\n💰 *Titular:* R$ 600,00/ano\n👨‍👩‍👧 *Dependente:* R$ 100,00/ano\n✅ Prioridade no agendamento\n✅ Acesso ao painel: cartaoquiroferreira.com.br\n\nPara contratar ou saber mais:\n🔗 ${refLink}\n\nTem alguma dúvida específica? É só perguntar!`;
   }
-  const fallback = !ai?.text;
-  const reply = ai?.text || humanFallbackText();
-  if (fallback) session.mode = "pending";
-  history.push({ role: "assistant", content: reply });
-  session.convenioHistory = history.slice(-10);
-  await replyS(session, phone, reply);
-  // Permanece em convenio_chat para continuar a conversa.
-  session.step = "convenio_chat";
+
+  await replyS(session, phone, msg);
+  session.step = null;
+
+  /* ═══════════════════════════════════════════════════════════════
+   * INTEGRAÇÃO IA — DESATIVADA NA FASE 1 (descomentar quando decidido)
+   * ═══════════════════════════════════════════════════════════════
+   * // Mantém o contexto da conversa entre mensagens (últimas 10 trocas).
+   * const history = Array.isArray(session.convenioHistory) ? session.convenioHistory : [];
+   * history.push({ role: "user", content: text });
+   * const professionalName = await professionalDisplayName(session);
+   * const ai = await callAnthropic(history.slice(-10), professionalName);
+   * if (ai?.usage) {
+   *   await recordAiUsage({ phone, professionalId: session.profissionalId, usage: ai.usage, model: ai.model });
+   * }
+   * const fallback = !ai?.text;
+   * const reply = ai?.text || humanFallbackText();
+   * if (fallback) session.mode = "pending";
+   * history.push({ role: "assistant", content: reply });
+   * session.convenioHistory = history.slice(-10);
+   * await replyS(session, phone, reply);
+   * session.step = "convenio_chat"; // mantém multi-turn com IA
+   * ═══════════════════════════════════════════════════════════════ */
 }
 
 async function handleConvenioCpf(session, phone, text) {

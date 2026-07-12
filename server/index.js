@@ -1664,6 +1664,19 @@ const initializeDatabase = async () => {
       CREATE INDEX IF NOT EXISTS idx_whatsapp_audit_professional ON whatsapp_audit_log(professional_id);
     `);
 
+    // Planos/convênios aceitos por cada profissional (para o bot responder e o agendamento perguntar).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS professional_insurances (
+        id SERIAL PRIMARY KEY,
+        professional_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_professional_insurances_prof
+        ON professional_insurances(professional_id);
+    `);
+
     console.log("✅ Database tables initialized successfully");
   } catch (error) {
     console.error("❌ Error initializing database:", error);
@@ -3553,17 +3566,7 @@ app.get(
         });
       });
 
-      // ✅ Ajusta o fuso horário para America/Sao_Paulo
-      const consultationsWithBrazilTZ = result.rows.map((row) => ({
-        ...row,
-        date: row.date
-          ? new Date(row.date).toLocaleString("sv-SE", {
-              timeZone: "America/Sao_Paulo",
-            })
-          : null,
-      }));
-
-      res.json(consultationsWithBrazilTZ);
+      res.json(result.rows);
     } catch (error) {
       console.error(
         "❌ [AGENDA-QUERY] Error fetching consultations for agenda:",
@@ -7324,6 +7327,74 @@ app.delete(
     } catch (error) {
       console.error("❌ Error deleting service:", error);
       res.status(500).json({ message: "Erro ao excluir serviço" });
+    }
+  }
+);
+
+// ===== PROFESSIONAL INSURANCES ROUTES =====
+
+function insuranceProfId(req) {
+  return req.user?.currentRole === "professional" || req.user?.currentRole === "secretaria"
+    ? req.user.professionalScopeId
+    : req.user?.id;
+}
+
+app.get(
+  "/api/professional/insurances",
+  authenticate,
+  authorize(["professional", "secretaria", "admin"]),
+  async (req, res) => {
+    try {
+      const profId = insuranceProfId(req);
+      const r = await pool.query(
+        `SELECT id, name, is_active FROM professional_insurances
+          WHERE professional_id = $1 ORDER BY name ASC`,
+        [profId]
+      );
+      res.json(r.rows);
+    } catch (e) {
+      res.status(500).json({ message: "Erro ao buscar convênios" });
+    }
+  }
+);
+
+app.post(
+  "/api/professional/insurances",
+  authenticate,
+  authorize(["professional", "secretaria", "admin"]),
+  async (req, res) => {
+    try {
+      const profId = insuranceProfId(req);
+      const { name } = req.body;
+      if (!name || !String(name).trim()) {
+        return res.status(400).json({ message: "Nome do convênio é obrigatório" });
+      }
+      const r = await pool.query(
+        `INSERT INTO professional_insurances (professional_id, name)
+         VALUES ($1, $2) RETURNING id, name, is_active`,
+        [profId, String(name).trim()]
+      );
+      res.status(201).json(r.rows[0]);
+    } catch (e) {
+      res.status(500).json({ message: "Erro ao adicionar convênio" });
+    }
+  }
+);
+
+app.delete(
+  "/api/professional/insurances/:id",
+  authenticate,
+  authorize(["professional", "secretaria", "admin"]),
+  async (req, res) => {
+    try {
+      const profId = insuranceProfId(req);
+      await pool.query(
+        `DELETE FROM professional_insurances WHERE id = $1 AND professional_id = $2`,
+        [req.params.id, profId]
+      );
+      res.json({ message: "Convênio removido" });
+    } catch (e) {
+      res.status(500).json({ message: "Erro ao remover convênio" });
     }
   }
 );
