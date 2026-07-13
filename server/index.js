@@ -131,6 +131,7 @@ const PORT = process.env.PORT || 3001;
 // Allowed origins for CORS
 const allowedOrigins = [
   "http://localhost:5173",
+  "http://localhost:5174",
   "http://localhost:3000",
   "https://cartaoquiroferreira.com.br",
   "https://www.cartaoquiroferreira.com.br",
@@ -947,7 +948,26 @@ const initializeDatabase = async () => {
         ) THEN
           ALTER TABLE users ADD COLUMN linked_professional_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
         END IF;
+
+        -- Uma secretária pode ser vinculada a vários profissionais. A lista
+        -- fica neste array; linked_professional_id (legado) é mantido em sincronia
+        -- com o PRIMEIRO elemento para compatibilidade com o código existente.
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'linked_professional_ids'
+        ) THEN
+          ALTER TABLE users ADD COLUMN linked_professional_ids INTEGER[];
+        END IF;
       END $$;
+    `);
+
+    // Backfill: secretárias que só têm o vínculo legado (coluna singular)
+    // recebem o array com esse único profissional.
+    await pool.query(`
+      UPDATE users
+      SET linked_professional_ids = ARRAY[linked_professional_id]
+      WHERE linked_professional_id IS NOT NULL
+        AND (linked_professional_ids IS NULL OR array_length(linked_professional_ids, 1) IS NULL)
     `);
 
     await pool.query(`
@@ -1696,6 +1716,53 @@ function buildProfessionalSpecialtyPayload(userRow) {
   };
 }
 
+// Lista de profissionais vinculados a uma secretária: prioriza o array
+// linked_professional_ids e cai para o vínculo legado (singular). Retorna
+// ids únicos e numéricos (sem zeros/nulos).
+function resolveSecretaryLinkedIds(user) {
+  const raw =
+    Array.isArray(user?.linked_professional_ids) &&
+    user.linked_professional_ids.length > 0
+      ? user.linked_professional_ids
+      : user?.linked_professional_id != null
+      ? [user.linked_professional_id]
+      : [];
+  return [...new Set(raw.map(Number).filter(Boolean))];
+}
+
+// Valida e normaliza os profissionais vinculados a uma secretária vindos do
+// corpo da requisição (admin). Aceita o array linked_professional_ids e/ou o
+// campo legado linked_professional_id. Retorna { ok, ids, message }.
+async function validateSecretaryLinks(body) {
+  const raw = [];
+  if (Array.isArray(body?.linked_professional_ids)) {
+    raw.push(...body.linked_professional_ids);
+  }
+  if (body?.linked_professional_id != null && body.linked_professional_id !== "") {
+    raw.push(body.linked_professional_id);
+  }
+  const ids = [...new Set(raw.map(Number).filter((n) => n && !Number.isNaN(n)))];
+  if (ids.length === 0) {
+    return {
+      ok: false,
+      message: "Secretária deve ter pelo menos um profissional vinculado",
+    };
+  }
+  const check = await pool.query(
+    `SELECT id FROM users WHERE id = ANY($1::int[]) AND 'professional' = ANY(roles)`,
+    [ids]
+  );
+  const validIds = new Set(check.rows.map((r) => r.id));
+  const invalid = ids.filter((id) => !validIds.has(id));
+  if (invalid.length > 0) {
+    return {
+      ok: false,
+      message: `Profissional(is) vinculado(s) inválido(s) ou inexistente(s): ${invalid.join(", ")}`,
+    };
+  }
+  return { ok: true, ids };
+}
+
 // Utility functions
 const generateToken = (user) => {
   return jwt.sign(
@@ -1703,6 +1770,8 @@ const generateToken = (user) => {
       id: user.id,
       currentRole: user.currentRole,
       roles: user.roles,
+      // Profissional ativo (secretária com múltiplos vínculos). null caso contrário.
+      professionalScopeId: user.professionalScopeId ?? null,
     },
     process.env.JWT_SECRET || "your-secret-key",
     { expiresIn: "24h" }
@@ -1719,6 +1788,8 @@ const generateAccessToken = (user) => {
       id: user.id,
       currentRole: user.currentRole,
       roles: user.roles,
+      // Profissional ativo (secretária com múltiplos vínculos). null caso contrário.
+      professionalScopeId: user.professionalScopeId ?? null,
     },
     process.env.JWT_SECRET || "your-secret-key",
     { expiresIn: "1h" }
@@ -2447,7 +2518,7 @@ app.get("/api/auth/me", authenticate, async (req, res) => {
     const userResult = await pool.query(
       `SELECT id, name, cpf, email, roles, subscription_status, subscription_expiry, professional_type,
               primary_specialty_code, onboarding_status, onboarding_completed_at,
-              linked_professional_id
+              linked_professional_id, linked_professional_ids
        FROM users
        WHERE id = $1`,
       [req.user.id]
@@ -2458,13 +2529,28 @@ app.get("/api/auth/me", authenticate, async (req, res) => {
     }
 
     const user = userResult.rows[0];
-    const specialtyPayload =
-      req.user.currentRole === "secretaria"
-        ? {
-            primarySpecialtyCode: req.user.primary_specialty_code || null,
-            onboardingStatus: req.user.onboarding_status,
-          }
-        : buildProfessionalSpecialtyPayload(user);
+    const isSecretaria = req.user.currentRole === "secretaria";
+    const specialtyPayload = isSecretaria
+      ? {
+          primarySpecialtyCode: req.user.primary_specialty_code || null,
+          onboardingStatus: req.user.onboarding_status,
+        }
+      : buildProfessionalSpecialtyPayload(user);
+
+    // Para a secretária, o "profissional ativo" é o escopo resolvido no auth
+    // (req.user.professionalScopeId). Também devolvemos a lista de vínculos com
+    // nomes para popular o seletor de troca de profissional no front.
+    const linkedProfessionalIds = isSecretaria
+      ? req.user.linked_professional_ids || []
+      : [];
+    let linkedProfessionals = [];
+    if (isSecretaria && linkedProfessionalIds.length > 0) {
+      const profRes = await pool.query(
+        `SELECT id, name FROM users WHERE id = ANY($1::int[]) ORDER BY name`,
+        [linkedProfessionalIds]
+      );
+      linkedProfessionals = profRes.rows;
+    }
 
     const userData = {
       id: user.id,
@@ -2478,7 +2564,11 @@ app.get("/api/auth/me", authenticate, async (req, res) => {
       professionalType: normalizeProfessionalType(req.user.professional_type),
       primarySpecialtyCode: specialtyPayload.primarySpecialtyCode,
       onboardingStatus: specialtyPayload.onboardingStatus,
-      linkedProfessionalId: user.linked_professional_id || null,
+      linkedProfessionalId: isSecretaria
+        ? req.user.professionalScopeId || null
+        : user.linked_professional_id || null,
+      linkedProfessionalIds,
+      linkedProfessionals,
     };
 
     console.log(
@@ -2549,8 +2639,9 @@ app.post("/api/auth/select-role", async (req, res) => {
     const userResult = await pool.query(
       `
       SELECT id, name, roles, subscription_status, subscription_expiry, professional_type,
-             primary_specialty_code, onboarding_status, linked_professional_id
-      FROM users 
+             primary_specialty_code, onboarding_status,
+             linked_professional_id, linked_professional_ids
+      FROM users
       WHERE id = $1
     `,
       [userId]
@@ -2569,17 +2660,21 @@ app.post("/api/auth/select-role", async (req, res) => {
         .json({ message: "Role não autorizada para este usuário" });
     }
 
+    // Profissional ativo escolhido no login da secretária (primeiro da lista).
+    let activeProfessionalId = null;
+    let secretaryLinkedIds = [];
     if (role === "secretaria") {
-      const linkId = user.linked_professional_id;
-      if (!linkId) {
+      secretaryLinkedIds = resolveSecretaryLinkedIds(user);
+      if (secretaryLinkedIds.length === 0) {
         return res.status(400).json({
           message:
             "Usuário secretária precisa de profissional vinculado (linked_professional_id)",
         });
       }
+      activeProfessionalId = secretaryLinkedIds[0];
       const proCheck = await pool.query(
         `SELECT id, roles FROM users WHERE id = $1`,
-        [linkId]
+        [activeProfessionalId]
       );
       if (
         proCheck.rows.length === 0 ||
@@ -2593,10 +2688,10 @@ app.post("/api/auth/select-role", async (req, res) => {
 
     let specialtyPayload = buildProfessionalSpecialtyPayload(user);
     let professionalTypeForToken = user.professional_type;
-    if (role === "secretaria" && user.linked_professional_id) {
+    if (role === "secretaria" && activeProfessionalId) {
       const proRowResult = await pool.query(
         `SELECT primary_specialty_code, professional_type FROM users WHERE id = $1`,
-        [user.linked_professional_id]
+        [activeProfessionalId]
       );
       if (proRowResult.rows.length > 0) {
         const pr = proRowResult.rows[0];
@@ -2606,6 +2701,17 @@ app.post("/api/auth/select-role", async (req, res) => {
           primary_specialty_code: pr.primary_specialty_code,
         });
       }
+    }
+
+    // Lista de profissionais (com nomes) para o seletor no front, já na resposta
+    // do login — evita esperar o /api/auth/me para popular o seletor.
+    let linkedProfessionals = [];
+    if (role === "secretaria" && secretaryLinkedIds.length > 0) {
+      const profRes = await pool.query(
+        `SELECT id, name FROM users WHERE id = ANY($1::int[]) ORDER BY name`,
+        [secretaryLinkedIds]
+      );
+      linkedProfessionals = profRes.rows;
     }
 
     // Generate tokens with selected role
@@ -2619,7 +2725,10 @@ app.post("/api/auth/select-role", async (req, res) => {
       professionalType: normalizeProfessionalType(professionalTypeForToken),
       primarySpecialtyCode: specialtyPayload.primarySpecialtyCode,
       onboardingStatus: specialtyPayload.onboardingStatus,
-      linkedProfessionalId: user.linked_professional_id ?? null,
+      professionalScopeId: activeProfessionalId,
+      linkedProfessionalId: activeProfessionalId ?? user.linked_professional_id ?? null,
+      linkedProfessionalIds: secretaryLinkedIds,
+      linkedProfessionals,
     };
 
     const accessToken = generateAccessToken(userData);
@@ -2707,6 +2816,88 @@ app.post(
       });
     } catch (error) {
       console.error("❌ Role switch error:", error);
+      res.status(500).json({ message: "Erro interno do servidor" });
+    }
+  }
+);
+
+// Troca o profissional ATIVO de uma secretária vinculada a vários profissionais.
+// Reaproveita o padrão do switch-role: valida que o alvo está na lista permitida
+// e re-emite o token com o novo professionalScopeId (todo o escopo do painel
+// passa a ser desse profissional).
+app.post(
+  "/api/auth/switch-professional",
+  authenticate,
+  authorize(["secretaria"]),
+  async (req, res) => {
+    try {
+      const professionalId = Number(req.body?.professionalId);
+      if (!professionalId || Number.isNaN(professionalId)) {
+        return res.status(400).json({ message: "professionalId é obrigatório" });
+      }
+
+      const allowed = Array.isArray(req.user.linked_professional_ids)
+        ? req.user.linked_professional_ids
+        : [];
+      if (!allowed.includes(professionalId)) {
+        return res.status(403).json({
+          message: "Profissional não está vinculado a esta secretária",
+          code: "PROFESSIONAL_NOT_LINKED",
+        });
+      }
+
+      // Especialidade/tipo do profissional ativo, para o painel refletir o certo.
+      const proRow = await pool.query(
+        `SELECT primary_specialty_code, professional_type FROM users WHERE id = $1`,
+        [professionalId]
+      );
+      const specialtyPayload = buildProfessionalSpecialtyPayload({
+        roles: ["professional"],
+        primary_specialty_code: proRow.rows[0]?.primary_specialty_code || null,
+      });
+
+      const userData = {
+        ...req.user,
+        professionalScopeId: professionalId,
+        professional_type: proRow.rows[0]?.professional_type ?? req.user.professional_type,
+        primary_specialty_code: specialtyPayload.primarySpecialtyCode,
+        onboarding_status: specialtyPayload.onboardingStatus,
+        linked_professional_id: professionalId,
+      };
+
+      const token = generateToken(userData);
+
+      res.cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 24 * 60 * 60 * 1000,
+      });
+
+      const {
+        professional_type,
+        primary_specialty_code,
+        onboarding_status,
+        linked_professional_id,
+        linked_professional_ids,
+        ...rest
+      } = userData;
+
+      res.json({
+        message: "Profissional ativo alterado com sucesso",
+        token,
+        user: {
+          ...rest,
+          professionalType: normalizeProfessionalType(professional_type),
+          primarySpecialtyCode: primary_specialty_code || null,
+          onboardingStatus: onboarding_status ?? null,
+          linkedProfessionalId: professionalId,
+          linkedProfessionalIds: linked_professional_ids || [],
+        },
+      });
+    } catch (error) {
+      console.error("❌ Switch professional error:", error);
       res.status(500).json({ message: "Erro interno do servidor" });
     }
   }
@@ -2880,8 +3071,8 @@ app.get("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
         id, name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, roles, subscription_status,
         subscription_expiry, photo_url, category_name, percentage, crm, professional_type, created_at,
-        linked_professional_id
-      FROM users 
+        linked_professional_id, linked_professional_ids
+      FROM users
       ORDER BY created_at DESC
     `);
 
@@ -2918,8 +3109,8 @@ app.get("/api/users/:id", authenticate, async (req, res) => {
         id, name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, roles, subscription_status,
         subscription_expiry, photo_url, category_name, percentage, crm, professional_type, created_at,
-        linked_professional_id
-      FROM users 
+        linked_professional_id, linked_professional_ids
+      FROM users
       WHERE id = $1
     `,
       [id]
@@ -3003,6 +3194,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
       crm,
       professional_type,
       linked_professional_id,
+      linked_professional_ids,
     } = req.body;
 
     // Validate required fields
@@ -3059,37 +3251,24 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
     }
 
     let finalLinkedProfessionalId = null;
+    let finalLinkedProfessionalIds = null;
     if (roles.includes("secretaria")) {
-      const lid =
-        linked_professional_id != null && linked_professional_id !== ""
-          ? Number(linked_professional_id)
-          : null;
-      if (!lid || Number.isNaN(lid)) {
-        return res.status(400).json({
-          message:
-            "Secretária deve ter um profissional vinculado (linked_professional_id)",
-        });
+      const check = await validateSecretaryLinks({
+        linked_professional_ids,
+        linked_professional_id,
+      });
+      if (!check.ok) {
+        return res.status(400).json({ message: check.message });
       }
-      const proCheck = await pool.query(
-        `SELECT id, roles FROM users WHERE id = $1`,
-        [lid]
-      );
-      if (
-        proCheck.rows.length === 0 ||
-        !proCheck.rows[0].roles?.includes("professional")
-      ) {
-        return res.status(400).json({
-          message: "Profissional vinculado inválido ou inexistente",
-        });
-      }
-      finalLinkedProfessionalId = lid;
+      finalLinkedProfessionalIds = check.ids;
+      finalLinkedProfessionalId = check.ids[0]; // compat: primeiro da lista
     } else if (
-      linked_professional_id != null &&
-      linked_professional_id !== ""
+      (linked_professional_id != null && linked_professional_id !== "") ||
+      (Array.isArray(linked_professional_ids) && linked_professional_ids.length > 0)
     ) {
       return res.status(400).json({
         message:
-          "linked_professional_id só é permitido para usuários com role secretaria",
+          "Vínculo de profissional só é permitido para usuários com role secretaria",
       });
     }
 
@@ -3105,9 +3284,10 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
         name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, password, roles,
         subscription_status, subscription_expiry, category_name,
-        percentage, crm, professional_type, linked_professional_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
-      RETURNING id, name, cpf, email, roles, linked_professional_id
+        percentage, crm, professional_type, linked_professional_id,
+        linked_professional_ids
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+      RETURNING id, name, cpf, email, roles, linked_professional_id, linked_professional_ids
     `,
       [
         toTitleCase(name),
@@ -3130,6 +3310,7 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
         crm?.trim() || null,
         professional_type || "convenio",
         finalLinkedProfessionalId,
+        finalLinkedProfessionalIds,
       ]
     );
 
@@ -3180,6 +3361,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
       newPassword,
       professional_type,
       linked_professional_id,
+      linked_professional_ids,
     } = req.body;
 
     const targetUserId = Number.parseInt(id, 10);
@@ -3266,44 +3448,39 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
         updateData.roles = roles;
         if (!roles.includes("secretaria")) {
           updateData.linked_professional_id = null;
+          updateData.linked_professional_ids = null;
         }
       }
-      if (linked_professional_id !== undefined) {
-        const effRoles = updateData.roles || [];
+      const linkFieldsProvided =
+        linked_professional_id !== undefined ||
+        linked_professional_ids !== undefined;
+      const effRoles = updateData.roles || currentUser.roles || [];
+      if (linkFieldsProvided) {
         if (!effRoles.includes("secretaria")) {
           updateData.linked_professional_id = null;
+          updateData.linked_professional_ids = null;
         } else {
-          const lid =
-            linked_professional_id != null && linked_professional_id !== ""
-              ? Number(linked_professional_id)
-              : null;
-          if (!lid || Number.isNaN(lid)) {
-            return res.status(400).json({
-              message:
-                "Secretária deve ter um profissional vinculado (linked_professional_id)",
-            });
+          const check = await validateSecretaryLinks({
+            linked_professional_ids,
+            linked_professional_id,
+          });
+          if (!check.ok) {
+            return res.status(400).json({ message: check.message });
           }
-          const proCheck = await pool.query(
-            `SELECT id, roles FROM users WHERE id = $1`,
-            [lid]
-          );
-          if (
-            proCheck.rows.length === 0 ||
-            !proCheck.rows[0].roles?.includes("professional")
-          ) {
-            return res.status(400).json({
-              message: "Profissional vinculado inválido ou inexistente",
-            });
-          }
-          updateData.linked_professional_id = lid;
+          updateData.linked_professional_ids = check.ids;
+          updateData.linked_professional_id = check.ids[0]; // compat
         }
       } else if (roles !== undefined && roles.includes("secretaria")) {
-        if (!updateData.linked_professional_id) {
+        // Virou secretária sem informar vínculos: exige que já existam.
+        const existing = resolveSecretaryLinkedIds(currentUser);
+        if (existing.length === 0) {
           return res.status(400).json({
             message:
-              "Usuário com role secretaria precisa de linked_professional_id",
+              "Usuário com role secretaria precisa de profissional(is) vinculado(s)",
           });
         }
+        updateData.linked_professional_ids = existing;
+        updateData.linked_professional_id = existing[0];
       }
       if (subscription_status !== undefined)
         updateData.subscription_status = subscription_status;
@@ -3329,12 +3506,13 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
         name = $1, email = $2, phone = $3, birth_date = $4, address = $5,
         address_number = $6, address_complement = $7, neighborhood = $8,
         city = $9, state = $10, password = $11, roles = $12, subscription_status = $13,
-        subscription_expiry = $14, category_name = $15, percentage = $16, crm = $17, 
-        professional_type = $18, linked_professional_id = $19, updated_at = $20
+        subscription_expiry = $14, category_name = $15, percentage = $16, crm = $17,
+        professional_type = $18, linked_professional_id = $19, updated_at = $20,
+        linked_professional_ids = $22
       WHERE id = $21
       RETURNING id, name, cpf, email, phone, birth_date, address, address_number,
-        address_complement, neighborhood, city, state, roles, subscription_status, 
-        subscription_expiry, photo_url, category_name, percentage, crm, professional_type, linked_professional_id, created_at, updated_at
+        address_complement, neighborhood, city, state, roles, subscription_status,
+        subscription_expiry, photo_url, category_name, percentage, crm, professional_type, linked_professional_id, linked_professional_ids, created_at, updated_at
     `,
       [
         updateData.name,
@@ -3358,6 +3536,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
         updateData.linked_professional_id,
         updateData.updated_at,
         id,
+        updateData.linked_professional_ids ?? null,
       ]
     );
 

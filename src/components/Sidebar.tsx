@@ -10,8 +10,30 @@ type SidebarProps = {
 };
 
 const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
-  const { user } = useAuth();
+  const { user, switchProfessional } = useAuth();
   const pendingCount = usePendingCount();
+  const [switchingPro, setSwitchingPro] = React.useState(false);
+
+  const linkedProfessionals = user?.linkedProfessionals || [];
+  const showProfessionalSwitcher =
+    user?.currentRole === 'secretaria' && linkedProfessionals.length > 1;
+
+  const handleProfessionalChange = async (
+    e: React.ChangeEvent<HTMLSelectElement>
+  ) => {
+    const id = Number(e.target.value);
+    if (!id || id === user?.linkedProfessionalId) return;
+    try {
+      setSwitchingPro(true);
+      await switchProfessional(id);
+      // Recarrega para que todas as telas com escopo do profissional refaçam
+      // suas requisições já com o novo token/profissional ativo.
+      window.location.reload();
+    } catch (err) {
+      console.error('Erro ao trocar profissional:', err);
+      setSwitchingPro(false);
+    }
+  };
 
   // Navigation links based on user current role. Cada item tem uma cor própria
   // de ícone (decisão do dono do convênio: navbar mais colorida).
@@ -71,6 +93,33 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
   return (
     <aside className="h-full">
       <div className="p-4">
+        {showProfessionalSwitcher && (
+          <div className="mb-4 rounded-md border border-indigo-100 bg-indigo-50 px-3 py-2">
+            <label
+              htmlFor="professional-switcher"
+              className="mb-1 flex items-center gap-1 text-xs font-medium text-indigo-800"
+            >
+              <UserCheck size={14} className="text-indigo-600" />
+              Profissional ativo
+            </label>
+            <select
+              id="professional-switcher"
+              value={user?.linkedProfessionalId ?? ''}
+              onChange={handleProfessionalChange}
+              disabled={switchingPro}
+              className="w-full rounded-md border border-indigo-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring focus:ring-indigo-200 disabled:opacity-60"
+            >
+              {linkedProfessionals.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {switchingPro && (
+              <p className="mt-1 text-xs text-indigo-600">Trocando…</p>
+            )}
+          </div>
+        )}
         {(user?.currentRole === 'professional' || user?.currentRole === 'secretaria') &&
           user.primarySpecialtyCode &&
           user.onboardingStatus === 'completed' && (

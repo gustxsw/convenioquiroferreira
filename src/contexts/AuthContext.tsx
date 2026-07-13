@@ -15,8 +15,12 @@ type User = {
   professionalType?: ProfessionalType;
   primarySpecialtyCode?: string | null;
   onboardingStatus?: "pending" | "completed" | null;
-  /** Profissional vinculado quando currentRole é secretaria */
+  /** Profissional ATIVO quando currentRole é secretaria */
   linkedProfessionalId?: number | null;
+  /** Todos os profissionais que a secretária pode operar */
+  linkedProfessionalIds?: number[];
+  /** Lista {id, name} dos profissionais vinculados, para o seletor */
+  linkedProfessionals?: { id: number; name: string }[];
 };
 
 type AuthContextType = {
@@ -37,6 +41,7 @@ type AuthContextType = {
     preAuthToken: string
   ) => Promise<void>;
   switchRole: (role: string) => Promise<void>;
+  switchProfessional: (professionalId: number) => Promise<void>;
   refreshSession: () => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -457,6 +462,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  const switchProfessional = async (professionalId: number) => {
+    try {
+      setIsLoading(true);
+      invalidatePendingAuthChecks();
+
+      const apiUrl = getApiUrl();
+      const token = ls.get("token");
+
+      const response = await fetch(`${apiUrl}/api/auth/switch-professional`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "Cache-Control": "no-store",
+        },
+        body: JSON.stringify({ professionalId }),
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Erro ao trocar profissional");
+      }
+
+      const data = await response.json();
+
+      ls.set("token", data.token || data.accessToken);
+      if (data.refreshToken) {
+        ls.set("refreshToken", data.refreshToken);
+      }
+      // Preserva a lista de profissionais/nomes (o endpoint devolve ids, mas
+      // pode não reenviar os nomes) para o seletor continuar populado.
+      const mergedUser = {
+        ...(user || {}),
+        ...data.user,
+        linkedProfessionals:
+          data.user?.linkedProfessionals ?? user?.linkedProfessionals ?? [],
+      };
+      ls.set("user", JSON.stringify(mergedUser));
+      setUser(mergedUser);
+    } catch (error) {
+      logger.error("Switch professional error");
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const logout = async () => {
     try {
       setIsLoading(true);
@@ -511,6 +564,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     login,
     selectRole,
     switchRole,
+    switchProfessional,
     refreshSession,
     logout,
   };

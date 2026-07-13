@@ -77,7 +77,7 @@ export const authenticate = async (req, res, next) => {
     const result = await pool.query(
       `SELECT id, name, cpf, roles, professional_type,
               primary_specialty_code, onboarding_status,
-              linked_professional_id
+              linked_professional_id, linked_professional_ids
        FROM users WHERE id = $1`,
       [decoded.id]
     );
@@ -96,6 +96,8 @@ export const authenticate = async (req, res, next) => {
     let professionalTypeForAccess = normalizeProfessionalType(user.professional_type);
     let primarySpecialtyForAccess = user.primary_specialty_code || null;
     let onboardingResolved = null;
+    // Conjunto de profissionais que a secretária pode operar (multi-vínculo).
+    let linkedProfessionalIds = [];
 
     if (currentRole === "secretaria") {
       if (!roles.includes("secretaria")) {
@@ -104,17 +106,35 @@ export const authenticate = async (req, res, next) => {
           code: "ROLE_TOKEN_MISMATCH",
         });
       }
-      const linkId = user.linked_professional_id;
-      if (!linkId) {
+      // Lista permitida: prioriza o array; cai para o vínculo legado (singular).
+      const rawIds =
+        Array.isArray(user.linked_professional_ids) &&
+        user.linked_professional_ids.length > 0
+          ? user.linked_professional_ids
+          : user.linked_professional_id != null
+          ? [user.linked_professional_id]
+          : [];
+      linkedProfessionalIds = [...new Set(rawIds.map(Number).filter(Boolean))];
+
+      if (linkedProfessionalIds.length === 0) {
         return res.status(403).json({
           message: "Secretária sem profissional vinculado. Contate o administrador.",
           code: "SECRETARY_NO_LINK",
         });
       }
+
+      // Profissional ativo: o do token se estiver na lista permitida; senão o
+      // primeiro. Isso impede a secretária de forçar um profissional fora da lista.
+      const requested = decoded.professionalScopeId != null ? Number(decoded.professionalScopeId) : null;
+      const activeId =
+        requested != null && linkedProfessionalIds.includes(requested)
+          ? requested
+          : linkedProfessionalIds[0];
+
       const proRes = await pool.query(
         `SELECT id, professional_type, primary_specialty_code, roles
          FROM users WHERE id = $1`,
-        [linkId]
+        [activeId]
       );
       if (
         proRes.rows.length === 0 ||
@@ -151,7 +171,12 @@ export const authenticate = async (req, res, next) => {
       primary_specialty_code: primarySpecialtyForAccess,
       onboarding_status: onboardingResolved,
       professionalScopeId,
-      linked_professional_id: user.linked_professional_id || null,
+      // Para secretária: ativo = escopo resolvido; lista = todos os vínculos.
+      linked_professional_id:
+        currentRole === "secretaria"
+          ? professionalScopeId
+          : user.linked_professional_id || null,
+      linked_professional_ids: linkedProfessionalIds,
     };
 
     next();

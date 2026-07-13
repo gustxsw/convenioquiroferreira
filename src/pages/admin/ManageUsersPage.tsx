@@ -45,6 +45,7 @@ type UserData = {
   crm: string;
   professional_type: string;
   linked_professional_id?: number | null;
+  linked_professional_ids?: number[] | null;
 };
 
 const ManageUsersPage: React.FC = () => {
@@ -85,7 +86,7 @@ const ManageUsersPage: React.FC = () => {
     percentage: 50,
     crm: "",
     professional_type: "convenio",
-    linked_professional_id: "" as number | "",
+    linked_professional_ids: [] as number[],
   });
 
   // Password visibility
@@ -206,7 +207,7 @@ const ManageUsersPage: React.FC = () => {
       percentage: 50,
       crm: "",
       professional_type: "convenio",
-      linked_professional_id: "",
+      linked_professional_ids: [],
     });
     setSelectedUser(null);
     setIsModalOpen(true);
@@ -261,7 +262,12 @@ const ManageUsersPage: React.FC = () => {
       percentage: user.percentage || 50,
       crm: user.crm || "",
       professional_type: user.professional_type || "convenio",
-      linked_professional_id: user.linked_professional_id ?? "",
+      linked_professional_ids:
+        user.linked_professional_ids && user.linked_professional_ids.length > 0
+          ? user.linked_professional_ids
+          : user.linked_professional_id != null
+          ? [user.linked_professional_id]
+          : [],
     });
     setSelectedUser(user);
     setIsModalOpen(true);
@@ -309,13 +315,28 @@ const ManageUsersPage: React.FC = () => {
         return {
           ...prev,
           roles: nextRoles,
-          linked_professional_id:
-            role === "secretaria" && !target.checked ? "" : prev.linked_professional_id,
+          linked_professional_ids:
+            role === "secretaria" && !target.checked
+              ? []
+              : prev.linked_professional_ids,
         };
       });
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
     }
+  };
+
+  // Marca/desmarca um profissional na lista de vínculos da secretária.
+  const handleProfessionalLinkToggle = (professionalId: number) => {
+    setFormData((prev) => {
+      const set = new Set(prev.linked_professional_ids);
+      if (set.has(professionalId)) {
+        set.delete(professionalId);
+      } else {
+        set.add(professionalId);
+      }
+      return { ...prev, linked_professional_ids: Array.from(set) };
+    });
   };
 
   const formatCpf = (value: string) => {
@@ -365,12 +386,8 @@ const ManageUsersPage: React.FC = () => {
 
       // Validate secretary link
       if (formData.roles.includes("secretaria")) {
-        const lid =
-          formData.linked_professional_id === ""
-            ? NaN
-            : Number(formData.linked_professional_id);
-        if (!lid || Number.isNaN(lid)) {
-          setError("Secretária deve ter um profissional vinculado");
+        if (formData.linked_professional_ids.length === 0) {
+          setError("Secretária deve ter pelo menos um profissional vinculado");
           return;
         }
       }
@@ -394,9 +411,9 @@ const ManageUsersPage: React.FC = () => {
 
       const payload: Record<string, unknown> = { ...formData };
       if (formData.roles.includes("secretaria")) {
-        payload.linked_professional_id = Number(formData.linked_professional_id);
+        payload.linked_professional_ids = formData.linked_professional_ids;
       } else {
-        delete payload.linked_professional_id;
+        delete payload.linked_professional_ids;
       }
 
       const response = await fetchWithAuth(url, {
@@ -1130,28 +1147,51 @@ const ManageUsersPage: React.FC = () => {
                     {formData.roles.includes("secretaria") && (
                       <div className="ml-8 pl-4 border-l-2 border-indigo-200 py-2">
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Profissional vinculado *
+                          Profissionais vinculados *
                         </label>
-                        <select
-                          name="linked_professional_id"
-                          value={
-                            formData.linked_professional_id === ""
-                              ? ""
-                              : String(formData.linked_professional_id)
-                          }
-                          onChange={handleInputChange}
-                          className="input w-full max-w-md"
-                          required
-                        >
-                          <option value="">Selecione o profissional...</option>
+                        <p className="text-xs text-gray-500 mb-2">
+                          Marque um ou mais profissionais. A secretária poderá
+                          alternar entre eles no painel.
+                        </p>
+                        <div className="max-h-48 overflow-y-auto rounded-md border border-gray-200 p-2 max-w-md">
                           {users
                             .filter((u) => u.roles?.includes("professional"))
                             .map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name} (ID {p.id})
-                              </option>
+                              <label
+                                key={p.id}
+                                className="flex items-center gap-2 py-1 text-sm text-gray-700"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={formData.linked_professional_ids.includes(
+                                    p.id
+                                  )}
+                                  onChange={() =>
+                                    handleProfessionalLinkToggle(p.id)
+                                  }
+                                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-200"
+                                />
+                                <span>
+                                  {p.name}{" "}
+                                  <span className="text-gray-400">
+                                    (ID {p.id})
+                                  </span>
+                                </span>
+                              </label>
                             ))}
-                        </select>
+                          {users.filter((u) => u.roles?.includes("professional"))
+                            .length === 0 && (
+                            <p className="text-xs text-gray-400 py-1">
+                              Nenhum profissional cadastrado.
+                            </p>
+                          )}
+                        </div>
+                        {formData.linked_professional_ids.length > 0 && (
+                          <p className="mt-1 text-xs text-indigo-600">
+                            {formData.linked_professional_ids.length}{" "}
+                            profissional(is) selecionado(s).
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1510,22 +1550,33 @@ const ManageUsersPage: React.FC = () => {
               </div>
 
               {viewingUser.roles?.includes("secretaria") &&
-                viewingUser.linked_professional_id && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-900 mb-2">
-                      Vínculo (secretária)
-                    </h3>
-                    <p className="text-sm text-gray-700">
-                      Profissional ID: {viewingUser.linked_professional_id}
-                      {users.find((u) => u.id === viewingUser.linked_professional_id)
-                        ? ` — ${
-                            users.find((u) => u.id === viewingUser.linked_professional_id)
-                              ?.name
-                          }`
-                        : ""}
-                    </p>
-                  </div>
-                )}
+                (() => {
+                  const linkedIds =
+                    viewingUser.linked_professional_ids &&
+                    viewingUser.linked_professional_ids.length > 0
+                      ? viewingUser.linked_professional_ids
+                      : viewingUser.linked_professional_id != null
+                      ? [viewingUser.linked_professional_id]
+                      : [];
+                  if (linkedIds.length === 0) return null;
+                  return (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900 mb-2">
+                        Vínculo (secretária)
+                      </h3>
+                      <ul className="text-sm text-gray-700 list-disc pl-5 space-y-0.5">
+                        {linkedIds.map((pid) => {
+                          const pro = users.find((u) => u.id === pid);
+                          return (
+                            <li key={pid}>
+                              {pro ? pro.name : `Profissional ID ${pid}`}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  );
+                })()}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
