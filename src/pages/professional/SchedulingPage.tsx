@@ -24,6 +24,7 @@ import {
   Unlock,
   CalendarClock,
   Video,
+  Sparkles,
 } from "lucide-react";
 import {
   format,
@@ -101,6 +102,11 @@ const SchedulingPage: React.FC = () => {
   const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [consultations, setConsultations] = useState<Consultation[]>([]);
+  // IDs de consultas destacadas (recém-surgidas num refresh) — realce temporário.
+  const [highlightedIds, setHighlightedIds] = useState<number[]>([]);
+  // IDs já conhecidos do dia atual, para detectar novidades sem "piscar" tudo
+  // no carregamento inicial / troca de data.
+  const knownConsultationIdsRef = useRef<Set<number>>(new Set());
   const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [privatePatients, setPrivatePatients] = useState<PrivatePatient[]>([]);
@@ -400,7 +406,26 @@ const SchedulingPage: React.FC = () => {
       ]);
       if (consultationsResponse.ok) {
         const data = await consultationsResponse.json();
-        if (Array.isArray(data)) setConsultations(data);
+        if (Array.isArray(data)) {
+          const known = knownConsultationIdsRef.current;
+          const freshIds: number[] = data.map((c: Consultation) => c.id);
+          // Novidades = IDs que ainda não conhecíamos (ex.: agendamento feito
+          // pela Secretária Virtual). Só destaca se já havia uma base conhecida,
+          // para não realçar tudo caso o polling rode antes da carga inicial.
+          const added =
+            known.size > 0 ? freshIds.filter((id) => !known.has(id)) : [];
+          setConsultations(data);
+          knownConsultationIdsRef.current = new Set(freshIds);
+          if (added.length > 0) {
+            setHighlightedIds((cur) => Array.from(new Set([...cur, ...added])));
+            // Remove o realce após alguns segundos (destaque temporário).
+            setTimeout(() => {
+              setHighlightedIds((cur) =>
+                cur.filter((id) => !added.includes(id))
+              );
+            }, 6000);
+          }
+        }
       }
       if (blockedSlotsResponse.ok) {
         const data = await blockedSlotsResponse.json();
@@ -752,6 +777,12 @@ const SchedulingPage: React.FC = () => {
         });
 
         setConsultations(consultationsData);
+        // Carga completa (load inicial / troca de data): tudo que veio já é
+        // "conhecido", então nada é destacado agora.
+        knownConsultationIdsRef.current = new Set(
+          consultationsData.map((c: Consultation) => c.id)
+        );
+        setHighlightedIds([]);
       } else {
         const errorText = await consultationsResponse.text();
         console.error(
@@ -1894,6 +1925,10 @@ const SchedulingPage: React.FC = () => {
                       const theme = consultation
                         ? getConsultationTheme(consultation)
                         : null;
+                      // Agendamento recém-surgido num auto-refresh: realce temporário.
+                      const isNew = consultation
+                        ? highlightedIds.includes(consultation.id)
+                        : false;
 
                       return (
                         <div
@@ -1909,12 +1944,14 @@ const SchedulingPage: React.FC = () => {
                               : isBlocked
                               ? "bg-[#f5f3f2]"
                               : "hover:bg-[#faf8f7] cursor-pointer"
-                          }`}
+                          } ${isNew ? "agenda-new-flash" : ""}`}
                           style={
                             consultation && theme
                               ? {
                                   background: theme.rowBg,
-                                  borderLeft: `4px solid ${theme.border}`,
+                                  borderLeft: `4px solid ${
+                                    isNew ? "#3b9555" : theme.border
+                                  }`,
                                 }
                               : isBlocked
                               ? { borderLeft: "4px solid #cfcac8" }
@@ -1949,6 +1986,12 @@ const SchedulingPage: React.FC = () => {
                                   >
                                     {theme.label}
                                   </span>
+                                  {isNew && (
+                                    <span className="agenda-new-badge inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap bg-[#3b9555] text-white">
+                                      <Sparkles className="h-3 w-3" />
+                                      Novo
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="text-xs text-[#747070] mt-0.5 truncate">
                                   {consultation.service_name}
