@@ -2778,10 +2778,57 @@ app.post(
       }
 
       // Generate new token with new role
-      const userData = {
+      let userData = {
         ...req.user,
         currentRole: role,
       };
+      let extraUserFields = {};
+
+      // Ao trocar PARA secretária pelo menu, recalcula o escopo e a lista de
+      // profissionais (req.user pode não trazê-los se a role atual não era
+      // secretaria). Espelha o /api/auth/select-role para o seletor aparecer.
+      if (role === "secretaria") {
+        const secRes = await pool.query(
+          `SELECT linked_professional_id, linked_professional_ids
+             FROM users WHERE id = $1`,
+          [req.user.id]
+        );
+        const secIds = resolveSecretaryLinkedIds(secRes.rows[0] || {});
+        if (secIds.length === 0) {
+          return res.status(400).json({
+            message:
+              "Secretária sem profissional vinculado. Contate o administrador.",
+            code: "SECRETARY_NO_LINK",
+          });
+        }
+        const activeId = secIds[0];
+        const proRow = await pool.query(
+          `SELECT primary_specialty_code, professional_type FROM users WHERE id = $1`,
+          [activeId]
+        );
+        const specialtyPayload = buildProfessionalSpecialtyPayload({
+          roles: ["professional"],
+          primary_specialty_code: proRow.rows[0]?.primary_specialty_code || null,
+        });
+        const profList = await pool.query(
+          `SELECT id, name FROM users WHERE id = ANY($1::int[]) ORDER BY name`,
+          [secIds]
+        );
+        userData = {
+          ...userData,
+          professionalScopeId: activeId,
+          professional_type:
+            proRow.rows[0]?.professional_type ?? req.user.professional_type,
+          primary_specialty_code: specialtyPayload.primarySpecialtyCode,
+          onboarding_status: specialtyPayload.onboardingStatus,
+          linked_professional_id: activeId,
+          linked_professional_ids: secIds,
+        };
+        extraUserFields = {
+          linkedProfessionalIds: secIds,
+          linkedProfessionals: profList.rows,
+        };
+      }
 
       const token = generateToken(userData);
 
@@ -2801,6 +2848,7 @@ app.post(
         primary_specialty_code,
         onboarding_status,
         linked_professional_id,
+        linked_professional_ids,
         ...rest
       } = userData;
       res.json({
@@ -2812,6 +2860,7 @@ app.post(
           primarySpecialtyCode: primary_specialty_code || null,
           onboardingStatus: onboarding_status ?? null,
           linkedProfessionalId: linked_professional_id ?? null,
+          ...extraUserFields,
         },
       });
     } catch (error) {
