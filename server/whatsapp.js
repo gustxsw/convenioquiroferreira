@@ -1900,6 +1900,15 @@ async function routeMessage(session, phone, text) {
     return;
   }
 
+  // Modo IA (flag WHATSAPP_AI_MODE): a IA conduz TODA a conversa via ferramentas.
+  // SAIR/ATENDENTE acima continuam como escape determinístico, garantido.
+  if (aiModeEnabled(session)) {
+    session.intent = null;
+    await routeMessageAI(session, phone, text);
+    await saveSession(phone, session);
+    return;
+  }
+
   if (!session.step) {
     session.intent = globalIntent;
     await audit({ phone, actor: "patient", action: "intent_detected", detail: { intent: globalIntent, text }, professionalId: session.profissionalId });
@@ -1908,6 +1917,452 @@ async function routeMessage(session, phone, text) {
     await continueFlow(session, phone, text);
   }
   await saveSession(phone, session);
+}
+
+// ===== MODO IA (agente com ferramentas) — ativado por flag =====
+//
+// Diferente do fluxo por palavra-chave (detectIntent + máquina de estados), aqui
+// o Claude conduz TODA a conversa e chama FERRAMENTAS para ler a agenda e
+// agendar/remarcar/cancelar. As escritas no banco continuam passando pelas mesmas
+// funções validadas (createConsultation, rescheduleConsultation,
+// cancelConsultation), então a IA nunca marca fora do expediente nem duplica
+// horário — a IA decide o QUE fazer; o banco continua garantindo as regras.
+//
+// Ativação em server/.env:
+//   WHATSAPP_AI_MODE=on        -> todos os números
+//   WHATSAPP_AI_MODE=prof:2,5  -> só os profissionais de id 2 e 5 (teste seguro)
+//   (ausente / "off")          -> mantém o bot por palavra-chave
+
+function aiModeEnabled(session) {
+  const raw = String(process.env.WHATSAPP_AI_MODE || "").trim().toLowerCase();
+  if (!raw || ["off", "false", "0", "no"].includes(raw)) return false;
+  if (["on", "all", "true", "1"].includes(raw)) return true;
+  if (raw.startsWith("prof:")) {
+    const ids = raw.slice(5).split(",").map((x) => Number(x.trim())).filter((n) => Number.isFinite(n));
+    return session.profissionalId != null && ids.includes(Number(session.profissionalId));
+  }
+  return false;
+}
+
+const WEEKDAY_NAMES_PT = [
+  "domingo", "segunda-feira", "terça-feira", "quarta-feira",
+  "quinta-feira", "sexta-feira", "sábado",
+];
+
+// Ferramentas expostas ao modelo. Descrições em PT-BR para guiar o uso correto.
+const AI_TOOLS = [
+  {
+    name: "identificar_paciente",
+    description:
+      "Localiza o paciente pelo CPF (11 dígitos). Chame ANTES de qualquer agendamento, remarcação ou cancelamento. Retorna se encontrou, o nome e o perfil (conveniado ou particular).",
+    input_schema: {
+      type: "object",
+      properties: { cpf: { type: "string", description: "CPF, só números ou com pontos" } },
+      required: ["cpf"],
+    },
+  },
+  {
+    name: "cadastrar_paciente_particular",
+    description:
+      "Cadastra um novo paciente particular quando o CPF não foi encontrado. Use só depois de o paciente concordar em seguir como particular e informar o nome completo.",
+    input_schema: {
+      type: "object",
+      properties: { nome: { type: "string" }, cpf: { type: "string" } },
+      required: ["nome", "cpf"],
+    },
+  },
+  {
+    name: "listar_dias_disponiveis",
+    description: "Retorna os próximos dias com horários livres na agenda do profissional.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "listar_horarios_do_dia",
+    description: "Retorna os horários livres de um dia específico.",
+    input_schema: {
+      type: "object",
+      properties: { data: { type: "string", description: "Data no formato AAAA-MM-DD" } },
+      required: ["data"],
+    },
+  },
+  {
+    name: "criar_consulta",
+    description:
+      "Agenda a consulta no dia e horário escolhidos. Só chame após identificar/cadastrar o paciente e após ele confirmar o horário. O horário precisa ser um dos livres do dia.",
+    input_schema: {
+      type: "object",
+      properties: {
+        data: { type: "string", description: "AAAA-MM-DD" },
+        hora: { type: "string", description: "HH:MM (24h)" },
+      },
+      required: ["data", "hora"],
+    },
+  },
+  {
+    name: "listar_consultas_ativas",
+    description:
+      "Lista as consultas futuras do paciente já identificado, para remarcar ou cancelar. Cada uma vem com um id.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "remarcar_consulta",
+    description: "Muda uma consulta para novo dia/horário. Use o id vindo de listar_consultas_ativas.",
+    input_schema: {
+      type: "object",
+      properties: {
+        consulta_id: { type: "number" },
+        data: { type: "string", description: "AAAA-MM-DD" },
+        hora: { type: "string", description: "HH:MM (24h)" },
+      },
+      required: ["consulta_id", "data", "hora"],
+    },
+  },
+  {
+    name: "cancelar_consulta",
+    description:
+      "Cancela uma consulta. Use o id vindo de listar_consultas_ativas e confirme com o paciente antes de chamar.",
+    input_schema: {
+      type: "object",
+      properties: { consulta_id: { type: "number" } },
+      required: ["consulta_id"],
+    },
+  },
+  {
+    name: "info_servico",
+    description: "Detalhes e preços (conveniado/particular) do serviço/consulta do profissional.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "transferir_humano",
+    description:
+      "Encaminha a conversa para um atendente humano quando o paciente pede uma pessoa ou você não consegue resolver.",
+    input_schema: { type: "object", properties: {} },
+  },
+];
+
+// Normaliza AAAA-MM-DD vindo do modelo (rejeita datas inválidas).
+function normalizeYmd(s) {
+  const m = String(s || "").trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!m) return null;
+  const y = +m[1], mo = +m[2], d = +m[3];
+  if (!isValidDMY(y, mo, d)) return null;
+  return `${y}-${pad2(mo)}-${pad2(d)}`;
+}
+
+// Normaliza HH:MM vindo do modelo.
+function normalizeHM(s) {
+  const m = String(s || "").trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  return clampHM(+m[1], +m[2]);
+}
+
+// Executa a ferramenta chamada pelo modelo. Toda escrita passa pelas funções já
+// validadas; o estado do paciente (id/perfil) fica na sessão, não é confiado ao modelo.
+async function executeAiTool(session, phone, name, input = {}) {
+  const profId = session.profissionalId;
+  try {
+    switch (name) {
+      case "identificar_paciente": {
+        const cpf = onlyDigits(input.cpf);
+        if (cpf.length !== 11) return { erro: "CPF inválido — precisa ter 11 dígitos." };
+        session.cpf = cpf;
+        const patient = await identifyPatient(cpf, profId);
+        if (!patient) {
+          session.pacienteId = null;
+          session.privatePatientId = null;
+          session.patientKind = null;
+          session.pacienteNome = null;
+          session.priceProfile = null;
+          return {
+            encontrado: false,
+            orientacao:
+              "CPF não cadastrado. Ofereça cadastro como paciente particular (peça o nome completo) ou, se ele quiser o convênio, explique que o profissional envia o link de cadastro pessoalmente.",
+          };
+        }
+        session.patientKind = patient.kind;
+        session.pacienteId = patient.userId || null;
+        session.privatePatientId = patient.privatePatientId || null;
+        session.pacienteNome = patient.name;
+        session.priceProfile = patient.profile;
+        return {
+          encontrado: true,
+          nome: patient.name,
+          perfil: patient.profile === "convenio" ? "conveniado" : "particular",
+        };
+      }
+
+      case "cadastrar_paciente_particular": {
+        const cpf = onlyDigits(input.cpf || session.cpf);
+        if (cpf.length !== 11) return { erro: "CPF inválido." };
+        if (!input.nome || String(input.nome).trim().length < 3) return { erro: "Peça o nome completo do paciente." };
+        const created = await createPrivatePatient({ name: input.nome, phone, cpf, professionalId: profId });
+        session.patientKind = "private";
+        session.privatePatientId = created.id;
+        session.pacienteId = null;
+        session.pacienteNome = created.name;
+        session.priceProfile = "particular";
+        session.cpf = cpf;
+        await audit({ phone, actor: "ai", action: "private_patient_created", detail: { privatePatientId: created.id }, professionalId: profId });
+        return { ok: true, nome: created.name };
+      }
+
+      case "listar_dias_disponiveis": {
+        const days = await getAvailableDays(profId, { limit: 6 });
+        if (!days.length) return { dias: [], mensagem: "Sem dias disponíveis no momento." };
+        return { dias: days.map((d) => ({ data: d.dateBrazil, descricao: d.label })) };
+      }
+
+      case "listar_horarios_do_dia": {
+        const ymd = normalizeYmd(input.data);
+        if (!ymd) return { erro: "Data inválida. Use AAAA-MM-DD." };
+        const slots = await getFreeSlotsForDay(profId, ymd);
+        return { data: ymd, horarios: slots.map((s) => s.time) };
+      }
+
+      case "criar_consulta": {
+        if (!session.pacienteId && !session.privatePatientId) {
+          return { erro: "Identifique o paciente (identificar_paciente) antes de agendar." };
+        }
+        const ymd = normalizeYmd(input.data);
+        if (!ymd) return { erro: "Data inválida." };
+        if (ymd < todayInBrazilYmd()) return { erro: "Essa data já passou." };
+        const base = await getBaseService(profId, session.priceProfile || "convenio");
+        if (!base) return { erro: "Serviço não configurado para este profissional." };
+        const slots = await getFreeSlotsForDay(profId, ymd);
+        const slot = slots.find((s) => s.time === normalizeHM(input.hora));
+        if (!slot) return { erro: "Horário indisponível nesse dia.", horarios_livres: slots.map((s) => s.time) };
+        const result = await createConsultation({
+          professionalId: profId,
+          userId: session.pacienteId,
+          privatePatientId: session.privatePatientId,
+          serviceId: base.service_id,
+          value: base.value,
+          isoUTC: slot.isoUTC,
+          convenio: session.priceProfile === "convenio" ? "Quiro Ferreira" : null,
+        });
+        if (!result.ok) return { erro: result.message || "Não foi possível agendar esse horário." };
+        await audit({ phone, actor: "ai", action: "consultation_created", detail: { consultationId: result.id, professionalId: profId, date: slot.isoUTC }, professionalId: profId });
+        let meetLink = null;
+        try { meetLink = await syncCreateEvent(result.id); } catch (e) { botLog("sync_create_error", { error: String(e) }); }
+        return {
+          ok: true,
+          data_formatada: formatToBrazilDate(slot.isoUTC),
+          hora: slot.time,
+          profissional: await getProfessionalName(profId),
+          online: !!base.isOnline,
+          link_meet: meetLink || null,
+        };
+      }
+
+      case "listar_consultas_ativas": {
+        if (!session.pacienteId && !session.privatePatientId) {
+          return { erro: "Identifique o paciente (identificar_paciente) primeiro." };
+        }
+        const consultas = await getActiveConsultations({ userId: session.pacienteId, privatePatientId: session.privatePatientId });
+        session.aiConsultas = consultas.map((c) => ({ id: c.id, professionalId: c.professional_id }));
+        return {
+          consultas: consultas.map((c) => ({
+            id: c.id,
+            data_formatada: formatToBrazilDate(c.date),
+            hora: formatToBrazilTimeOnly(c.date),
+            profissional: c.professional_name,
+          })),
+        };
+      }
+
+      case "remarcar_consulta": {
+        const id = Number(input.consulta_id);
+        const found = (session.aiConsultas || []).find((c) => c.id === id);
+        if (!found) return { erro: "Consulta não reconhecida. Chame listar_consultas_ativas antes." };
+        const ymd = normalizeYmd(input.data);
+        if (!ymd) return { erro: "Data inválida." };
+        const targetProf = found.professionalId || profId;
+        const slots = await getFreeSlotsForDay(targetProf, ymd);
+        const slot = slots.find((s) => s.time === normalizeHM(input.hora));
+        if (!slot) return { erro: "Horário indisponível nesse dia.", horarios_livres: slots.map((s) => s.time) };
+        const res = await rescheduleConsultation(id, slot.isoUTC, targetProf);
+        if (!res.ok) return { erro: res.message || "Não foi possível remarcar." };
+        await audit({ phone, actor: "ai", action: "consultation_rescheduled", detail: { consultationId: id, date: slot.isoUTC }, professionalId: targetProf });
+        syncUpdateEvent(id).catch((e) => botLog("sync_update_error", { error: String(e) }));
+        return { ok: true, data_formatada: formatToBrazilDate(slot.isoUTC), hora: slot.time };
+      }
+
+      case "cancelar_consulta": {
+        const id = Number(input.consulta_id);
+        const found = (session.aiConsultas || []).find((c) => c.id === id);
+        if (!found) return { erro: "Consulta não reconhecida. Chame listar_consultas_ativas antes." };
+        const ok = await cancelConsultation(id);
+        if (!ok) return { erro: "Não foi possível cancelar (talvez já esteja cancelada)." };
+        await audit({ phone, actor: "ai", action: "consultation_cancelled", detail: { consultationId: id }, professionalId: found.professionalId || profId });
+        syncCancelEvent(id).catch((e) => botLog("sync_cancel_error", { error: String(e) }));
+        return { ok: true };
+      }
+
+      case "info_servico": {
+        const base = await getBaseService(profId, "convenio");
+        if (!base) return { erro: "Serviço não configurado." };
+        const fmt = (v) => (v != null ? `R$ ${Number(v).toFixed(2).replace(".", ",")}` : null);
+        return {
+          nome: base.name,
+          descricao: base.description,
+          preco_conveniado: fmt(base.priceMember),
+          preco_particular: fmt(base.pricePrivate),
+          online: !!base.isOnline,
+        };
+      }
+
+      case "transferir_humano": {
+        session.mode = "pending";
+        await audit({ phone, actor: "ai", action: "takeover", detail: { reason: "ai" }, professionalId: profId });
+        return { ok: true, orientacao: "Conversa encaminhada. Avise o paciente que em breve a equipe entra em contato." };
+      }
+
+      default:
+        return { erro: `Ferramenta desconhecida: ${name}` };
+    }
+  } catch (e) {
+    botLog("ai_tool_error", { name, error: String(e) });
+    return { erro: "Falha interna ao executar a ação. Peça para o paciente tentar novamente." };
+  }
+}
+
+// Monta o system prompt do agente: persona + data de hoje + regras operacionais.
+function buildAgentSystemPrompt(session, ctx) {
+  const today = todayInBrazilYmd();
+  const dow = WEEKDAY_NAMES_PT[weekdayOfYmd(today)];
+  const lines = [
+    buildSystemPrompt(ctx.professionalName),
+    "",
+    "## Como você trabalha",
+    `Hoje é ${dow} (${today}). Fuso horário: America/São_Paulo.`,
+    "Você conduz a conversa de forma natural e usa FERRAMENTAS para agir de verdade na agenda. Nunca invente horários, preços ou confirme um agendamento sem chamar a ferramenta correspondente.",
+    "",
+    "Regras:",
+    "- Para agendar, remarcar ou cancelar, primeiro identifique o paciente com identificar_paciente (peça o CPF — 11 dígitos).",
+    "- Converta datas relativas ('amanhã', 'próxima segunda', 'dia 15') para AAAA-MM-DD você mesmo, usando a data de hoje acima.",
+    "- Só ofereça horários que vieram de listar_dias_disponiveis ou listar_horarios_do_dia.",
+    "- Antes de criar ou cancelar, confirme o dia/horário com o paciente em linguagem natural.",
+    "- Se o paciente pedir uma pessoa/atendente, ou você não conseguir resolver, use transferir_humano.",
+    "- Respostas curtas, calorosas, estilo WhatsApp. Pode usar *negrito* e no máximo 1 emoji.",
+  ];
+  if (ctx.convenioType === "agenda_only") {
+    lines.push("- Este profissional NÃO usa o Convênio Quiro Ferreira. Não fale sobre convênio; foque nos agendamentos.");
+  } else {
+    lines.push(`- Se o paciente quiser contratar o Convênio Quiro Ferreira, compartilhe o link de cadastro: ${ctx.convenioLink}`);
+  }
+  if (ctx.insurances?.length) {
+    lines.push(`- Planos/convênios que o profissional aceita: ${ctx.insurances.join(", ")} (além de pacientes particulares).`);
+  }
+  return lines.join("\n");
+}
+
+// Uma chamada à API Anthropic com ferramentas. Retorna o JSON bruto ou null.
+async function callAnthropicAgent({ system, messages }) {
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!apiKey) return null;
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ model: AI_MODEL, max_tokens: 1024, system, tools: AI_TOOLS, messages }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      botLog("anthropic_agent_error", { status: res.status, data });
+      return null;
+    }
+    return data;
+  } catch (e) {
+    botLog("anthropic_agent_exception", { error: String(e) });
+    return null;
+  }
+}
+
+// Roteamento no modo IA: a IA conduz a conversa inteira via loop de tool-use.
+async function routeMessageAI(session, phone, text) {
+  // Número exclusivo por profissional; sem mapeamento, usa o primeiro com agenda.
+  if (!session.profissionalId) {
+    const profs = await getProfessionalsWithBaseService();
+    if (profs.length === 0) {
+      await replyS(session, phone, "No momento não há profissionais com agenda disponível. Tente novamente em instantes.");
+      return;
+    }
+    session.profissionalId = profs[0].id;
+  }
+
+  const professionalName = await professionalDisplayName(session);
+  const convenioInfo = await getProfessionalConvenioInfo(session.profissionalId);
+  const insurances = await getProfessionalInsurances(session.profissionalId);
+  const convenioLink = convenioInfo.affiliateCode
+    ? `https://cartaoquiroferreira.com.br/register?ref=${convenioInfo.affiliateCode}`
+    : "https://cartaoquiroferreira.com.br/register";
+  const system = buildAgentSystemPrompt(session, {
+    professionalName,
+    convenioType: convenioInfo.professionalType,
+    convenioLink,
+    insurances,
+  });
+
+  // Persistimos só a conversa "limpa" (texto do paciente + resposta final). Os
+  // ciclos de ferramenta vivem apenas dentro deste turno — barato e sem quebrar
+  // o pareamento tool_use/tool_result entre mensagens.
+  const history = Array.isArray(session.aiHistory) ? session.aiHistory : [];
+  const messages = [...history, { role: "user", content: text }];
+
+  let usageInput = 0;
+  let usageOutput = 0;
+  let finalText = "";
+  const MAX_TURNS = 6;
+
+  for (let i = 0; i < MAX_TURNS; i++) {
+    const data = await callAnthropicAgent({ system, messages });
+    if (!data) break;
+    if (data.usage) {
+      usageInput += data.usage.input_tokens || 0;
+      usageOutput += data.usage.output_tokens || 0;
+    }
+    const content = data.content || [];
+    messages.push({ role: "assistant", content });
+
+    const toolUses = content.filter((b) => b.type === "tool_use");
+    if (toolUses.length === 0) {
+      finalText = content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+      break;
+    }
+
+    const results = [];
+    for (const tu of toolUses) {
+      const out = await executeAiTool(session, phone, tu.name, tu.input || {});
+      results.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(out) });
+    }
+    messages.push({ role: "user", content: results });
+  }
+
+  if (usageInput || usageOutput) {
+    await recordAiUsage({
+      phone,
+      professionalId: session.profissionalId,
+      usage: { input_tokens: usageInput, output_tokens: usageOutput },
+      model: AI_MODEL,
+    });
+  }
+
+  // Sem resposta da IA (chave ausente, erro, ou estourou o limite de turnos):
+  // encaminha para a equipe em vez de deixar a conversa travar.
+  if (!finalText) {
+    finalText = humanFallbackText();
+    session.mode = "pending";
+  }
+
+  history.push({ role: "user", content: text });
+  history.push({ role: "assistant", content: finalText });
+  session.aiHistory = history.slice(-16);
+
+  await replyS(session, phone, finalText);
 }
 
 // ===== WEBHOOK =====
