@@ -7624,6 +7624,33 @@ app.post(
   }
 );
 
+app.put(
+  "/api/professional/insurances/:id",
+  authenticate,
+  authorize(["professional", "secretaria", "admin"]),
+  async (req, res) => {
+    try {
+      const profId = insuranceProfId(req);
+      const { name } = req.body;
+      if (!name || !String(name).trim()) {
+        return res.status(400).json({ message: "Nome do convênio é obrigatório" });
+      }
+      const r = await pool.query(
+        `UPDATE professional_insurances SET name = $1
+          WHERE id = $2 AND professional_id = $3
+          RETURNING id, name, is_active`,
+        [String(name).trim(), req.params.id, profId]
+      );
+      if (r.rows.length === 0) {
+        return res.status(404).json({ message: "Convênio não encontrado" });
+      }
+      res.json(r.rows[0]);
+    } catch (e) {
+      res.status(500).json({ message: "Erro ao atualizar convênio" });
+    }
+  }
+);
+
 app.delete(
   "/api/professional/insurances/:id",
   authenticate,

@@ -1,6 +1,6 @@
 import type React from "react";
 import { useState, useEffect } from "react";
-import { Shield, Plus, Trash2, X, Check, Info } from "lucide-react";
+import { Shield, Plus, Trash2, Edit, X, Check, Info } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
 type Insurance = { id: number; name: string; is_active?: boolean };
@@ -11,8 +11,10 @@ const InsurancesPage: React.FC = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  // Create modal state
+  // Create/edit modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [newName, setNewName] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -44,15 +46,27 @@ const InsurancesPage: React.FC = () => {
   };
 
   const openCreateModal = () => {
+    setModalMode("create");
+    setEditingId(null);
     setNewName("");
     setError("");
     setSuccess("");
     setIsModalOpen(true);
   };
 
-  const closeCreateModal = () => {
+  const openEditModal = (insurance: Insurance) => {
+    setModalMode("edit");
+    setEditingId(insurance.id);
+    setNewName(insurance.name);
+    setError("");
+    setSuccess("");
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
     if (isSaving) return;
     setIsModalOpen(false);
+    setEditingId(null);
     setNewName("");
   };
 
@@ -65,11 +79,15 @@ const InsurancesPage: React.FC = () => {
     setError("");
     setSuccess("");
 
+    const isEdit = modalMode === "edit" && editingId != null;
+
     try {
       const response = await fetchWithAuth(
-        `${getApiUrl()}/api/professional/insurances`,
+        isEdit
+          ? `${getApiUrl()}/api/professional/insurances/${editingId}`
+          : `${getApiUrl()}/api/professional/insurances`,
         {
-          method: "POST",
+          method: isEdit ? "PUT" : "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name }),
         }
@@ -77,19 +95,34 @@ const InsurancesPage: React.FC = () => {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "Erro ao adicionar convênio");
+        throw new Error(
+          errorData.message ||
+            (isEdit ? "Erro ao atualizar convênio" : "Erro ao adicionar convênio")
+        );
       }
 
-      const created: Insurance = await response.json();
+      const saved: Insurance = await response.json();
       setInsurances((prev) =>
-        [...prev, created].sort((a, b) => a.name.localeCompare(b.name))
+        (isEdit
+          ? prev.map((i) => (i.id === saved.id ? saved : i))
+          : [...prev, saved]
+        ).sort((a, b) => a.name.localeCompare(b.name))
       );
-      setSuccess("Convênio adicionado com sucesso!");
+      setSuccess(
+        isEdit
+          ? "Convênio atualizado com sucesso!"
+          : "Convênio adicionado com sucesso!"
+      );
       setIsModalOpen(false);
+      setEditingId(null);
       setNewName("");
     } catch (error) {
       setError(
-        error instanceof Error ? error.message : "Erro ao adicionar convênio"
+        error instanceof Error
+          ? error.message
+          : isEdit
+          ? "Erro ao atualizar convênio"
+          : "Erro ao adicionar convênio"
       );
     } finally {
       setIsSaving(false);
@@ -219,14 +252,24 @@ const InsurancesPage: React.FC = () => {
                       {ins.name}
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => confirmDelete(ins)}
-                    className="text-gray-400 hover:text-red-600 transition-colors p-2"
-                    title="Remover"
-                  >
-                    <Trash2 className="h-5 w-5" />
-                  </button>
+                  <div className="flex items-center">
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(ins)}
+                      className="text-gray-400 hover:text-red-600 transition-colors p-2"
+                      title="Editar"
+                    >
+                      <Edit className="h-5 w-5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => confirmDelete(ins)}
+                      className="text-gray-400 hover:text-red-600 transition-colors p-2"
+                      title="Remover"
+                    >
+                      <Trash2 className="h-5 w-5" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -262,14 +305,24 @@ const InsurancesPage: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
-                        <button
-                          type="button"
-                          onClick={() => confirmDelete(ins)}
-                          className="text-gray-400 hover:text-red-600 transition-colors"
-                          title="Remover"
-                        >
-                          <Trash2 className="h-5 w-5" />
-                        </button>
+                        <div className="flex items-center justify-end gap-3">
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(ins)}
+                            className="text-gray-400 hover:text-red-600 transition-colors"
+                            title="Editar"
+                          >
+                            <Edit className="h-5 w-5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => confirmDelete(ins)}
+                            className="text-gray-400 hover:text-red-600 transition-colors"
+                            title="Remover"
+                          >
+                            <Trash2 className="h-5 w-5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -280,14 +333,16 @@ const InsurancesPage: React.FC = () => {
         )}
       </div>
 
-      {/* Create modal */}
+      {/* Create/edit modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-md">
             <div className="p-6 border-b border-gray-200 flex justify-between items-center">
-              <h2 className="text-xl font-bold">Novo Convênio</h2>
+              <h2 className="text-xl font-bold">
+                {modalMode === "edit" ? "Editar Convênio" : "Novo Convênio"}
+              </h2>
               <button
-                onClick={closeCreateModal}
+                onClick={closeModal}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
               >
                 <X className="h-6 w-6" />
@@ -313,7 +368,7 @@ const InsurancesPage: React.FC = () => {
               <div className="flex justify-end space-x-3 mt-8 pt-6 border-t border-gray-200">
                 <button
                   type="button"
-                  onClick={closeCreateModal}
+                  onClick={closeModal}
                   className="btn btn-secondary"
                   disabled={isSaving}
                 >
@@ -327,7 +382,12 @@ const InsurancesPage: React.FC = () => {
                   {isSaving ? (
                     <>
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Adicionando...
+                      {modalMode === "edit" ? "Salvando..." : "Adicionando..."}
+                    </>
+                  ) : modalMode === "edit" ? (
+                    <>
+                      <Check className="h-4 w-4 mr-2" />
+                      Salvar
                     </>
                   ) : (
                     <>
