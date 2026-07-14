@@ -11,6 +11,9 @@ import {
   X,
   Filter,
   Search,
+  MessageCircle,
+  Instagram,
+  Facebook,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
@@ -28,6 +31,8 @@ type Professional = {
   state: string;
   category_name: string;
   photo_url?: string;
+  social_instagram?: string;
+  social_facebook?: string;
 };
 
 const ProfessionalsPage: React.FC = () => {
@@ -184,6 +189,21 @@ const ProfessionalsPage: React.FC = () => {
     ].filter(Boolean);
 
     return parts.length > 0 ? parts.join(", ") : "Endereço não informado";
+  };
+
+  // Monta os links de contato/redes a partir do que estiver cadastrado.
+  const buildWhatsappUrl = (phone: string) =>
+    `https://wa.me/55${(phone || "").replace(/\D/g, "")}`;
+
+  const buildSocialUrl = (raw: string | undefined, domain: string) => {
+    const v = (raw || "").trim();
+    if (!v) return "";
+    if (/^https?:\/\//i.test(v)) return v;
+    const handle = v
+      .replace(/^@/, "")
+      .replace(new RegExp(`^(www\\.)?${domain}/`, "i"), "")
+      .replace(/^\//, "");
+    return `https://${domain}/${handle}`;
   };
 
   return (
@@ -362,21 +382,57 @@ const ProfessionalsPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Action Button */}
-                {professional.phone && (
-                  <a
-                    href={`https://wa.me/55${professional.phone.replace(
-                      /\D/g,
-                      ""
-                    )}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block w-full text-center bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 transition-colors duration-200 font-medium"
-                  >
-                    <Phone className="h-4 w-4 inline mr-2" />
-                    Entrar em contato pelo WhatsApp
-                  </a>
-                )}
+                {/* Contact & social actions */}
+                {(() => {
+                  const instagramUrl = buildSocialUrl(
+                    professional.social_instagram,
+                    "instagram.com"
+                  );
+                  const facebookUrl = buildSocialUrl(
+                    professional.social_facebook,
+                    "facebook.com"
+                  );
+                  if (!professional.phone && !instagramUrl && !facebookUrl) {
+                    return null;
+                  }
+                  return (
+                    <div className="space-y-2">
+                      {professional.phone && (
+                        <a
+                          href={buildWhatsappUrl(professional.phone)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-lg text-white text-sm font-medium bg-green-600 hover:bg-green-700 transition-colors"
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                          WhatsApp
+                        </a>
+                      )}
+                      {instagramUrl && (
+                        <a
+                          href={instagramUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-lg text-white text-sm font-medium bg-pink-600 hover:bg-pink-700 transition-colors"
+                        >
+                          <Instagram className="h-4 w-4" />
+                          Instagram
+                        </a>
+                      )}
+                      {facebookUrl && (
+                        <a
+                          href={facebookUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-lg text-white text-sm font-medium bg-blue-600 hover:bg-blue-700 transition-colors"
+                        >
+                          <Facebook className="h-4 w-4" />
+                          Facebook
+                        </a>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           ))}

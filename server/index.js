@@ -333,6 +333,12 @@ const initializeDatabase = async () => {
       )
     `);
 
+    // Redes sociais do profissional (exibidas no painel do cliente).
+    await pool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS social_instagram TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS social_facebook TEXT;
+    `);
+
     await pool.query(`
       DO $$
       BEGIN
@@ -3158,7 +3164,7 @@ app.get("/api/users/:id", authenticate, async (req, res) => {
         id, name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, roles, subscription_status,
         subscription_expiry, photo_url, category_name, percentage, crm, professional_type, created_at,
-        linked_professional_id, linked_professional_ids
+        linked_professional_id, linked_professional_ids, social_instagram, social_facebook
       FROM users
       WHERE id = $1
     `,
@@ -3411,6 +3417,8 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
       professional_type,
       linked_professional_id,
       linked_professional_ids,
+      social_instagram,
+      social_facebook,
     } = req.body;
 
     const targetUserId = Number.parseInt(id, 10);
@@ -3590,6 +3598,22 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
     );
 
     const updatedUser = updatedUserResult.rows[0];
+
+    // Redes sociais: atualizadas isoladamente para não mexer na query posicional acima.
+    if (social_instagram !== undefined) {
+      const r = await pool.query(
+        "UPDATE users SET social_instagram = $1, updated_at = NOW() WHERE id = $2 RETURNING social_instagram",
+        [social_instagram?.trim() || null, id]
+      );
+      updatedUser.social_instagram = r.rows[0]?.social_instagram ?? null;
+    }
+    if (social_facebook !== undefined) {
+      const r = await pool.query(
+        "UPDATE users SET social_facebook = $1, updated_at = NOW() WHERE id = $2 RETURNING social_facebook",
+        [social_facebook?.trim() || null, id]
+      );
+      updatedUser.social_facebook = r.rows[0]?.social_facebook ?? null;
+    }
 
     console.log("✅ User updated successfully:", updatedUser.id);
 
@@ -7625,7 +7649,8 @@ app.get("/api/professionals", authenticate, async (req, res) => {
     const professionalsResult = await pool.query(`
       SELECT
         id, name, email, phone, address, address_number, address_complement,
-        neighborhood, city, state, category_name, photo_url, crm, percentage, professional_type
+        neighborhood, city, state, category_name, photo_url, crm, percentage, professional_type,
+        social_instagram, social_facebook
       FROM users u
       WHERE 'professional' = ANY(u.roles)
         AND u.professional_type = 'convenio'

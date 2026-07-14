@@ -17,6 +17,8 @@ import {
   MessageCircle,
   Phone,
   Calendar,
+  Instagram,
+  Facebook,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 import { getProfessionalActorId } from "../../utils/professionalActor";
@@ -75,6 +77,8 @@ const ProfessionalProfilePage: React.FC = () => {
     name: "",
     email: "",
     phone: "",
+    social_instagram: "",
+    social_facebook: "",
     currentPassword: "",
     newPassword: "",
     confirmPassword: "",
@@ -210,6 +214,8 @@ const ProfessionalProfilePage: React.FC = () => {
           name: userData.name || "",
           email: userData.email || "",
           phone: userData.phone || "",
+          social_instagram: userData.social_instagram || "",
+          social_facebook: userData.social_facebook || "",
         }));
       }
 
@@ -272,6 +278,8 @@ const ProfessionalProfilePage: React.FC = () => {
         name: profileData.name,
         email: profileData.email,
         phone: profileData.phone,
+        social_instagram: profileData.social_instagram.trim(),
+        social_facebook: profileData.social_facebook.trim(),
       };
 
       if (profileData.newPassword) {
@@ -800,6 +808,44 @@ const ProfessionalProfilePage: React.FC = () => {
                   }
                   className="input"
                   placeholder="(00) 00000-0000"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <Instagram className="h-4 w-4 mr-2 text-gray-400" />
+                  Instagram
+                </label>
+                <input
+                  type="text"
+                  value={profileData.social_instagram}
+                  onChange={(e) =>
+                    setProfileData((prev) => ({
+                      ...prev,
+                      social_instagram: e.target.value,
+                    }))
+                  }
+                  className="input"
+                  placeholder="@seuperfil ou link do Instagram"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <Facebook className="h-4 w-4 mr-2 text-gray-400" />
+                  Facebook
+                </label>
+                <input
+                  type="text"
+                  value={profileData.social_facebook}
+                  onChange={(e) =>
+                    setProfileData((prev) => ({
+                      ...prev,
+                      social_facebook: e.target.value,
+                    }))
+                  }
+                  className="input"
+                  placeholder="Seu perfil ou link do Facebook"
                 />
               </div>
 

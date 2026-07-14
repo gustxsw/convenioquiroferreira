@@ -617,6 +617,37 @@ async function getProfessionalDetails(professionalId) {
   };
 }
 
+// Locais de atendimento do profissional (multi-cidade). O padrão (is_default) vem
+// primeiro. Usado quando o profissional atende em mais de um lugar: a IA pergunta
+// qual e grava o location_id na consulta. A agenda em si continua única (limitação).
+async function getAttendanceLocations(professionalId) {
+  if (!professionalId) return [];
+  const r = await pool.query(
+    `SELECT id, name, address, address_number, address_complement,
+            neighborhood, city, state, is_default
+       FROM attendance_locations
+      WHERE professional_id = $1
+      ORDER BY is_default DESC, name ASC`,
+    [professionalId]
+  );
+  return r.rows.map((u) => {
+    const hasNumber = u.address_number && String(u.address_number).trim() !== "0";
+    const parts = [];
+    if (u.address) parts.push(hasNumber ? `${u.address}, ${u.address_number}` : u.address);
+    if (u.address_complement) parts.push(u.address_complement);
+    if (u.neighborhood) parts.push(u.neighborhood);
+    const cityState = [u.city, u.state].filter(Boolean).join(" - ");
+    if (cityState) parts.push(cityState);
+    return {
+      id: u.id,
+      nome: u.name,
+      cidade: u.city || null,
+      endereco: parts.join(", ") || null,
+      is_default: !!u.is_default,
+    };
+  });
+}
+
 // Retorna o tipo do profissional e seu código de afiliado para montar o link de indicação.
 // professional_type = 'agenda_only' → só usa agenda, nunca fala de convênio Quiro.
 // professional_type = 'convenio' (ou null/default) → usa o convênio completo.
@@ -723,7 +754,7 @@ function pickConsultation(list, text) {
 }
 
 // Replica a validação de expediente/conflito do POST /api/consultations.
-async function createConsultation({ professionalId, userId, privatePatientId, serviceId, value, isoUTC, convenio = null }) {
+async function createConsultation({ professionalId, userId, privatePatientId, serviceId, value, isoUTC, convenio = null, locationId = null }) {
   const working = await getWorkingHours(professionalId);
   if (!isWithinWorkingHours(isoUTC, working)) {
     return { ok: false, message: "Esse horário está fora do expediente. Escolha outro, por favor." };
@@ -738,10 +769,10 @@ async function createConsultation({ professionalId, userId, privatePatientId, se
   }
   // CHECK no banco exige exatamente um entre user_id / dependent_id / private_patient_id.
   const r = await pool.query(
-    `INSERT INTO consultations (user_id, private_patient_id, professional_id, service_id, value, date, status, convenio)
-     VALUES ($1, $2, $3, $4, $5, $6, 'scheduled', $7)
+    `INSERT INTO consultations (user_id, private_patient_id, professional_id, service_id, location_id, value, date, status, convenio)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'scheduled', $8)
      RETURNING id`,
-    [userId || null, privatePatientId || null, professionalId, serviceId, value, isoUTC, convenio || null]
+    [userId || null, privatePatientId || null, professionalId, serviceId, locationId || null, value, isoUTC, convenio || null]
   );
   return { ok: true, id: r.rows[0].id };
 }
@@ -2069,15 +2100,22 @@ const AI_TOOLS = [
   {
     name: "criar_consulta",
     description:
-      "Agenda a consulta no dia e horário escolhidos. Só chame após identificar/cadastrar o paciente e após ele confirmar o horário. O horário precisa ser um dos livres do dia.",
+      "Agenda a consulta no dia e horário escolhidos. Só chame após identificar/cadastrar o paciente e após ele confirmar o horário. O horário precisa ser um dos livres do dia. Se o profissional atende em mais de um local, passe local_id (obtido em listar_locais) com o local escolhido pelo paciente.",
     input_schema: {
       type: "object",
       properties: {
         data: { type: "string", description: "AAAA-MM-DD" },
         hora: { type: "string", description: "HH:MM (24h)" },
+        local_id: { type: "number", description: "id do local de atendimento (só quando houver mais de um)" },
       },
       required: ["data", "hora"],
     },
+  },
+  {
+    name: "listar_locais",
+    description:
+      "Lista os locais/cidades onde o profissional atende (nome, cidade, endereço, id). Use quando o profissional tiver mais de um local: pergunte ao paciente em qual ele quer ser atendido ANTES de agendar, informe o endereço do local escolhido e passe o id em criar_consulta (local_id).",
+    input_schema: { type: "object", properties: {} },
   },
   {
     name: "listar_consultas_ativas",
@@ -2208,6 +2246,13 @@ async function executeAiTool(session, phone, name, input = {}) {
         return { dias: days.map((d) => ({ data: d.dateBrazil, descricao: d.label })) };
       }
 
+      case "listar_locais": {
+        const locais = await getAttendanceLocations(profId);
+        return {
+          locais: locais.map((l) => ({ id: l.id, nome: l.nome, cidade: l.cidade, endereco: l.endereco })),
+        };
+      }
+
       case "listar_horarios_do_dia": {
         const ymd = normalizeYmd(input.data);
         if (!ymd) return { erro: "Data inválida. Use AAAA-MM-DD." };
@@ -2227,6 +2272,27 @@ async function executeAiTool(session, phone, name, input = {}) {
         const slots = await getFreeSlotsForDay(profId, ymd);
         const slot = slots.find((s) => s.time === normalizeHM(input.hora));
         if (!slot) return { erro: "Horário indisponível nesse dia.", horarios_livres: slots.map((s) => s.time) };
+
+        // Local de atendimento (multi-cidade). 0 locais → sem local; 1 → automático;
+        // >1 → exige que a IA pergunte e passe local_id.
+        const locais = await getAttendanceLocations(profId);
+        let locationId = null;
+        if (locais.length === 1) {
+          locationId = locais[0].id;
+        } else if (locais.length > 1) {
+          const chosen = input.local_id != null
+            ? locais.find((l) => l.id === Number(input.local_id))
+            : null;
+          if (!chosen) {
+            return {
+              erro: "O profissional atende em mais de um local. Pergunte ao paciente em qual cidade/unidade ele quer ser atendido e chame de novo com local_id.",
+              locais: locais.map((l) => ({ id: l.id, nome: l.nome, cidade: l.cidade, endereco: l.endereco })),
+            };
+          }
+          locationId = chosen.id;
+        }
+        const chosenLocal = locationId != null ? locais.find((l) => l.id === locationId) : null;
+
         const result = await createConsultation({
           professionalId: profId,
           userId: session.pacienteId,
@@ -2235,9 +2301,10 @@ async function executeAiTool(session, phone, name, input = {}) {
           value: base.value,
           isoUTC: slot.isoUTC,
           convenio: session.priceProfile === "convenio" ? "Quiro Ferreira" : null,
+          locationId,
         });
         if (!result.ok) return { erro: result.message || "Não foi possível agendar esse horário." };
-        await audit({ phone, actor: "ai", action: "consultation_created", detail: { consultationId: result.id, professionalId: profId, date: slot.isoUTC }, professionalId: profId });
+        await audit({ phone, actor: "ai", action: "consultation_created", detail: { consultationId: result.id, professionalId: profId, date: slot.isoUTC, locationId }, professionalId: profId });
         let meetLink = null;
         try { meetLink = await syncCreateEvent(result.id); } catch (e) { botLog("sync_create_error", { error: String(e) }); }
         return {
@@ -2247,6 +2314,7 @@ async function executeAiTool(session, phone, name, input = {}) {
           profissional: await getProfessionalName(profId),
           online: !!base.isOnline,
           link_meet: meetLink || null,
+          local: chosenLocal ? { nome: chosenLocal.nome, cidade: chosenLocal.cidade, endereco: chosenLocal.endereco } : null,
         };
       }
 
@@ -2390,6 +2458,14 @@ function buildAgentSystemPrompt(session, ctx) {
   if (ctx.insurances?.length) {
     lines.push(`- Planos/convênios que o profissional aceita: ${ctx.insurances.join(", ")} (além de pacientes particulares).`);
   }
+  if (ctx.locations?.length > 1) {
+    const nomes = ctx.locations.map((l) => l.cidade || l.nome).filter(Boolean).join(", ");
+    lines.push(
+      `- Este profissional atende em MAIS DE UM local${nomes ? ` (${nomes})` : ""}. Antes de agendar, use listar_locais, pergunte ao paciente em qual cidade/unidade ele quer ser atendido, informe o endereço desse local e passe o id escolhido em criar_consulta (local_id).`
+    );
+  } else if (ctx.locations?.length === 1 && ctx.locations[0].cidade) {
+    lines.push(`- O profissional atende em ${ctx.locations[0].cidade}.`);
+  }
   return lines.join("\n");
 }
 
@@ -2453,6 +2529,7 @@ async function routeMessageAI(session, phone, text) {
 
   const convenioInfo = await getProfessionalConvenioInfo(session.profissionalId);
   const insurances = await getProfessionalInsurances(session.profissionalId);
+  const locations = await getAttendanceLocations(session.profissionalId);
   const convenioLink = convenioInfo.affiliateCode
     ? `https://cartaoquiroferreira.com.br/register?ref=${convenioInfo.affiliateCode}`
     : "https://cartaoquiroferreira.com.br/register";
@@ -2461,6 +2538,7 @@ async function routeMessageAI(session, phone, text) {
     convenioType: convenioInfo.professionalType,
     convenioLink,
     insurances,
+    locations,
   });
 
   // Persistimos só a conversa "limpa" (texto do paciente + resposta final). Os
