@@ -72,6 +72,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
         { to: '/admin/scheduling-access', icon: <Clock size={20} />, label: 'Acesso à Agenda', color: 'text-red-400' },
         { to: '/admin/affiliates', icon: <DollarSign size={20} />, label: 'Afiliados', color: 'text-red-400' },
         { to: '/admin/agenda-partners', icon: <UserCheck size={20} />, label: 'Parceiros da Agenda', color: 'text-red-400' },
+        { to: '/admin/whatsapp-numbers', icon: <MessageCircle size={20} />, label: 'Números do WhatsApp', color: 'text-red-400' },
         { to: '/admin/coupons', icon: <Ticket size={20} />, label: 'Cupons', color: 'text-red-400' },
         { to: '/admin/reports', icon: <BarChart2 size={20} />, label: 'Relatórios', color: 'text-red-400' },
       ];

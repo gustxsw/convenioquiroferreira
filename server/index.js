@@ -50,6 +50,7 @@ import {
   getConversation,
   listConversations,
   getWhatsappReport,
+  invalidateNumbersCache,
 } from "./whatsapp.js";
 import {
   scheduleExpiryCheck,
@@ -1688,6 +1689,28 @@ const initializeDatabase = async () => {
       CREATE INDEX IF NOT EXISTS idx_whatsapp_ai_usage_professional ON whatsapp_ai_usage(professional_id);
       CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_professional ON whatsapp_messages(professional_id);
       CREATE INDEX IF NOT EXISTS idx_whatsapp_audit_professional ON whatsapp_audit_log(professional_id);
+    `);
+
+    // Registro de números da secretária virtual (multi-número), gerenciável pelo
+    // painel admin. Substitui a variável de ambiente WHATSAPP_NUMBERS: mapeia cada
+    // número Meta (phone_number_id / número exibido) ao profissional dono e permite
+    // ligar/desligar o modo IA e ajustar o teto diário por número, sem redeploy.
+    // O bot lê esta tabela com cache; se estiver vazia, faz fallback para o env.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_numbers (
+        id SERIAL PRIMARY KEY,
+        phone_number_id TEXT UNIQUE,
+        display_number TEXT,
+        professional_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        label TEXT,
+        ai_enabled BOOLEAN,
+        daily_limit INTEGER,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_numbers_professional ON whatsapp_numbers(professional_id);
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_numbers_display ON whatsapp_numbers(display_number);
     `);
 
     // Planos/convênios aceitos por cada profissional (para o bot responder e o agendamento perguntar).
@@ -12535,6 +12558,206 @@ app.get(
     } catch (error) {
       console.error("❌ [whatsapp-reports-pdf]", error);
       res.status(500).json({ message: "Erro ao gerar PDF do relatório: " + error.message });
+    }
+  }
+);
+
+// ===== ADMIN — Números da Secretária Virtual (whatsapp_numbers) =====
+// Gerencia o mapeamento número→profissional e a config de IA por número sem
+// depender do env WHATSAPP_NUMBERS / WHATSAPP_AI_MODE (evita redeploy). O bot lê
+// esta tabela com cache; após qualquer escrita invalidamos o cache.
+
+function normalizeAiEnabled(v) {
+  if (v === true || v === "true" || v === 1 || v === "1") return true;
+  if (v === false || v === "false" || v === 0 || v === "0") return false;
+  return null; // null = usar o padrão do env
+}
+
+// Lista os números cadastrados com o nome/tipo do profissional e o uso de IA de hoje.
+app.get(
+  "/api/admin/whatsapp/numbers",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const r = await pool.query(
+        `SELECT n.id, n.phone_number_id, n.display_number, n.professional_id,
+                n.label, n.ai_enabled, n.daily_limit, n.is_active,
+                n.created_at, n.updated_at,
+                u.name AS professional_name,
+                u.professional_type,
+                COALESCE(usage.replies_today, 0)::int AS ai_replies_today
+           FROM whatsapp_numbers n
+           LEFT JOIN users u ON u.id = n.professional_id
+           LEFT JOIN (
+             SELECT professional_id, COUNT(*) AS replies_today
+               FROM whatsapp_ai_usage
+              WHERE (created_at AT TIME ZONE 'America/Sao_Paulo')::date
+                    = (now() AT TIME ZONE 'America/Sao_Paulo')::date
+              GROUP BY professional_id
+           ) usage ON usage.professional_id = n.professional_id
+          ORDER BY u.name NULLS LAST, n.id`
+      );
+      res.json(r.rows);
+    } catch (error) {
+      console.error("❌ [whatsapp-numbers-list]", error);
+      res.status(500).json({ message: "Erro ao listar números" });
+    }
+  }
+);
+
+// Cria um número.
+app.post(
+  "/api/admin/whatsapp/numbers",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    const {
+      phone_number_id,
+      display_number,
+      professional_id,
+      label,
+      ai_enabled,
+      daily_limit,
+      is_active,
+    } = req.body || {};
+
+    if (!phone_number_id && !display_number) {
+      return res
+        .status(400)
+        .json({ message: "Informe o Phone Number ID (Meta) ou o número exibido." });
+    }
+    if (!professional_id) {
+      return res.status(400).json({ message: "Selecione o profissional dono do número." });
+    }
+    try {
+      const prof = await pool.query(
+        "SELECT id FROM users WHERE id = $1 AND 'professional' = ANY(roles)",
+        [professional_id]
+      );
+      if (prof.rows.length === 0) {
+        return res.status(400).json({ message: "Profissional inválido." });
+      }
+      const dl =
+        daily_limit === "" || daily_limit == null ? null : Number(daily_limit);
+      if (dl != null && (!Number.isFinite(dl) || dl < 0)) {
+        return res.status(400).json({ message: "Teto diário inválido." });
+      }
+      const r = await pool.query(
+        `INSERT INTO whatsapp_numbers
+           (phone_number_id, display_number, professional_id, label, ai_enabled, daily_limit, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id`,
+        [
+          phone_number_id ? String(phone_number_id).trim() : null,
+          display_number ? String(display_number).trim() : null,
+          professional_id,
+          label ? String(label).trim() : null,
+          normalizeAiEnabled(ai_enabled),
+          dl,
+          is_active === false ? false : true,
+        ]
+      );
+      invalidateNumbersCache();
+      res.status(201).json({ id: r.rows[0].id });
+    } catch (error) {
+      if (error.code === "23505") {
+        return res.status(409).json({ message: "Já existe um número com esse Phone Number ID." });
+      }
+      console.error("❌ [whatsapp-numbers-create]", error);
+      res.status(500).json({ message: "Erro ao cadastrar número" });
+    }
+  }
+);
+
+// Atualiza um número.
+app.put(
+  "/api/admin/whatsapp/numbers/:id",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    const { id } = req.params;
+    const {
+      phone_number_id,
+      display_number,
+      professional_id,
+      label,
+      ai_enabled,
+      daily_limit,
+      is_active,
+    } = req.body || {};
+    try {
+      if (professional_id) {
+        const prof = await pool.query(
+          "SELECT id FROM users WHERE id = $1 AND 'professional' = ANY(roles)",
+          [professional_id]
+        );
+        if (prof.rows.length === 0) {
+          return res.status(400).json({ message: "Profissional inválido." });
+        }
+      }
+      const dl =
+        daily_limit === "" || daily_limit == null ? null : Number(daily_limit);
+      if (dl != null && (!Number.isFinite(dl) || dl < 0)) {
+        return res.status(400).json({ message: "Teto diário inválido." });
+      }
+      const r = await pool.query(
+        `UPDATE whatsapp_numbers SET
+           phone_number_id = $1,
+           display_number = $2,
+           professional_id = $3,
+           label = $4,
+           ai_enabled = $5,
+           daily_limit = $6,
+           is_active = $7,
+           updated_at = NOW()
+         WHERE id = $8
+         RETURNING id`,
+        [
+          phone_number_id ? String(phone_number_id).trim() : null,
+          display_number ? String(display_number).trim() : null,
+          professional_id || null,
+          label ? String(label).trim() : null,
+          normalizeAiEnabled(ai_enabled),
+          dl,
+          is_active === false ? false : true,
+          id,
+        ]
+      );
+      if (r.rows.length === 0) {
+        return res.status(404).json({ message: "Número não encontrado." });
+      }
+      invalidateNumbersCache();
+      res.json({ id: r.rows[0].id });
+    } catch (error) {
+      if (error.code === "23505") {
+        return res.status(409).json({ message: "Já existe um número com esse Phone Number ID." });
+      }
+      console.error("❌ [whatsapp-numbers-update]", error);
+      res.status(500).json({ message: "Erro ao atualizar número" });
+    }
+  }
+);
+
+// Exclui um número.
+app.delete(
+  "/api/admin/whatsapp/numbers/:id",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const r = await pool.query(
+        "DELETE FROM whatsapp_numbers WHERE id = $1 RETURNING id",
+        [req.params.id]
+      );
+      if (r.rows.length === 0) {
+        return res.status(404).json({ message: "Número não encontrado." });
+      }
+      invalidateNumbersCache();
+      res.json({ message: "Número removido." });
+    } catch (error) {
+      console.error("❌ [whatsapp-numbers-delete]", error);
+      res.status(500).json({ message: "Erro ao remover número" });
     }
   }
 );

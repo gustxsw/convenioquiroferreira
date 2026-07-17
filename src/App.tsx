@@ -32,6 +32,7 @@ import ManageSchedulingAccessPage from "./pages/admin/ManageSchedulingAccessPage
 import ReportsPage from "./pages/admin/ReportsPage";
 import ManageAffiliatesPage from "./pages/admin/ManageAffiliatesPage";
 import ManageAgendaPartnersPage from "./pages/admin/ManageAgendaPartnersPage";
+import ManageWhatsappNumbersPage from "./pages/admin/ManageWhatsappNumbersPage";
 import ManageCouponsPage from "./pages/admin/ManageCouponsPage";
 import AffiliateFinancialReport from "./pages/admin/AffiliateFinancialReport";
 import AffiliateDashboard from "./pages/affiliate/AffiliateDashboard";
@@ -181,6 +182,7 @@ function App() {
         <Route path="/admin/cancelled-consultations" element={<CancelledConsultationsPage />} />
         <Route path="/admin/affiliates" element={<ManageAffiliatesPage />} />
         <Route path="/admin/agenda-partners" element={<ManageAgendaPartnersPage />} />
+        <Route path="/admin/whatsapp-numbers" element={<ManageWhatsappNumbersPage />} />
         <Route path="/admin/affiliates/financial-report" element={<AffiliateFinancialReport />} />
         <Route path="/admin/coupons" element={<ManageCouponsPage />} />
       </Route>

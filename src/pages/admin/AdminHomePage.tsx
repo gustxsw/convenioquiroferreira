@@ -7,6 +7,7 @@ import {
   BarChart2,
   CalendarClock,
   DollarSign,
+  MessageCircle,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
@@ -268,6 +269,12 @@ const AdminHomePage: React.FC = () => {
       description: "Configurar parceiros e vincular profissionais indicados",
       icon: <Users className="h-6 w-6 text-red-600" />,
       link: "/admin/agenda-partners",
+    },
+    {
+      title: "Números do WhatsApp",
+      description: "Vincular números aos profissionais e controlar a IA da secretária",
+      icon: <MessageCircle className="h-6 w-6 text-red-600" />,
+      link: "/admin/whatsapp-numbers",
     },
   ];
 
