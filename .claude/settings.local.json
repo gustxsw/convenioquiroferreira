@@ -34,7 +34,10 @@
       "Bash(Select-Object -First 80)",
       "Bash(xargs grep -l \"CREATE TABLE\\\\|ALTER TABLE\\\\|users\\\\|affiliates\\\\|leaders\")",
       "PowerShell(netsh interface *)",
-      "PowerShell(Get-Process *)"
+      "PowerShell(Get-Process *)",
+      "Skill(run)",
+      "Bash(git fetch *)",
+      "Bash(git add *)"
     ]
   }
 }
