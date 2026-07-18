@@ -134,6 +134,87 @@ function botLog(event, data = {}) {
   }
 }
 
+// ===== ANTI-LOOP / ANTI-BOT GUARD =====
+//
+// Três camadas de proteção:
+//   1. Burst: N mensagens em 60s → despedida + silêncio (ou drop silencioso se flood)
+//   2. Fingerprint: padrões de bot conhecido (número SAC, menu numerado, etc.)
+//   3. Reply loop: o BOT enviou N respostas seguidas sem avanço → escala para equipe
+
+// Tracker in-memory: phone → timestamps (ms) dentro da janela deslizante
+const _burst = new Map();
+const BURST_WINDOW_MS = 60_000;
+const BURST_SUSPECT   = 7;   // ≥ este valor: farewell + bloqueia sessão
+const BURST_BLOCK     = 14;  // ≥ este valor: drop silencioso total
+
+function trackBurst(phone) {
+  const now = Date.now();
+  let ts = (_burst.get(phone) || []).filter(t => now - t < BURST_WINDOW_MS);
+  ts.push(now);
+  _burst.set(phone, ts);
+  if (_burst.size > 5000) {
+    for (const [k, v] of _burst)
+      if (!v.some(t => now - t < BURST_WINDOW_MS)) _burst.delete(k);
+  }
+  return ts.length;
+}
+
+// Últimos dois intervalos entre mensagens (para detectar cadência robótica)
+function lastGapsMs(phone) {
+  const ts = _burst.get(phone) || [];
+  if (ts.length < 2) return [];
+  return ts.slice(-3).reduce((acc, t, i, a) => {
+    if (i > 0) acc.push(t - a[i - 1]);
+    return acc;
+  }, []);
+}
+
+// Números comerciais / SAC conhecidos (Brasil)
+const BOT_NUMBER_RE = [
+  /^550800/,           // 0800 toll-free
+  /^5511[2-5]\d{7}$/,  // SP fixo
+  /^5521[2-5]\d{7}$/,  // RJ fixo
+  /^5531[2-5]\d{7}$/,  // BH fixo
+  /^5541[2-5]\d{7}$/,  // Curitiba fixo
+  /^5551[2-5]\d{7}$/,  // Porto Alegre fixo
+  /^5561[2-5]\d{7}$/,  // Brasília fixo
+];
+
+// Padrões de texto que indicam mensagem automática
+const BOT_TEXT_RE = [
+  /^\s*\d+\s*[.)]\s+\S.*\n\s*\d+\s*[.)]/m,      // menu numerado (≥2 itens)
+  /^[\*\-•]\s+.+\n[\*\-•]\s+/m,                  // lista com bullets
+  /protocolo\s*n?[°º]?\s*[\dA-Z\-]{5,}/i,         // "Protocolo nº 12345"
+  /unsubscri|descadastrar|cancelar\s+recebimento|opt[- ]?out/i,
+  /atendimento\s+autom[aá]tico|chatbot|assistente\s+virtual/i,
+  /https?:\/\/\S{70,}/,                            // URL de rastreamento longa
+  /clique\s+aqui.*https?:\/\//i,
+];
+
+function looksLikeBot(phone, text) {
+  if (BOT_NUMBER_RE.some(re => re.test(phone))) return true;
+  if (text && BOT_TEXT_RE.some(re => re.test(text))) return true;
+  // cadência mecânica: 3 mensagens em < 3 s cada uma
+  const gaps = lastGapsMs(phone);
+  if (gaps.length >= 2 && gaps.every(g => g < 3000)) return true;
+  return false;
+}
+
+// Reply-loop: bot enviou muitas respostas sem progressão da conversa
+const REPLY_LOOP_LIMIT = 7;
+
+function incrementReplyStreak(session) {
+  session._replyStreak = (session._replyStreak || 0) + 1;
+}
+
+function resetReplyStreak(session) {
+  session._replyStreak = 0;
+}
+
+function isInReplyLoop(session) {
+  return (session._replyStreak || 0) >= REPLY_LOOP_LIMIT;
+}
+
 // ===== UTILITÁRIOS =====
 
 function normalize(s) {
@@ -197,6 +278,7 @@ function newSession() {
 }
 
 function resetFlow(session) {
+  resetReplyStreak(session);
   session.step = null;
   session.intent = null;
   session.flow = null;
@@ -491,6 +573,7 @@ async function reply(phone, text, { phoneNumberId, intent = null, step = null, p
 
 // Envia usando o contexto da sessão (phoneNumberId/intent/step atuais).
 async function replyS(session, phone, text) {
+  incrementReplyStreak(session);
   await reply(phone, text, {
     phoneNumberId: session.phoneNumberId,
     intent: session.intent,
@@ -1315,6 +1398,7 @@ async function handleAgendarCpf(session, phone, text) {
     if (time) session.pendingTime = time;
   }
   session.cpf = cpf;
+  resetReplyStreak(session); // progresso real: CPF aceito
   const patient = await identifyPatient(cpf, session.profissionalId);
   if (patient) {
     session.patientKind = patient.kind; // 'user' | 'private'
@@ -2002,6 +2086,7 @@ async function handleConvenioCpf(session, phone, text) {
     return;
   }
   session.cpf = cpf;
+  resetReplyStreak(session); // progresso real: CPF aceito (fluxo convênio)
   const client = await findClientByCpf(cpf);
   if (client) {
     session.pacienteNome = client.name;
@@ -2039,6 +2124,19 @@ async function handleConvenioCadastroNome(session, phone, text) {
 // ===== ROTEAMENTO =====
 
 async function routeMessage(session, phone, text) {
+  // Reply-loop: o bot enviou muitas respostas seguidas sem avanço → escala para equipe.
+  if (isInReplyLoop(session)) {
+    resetFlow(session);
+    session.mode = "pending";
+    botLog("reply_loop_escalate", { phone, streak: session._replyStreak });
+    await replyS(session, phone, pick([
+      "Percebi que estamos rodando em círculos aqui 😅 Vou chamar alguém da nossa equipe para te atender melhor.",
+      "Estou com dificuldade de entender o que você precisa. Vou avisar nossa equipe — eles entrarão em contato logo.",
+    ]));
+    await saveSession(phone, session);
+    return;
+  }
+
   // SAIR e ATENDENTE interrompem qualquer fluxo ativo.
   const globalIntent = detectIntent(text);
   if (globalIntent === "SAIR") {
@@ -2753,8 +2851,42 @@ export async function processInbound({ phone, messageId, type, textBody = "", ph
   }
   await audit({ phone, actor: "patient", action: "message_in", detail: { type }, professionalId: mappedProf });
 
+  // ── Burst / bot / flood guard ──────────────────────────────────────────
+  const burstCount = trackBurst(phone);
+  const botSuspected = looksLikeBot(phone, textBody);
+
+  // Flood absoluto: drop silencioso (responder seria alimentar o loop)
+  if (burstCount >= BURST_BLOCK) {
+    botLog("flood_block", { phone, burstCount });
+    return;
+  }
+
+  // Bot detectado ou burst suspeito: despedida única e silencia a sessão
+  if (burstCount >= BURST_SUSPECT || botSuspected) {
+    const raw = await loadSessionRaw(phone);
+    if (raw?.mode !== "blocked_auto") {
+      const farewellText =
+        "Este contato parece ser um sistema automático. Não consigo continuar esta conversa. Até logo! 👋";
+      await sendText({ toDigits: phone, text: farewellText, phoneNumberId });
+      const sess = raw || newSession();
+      sess.mode = "blocked_auto";
+      await saveSession(phone, sess);
+      await audit({ phone, actor: "ai", action: "bot_detected",
+        detail: { burstCount, botSuspected }, professionalId: mappedProf });
+      botLog("bot_detected", { phone, burstCount, botSuspected });
+    }
+    return;
+  }
+  // ── fim do guard ────────────────────────────────────────────────────────
+
   let session = (await loadSession(phone)) || newSession();
   session.phoneNumberId = phoneNumberId;
+
+  // Bot detectado em sessão anterior (blocked_auto): silêncio total.
+  if (session.mode === "blocked_auto") {
+    botLog("blocked_auto_skip", { phone });
+    return;
+  }
 
   // Conversa assumida por um operador humano: registra e silencia o bot.
   if (session.mode === "human") {
