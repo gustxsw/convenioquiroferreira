@@ -19,6 +19,7 @@ import {
   Calendar,
   Instagram,
   Facebook,
+  AlignLeft,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 import { getProfessionalActorId } from "../../utils/professionalActor";
@@ -79,6 +80,7 @@ const ProfessionalProfilePage: React.FC = () => {
     phone: "",
     social_instagram: "",
     social_facebook: "",
+    bio: "",
     currentPassword: "",
     newPassword: "",
     confirmPassword: "",
@@ -216,6 +218,7 @@ const ProfessionalProfilePage: React.FC = () => {
           phone: userData.phone || "",
           social_instagram: userData.social_instagram || "",
           social_facebook: userData.social_facebook || "",
+          bio: userData.bio || "",
         }));
       }
 
@@ -280,6 +283,7 @@ const ProfessionalProfilePage: React.FC = () => {
         phone: profileData.phone,
         social_instagram: profileData.social_instagram.trim(),
         social_facebook: profileData.social_facebook.trim(),
+        bio: profileData.bio.trim(),
       };
 
       if (profileData.newPassword) {
@@ -847,6 +851,29 @@ const ProfessionalProfilePage: React.FC = () => {
                   className="input"
                   placeholder="Seu perfil ou link do Facebook"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <AlignLeft className="h-4 w-4 mr-2 text-gray-400" />
+                  Descrição / Bio
+                </label>
+                <textarea
+                  value={profileData.bio}
+                  onChange={(e) =>
+                    setProfileData((prev) => ({
+                      ...prev,
+                      bio: e.target.value,
+                    }))
+                  }
+                  className="input resize-none"
+                  rows={3}
+                  maxLength={400}
+                  placeholder="Uma breve descrição sobre você, sua formação e especialidades..."
+                />
+                <p className="text-xs text-gray-400 mt-1 text-right">
+                  {profileData.bio.length}/400
+                </p>
               </div>
 
               <div className="border-t border-gray-200 pt-4">

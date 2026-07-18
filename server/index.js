@@ -334,10 +334,11 @@ const initializeDatabase = async () => {
       )
     `);
 
-    // Redes sociais do profissional (exibidas no painel do cliente).
+    // Redes sociais e bio do profissional (exibidos no painel do cliente).
     await pool.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS social_instagram TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS social_facebook TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;
     `);
 
     await pool.query(`
@@ -1711,6 +1712,25 @@ const initializeDatabase = async () => {
       );
       CREATE INDEX IF NOT EXISTS idx_whatsapp_numbers_professional ON whatsapp_numbers(professional_id);
       CREATE INDEX IF NOT EXISTS idx_whatsapp_numbers_display ON whatsapp_numbers(display_number);
+    `);
+
+    // Contatos por número de WhatsApp: memória de paciente por profissional.
+    // Cada profissional tem sua própria agenda de contatos — um número de paciente
+    // não é compartilhado entre profissionais.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_contacts (
+        phone TEXT NOT NULL,
+        professional_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        patient_id INTEGER,
+        private_patient_id INTEGER,
+        patient_kind TEXT NOT NULL,
+        patient_name TEXT NOT NULL,
+        cpf TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (phone, professional_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_contacts_prof ON whatsapp_contacts(professional_id);
     `);
 
     // Planos/convênios aceitos por cada profissional (para o bot responder e o agendamento perguntar).
@@ -3187,7 +3207,7 @@ app.get("/api/users/:id", authenticate, async (req, res) => {
         id, name, cpf, email, phone, birth_date, address, address_number,
         address_complement, neighborhood, city, state, roles, subscription_status,
         subscription_expiry, photo_url, category_name, percentage, crm, professional_type, created_at,
-        linked_professional_id, linked_professional_ids, social_instagram, social_facebook
+        linked_professional_id, linked_professional_ids, social_instagram, social_facebook, bio
       FROM users
       WHERE id = $1
     `,
@@ -3442,6 +3462,7 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
       linked_professional_ids,
       social_instagram,
       social_facebook,
+      bio,
     } = req.body;
 
     const targetUserId = Number.parseInt(id, 10);
@@ -3636,6 +3657,13 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
         [social_facebook?.trim() || null, id]
       );
       updatedUser.social_facebook = r.rows[0]?.social_facebook ?? null;
+    }
+    if (bio !== undefined) {
+      const r = await pool.query(
+        "UPDATE users SET bio = $1, updated_at = NOW() WHERE id = $2 RETURNING bio",
+        [bio?.trim() || null, id]
+      );
+      updatedUser.bio = r.rows[0]?.bio ?? null;
     }
 
     console.log("✅ User updated successfully:", updatedUser.id);
@@ -7700,7 +7728,7 @@ app.get("/api/professionals", authenticate, async (req, res) => {
       SELECT
         id, name, email, phone, address, address_number, address_complement,
         neighborhood, city, state, category_name, photo_url, crm, percentage, professional_type,
-        social_instagram, social_facebook
+        social_instagram, social_facebook, bio
       FROM users u
       WHERE 'professional' = ANY(u.roles)
         AND u.professional_type = 'convenio'

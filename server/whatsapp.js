@@ -547,6 +547,78 @@ async function saveSession(phone, session) {
   );
 }
 
+// ===== CONTATOS POR NÚMERO (agenda de pacientes por profissional) =====
+//
+// Cada profissional tem seus próprios contatos. Ao identificar um paciente com
+// sucesso, salvamos phone → paciente para não precisar pedir o CPF novamente.
+
+async function saveContact(phone, professionalId, patient, cpf) {
+  if (!professionalId || !cpf || !patient?.name) return;
+  try {
+    await pool.query(
+      `INSERT INTO whatsapp_contacts
+         (phone, professional_id, patient_id, private_patient_id, patient_kind, patient_name, cpf, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+       ON CONFLICT (phone, professional_id) DO UPDATE
+         SET patient_id         = EXCLUDED.patient_id,
+             private_patient_id = EXCLUDED.private_patient_id,
+             patient_kind       = EXCLUDED.patient_kind,
+             patient_name       = EXCLUDED.patient_name,
+             cpf                = EXCLUDED.cpf,
+             updated_at         = NOW()`,
+      [
+        phone, professionalId,
+        patient.userId || null,
+        patient.privatePatientId || null,
+        patient.kind,
+        patient.name,
+        cpf,
+      ]
+    );
+    botLog("contact_saved", { phone, professionalId, name: patient.name });
+  } catch (e) {
+    botLog("contact_save_error", { error: String(e) });
+  }
+}
+
+async function loadContact(phone, professionalId) {
+  if (!professionalId) return null;
+  try {
+    const r = await pool.query(
+      `SELECT patient_id, private_patient_id, patient_kind, patient_name, cpf
+         FROM whatsapp_contacts WHERE phone = $1 AND professional_id = $2`,
+      [phone, professionalId]
+    );
+    return r.rows[0] || null;
+  } catch (e) {
+    botLog("contact_load_error", { error: String(e) });
+    return null;
+  }
+}
+
+async function deleteContact(phone, professionalId) {
+  if (!professionalId) return;
+  try {
+    await pool.query(
+      "DELETE FROM whatsapp_contacts WHERE phone = $1 AND professional_id = $2",
+      [phone, professionalId]
+    );
+    botLog("contact_deleted", { phone, professionalId });
+  } catch (e) {
+    botLog("contact_delete_error", { error: String(e) });
+  }
+}
+
+// Aplica um contato salvo à sessão corrente (pré-preenche dados do paciente).
+function applyContactToSession(session, contact) {
+  session.cpf             = contact.cpf;
+  session.patientKind     = contact.patient_kind;
+  session.pacienteId      = contact.patient_id;
+  session.privatePatientId = contact.private_patient_id;
+  session.pacienteNome    = contact.patient_name;
+  session._fromContact    = true;   // flag: CPF veio do cache, não do usuário
+}
+
 // ===== ENVIO + LOG =====
 
 // Envio de texto agnóstico ao transporte. WHATSAPP_PROVIDER=baileys usa a
@@ -1278,42 +1350,58 @@ async function startFlow(session, phone, text, intent) {
     case "AGENDAR": {
       session.flow = "agendar";
       session.step = "agendar_cpf";
-      const fastCpf = extractCpfFromText(text);
-      if (fastCpf) {
-        // Fast-track: CPF já veio na primeira mensagem — extrai data/hora também.
-        const { ymd: fYmd, time: fTime } = parseWhen(text);
-        if (fYmd) session.pendingYmd = fYmd;
-        if (fTime) session.pendingTime = fTime;
-        await handleAgendarCpf(session, phone, fastCpf);
+      const { ymd: fYmd, time: fTime } = parseWhen(text);
+      if (fYmd) session.pendingYmd = fYmd;
+      if (fTime) session.pendingTime = fTime;
+      const savedAgendar = await loadContact(phone, session.profissionalId);
+      if (savedAgendar) {
+        // CPF salvo: pula a pergunta e vai direto para a verificação.
+        session._fromSavedContact = true;
+        await handleAgendarCpf(session, phone, savedAgendar.cpf);
       } else {
-        // Sem CPF, mas guarda data/hora se já vieram — usadas quando o CPF chegar.
-        const { ymd: fYmd, time: fTime } = parseWhen(text);
-        if (fYmd) session.pendingYmd = fYmd;
-        if (fTime) session.pendingTime = fTime;
+        const fastCpf = extractCpfFromText(text);
+        if (fastCpf) {
+          await handleAgendarCpf(session, phone, fastCpf);
+        } else {
+          await replyS(session, phone, pick([
+            "Com prazer! Para começar, preciso confirmar o seu *CPF*. Pode enviar com ou sem pontos.\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_",
+            "Claro! Me informa o seu *CPF* para eu localizar seu cadastro? Pode enviar do jeito que quiser — com ou sem pontos.\n\n_(Escreva *sair* para encerrar ou *atendente* para falar com nossa equipe a qualquer momento.)_",
+            "Ótimo! Vamos agendar sua consulta. Para isso, preciso do seu *CPF*. Pode enviar com ou sem pontos.\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_",
+          ]));
+        }
+      }
+      break;
+    }
+    case "REAGENDAR": {
+      session.flow = "reagendar";
+      session.step = "reagendar_cpf";
+      const savedReagendar = await loadContact(phone, session.profissionalId);
+      if (savedReagendar) {
+        session._fromSavedContact = true;
+        await handleReagendarCpf(session, phone, savedReagendar.cpf);
+      } else {
         await replyS(session, phone, pick([
-          "Com prazer! Para começar, preciso confirmar o seu *CPF*. Pode enviar com ou sem pontos.\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_",
-          "Claro! Me informa o seu *CPF* para eu localizar seu cadastro? Pode enviar do jeito que quiser — com ou sem pontos.\n\n_(Escreva *sair* para encerrar ou *atendente* para falar com nossa equipe a qualquer momento.)_",
-          "Ótimo! Vamos agendar sua consulta. Para isso, preciso do seu *CPF*. Pode enviar com ou sem pontos.\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_",
+          "Sem problema, vamos encontrar um novo horário para você. Me informa o seu *CPF*? Pode enviar com ou sem pontos.\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_",
+          "Claro! Vamos resolver isso. Me passa o seu *CPF* para localizar sua consulta? Pode enviar com ou sem pontos.\n\n_(Escreva *sair* para encerrar ou *atendente* para falar com nossa equipe a qualquer momento.)_",
         ]));
       }
       break;
     }
-    case "REAGENDAR":
-      session.flow = "reagendar";
-      session.step = "reagendar_cpf";
-      await replyS(session, phone, pick([
-        "Sem problema, vamos encontrar um novo horário para você. Me informa o seu *CPF*? Pode enviar com ou sem pontos.\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_",
-        "Claro! Vamos resolver isso. Me passa o seu *CPF* para localizar sua consulta? Pode enviar com ou sem pontos.\n\n_(Escreva *sair* para encerrar ou *atendente* para falar com nossa equipe a qualquer momento.)_",
-      ]));
-      break;
-    case "CANCELAR":
+    case "CANCELAR": {
       session.flow = "cancelar";
       session.step = "cancelar_cpf";
-      await replyS(session, phone, pick([
-        "Entendido. Vou cuidar disso para você. Me informa o seu *CPF*, por favor? Pode enviar com ou sem pontos.\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_",
-        "Tudo bem, cuido disso agora mesmo. Para localizar sua consulta, preciso do seu *CPF*. Pode enviar com ou sem pontos.\n\n_(Escreva *sair* para encerrar ou *atendente* para falar com nossa equipe a qualquer momento.)_",
-      ]));
+      const savedCancelar = await loadContact(phone, session.profissionalId);
+      if (savedCancelar) {
+        session._fromSavedContact = true;
+        await handleCancelarCpf(session, phone, savedCancelar.cpf);
+      } else {
+        await replyS(session, phone, pick([
+          "Entendido. Vou cuidar disso para você. Me informa o seu *CPF*, por favor? Pode enviar com ou sem pontos.\n\n_(A qualquer momento, escreva *sair* para encerrar ou *atendente* para falar com nossa equipe.)_",
+          "Tudo bem, cuido disso agora mesmo. Para localizar sua consulta, preciso do seu *CPF*. Pode enviar com ou sem pontos.\n\n_(Escreva *sair* para encerrar ou *atendente* para falar com nossa equipe a qualquer momento.)_",
+        ]));
+      }
       break;
+    }
     case "CONVENIO":
       session.step = "convenio_chat";
       await handleConvenioChat(session, phone, text);
@@ -1325,11 +1413,21 @@ async function startFlow(session, phone, text, intent) {
       const quem = profNome
         ? `a secretária virtual de *${firstName(profNome)}*`
         : "a secretária virtual do seu atendimento";
-      await replyS(session, phone, pick([
-        `Olá! Aqui é ${quem}. Como posso te ajudar? Posso *marcar*, *remarcar* ou *cancelar* uma consulta, ou tirar dúvidas sobre o *convênio*.`,
-        `Oi, tudo bem? Sou ${quem}. Estou aqui para te ajudar com agendamentos e dúvidas sobre o convênio. O que você precisa?`,
-        `Olá, seja bem-vindo. Sou ${quem}. Posso *agendar*, *remarcar* ou *cancelar* consultas, e também esclarecer dúvidas sobre o *convênio*. Como posso ajudar?`,
-      ]));
+      const savedSaud = await loadContact(phone, session.profissionalId);
+      if (savedSaud) {
+        const pNome = firstName(savedSaud.patient_name);
+        await replyS(session, phone, pick([
+          `Olá, ${pNome}! Aqui é ${quem}. Como posso te ajudar? Posso *marcar*, *remarcar* ou *cancelar* uma consulta, ou tirar dúvidas sobre o *convênio*.`,
+          `Oi, ${pNome}! Sou ${quem}. O que você precisa hoje?`,
+          `Olá, ${pNome}, que bom te ver! Sou ${quem}. Posso *agendar*, *remarcar* ou *cancelar* consultas. Como posso ajudar?`,
+        ]));
+      } else {
+        await replyS(session, phone, pick([
+          `Olá! Aqui é ${quem}. Como posso te ajudar? Posso *marcar*, *remarcar* ou *cancelar* uma consulta, ou tirar dúvidas sobre o *convênio*.`,
+          `Oi, tudo bem? Sou ${quem}. Estou aqui para te ajudar com agendamentos e dúvidas sobre o convênio. O que você precisa?`,
+          `Olá, seja bem-vindo. Sou ${quem}. Posso *agendar*, *remarcar* ou *cancelar* consultas, e também esclarecer dúvidas sobre o *convênio*. Como posso ajudar?`,
+        ]));
+      }
       break;
     }
   }
@@ -1401,11 +1499,13 @@ async function handleAgendarCpf(session, phone, text) {
   resetReplyStreak(session); // progresso real: CPF aceito
   const patient = await identifyPatient(cpf, session.profissionalId);
   if (patient) {
+    delete session._fromSavedContact;
     session.patientKind = patient.kind; // 'user' | 'private'
     session.pacienteId = patient.userId || null;
     session.privatePatientId = patient.privatePatientId || null;
     session.pacienteNome = patient.name;
     session.priceProfile = patient.profile; // 'convenio' | 'particular'
+    await saveContact(phone, session.profissionalId, patient, cpf);
     await replyS(session, phone, pick([
       `Cadastro encontrado, ${firstName(patient.name)}!`,
       `Olá, ${firstName(patient.name)}! Encontrei seu cadastro.`,
@@ -1413,6 +1513,14 @@ async function handleAgendarCpf(session, phone, text) {
     ]));
     await proceedToConvenio(session, phone);
   } else {
+    if (session._fromSavedContact) {
+      // CPF em cache ficou obsoleto: limpa e pede novamente.
+      delete session._fromSavedContact;
+      await deleteContact(phone, session.profissionalId);
+      session.step = "agendar_cpf";
+      await replyS(session, phone, "Não encontrei o cadastro salvo para este número. Para continuar, me informa o seu *CPF*, por favor.");
+      return;
+    }
     session.step = "agendar_tipo_cadastro";
     await replyS(session, phone, pick([
       "Não encontrei nenhum cadastro com esse CPF. Gostaria de continuar como *paciente particular*? É só responder *sim*.",
@@ -1465,6 +1573,9 @@ async function handleAgendarCadastroNome(session, phone, text) {
     session.pacienteNome = created.name;
     session.priceProfile = "particular";
     await audit({ phone, actor: "ai", action: "private_patient_created", detail: { privatePatientId: created.id }, professionalId: session.profissionalId });
+    await saveContact(phone, session.profissionalId,
+      { name: created.name, kind: "private", userId: null, privatePatientId: created.id },
+      session.cpf);
   } else {
     // Novo conveniado: ainda sem assinatura ativa, então o preço desta consulta é o particular.
     const created = await createClient({ name: nome, phone, cpf: session.cpf });
@@ -1474,6 +1585,9 @@ async function handleAgendarCadastroNome(session, phone, text) {
     session.pacienteNome = created.name;
     session.priceProfile = "particular";
     await audit({ phone, actor: "ai", action: "client_created", detail: { clientId: created.id }, professionalId: session.profissionalId });
+    await saveContact(phone, session.profissionalId,
+      { name: created.name, kind: "user", userId: created.id, privatePatientId: null },
+      session.cpf);
   }
   await proceedToConvenio(session, phone);
 }
@@ -1813,14 +1927,23 @@ async function handleReagendarCpf(session, phone, text) {
   }
   const patient = await identifyPatient(cpf, session.profissionalId);
   if (!patient) {
+    if (session._fromSavedContact) {
+      delete session._fromSavedContact;
+      await deleteContact(phone, session.profissionalId);
+      session.step = "reagendar_cpf";
+      await replyS(session, phone, "Não encontrei o cadastro salvo para este número. Para continuar, me informa o seu *CPF*, por favor.");
+      return;
+    }
     await replyS(session, phone, "Não encontrei nenhum cadastro com esse CPF. Se quiser agendar uma consulta, é só me dizer *\"agendar\"*.");
     resetFlow(session);
     return;
   }
+  delete session._fromSavedContact;
   session.pacienteId = patient.userId || null;
   session.privatePatientId = patient.privatePatientId || null;
   session.pacienteNome = patient.name;
   session.priceProfile = patient.profile;
+  await saveContact(phone, session.profissionalId, patient, cpf);
   const consultas = await getActiveConsultations({
     userId: patient.userId,
     privatePatientId: patient.privatePatientId,
@@ -1921,13 +2044,22 @@ async function handleCancelarCpf(session, phone, text) {
   }
   const patient = await identifyPatient(cpf, session.profissionalId);
   if (!patient) {
+    if (session._fromSavedContact) {
+      delete session._fromSavedContact;
+      await deleteContact(phone, session.profissionalId);
+      session.step = "cancelar_cpf";
+      await replyS(session, phone, "Não encontrei o cadastro salvo para este número. Para continuar, me informa o seu *CPF*, por favor.");
+      return;
+    }
     await replyS(session, phone, "Não encontrei nenhum cadastro com esse CPF. Pode verificar se está correto?");
     resetFlow(session);
     return;
   }
+  delete session._fromSavedContact;
   session.pacienteId = patient.userId || null;
   session.privatePatientId = patient.privatePatientId || null;
   session.pacienteNome = patient.name;
+  await saveContact(phone, session.profissionalId, patient, cpf);
   const consultas = await getActiveConsultations({
     userId: patient.userId,
     privatePatientId: patient.privatePatientId,
@@ -2399,6 +2531,7 @@ async function executeAiTool(session, phone, name, input = {}) {
         session.privatePatientId = patient.privatePatientId || null;
         session.pacienteNome = patient.name;
         session.priceProfile = patient.profile;
+        await saveContact(phone, profId, patient, cpf);
         return {
           encontrado: true,
           nome: patient.name,
@@ -2418,6 +2551,9 @@ async function executeAiTool(session, phone, name, input = {}) {
         session.priceProfile = "particular";
         session.cpf = cpf;
         await audit({ phone, actor: "ai", action: "private_patient_created", detail: { privatePatientId: created.id }, professionalId: profId });
+        await saveContact(phone, profId,
+          { name: created.name, kind: "private", userId: null, privatePatientId: created.id },
+          cpf);
         return { ok: true, nome: created.name };
       }
 
@@ -2623,7 +2759,9 @@ function buildAgentSystemPrompt(session, ctx) {
     "Você conduz a conversa de forma natural e usa FERRAMENTAS para agir de verdade na agenda. Nunca invente horários, preços ou confirme um agendamento sem chamar a ferramenta correspondente.",
     "",
     "Regras:",
-    "- Para agendar, remarcar ou cancelar, primeiro identifique o paciente com identificar_paciente (peça o CPF — 11 dígitos).",
+    ctx.knownPatient
+      ? `- Este número já está vinculado ao paciente *${ctx.knownPatient.name}*${ctx.knownPatient.cpf ? ` (CPF ${ctx.knownPatient.cpf})` : ""}. NÃO peça o CPF — chame identificar_paciente com esse CPF antes de agendar/remarcar/cancelar, sem precisar perguntar ao paciente. Só peça o CPF se o paciente quiser usar outro cadastro.`
+      : "- Para agendar, remarcar ou cancelar, primeiro identifique o paciente com identificar_paciente (peça o CPF — 11 dígitos).",
     "- Converta datas relativas ('amanhã', 'próxima segunda', 'dia 15') para AAAA-MM-DD você mesmo, usando a data de hoje acima.",
     "- Só ofereça horários que vieram de listar_dias_disponiveis ou listar_horarios_do_dia.",
     "- Antes de criar ou cancelar, confirme o dia/horário com o paciente em linguagem natural.",
@@ -2716,6 +2854,12 @@ async function routeMessageAI(session, phone, text) {
     return;
   }
 
+  // Carrega contato salvo para evitar que a IA peça o CPF novamente.
+  if (!session.pacienteId && !session.privatePatientId) {
+    const savedAI = await loadContact(phone, session.profissionalId);
+    if (savedAI) applyContactToSession(session, savedAI);
+  }
+
   const convenioInfo = await getProfessionalConvenioInfo(session.profissionalId);
   const insurances = await getProfessionalInsurances(session.profissionalId);
   const locations = await getAttendanceLocations(session.profissionalId);
@@ -2728,6 +2872,9 @@ async function routeMessageAI(session, phone, text) {
     convenioLink,
     insurances,
     locations,
+    knownPatient: session.pacienteNome
+      ? { name: session.pacienteNome, cpf: session.cpf || null }
+      : null,
   });
 
   // Persistimos só a conversa "limpa" (texto do paciente + resposta final). Os
