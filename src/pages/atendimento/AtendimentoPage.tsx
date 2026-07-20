@@ -34,6 +34,9 @@ type Message = {
   intent: string | null;
   step: string | null;
   text: string;
+  media_type?: string | null;
+  media_url?: string | null;
+  media_mime?: string | null;
   created_at: string;
 };
 
@@ -658,6 +661,36 @@ const AtendimentoPage: React.FC = () => {
                               >
                                 {isHuman ? <Headphones size={10} /> : isBot ? <Bot size={10} /> : null}
                                 {senderLabel}
+                              </div>
+                            )}
+                            {m.media_url && (
+                              <div className="mb-1">
+                                {m.media_type === "image" || m.media_type === "sticker" ? (
+                                  <a href={m.media_url} target="_blank" rel="noreferrer">
+                                    <img
+                                      src={m.media_url}
+                                      alt="imagem enviada pelo paciente"
+                                      style={{ maxWidth: "100%", maxHeight: 260, borderRadius: 8, display: "block" }}
+                                    />
+                                  </a>
+                                ) : m.media_type === "audio" ? (
+                                  <audio controls src={m.media_url} style={{ maxWidth: "100%" }} />
+                                ) : m.media_type === "video" ? (
+                                  <video
+                                    controls
+                                    src={m.media_url}
+                                    style={{ maxWidth: "100%", maxHeight: 260, borderRadius: 8 }}
+                                  />
+                                ) : (
+                                  <a
+                                    href={m.media_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[13px] font-medium text-blue-600 underline"
+                                  >
+                                    📎 Abrir arquivo enviado
+                                  </a>
+                                )}
                               </div>
                             )}
                             {m.text && (

@@ -471,13 +471,13 @@ export function parseWhen(text) {
 // ===== PERSISTÊNCIA: MENSAGENS, SESSÃO, AUDITORIA =====
 
 // INSERT inbound com idempotência. Retorna true se a mensagem é nova.
-async function recordInbound({ phone, messageId, text, intent = null, step = null, professionalId = null }) {
+async function recordInbound({ phone, messageId, text, intent = null, step = null, professionalId = null, mediaType = null, mediaUrl = null, mediaMime = null }) {
   const r = await pool.query(
-    `INSERT INTO whatsapp_messages (phone, message_id, direction, actor, intent, step, text, professional_id)
-     VALUES ($1, $2, 'inbound', 'patient', $3, $4, $5, $6)
+    `INSERT INTO whatsapp_messages (phone, message_id, direction, actor, intent, step, text, professional_id, media_type, media_url, media_mime)
+     VALUES ($1, $2, 'inbound', 'patient', $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (message_id) DO NOTHING
      RETURNING id`,
-    [phone, messageId || null, intent, step, text || null, professionalId]
+    [phone, messageId || null, intent, step, text || null, professionalId, mediaType, mediaUrl, mediaMime]
   );
   return r.rows.length > 0;
 }
@@ -957,6 +957,66 @@ async function getBaseService(professionalId, priceProfile = "convenio") {
   };
 }
 
+// Formata um valor numérico como moeda BRL (ex.: 120 -> "R$ 120,00").
+function formatBRL(v) {
+  if (v == null || v === "") return null;
+  return `R$ ${Number(v).toFixed(2).replace(".", ",")}`;
+}
+
+// Todos os serviços/procedimentos do profissional. Para profissionais com mais de um
+// serviço (ex.: dentista com clareamento, manutenção de aparelho, avaliação), a IA
+// lista as opções e agenda o serviço escolhido — não assume o serviço-base.
+async function listServices(professionalId) {
+  const r = await pool.query(
+    `SELECT id AS service_id, name, description, base_price, price_member, price_private,
+            COALESCE(is_online, false) AS is_online,
+            COALESCE(is_base_service, false) AS is_base
+       FROM services
+      WHERE professional_id = $1
+      ORDER BY is_base_service DESC NULLS LAST, name ASC, id ASC`,
+    [professionalId]
+  );
+  return r.rows.map((s) => ({
+    service_id: s.service_id,
+    name: s.name || null,
+    description: s.description || null,
+    isOnline: s.is_online,
+    isBase: s.is_base,
+    priceMember: s.price_member ?? s.base_price ?? null,
+    pricePrivate: s.price_private ?? s.base_price ?? null,
+  }));
+}
+
+// Resolve o serviço a agendar: com serviceId, valida que pertence ao profissional e
+// calcula o valor pelo perfil; sem serviceId, cai no serviço-base. Retorna null se o
+// serviceId informado não for um serviço válido deste profissional.
+async function resolveServiceForBooking(professionalId, priceProfile = "convenio", serviceId = null) {
+  if (serviceId != null && serviceId !== "") {
+    const r = await pool.query(
+      `SELECT id AS service_id, name, description, base_price, price_member, price_private,
+              COALESCE(is_online, false) AS is_online
+         FROM services
+        WHERE id = $1 AND professional_id = $2
+        LIMIT 1`,
+      [serviceId, professionalId]
+    );
+    const s = r.rows[0];
+    if (!s) return null;
+    const value =
+      priceProfile === "convenio"
+        ? s.price_member ?? s.base_price
+        : s.price_private ?? s.base_price;
+    return {
+      service_id: s.service_id,
+      name: s.name || null,
+      description: s.description || null,
+      value,
+      isOnline: s.is_online,
+    };
+  }
+  return getBaseService(professionalId, priceProfile);
+}
+
 // Todas as consultas futuras ativas do paciente (para remarcar/cancelar quando
 // houver mais de uma — aí perguntamos qual, em vez de assumir a mais próxima).
 async function getActiveConsultations({ userId = null, privatePatientId = null }, limit = 8) {
@@ -1055,6 +1115,11 @@ async function cancelConsultation(consultationId) {
 // ===== IA (fluxo CONVENIO) =====
 
 const AI_MODEL = "claude-haiku-4-5-20251001";
+// Turnos de AÇÃO (paciente já identificado — agendar/remarcar/cancelar) usam um
+// modelo mais forte, que erra muito menos ao chamar as ferramentas. Configurável por
+// env; cai no Haiku se a env estiver vazia. A conversa inicial/identificação segue no
+// Haiku (barato). Ver escolha do modelo por turno em routeMessageAI.
+const AI_MODEL_ACTION = process.env.WHATSAPP_AI_ACTION_MODEL?.trim() || "claude-sonnet-5";
 
 // Retorna { text, usage, model } ou null. `usage` traz input_tokens/output_tokens
 // (registrados para o relatório de custo da IA — Seção 7).
@@ -2413,16 +2478,23 @@ const AI_TOOLS = [
   {
     name: "criar_consulta",
     description:
-      "Agenda a consulta no dia e horário escolhidos. Só chame após identificar/cadastrar o paciente e após ele confirmar o horário. O horário precisa ser um dos livres do dia. Se o profissional atende em mais de um local, passe local_id (obtido em listar_locais) com o local escolhido pelo paciente.",
+      "Agenda a consulta no dia e horário escolhidos. Só chame após identificar/cadastrar o paciente e após ele confirmar o horário. O horário precisa ser um dos livres do dia. Se o profissional oferece mais de um serviço/procedimento, passe servico_id (obtido em listar_servicos) com o serviço que o paciente quer. Se o profissional atende em mais de um local, passe local_id (obtido em listar_locais) com o local escolhido pelo paciente.",
     input_schema: {
       type: "object",
       properties: {
         data: { type: "string", description: "AAAA-MM-DD" },
         hora: { type: "string", description: "HH:MM (24h)" },
+        servico_id: { type: "number", description: "id EXATO do serviço vindo do campo 'id' de listar_servicos (ex.: 146, 167) — NÃO é a posição na lista (1, 2, 3). Só quando o profissional tem mais de um serviço; omita para usar o serviço padrão." },
         local_id: { type: "number", description: "id do local de atendimento (só quando houver mais de um)" },
       },
       required: ["data", "hora"],
     },
+  },
+  {
+    name: "listar_servicos",
+    description:
+      "Lista os serviços/procedimentos que o profissional oferece (id, nome, preços conveniado/particular, se é online). Use quando o profissional tem mais de um serviço para o paciente escolher qual quer agendar; depois passe o id escolhido em criar_consulta (servico_id).",
+    input_schema: { type: "object", properties: {} },
   },
   {
     name: "listar_locais",
@@ -2570,6 +2642,20 @@ async function executeAiTool(session, phone, name, input = {}) {
         };
       }
 
+      case "listar_servicos": {
+        const servicos = await listServices(profId);
+        return {
+          servicos: servicos.map((s) => ({
+            id: s.service_id,
+            nome: s.name,
+            descricao: s.description,
+            preco_conveniado: formatBRL(s.priceMember),
+            preco_particular: formatBRL(s.pricePrivate),
+            online: s.isOnline,
+          })),
+        };
+      }
+
       case "listar_horarios_do_dia": {
         const ymd = normalizeYmd(input.data);
         if (!ymd) return { erro: "Data inválida. Use AAAA-MM-DD." };
@@ -2584,8 +2670,17 @@ async function executeAiTool(session, phone, name, input = {}) {
         const ymd = normalizeYmd(input.data);
         if (!ymd) return { erro: "Data inválida." };
         if (ymd < todayInBrazilYmd()) return { erro: "Essa data já passou." };
-        const base = await getBaseService(profId, session.priceProfile || "convenio");
-        if (!base) return { erro: "Serviço não configurado para este profissional." };
+        const base = await resolveServiceForBooking(profId, session.priceProfile || "convenio", input.servico_id);
+        if (!base) {
+          if (input.servico_id != null) {
+            const validos = await listServices(profId);
+            return {
+              erro: "servico_id inválido para este profissional (lembre: é o campo 'id' da lista, não a posição). Escolha um dos serviços abaixo e chame criar_consulta de novo com o 'id' exato.",
+              servicos: validos.map((s) => ({ id: s.service_id, nome: s.name })),
+            };
+          }
+          return { erro: "Serviço não configurado para este profissional." };
+        }
         const slots = await getFreeSlotsForDay(profId, ymd);
         const slot = slots.find((s) => s.time === normalizeHM(input.hora));
         if (!slot) return { erro: "Horário indisponível nesse dia.", horarios_livres: slots.map((s) => s.time) };
@@ -2629,6 +2724,8 @@ async function executeAiTool(session, phone, name, input = {}) {
           data_formatada: formatToBrazilDate(slot.isoUTC),
           hora: slot.time,
           profissional: await getProfessionalName(profId),
+          servico: base.name,
+          valor_formatado: formatBRL(base.value),
           online: !!base.isOnline,
           link_meet: meetLink || null,
           local: chosenLocal ? { nome: chosenLocal.nome, cidade: chosenLocal.cidade, endereco: chosenLocal.endereco } : null,
@@ -2746,9 +2843,11 @@ function buildAgentSystemPrompt(session, ctx) {
   const today = todayInBrazilYmd();
   const dow = WEEKDAY_NAMES_PT[weekdayOfYmd(today)];
   const sellsConvenio = ctx.convenioType !== "agenda_only";
+  const multiService = (ctx.services?.length || 0) > 1;
+  const precoTool = multiService ? "listar_servicos (cada serviço tem seu próprio preço)" : "info_servico";
   const precoRule = sellsConvenio
-    ? "- Para valores da consulta, use info_servico. Nele, 'preco_conveniado' é o preço para quem TEM o Convênio Quiro Ferreira e 'preco_particular' para quem NÃO tem. Nunca troque esses rótulos, e nunca associe esses valores a planos de terceiros (Unimed, Bradesco etc.)."
-    : "- Para valores da consulta, use info_servico e informe o valor ao paciente. Nunca associe esses valores a planos de terceiros (Unimed, Bradesco etc.).";
+    ? `- Para valores, use ${precoTool}. 'preco_conveniado' é o preço para quem TEM o Convênio Quiro Ferreira e 'preco_particular' para quem NÃO tem. Nunca troque esses rótulos, e nunca associe esses valores a planos de terceiros (Unimed, Bradesco etc.).`
+    : `- Para valores, use ${precoTool} e informe o valor ao paciente. Nunca associe esses valores a planos de terceiros (Unimed, Bradesco etc.).`;
   const focoAssunto = sellsConvenio ? "a consulta e o convênio deste profissional" : "a consulta deste profissional";
   const focoRedirect = sellsConvenio ? "só com a consulta e o convênio" : "só com a consulta e os agendamentos";
   const lines = [
@@ -2789,33 +2888,87 @@ function buildAgentSystemPrompt(session, ctx) {
   } else if (ctx.locations?.length === 1 && ctx.locations[0].cidade) {
     lines.push(`- O profissional atende em ${ctx.locations[0].cidade}.`);
   }
+  if (multiService) {
+    const nomes = ctx.services.map((s) => s.name).filter(Boolean).slice(0, 12).join(", ");
+    lines.push(
+      `- Este profissional oferece VÁRIOS serviços/procedimentos${nomes ? ` (${nomes})` : ""}. Ao agendar, descubra QUAL o paciente quer; se ele não disser ou ficar em dúvida, use listar_servicos e apresente as opções com os preços. Passe o id do serviço escolhido em criar_consulta (servico_id). Nunca escolha o serviço por conta própria quando houver ambiguidade.`
+    );
+  }
   return lines.join("\n");
 }
 
 // Uma chamada à API Anthropic com ferramentas. Retorna o JSON bruto ou null.
-async function callAnthropicAgent({ system, messages }) {
+// Faz retry em erros transitórios (429 / 5xx / timeout de rede), com backoff curto —
+// sem isso, um soluço da API vira "vou confirmar e já retorno" pro paciente.
+async function callAnthropicAgent({ system, messages, model = AI_MODEL }) {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) return null;
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ model: AI_MODEL, max_tokens: 1024, system, tools: AI_TOOLS, messages }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      botLog("anthropic_agent_error", { status: res.status, data });
-      return null;
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ model, max_tokens: 1024, system, tools: AI_TOOLS, messages }),
+      });
+      if (res.ok) return await res.json().catch(() => ({}));
+      const transient = res.status === 429 || res.status >= 500;
+      const data = await res.json().catch(() => ({}));
+      botLog("anthropic_agent_error", { status: res.status, attempt, transient, data });
+      if (!transient || attempt === MAX_ATTEMPTS) return null;
+    } catch (e) {
+      botLog("anthropic_agent_exception", { attempt, error: String(e) });
+      if (attempt === MAX_ATTEMPTS) return null;
     }
-    return data;
-  } catch (e) {
-    botLog("anthropic_agent_exception", { error: String(e) });
-    return null;
+    await new Promise((r) => setTimeout(r, 400 * attempt)); // backoff: 400ms, 800ms
   }
+  return null;
+}
+
+// Ferramentas que alteram a agenda de verdade. A confirmação ao paciente ("feito")
+// só pode ser dita se uma destas retornou ok:true no turno.
+const STATE_CHANGE_TOOLS = new Set(["criar_consulta", "remarcar_consulta", "cancelar_consulta"]);
+
+// Verbos de CONCLUSÃO de ação (particípio/pretérito). Evita falso positivo com
+// infinitivo/futuro ("vou agendar", "quer marcar?", "posso confirmar?"). Usado para
+// barrar a IA de afirmar que agendou/remarcou/cancelou sem ter executado a ferramenta.
+const ACTION_CLAIM_RE = /\b(agendad|agendei|marcad|marquei|remarcad|remarquei|desmarcad|desmarquei|cancelad|cancelei|confirmad)\w*/i;
+
+const CONFIRMATION_GUARD_NUDGE =
+  "SISTEMA: Você deu a entender que a consulta foi agendada/remarcada/cancelada, mas NENHUMA ferramenta de ação (criar_consulta, remarcar_consulta ou cancelar_consulta) foi executada com sucesso neste turno. NÃO diga ao paciente que está feito. Se ele já confirmou os dados, chame AGORA a ferramenta correta com os dados corretos. Se faltar algum dado, pergunte de forma objetiva.";
+
+// Mensagem de confirmação DETERMINÍSTICA, montada a partir do resultado real da
+// ferramenta — nunca da narração do modelo. Garante que o que o paciente lê é o que
+// de fato aconteceu no sistema.
+function buildActionConfirmation(change, session) {
+  const r = (change && change.result) || {};
+  const prof = session._profName ? toTitleCase(session._profName) : null;
+  if (change.tool === "criar_consulta") {
+    const parts = [
+      `✅ Prontinho! Sua consulta${r.servico ? ` de *${r.servico}*` : ""} está agendada para *${r.data_formatada} às ${r.hora}*${prof ? ` com ${prof}` : ""}.`,
+    ];
+    if (r.valor_formatado) parts.push(`Valor: *${r.valor_formatado}*.`);
+    if (r.online) {
+      parts.push(r.link_meet ? `É atendimento online. Link: ${r.link_meet}` : "É um atendimento online; o link chega antes da consulta.");
+    } else if (r.local && r.local.nome) {
+      parts.push(
+        `Local: ${r.local.nome}${r.local.cidade ? ` — ${r.local.cidade}` : ""}${r.local.endereco ? ` (${r.local.endereco})` : ""}.`
+      );
+    }
+    parts.push("Qualquer coisa, é só me chamar. 💚");
+    return parts.join(" ");
+  }
+  if (change.tool === "remarcar_consulta") {
+    return `✅ Pronto! Sua consulta foi remarcada para *${r.data_formatada} às ${r.hora}*. Se precisar ajustar de novo, é só avisar. 💚`;
+  }
+  if (change.tool === "cancelar_consulta") {
+    return "✅ Sua consulta foi *cancelada*. Se quiser reagendar mais para frente, é só me chamar. 💚";
+  }
+  return "";
 }
 
 // Roteamento no modo IA: a IA conduz a conversa inteira via loop de tool-use.
@@ -2863,6 +3016,7 @@ async function routeMessageAI(session, phone, text) {
   const convenioInfo = await getProfessionalConvenioInfo(session.profissionalId);
   const insurances = await getProfessionalInsurances(session.profissionalId);
   const locations = await getAttendanceLocations(session.profissionalId);
+  const services = await listServices(session.profissionalId);
   const convenioLink = convenioInfo.affiliateCode
     ? `https://cartaoquiroferreira.com.br/register?ref=${convenioInfo.affiliateCode}`
     : "https://cartaoquiroferreira.com.br/register";
@@ -2872,6 +3026,7 @@ async function routeMessageAI(session, phone, text) {
     convenioLink,
     insurances,
     locations,
+    services,
     knownPatient: session.pacienteNome
       ? { name: session.pacienteNome, cpf: session.cpf || null }
       : null,
@@ -2887,10 +3042,17 @@ async function routeMessageAI(session, phone, text) {
   let usageOutput = 0;
   let finalText = "";
   let offTopicThisTurn = false;
+  let lastStateChange = null; // ação de agenda concluída (ok:true) neste turno
+  let guardNudged = false;    // já demos um empurrão anti-confirmação-falsa?
   const MAX_TURNS = 6;
 
+  // Paciente já identificado ⇒ estamos na fase de AÇÃO (agendar/remarcar/cancelar):
+  // usa o modelo mais forte, que erra muito menos ao chamar ferramentas. Conversa
+  // inicial e identificação seguem no Haiku (barato).
+  const turnModel = (session.pacienteId || session.privatePatientId) ? AI_MODEL_ACTION : AI_MODEL;
+
   for (let i = 0; i < MAX_TURNS; i++) {
-    const data = await callAnthropicAgent({ system, messages });
+    const data = await callAnthropicAgent({ system, messages, model: turnModel });
     if (!data) break;
     if (data.usage) {
       usageInput += data.usage.input_tokens || 0;
@@ -2901,7 +3063,16 @@ async function routeMessageAI(session, phone, text) {
 
     const toolUses = content.filter((b) => b.type === "tool_use");
     if (toolUses.length === 0) {
-      finalText = content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+      const candidate = content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+      // Guard anti-confirmação-falsa: se o modelo AFIRMA que agendou/remarcou/cancelou
+      // sem que nenhuma ferramenta de ação tenha dado ok:true neste turno, damos UMA
+      // chance de ele realmente executar antes de aceitar o texto.
+      if (!lastStateChange && !guardNudged && ACTION_CLAIM_RE.test(candidate)) {
+        guardNudged = true;
+        messages.push({ role: "user", content: [{ type: "text", text: CONFIRMATION_GUARD_NUDGE }] });
+        continue;
+      }
+      finalText = candidate;
       break;
     }
 
@@ -2909,9 +3080,23 @@ async function routeMessageAI(session, phone, text) {
     for (const tu of toolUses) {
       if (tu.name === "fora_de_escopo") offTopicThisTurn = true;
       const out = await executeAiTool(session, phone, tu.name, tu.input || {});
+      if (STATE_CHANGE_TOOLS.has(tu.name) && out && out.ok) lastStateChange = { tool: tu.name, result: out };
       results.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(out) });
     }
     messages.push({ role: "user", content: results });
+  }
+
+  // Confirmação determinística: se uma ação foi executada com sucesso, a mensagem de
+  // "feito" vem de um TEMPLATE baseado no resultado real — nunca da narração do modelo.
+  // Se o modelo ainda assim afirmar conclusão sem ação executada (mesmo após o empurrão),
+  // barramos a mentira e reconduzimos, sem confirmar nada falso.
+  if (lastStateChange) {
+    finalText = buildActionConfirmation(lastStateChange, session) || finalText;
+  } else if (finalText && ACTION_CLAIM_RE.test(finalText)) {
+    botLog("false_confirmation_blocked", { phone, professionalId: session.profissionalId || null });
+    await audit({ phone, actor: "ai", action: "false_confirmation_blocked", professionalId: session.profissionalId || null });
+    finalText =
+      "Deixa eu confirmar certinho aqui pra não te passar informação errada 🙏 Você pode me dizer de novo o que quer que eu faça agora — *agendar*, *remarcar* ou *cancelar* — e o dia e horário? Aí eu finalizo na hora.";
   }
 
   // Desvios só escalam enquanto persistem: um turno on-topic zera o contador.
@@ -2922,15 +3107,27 @@ async function routeMessageAI(session, phone, text) {
       phone,
       professionalId: session.profissionalId,
       usage: { input_tokens: usageInput, output_tokens: usageOutput },
-      model: AI_MODEL,
+      model: turnModel,
     });
   }
 
-  // Sem resposta da IA (chave ausente, erro, ou estourou o limite de turnos):
-  // encaminha para a equipe em vez de deixar a conversa travar.
+  // Sem resposta da IA (soluço da API mesmo após retry, ou estourou o limite de turnos).
+  // Em vez de escalar pra humano de cara (o que confundia idosos com mensagens curtas),
+  // primeiro pedimos gentilmente pra repetir; só escalamos se acontecer de novo em
+  // seguida. Uma resposta boa zera o contador.
   if (!finalText) {
-    finalText = humanFallbackText();
-    session.mode = "pending";
+    session._emptyStreak = (session._emptyStreak || 0) + 1;
+    if (session._emptyStreak >= 2) {
+      finalText = humanFallbackText();
+      session.mode = "pending";
+    } else {
+      finalText = pick([
+        "Acho que me perdi aqui 😅 Pode me dizer de novo, com outras palavras, o que você precisa?",
+        "Desculpa, não peguei direito 🙈 Pode repetir pra mim o que você gostaria?",
+      ]);
+    }
+  } else {
+    session._emptyStreak = 0;
   }
 
   history.push({ role: "user", content: text });
@@ -2980,9 +3177,12 @@ export async function handleWebhookEvent(body) {
  * @param {string} msg.textBody      corpo do texto (vazio se não-texto)
  * @param {string|null} msg.phoneNumberId   Phone Number ID de origem (Cloud API); null no Baileys
  * @param {string|null} msg.displayNumber   número que recebeu (resolve o profissional)
+ * @param {string|null} msg.mediaUrl        URL pública da mídia (áudio/imagem/doc), se houver
+ * @param {string|null} msg.mediaMime       mimetype original da mídia
+ * @param {string|null} msg.mediaType       "image" | "audio" | "document" | ... (mídia anexa)
  */
-export async function processInbound({ phone, messageId, type, textBody = "", phoneNumberId = null, displayNumber = null }) {
-  botLog("inbound", { phone, messageId, type });
+export async function processInbound({ phone, messageId, type, textBody = "", phoneNumberId = null, displayNumber = null, mediaUrl = null, mediaMime = null, mediaType = null }) {
+  botLog("inbound", { phone, messageId, type, hasMedia: !!mediaUrl });
 
   // Multi-número: o número que recebeu define o profissional (resolvido cedo para
   // atribuir as mensagens/auditoria ao profissional certo nos relatórios). Também
@@ -2990,8 +3190,14 @@ export async function processInbound({ phone, messageId, type, textBody = "", ph
   const numberConfig = await resolveNumberConfig(phoneNumberId, displayNumber);
   const mappedProf = numberConfig.professionalId;
 
-  // Idempotência: reentrega da Meta é registrada apenas uma vez.
-  const isNewMessage = await recordInbound({ phone, messageId, text: textBody, professionalId: mappedProf });
+  // Idempotência: reentrega da Meta é registrada apenas uma vez. Mídia (áudio/imagem/
+  // documento) é gravada junto para o operador ouvir/abrir no painel, mesmo que o bot
+  // não consiga processá-la e peça texto.
+  const resolvedMediaType = mediaUrl ? (mediaType || (type && type !== "text" ? type : "arquivo")) : null;
+  const isNewMessage = await recordInbound({
+    phone, messageId, text: textBody, professionalId: mappedProf,
+    mediaType: resolvedMediaType, mediaUrl, mediaMime,
+  });
   if (!isNewMessage) {
     botLog("duplicate_ignored", { messageId });
     return;
@@ -3120,7 +3326,7 @@ export async function sendOperatorMessage(phone, text, operatorId) {
 
 export async function getConversation(phone, limit = 50) {
   const r = await pool.query(
-    `SELECT id, direction, actor, actor_id, intent, step, text, created_at
+    `SELECT id, direction, actor, actor_id, intent, step, text, media_type, media_url, media_mime, created_at
        FROM whatsapp_messages
       WHERE phone = $1
       ORDER BY created_at DESC

@@ -1676,6 +1676,13 @@ const initializeDatabase = async () => {
       ALTER TABLE whatsapp_messages  ADD COLUMN IF NOT EXISTS professional_id INTEGER;
       ALTER TABLE whatsapp_audit_log ADD COLUMN IF NOT EXISTS professional_id INTEGER;
     `);
+    // Mídia recebida do paciente (áudio, imagem, documento) — baixada e guardada no
+    // Cloudinary para o operador ouvir/abrir no painel de atendimento.
+    await pool.query(`
+      ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS media_type TEXT;
+      ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS media_url  TEXT;
+      ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS media_mime TEXT;
+    `);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS whatsapp_ai_usage (
         id SERIAL PRIMARY KEY,

@@ -20,10 +20,12 @@ import makeWASocket, {
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
+  downloadMediaMessage,
 } from "@whiskeysockets/baileys";
 import qrcode from "qrcode-terminal";
 import qrimage from "qrcode"; // [TESTE] gera QR como PNG p/ escanear; remover depois
 import { processInbound } from "../whatsapp.js";
+import { uploadWhatsappMedia } from "./whatsappMedia.js";
 
 // [TESTE] caminho fixo onde o QR é salvo como imagem enquanto valida o pareamento.
 const QR_PNG_PATH =
@@ -73,6 +75,17 @@ function normalizeJid(jid) {
   const user = s.slice(0, at).split(":")[0];
   const domain = s.slice(at + 1);
   return `${user}@${domain}`;
+}
+
+// Detecta mídia numa mensagem Baileys → { mediaType, mime } ou null.
+function detectMedia(message) {
+  const m = message?.ephemeralMessage?.message || message || {};
+  if (m.imageMessage) return { mediaType: "image", mime: m.imageMessage.mimetype || "image/jpeg" };
+  if (m.audioMessage) return { mediaType: "audio", mime: m.audioMessage.mimetype || "audio/ogg" };
+  if (m.videoMessage) return { mediaType: "video", mime: m.videoMessage.mimetype || "video/mp4" };
+  if (m.documentMessage) return { mediaType: "document", mime: m.documentMessage.mimetype || "application/octet-stream" };
+  if (m.stickerMessage) return { mediaType: "sticker", mime: m.stickerMessage.mimetype || "image/webp" };
+  return null;
 }
 
 // Texto de uma mensagem Baileys (cobre os tipos de texto mais comuns).
@@ -216,18 +229,42 @@ async function handleIncoming(m) {
   replyJidByPhone.set(phone, normalizeJid(remoteJid));
 
   const rawText = extractText(m.message);
-  const type = rawText ? "text" : (Object.keys(m.message || {})[0] || "unknown");
 
-  log("inbound", { phone, jid: remoteJid, resolvedPn: !!pnJid, messageId: key.id, type });
+  // Mídia (áudio/imagem/documento): baixa e sobe pro Cloudinary, pra o operador
+  // ouvir/abrir no painel. O bot em si ainda só age sobre texto, mas a mídia fica
+  // registrada na conversa (com a legenda, se houver).
+  const media = detectMedia(m.message);
+  let mediaUrl = null;
+  let mediaMime = null;
+  const mediaType = media?.mediaType || null;
+  if (media) {
+    mediaMime = media.mime;
+    try {
+      const buffer = await downloadMediaMessage(
+        m, "buffer", {}, { reuploadRequest: sock.updateMediaMessage }
+      );
+      mediaUrl = await uploadWhatsappMedia(buffer, { mediaType, mime: mediaMime });
+      log("media_saved", { phone, mediaType, saved: !!mediaUrl });
+    } catch (e) {
+      log("media_download_error", { error: String(e) });
+    }
+  }
+
+  const type = rawText ? "text" : (mediaType || Object.keys(m.message || {})[0] || "unknown");
+
+  log("inbound", { phone, jid: remoteJid, resolvedPn: !!pnJid, messageId: key.id, type, hasMedia: !!mediaUrl });
 
   await processInbound({
     phone,
     messageId: key.id,
-    type: rawText ? "text" : type, // sem texto (áudio/imagem sem legenda) → o núcleo pede texto
+    type, // sem texto (áudio/imagem sem legenda) → o núcleo pede texto; a mídia fica logada
     textBody: rawText,
     phoneNumberId: null,
     // O número conectado é a "linha do profissional": WHATSAPP_NUMBERS o mapeia.
     displayNumber: botNumber || process.env.WHATSAPP_BOT_NUMBER || null,
+    mediaUrl,
+    mediaMime,
+    mediaType,
   });
 }
 
