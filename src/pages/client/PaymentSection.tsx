@@ -233,7 +233,7 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
     verifiedStatus
   );
 
-  const baseAmount = 600;
+  const baseAmount = 350;
   const discount = appliedCoupon ? appliedCoupon.discount_value : 0;
   const totalAmount = baseAmount - discount;
 

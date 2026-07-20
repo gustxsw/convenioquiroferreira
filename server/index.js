@@ -9308,7 +9308,7 @@ app.post(
           .json({ message: "Usuário já possui assinatura ativa" });
       }
 
-      let finalPrice = 600.0;
+      let finalPrice = 350.0;
       let couponId = null;
       let discountApplied = 0;
 
