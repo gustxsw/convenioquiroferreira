@@ -671,13 +671,45 @@ async function deleteContact(phone, professionalId) {
 }
 
 // Aplica um contato salvo à sessão corrente (pré-preenche dados do paciente).
-function applyContactToSession(session, contact) {
+/**
+ * Restaura o paciente conhecido na sessão. O perfil de preço é RECONSULTADO no
+ * banco, nunca herdado do contato salvo, por dois motivos:
+ *   1. sem ele, `session.priceProfile` ficava indefinido e o agendamento caía no
+ *      default "convenio" — um particular que voltava a conversar era agendado a
+ *      R$120 em vez de R$150 se a IA pulasse a identificação;
+ *   2. a situação muda com o tempo: quem renovou (ou deixou vencer) desde a última
+ *      conversa precisa do preço e do discurso de hoje, não os do mês passado.
+ */
+async function applyContactToSession(session, contact) {
   session.cpf             = contact.cpf;
   session.patientKind     = contact.patient_kind;
   session.pacienteId      = contact.patient_id;
   session.privatePatientId = contact.private_patient_id;
   session.pacienteNome    = contact.patient_name;
   session._fromContact    = true;   // flag: CPF veio do cache, não do usuário
+
+  session.priceProfile     = "particular";
+  session.convenioSituacao = "nenhum";
+  session.convenioVenceuEm = null;
+
+  if (contact.patient_kind === "user" && contact.patient_id) {
+    try {
+      const r = await pool.query(
+        `SELECT subscription_status, subscription_expiry FROM users WHERE id = $1`,
+        [contact.patient_id]
+      );
+      if (r.rows[0]) {
+        const conv = resolveConvenioSituation(r.rows[0]);
+        session.priceProfile     = conv.profile;
+        session.convenioSituacao = conv.situacao;
+        session.convenioVenceuEm = conv.venceuEm;
+      }
+    } catch (e) {
+      // Falhou a consulta: fica em "particular", que é o lado seguro (não concede
+      // desconto de conveniado a quem talvez não tenha direito).
+      botLog("contact_profile_error", { error: String(e) });
+    }
+  }
 }
 
 // ===== ENVIO + LOG =====
@@ -829,18 +861,56 @@ async function createPrivatePatient({ name, phone, cpf, professionalId }) {
 //   users + assinatura inativa -> particular (preço particular, agenda via user_id)
 //   private_patients do prof.  -> particular (preço particular, agenda via private_patient_id)
 //   não encontrado             -> null (bot pergunta convênio ou particular)
+/**
+ * Situação do convênio de um cliente, para a secretária saber COM QUEM está falando.
+ *
+ * Antes só existia "ativo ou não": quem tinha deixado vencer virava "particular" e a
+ * IA não tinha como distingui-lo de um desconhecido — cobrava o preço particular sem
+ * explicar por quê e nunca oferecia renovação. Isso vale para 43% da base (60
+ * expirados e 76 pendentes contra 177 ativos em jul/2026).
+ *
+ * A data só é usada para NÃO afirmar um vencimento falso: existem cadastros marcados
+ * como 'expired' com validade ainda no futuro. O que define ativo/inativo continua
+ * sendo o `subscription_status`, o mesmo critério do painel e do checkout.
+ */
+function resolveConvenioSituation(row) {
+  const status = row.subscription_status;
+  const expiry = row.subscription_expiry ? new Date(row.subscription_expiry) : null;
+  const venceuNoPassado = expiry ? expiry.getTime() <= Date.now() : false;
+
+  if (status === "active") {
+    return { profile: "convenio", situacao: "ativo", venceuEm: null };
+  }
+  if (status === "pending") {
+    // Começou a contratação e nunca concluiu o pagamento.
+    return { profile: "particular", situacao: "pendente", venceuEm: null };
+  }
+  if (status === "expired") {
+    return {
+      profile: "particular",
+      situacao: "expirado",
+      venceuEm: venceuNoPassado ? expiry : null,
+    };
+  }
+  return { profile: "particular", situacao: "nenhum", venceuEm: null };
+}
+
 async function identifyPatient(cpf, professionalId) {
   const u = await pool.query(
-    "SELECT id, name, subscription_status FROM users WHERE cpf = $1 AND 'client' = ANY(roles) LIMIT 1",
+    `SELECT id, name, subscription_status, subscription_expiry
+       FROM users WHERE cpf = $1 AND 'client' = ANY(roles) LIMIT 1`,
     [cpf]
   );
   if (u.rows[0]) {
     const row = u.rows[0];
+    const conv = resolveConvenioSituation(row);
     return {
       kind: "user",
       userId: row.id,
       name: row.name,
-      profile: row.subscription_status === "active" ? "convenio" : "particular",
+      profile: conv.profile,
+      convenioSituacao: conv.situacao,
+      convenioVenceuEm: conv.venceuEm,
     };
   }
   if (professionalId) {
@@ -851,7 +921,14 @@ async function identifyPatient(cpf, professionalId) {
       [cpf, professionalId]
     );
     if (p.rows[0]) {
-      return { kind: "private", privatePatientId: p.rows[0].id, name: p.rows[0].name, profile: "particular" };
+      return {
+        kind: "private",
+        privatePatientId: p.rows[0].id,
+        name: p.rows[0].name,
+        profile: "particular",
+        convenioSituacao: "nenhum",
+        convenioVenceuEm: null,
+      };
     }
   }
   return null;
@@ -1631,6 +1708,10 @@ async function handleAgendarCpf(session, phone, text) {
     session.privatePatientId = patient.privatePatientId || null;
     session.pacienteNome = patient.name;
     session.priceProfile = patient.profile; // 'convenio' | 'particular'
+    // Guardado também no fluxo por palavra-chave: se a IA reassumir no meio da
+    // conversa (crédito recarregado), a situação já está na sessão.
+    session.convenioSituacao = patient.convenioSituacao || "nenhum";
+    session.convenioVenceuEm = patient.convenioVenceuEm || null;
     await saveContact(phone, session.profissionalId, patient, cpf);
     await replyS(session, phone, pick([
       `Cadastro encontrado, ${firstName(patient.name)}!`,
@@ -2069,6 +2150,8 @@ async function handleReagendarCpf(session, phone, text) {
   session.privatePatientId = patient.privatePatientId || null;
   session.pacienteNome = patient.name;
   session.priceProfile = patient.profile;
+  session.convenioSituacao = patient.convenioSituacao || "nenhum";
+  session.convenioVenceuEm = patient.convenioVenceuEm || null;
   await saveContact(phone, session.profissionalId, patient, cpf);
   const consultas = await getActiveConsultations({
     userId: patient.userId,
@@ -2675,11 +2758,32 @@ async function executeAiTool(session, phone, name, input = {}) {
         session.privatePatientId = patient.privatePatientId || null;
         session.pacienteNome = patient.name;
         session.priceProfile = patient.profile;
+        session.convenioSituacao = patient.convenioSituacao || "nenhum";
+        session.convenioVenceuEm = patient.convenioVenceuEm || null;
         await saveContact(phone, profId, patient, cpf);
+
+        // A situação do convênio vai explícita para a IA. Sem isso ela não
+        // distinguia um conveniado que deixou vencer de um desconhecido: cobrava o
+        // preço particular sem explicar o motivo e nunca oferecia a renovação.
+        const orientacaoPorSituacao = {
+          expirado:
+            "Este paciente JÁ FOI conveniado e a assinatura venceu — não trate como se ele nunca tivesse ouvido falar do convênio. Se o valor vier à tona, explique com naturalidade que o preço de conveniado volta assim que ele renovar.",
+          pendente:
+            "Este paciente CHEGOU A INICIAR a contratação do convênio, mas o pagamento nunca foi concluído. Não ofereça como novidade: lembre que o cadastro ficou pela metade e que basta concluir o pagamento pelo painel.",
+          ativo: "Conveniado em dia — aplique o preço de conveniado.",
+          nenhum: "Nunca teve o convênio.",
+        };
         return {
           encontrado: true,
           nome: patient.name,
           perfil: patient.profile === "convenio" ? "conveniado" : "particular",
+          convenio: {
+            situacao: patient.convenioSituacao || "nenhum",
+            venceu_em: patient.convenioVenceuEm
+              ? formatToBrazilDate(patient.convenioVenceuEm)
+              : null,
+            orientacao: orientacaoPorSituacao[patient.convenioSituacao] || orientacaoPorSituacao.nenhum,
+          },
         };
       }
 
@@ -2963,7 +3067,11 @@ function buildAgentSystemPrompt(session, ctx) {
     "",
     "Regras:",
     ctx.knownPatient
-      ? `- Este número já está vinculado ao paciente *${ctx.knownPatient.name}*${ctx.knownPatient.cpf ? ` (CPF ${ctx.knownPatient.cpf})` : ""}. NÃO peça o CPF — chame identificar_paciente com esse CPF antes de agendar/remarcar/cancelar, sem precisar perguntar ao paciente. Só peça o CPF se o paciente quiser usar outro cadastro.`
+      ? `- Este número já está vinculado ao paciente *${ctx.knownPatient.name}*${ctx.knownPatient.cpf ? ` (CPF ${ctx.knownPatient.cpf})` : ""}${
+          ctx.knownPatient.convenioSituacao && ctx.knownPatient.convenioSituacao !== "nenhum"
+            ? `, situação do convênio: *${ctx.knownPatient.convenioSituacao}*`
+            : ""
+        }. NÃO peça o CPF — chame identificar_paciente com esse CPF antes de agendar/remarcar/cancelar, sem precisar perguntar ao paciente. Só peça o CPF se o paciente quiser usar outro cadastro.`
       : "- Para agendar, remarcar ou cancelar, primeiro identifique o paciente com identificar_paciente (peça o CPF — 11 dígitos).",
     "- Converta datas relativas ('amanhã', 'próxima segunda', 'dia 15') para AAAA-MM-DD você mesmo, usando a data de hoje acima.",
     "- Só ofereça horários que vieram de listar_dias_disponiveis ou listar_horarios_do_dia.",
@@ -3001,7 +3109,21 @@ function buildAgentSystemPrompt(session, ctx) {
           ]
         : []),
       "Se ele recusar, desconversar ou ignorar a oferta, encerre o assunto e siga atendendo com o mesmo carinho.",
-      "Se ele estiver com dor forte, aflito ou for uma urgência, NÃO ofereça — só acolha e resolva."
+      "Se ele estiver com dor forte, aflito ou for uma urgência, NÃO ofereça — só acolha e resolva.",
+      "",
+      "## Quem já teve o convênio (leia a situação antes de falar de preço)",
+      "A ferramenta identificar_paciente devolve `convenio.situacao`. Ela muda TUDO no que você diz:",
+      "- **expirado** — ele já foi conveniado e deixou vencer. Nunca apresente o convênio como novidade nem mande 'fazer o cadastro'. Trate como quem volta: receba bem, e quando o valor aparecer diga com naturalidade que ele está pagando como particular porque a assinatura venceu, e que o preço de conveniado volta na hora em que renovar. Se souber a data (`convenio.venceu_em`), pode citá-la; se não souber, NÃO invente nem chute.",
+      "- **pendente** — ele chegou a iniciar a contratação e o pagamento nunca foi concluído. Não venda de novo: lembre que ficou pela metade e que é só concluir.",
+      "- **ativo** — conveniado em dia. Não ofereça o convênio; ele já tem.",
+      "- **nenhum** — nunca teve. Aí sim vale a apresentação normal.",
+      "Para renovar ou concluir o pagamento, o caminho é o painel em cartaoquiroferreira.com.br, entrando com o CPF e a senha dele — a opção de pagamento aparece sozinha para quem está inativo. Não precisa de link novo do profissional.",
+      "Renovação também respeita o limite de uma oferta por conversa: se ele disser que não quer agora, agende como particular sem insistir e sem fazer o paciente se sentir cobrado.",
+      ...(savings.length
+        ? [
+            "Ao mostrar o que ele ganha renovando, use a MESMA tabela de contas acima — a economia por consulta é exatamente a diferença entre o preço particular e o de conveniado.",
+          ]
+        : [])
     );
   }
   if (ctx.insurances?.length) {
@@ -3202,7 +3324,7 @@ async function routeMessageAI(session, phone, text) {
   // Carrega contato salvo para evitar que a IA peça o CPF novamente.
   if (!session.pacienteId && !session.privatePatientId) {
     const savedAI = await loadContact(phone, session.profissionalId);
-    if (savedAI) applyContactToSession(session, savedAI);
+    if (savedAI) await applyContactToSession(session, savedAI);
   }
 
   const convenioInfo = await getProfessionalConvenioInfo(session.profissionalId);
@@ -3220,7 +3342,13 @@ async function routeMessageAI(session, phone, text) {
     locations,
     services,
     knownPatient: session.pacienteNome
-      ? { name: session.pacienteNome, cpf: session.cpf || null }
+      ? {
+          name: session.pacienteNome,
+          cpf: session.cpf || null,
+          // Situação já resolvida (contato salvo ou identificação anterior): assim a
+          // IA não fala de preço antes da primeira chamada de ferramenta do turno.
+          convenioSituacao: session.convenioSituacao || null,
+        }
       : null,
   });
 
