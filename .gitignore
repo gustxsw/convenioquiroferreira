@@ -24,3 +24,9 @@ node_modules
 
 # Sessão local do WhatsApp (Baileys)
 server/.baileys_auth/
+
+# Dumps de banco — contêm CPF, prontuários e telefones de pacientes.
+# NUNCA versionar. Backups ficam fora do repositório.
+*.backup
+*.dump
+*.sql.gz
