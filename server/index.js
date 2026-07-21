@@ -1900,15 +1900,21 @@ const generateAccessToken = (user) => {
   );
 };
 
-const generateRefreshToken = (userId) => {
+const generateRefreshToken = (userId, role = null) => {
   // SECURITY: the refresh token MUST be bound to the user AND carry enough
   // entropy to be globally unique. Without a userId + random jti, the payload
   // would be identical for every user and JWT/HMAC signing is deterministic,
   // so two tokens minted in the same second would be byte-for-byte identical.
   // That collision let one user's refresh request match another user's stored
   // token hash, handing them an access token for the wrong account.
+  //
+  // `role` guarda o papel escolhido no login para que o refresh devolva o
+  // usuário ao mesmo painel. Antes isso era buscado na tabela `user_sessions`,
+  // que ninguém alimenta desde 2025-12-19 — e a consulta lia `current_role`,
+  // que não é coluna dela e sim uma FUNÇÃO do PostgreSQL: devolvia o papel do
+  // BANCO ("neondb_owner") como se fosse o papel do usuário.
   return jwt.sign(
-    { type: "refresh", userId, jti: crypto.randomUUID() },
+    { type: "refresh", userId, role: role || null, jti: crypto.randomUUID() },
     process.env.JWT_SECRET || "your-secret-key",
     { expiresIn: "30d" }
   );
@@ -2836,7 +2842,7 @@ app.post("/api/auth/select-role", async (req, res) => {
     };
 
     const accessToken = generateAccessToken(userData);
-    const refreshToken = generateRefreshToken(user.id);
+    const refreshToken = generateRefreshToken(user.id, role);
 
     await saveRefreshToken(user.id, refreshToken);
 
@@ -2945,6 +2951,20 @@ app.post(
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
       });
 
+      // Rotaciona o refresh token com o papel NOVO. Sem isto, o refresh token
+      // continuaria carregando o papel escolhido no login e a próxima renovação
+      // jogaria o usuário de volta ao painel anterior.
+      let newRefreshToken = null;
+      try {
+        newRefreshToken = generateRefreshToken(req.user.id, role);
+        await saveRefreshToken(req.user.id, newRefreshToken);
+      } catch (e) {
+        // Falhar aqui não pode derrubar a troca de papel: o access token novo já
+        // vale, e o refresh antigo continua funcionando (com o papel anterior).
+        console.error("⚠️ [switch-role] falha ao rotacionar refresh token:", e.message);
+        newRefreshToken = null;
+      }
+
       console.log("✅ Role switched successfully to:", role);
 
       const {
@@ -2958,6 +2978,9 @@ app.post(
       res.json({
         message: "Role alterada com sucesso",
         token,
+        // Só vai no corpo se a rotação deu certo; o front que já guarda o
+        // refreshToken deve substituí-lo quando ele vier.
+        ...(newRefreshToken ? { refreshToken: newRefreshToken } : {}),
         user: {
           ...rest,
           professionalType: normalizeProfessionalType(professional_type),
@@ -3127,14 +3150,14 @@ app.post("/api/auth/refresh", async (req, res) => {
 
     const user = userResult.rows[0];
 
-    const currentRoleResult = await pool.query(
-      `SELECT current_role FROM user_sessions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
-      [user.id]
-    );
-
+    // O papel vem do próprio refresh token (assinado), e só é aceito se ainda
+    // constar em users.roles — um papel revogado desde a emissão do token não
+    // pode ressuscitar aqui. Tokens antigos não carregam `role` e caem no
+    // primeiro papel do usuário, mesmo comportamento de /api/auth/me.
+    const roleFromToken = decoded.role;
     const currentRole =
-      currentRoleResult.rows.length > 0
-        ? currentRoleResult.rows[0].current_role
+      roleFromToken && Array.isArray(user.roles) && user.roles.includes(roleFromToken)
+        ? roleFromToken
         : user.roles[0];
 
     const specialtyPayload = buildProfessionalSpecialtyPayload(user);
@@ -3152,7 +3175,8 @@ app.post("/api/auth/refresh", async (req, res) => {
     };
 
     const newAccessToken = generateAccessToken(userData);
-    const newRefreshToken = generateRefreshToken(user.id);
+    // Propaga o papel para o token rotacionado, senão o próximo refresh o perde.
+    const newRefreshToken = generateRefreshToken(user.id, currentRole);
 
     await pool.query(`UPDATE refresh_tokens SET revoked = true WHERE id = $1`, [
       matchedToken.id,
