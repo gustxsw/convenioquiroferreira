@@ -36,6 +36,24 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [couponError, setCouponError] = useState("");
   const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
+  // Valor vem do servidor (system_settings) — editável no painel admin sem deploy.
+  // O fallback só evita um "R$ 0,00" piscando enquanto a requisição não volta;
+  // quem cobra de verdade é o backend.
+  const [baseAmount, setBaseAmount] = useState<number>(350);
+
+  useEffect(() => {
+    const loadPricing = async () => {
+      try {
+        const response = await fetch(`${getApiUrl()}/api/pricing`);
+        if (!response.ok) return;
+        const data = await response.json();
+        if (typeof data.holder === "number") setBaseAmount(data.holder);
+      } catch {
+        /* mantém o fallback; o valor cobrado é sempre o do servidor */
+      }
+    };
+    loadPricing();
+  }, []);
 
   // 🔥 VERIFICAÇÃO DUPLA: Sempre verificar status no servidor antes de mostrar pagamento
   useEffect(() => {
@@ -233,9 +251,6 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
     verifiedStatus
   );
 
-  // Mantenha em sincronia com SUBSCRIPTION_HOLDER_PRICE em server/utils/pricing.js
-  // (o backend é quem cobra; este valor é só o exibido ao cliente).
-  const baseAmount = 350;
   const discount = appliedCoupon ? appliedCoupon.discount_value : 0;
   const totalAmount = baseAmount - discount;
 

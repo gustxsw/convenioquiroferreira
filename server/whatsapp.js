@@ -36,8 +36,8 @@ import {
   formatToBrazilTimeOnly,
 } from "./utils/dateHelpers.js";
 import {
-  SUBSCRIPTION_HOLDER_PRICE,
-  SUBSCRIPTION_DEPENDENT_PRICE,
+  getHolderPrice,
+  getDependentPrice,
   formatPriceBRL,
   monthlyEquivalentCeil,
 } from "./utils/pricing.js";
@@ -88,8 +88,8 @@ só diga que ${prof} atende caso esse plano esteja na lista de convênios aceito
 e NUNCA aplique os preços do Quiro Ferreira a eles.
 
 Como funciona o Convênio Quiro Ferreira:
-- Assinatura anual do titular: ${formatPriceBRL(SUBSCRIPTION_HOLDER_PRICE)} por ano.
-- Dependente: ${formatPriceBRL(SUBSCRIPTION_DEPENDENT_PRICE)} por ano cada (dá pra incluir a família).
+- Assinatura anual do titular: ${formatPriceBRL(getHolderPrice())} por ano.
+- Dependente: ${formatPriceBRL(getDependentPrice())} por ano cada (dá pra incluir a família).
 - Principal vantagem: a consulta fica mais barata para quem é conveniado do que para quem paga como particular,
   além de prioridade no agendamento e acesso ao painel do associado.
 - Painel do associado: cartaoquiroferreira.com.br (login com CPF e senha).
@@ -111,7 +111,7 @@ se costuma vir com frequência. A resposta dela é o que você vai usar.
 
 **3. Fale do mundo dela, não do produto.** Traduza cada benefício para a vida da pessoa:
 - Tratamento contínuo / várias sessões → o preço menor se repete em toda consulta, o ano inteiro.
-- Família, filhos, cônjuge → ${formatPriceBRL(SUBSCRIPTION_DEPENDENT_PRICE)}/ano por dependente é o
+- Família, filhos, cônjuge → ${formatPriceBRL(getDependentPrice())}/ano por dependente é o
   argumento mais forte que existe; a família inteira coberta por pouco.
 - Orçamento apertado → menos de ${formatPriceBRL(monthlyEquivalentCeil())} por mês, valor de um lanche.
 - Já usa outros profissionais → a rede inteira credenciada, não só ${prof}.
@@ -2298,7 +2298,7 @@ async function handleConvenioChat(session, phone, text) {
       `Boa decisão! 💪 Ao entrar para o Convênio Quiro Ferreira você tem acesso a consultas com desconto com ${profFirst} e outros profissionais da rede, além de incluir esposa, filhos e familiares por R$ 100/ano cada.\n\nCadastre-se aqui:\n🔗 ${refLink}`,
     ]);
   } else if (/quanto custa|preco|valor|mensalidade|assinatura|anuidade|custo/.test(n)) {
-    msg = `O Convênio Quiro Ferreira é *${formatPriceBRL(SUBSCRIPTION_HOLDER_PRICE)}/ano* para o titular — menos de R$ ${monthlyEquivalentCeil()} por mês para consultas com desconto com ${profFirst} e toda a rede de profissionais.\n\n👨‍👩‍👧 Dependentes (esposa, filhos…): *${formatPriceBRL(SUBSCRIPTION_DEPENDENT_PRICE)}/ano cada*\n\nUm plano de saúde para a família inteira por um valor acessível. Quer contratar?\n🔗 ${refLink}`;
+    msg = `O Convênio Quiro Ferreira é *${formatPriceBRL(getHolderPrice())}/ano* para o titular — menos de R$ ${monthlyEquivalentCeil()} por mês para consultas com desconto com ${profFirst} e toda a rede de profissionais.\n\n👨‍👩‍👧 Dependentes (esposa, filhos…): *${formatPriceBRL(getDependentPrice())}/ano cada*\n\nUm plano de saúde para a família inteira por um valor acessível. Quer contratar?\n🔗 ${refLink}`;
   } else if (/dependente|filho|filha|conjuge|esposa|marido|familiar|adicionar.*plano|incluir.*plano/.test(n)) {
     msg = `Sim, e essa é uma das maiores vantagens! 👨‍👩‍👧 Você pode incluir *esposa, filhos e outros familiares* por apenas *R$ 100,00/ano cada*.\n\nToda a família com acesso a consultas com desconto na rede Quiro Ferreira. O cadastro dos dependentes é feito pelo painel após a contratação do titular.\n\n🔗 ${refLink}`;
   } else if (/beneficio|vantagem|o que inclui|o que tem|o que ganha|desconto|prioridade/.test(n)) {
@@ -2307,7 +2307,7 @@ async function handleConvenioChat(session, phone, text) {
     msg = `O acesso ao painel é pelo site *cartaoquiroferreira.com.br* — login com CPF e senha cadastrada. Por lá você agenda consultas, gerencia seus dependentes e acompanha tudo.\n\nAinda não tem cadastro?\n🔗 ${refLink}`;
   } else {
     // Resposta geral sobre o convênio
-    msg = `O *Convênio Quiro Ferreira* é um plano anual de saúde para você e sua família. Com ele, você tem acesso a consultas com desconto não só com ${profFirst}, mas com toda a rede de profissionais credenciados.\n\n💰 *Titular:* ${formatPriceBRL(SUBSCRIPTION_HOLDER_PRICE)}/ano (menos de R$ ${monthlyEquivalentCeil()}/mês)\n👨‍👩‍👧 *Dependentes:* ${formatPriceBRL(SUBSCRIPTION_DEPENDENT_PRICE)}/ano cada\n✅ Prioridade no agendamento\n\nPara contratar ou saber mais:\n🔗 ${refLink}\n\nTem alguma dúvida? É só perguntar!`;
+    msg = `O *Convênio Quiro Ferreira* é um plano anual de saúde para você e sua família. Com ele, você tem acesso a consultas com desconto não só com ${profFirst}, mas com toda a rede de profissionais credenciados.\n\n💰 *Titular:* ${formatPriceBRL(getHolderPrice())}/ano (menos de R$ ${monthlyEquivalentCeil()}/mês)\n👨‍👩‍👧 *Dependentes:* ${formatPriceBRL(getDependentPrice())}/ano cada\n✅ Prioridade no agendamento\n\nPara contratar ou saber mais:\n🔗 ${refLink}\n\nTem alguma dúvida? É só perguntar!`;
   }
 
   await replyS(session, phone, msg);
@@ -2931,8 +2931,8 @@ function buildSavingsFacts(services) {
       rows.push(`- ${nome}: conveniado e particular custam o mesmo (${formatPriceBRL(priv)}) — NÃO use economia por consulta como argumento aqui.`);
       continue;
     }
-    const titular = Math.ceil(SUBSCRIPTION_HOLDER_PRICE / economia);
-    const dependente = Math.ceil(SUBSCRIPTION_DEPENDENT_PRICE / economia);
+    const titular = Math.ceil(getHolderPrice() / economia);
+    const dependente = Math.ceil(getDependentPrice() / economia);
     rows.push(
       `- ${nome}: particular ${formatPriceBRL(priv)} → conveniado ${formatPriceBRL(memb)} = ` +
         `economia de ${formatPriceBRL(economia)} por consulta. ` +
@@ -2993,7 +2993,7 @@ function buildAgentSystemPrompt(session, ctx) {
             "",
             "### Contas já prontas (use EXATAMENTE estes números)",
             ...savings,
-            `Anuidade: titular ${formatPriceBRL(SUBSCRIPTION_HOLDER_PRICE)}/ano, dependente ${formatPriceBRL(SUBSCRIPTION_DEPENDENT_PRICE)}/ano.`,
+            `Anuidade: titular ${formatPriceBRL(getHolderPrice())}/ano, dependente ${formatPriceBRL(getDependentPrice())}/ano.`,
             "Estes são os ÚNICOS números de economia e de 'em quantas consultas se paga' que você pode dizer.",
             "NUNCA diga um número de consultas menor do que o desta tabela, nem faça arredondamento para baixo, nem improvise outra conta.",
             "Também é proibido o vago otimista: nada de 'em poucas consultas já se paga', 'rapidinho compensa', 'logo se paga'. Ou você diz o número exato da tabela, ou não usa o argumento de payback de jeito nenhum.",
@@ -3558,6 +3558,65 @@ export async function getConversation(phone, limit = 50) {
     [phone, limit]
   );
   return r.rows.reverse();
+}
+
+// Regex de URL usada para extrair links do histórico. Deliberadamente simples:
+// pega http(s) e domínios "nus" comuns em conversa (www.x.com, site.com.br).
+const URL_IN_TEXT_RE =
+  /\b(?:https?:\/\/|www\.)[^\s<>"']+|\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:com|com\.br|br|net|org|io|app|me)\b(?:\/[^\s<>"']*)?/gi;
+
+/**
+ * Anexos de uma conversa: mídias, documentos e links, varrendo o histórico
+ * INTEIRO (a lista de mensagens do painel é limitada, e a secretária precisa
+ * achar um exame que o paciente mandou semana passada).
+ */
+export async function getConversationAttachments(phone) {
+  const r = await pool.query(
+    `SELECT id, direction, actor, text, media_type, media_url, media_mime, created_at
+       FROM whatsapp_messages
+      WHERE phone = $1
+        AND (media_url IS NOT NULL OR text ~* '(https?://|www\\.|\\.com|\\.br)')
+      ORDER BY created_at DESC`,
+    [phone]
+  );
+
+  const midias = [];
+  const documentos = [];
+  const links = [];
+  const vistos = new Set();
+
+  for (const m of r.rows) {
+    if (m.media_url) {
+      const item = {
+        id: m.id,
+        media_type: m.media_type,
+        media_url: m.media_url,
+        media_mime: m.media_mime,
+        caption: m.text || null,
+        actor: m.actor,
+        created_at: m.created_at,
+      };
+      // Documento é o que se abre; o resto (imagem/áudio/vídeo/sticker) se vê ou ouve.
+      if (m.media_type === "document") documentos.push(item);
+      else midias.push(item);
+    }
+
+    for (const bruto of String(m.text || "").match(URL_IN_TEXT_RE) || []) {
+      const url = bruto.replace(/[.,;:)\]}>]+$/, ""); // pontuação colada no fim
+      const chave = url.toLowerCase();
+      if (vistos.has(chave)) continue; // o bot repete o link de cadastro à exaustão
+      vistos.add(chave);
+      links.push({
+        id: m.id,
+        url: /^https?:\/\//i.test(url) ? url : `https://${url}`,
+        label: url,
+        actor: m.actor,
+        created_at: m.created_at,
+      });
+    }
+  }
+
+  return { midias, documentos, links };
 }
 
 // Casa o telefone do WhatsApp (dígitos, com DDI) com users.phone (formato livre),

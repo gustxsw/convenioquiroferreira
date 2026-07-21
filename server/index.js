@@ -48,6 +48,7 @@ import {
   releaseConversation,
   sendOperatorMessage,
   getConversation,
+  getConversationAttachments,
   listConversations,
   getWhatsappReport,
   invalidateNumbersCache,
@@ -58,8 +59,11 @@ import {
   checkExpiredSubscriptionsNow,
 } from "./jobs/checkExpiredSubscriptions.js";
 import {
-  SUBSCRIPTION_HOLDER_PRICE,
-  SUBSCRIPTION_DEPENDENT_PRICE,
+  loadPricing,
+  getHolderPrice,
+  getDependentPrice,
+  getPricing,
+  setPricing,
 } from "./utils/pricing.js";
 import { scheduleMonthlyAgendaRevenueReport } from "./jobs/monthlyAgendaRevenueReport.js";
 import { scheduleGoogleWatchRenewal } from "./jobs/renewGoogleWatchChannels.js";
@@ -1246,15 +1250,50 @@ const initializeDatabase = async () => {
     // Insert default system settings
     await pool.query(`
       INSERT INTO system_settings (key, value, description)
-      SELECT 'subscription_price', '600.0', 'Preço da assinatura mensal'
+      SELECT 'subscription_price', '350.0', 'Valor anual do titular do Convênio Quiro Ferreira (R$)'
       WHERE NOT EXISTS (SELECT 1 FROM system_settings WHERE key = 'subscription_price')
     `);
 
     await pool.query(`
-      INSERT INTO system_settings (key, value, description) 
-      SELECT 'dependent_price', '100.0', 'Preço da ativação de dependente'
+      INSERT INTO system_settings (key, value, description)
+      SELECT 'dependent_price', '100.0', 'Valor anual por dependente do Convênio Quiro Ferreira (R$)'
       WHERE NOT EXISTS (SELECT 1 FROM system_settings WHERE key = 'dependent_price')
     `);
+
+    // Correção ÚNICA. Estas linhas existiam com valores que NUNCA tiveram efeito,
+    // porque nada as lia — o checkout tinha os preços hardcoded. Ao promovê-las a
+    // fonte de verdade, elas precisam valer exatamente o que o sistema já cobrava,
+    // senão a mudança de arquitetura vira mudança de preço sem ninguém pedir:
+    //   subscription_price estava 600.0 (o checkout cobrava 350) → 350.0
+    //   dependent_price   estava  50.0 (o checkout cobrava 100) → 100.0
+    // Guardada por uma flag para que uma edição futura do admin não seja revertida
+    // no próximo boot.
+    const pricingFix = await pool.query(
+      `SELECT 1 FROM system_settings WHERE key = 'convenio_pricing_migrated_v2'`
+    );
+    if (pricingFix.rows.length === 0) {
+      await pool.query(
+        `UPDATE system_settings
+            SET value = '350.0',
+                description = 'Valor anual do titular do Convênio Quiro Ferreira (R$)',
+                updated_at = CURRENT_TIMESTAMP
+          WHERE key = 'subscription_price' AND value IN ('600.0', '600', '600.00')`
+      );
+      await pool.query(
+        `UPDATE system_settings
+            SET value = '100.0',
+                description = 'Valor anual por dependente do Convênio Quiro Ferreira (R$)',
+                updated_at = CURRENT_TIMESTAMP
+          WHERE key = 'dependent_price' AND value IN ('50.0', '50', '50.00')`
+      );
+      await pool.query(
+        `INSERT INTO system_settings (key, value, description)
+              VALUES ('convenio_pricing_migrated_v2', 'true',
+                      'Alinha system_settings ao preço que o checkout já cobrava (350/100)')
+         ON CONFLICT (key) DO NOTHING`
+      );
+      console.log("✅ Preços do convênio alinhados em system_settings (350 / 100)");
+    }
 
     await pool.query(`
       INSERT INTO system_settings (key, value, description)
@@ -10015,7 +10054,7 @@ app.post(
           .json({ message: "Usuário já possui assinatura ativa" });
       }
 
-      let finalPrice = SUBSCRIPTION_HOLDER_PRICE;
+      let finalPrice = getHolderPrice();
       let couponId = null;
       let discountApplied = 0;
 
@@ -10171,7 +10210,7 @@ app.post(
           .json({ message: "Dependente já possui assinatura ativa" });
       }
 
-      let finalPrice = SUBSCRIPTION_DEPENDENT_PRICE;
+      let finalPrice = getDependentPrice();
       let couponId = null;
       let discountApplied = 0;
 
@@ -12606,6 +12645,90 @@ app.get(
   }
 );
 
+// ===== PREÇOS DO CONVÊNIO =====
+// Ficam em system_settings e são editáveis pelo painel admin — sem deploy.
+
+// Público: o front do cliente mostra o valor certo sem tê-lo hardcoded.
+app.get("/api/pricing", async (req, res) => {
+  try {
+    const p = getPricing();
+    res.json({ holder: p.holder, dependent: p.dependent });
+  } catch (error) {
+    console.error("❌ [pricing-get]", error);
+    res.status(500).json({ message: "Erro ao carregar valores" });
+  }
+});
+
+// Admin: lê com metadados de auditoria (quem mudou, quando).
+app.get(
+  "/api/admin/pricing",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const r = await pool.query(
+        `SELECT s.key, s.value, s.description, s.updated_at, u.name AS updated_by_name
+           FROM system_settings s
+           LEFT JOIN users u ON u.id = s.updated_by
+          WHERE s.key IN ('subscription_price', 'dependent_price')`
+      );
+      const byKey = Object.fromEntries(r.rows.map((row) => [row.key, row]));
+      const p = getPricing();
+      res.json({
+        holder: p.holder,
+        dependent: p.dependent,
+        holder_meta: byKey.subscription_price || null,
+        dependent_meta: byKey.dependent_price || null,
+      });
+    } catch (error) {
+      console.error("❌ [admin-pricing-get]", error);
+      res.status(500).json({ message: "Erro ao carregar valores" });
+    }
+  }
+);
+
+app.put(
+  "/api/admin/pricing",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      const { holder, dependent } = req.body || {};
+      const parsed = {};
+      for (const [field, raw] of [["holder", holder], ["dependent", dependent]]) {
+        if (raw === undefined || raw === null || raw === "") continue;
+        const n = Number(String(raw).replace(",", "."));
+        if (!Number.isFinite(n) || n < 0) {
+          return res
+            .status(400)
+            .json({ message: `Valor inválido para ${field === "holder" ? "titular" : "dependente"}.` });
+        }
+        // Trava de segurança: um zero a mais muda o que o paciente paga de verdade.
+        if (n > 10000) {
+          return res.status(400).json({ message: "Valor acima do limite permitido (R$ 10.000)." });
+        }
+        parsed[field] = n;
+      }
+      if (Object.keys(parsed).length === 0) {
+        return res.status(400).json({ message: "Informe ao menos um valor." });
+      }
+
+      const updated = await setPricing({ ...parsed, updatedBy: req.user.id });
+      console.log(
+        `💰 [admin-pricing] ${req.user.id} alterou preços → titular R$${updated.holder} / dependente R$${updated.dependent}`
+      );
+      res.json({
+        message: "Valores atualizados.",
+        holder: updated.holder,
+        dependent: updated.dependent,
+      });
+    } catch (error) {
+      console.error("❌ [admin-pricing-put]", error);
+      res.status(500).json({ message: "Erro ao salvar valores" });
+    }
+  }
+);
+
 // ===== ADMIN — Números da Secretária Virtual (whatsapp_numbers) =====
 // Gerencia o mapeamento número→profissional e a config de IA por número sem
 // depender do env WHATSAPP_NUMBERS / WHATSAPP_AI_MODE (evita redeploy). O bot lê
@@ -12920,6 +13043,24 @@ app.get(
   }
 );
 
+// Mídias, documentos e links da conversa inteira — o painel lateral do
+// Atendimento, no mesmo espírito do "Dados do contato" do WhatsApp.
+app.get(
+  "/webhook/whatsapp/conversation/attachments",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    const phone = String(req.query.phone || "").replace(/\D/g, "");
+    if (!phone) return res.status(400).json({ message: "phone é obrigatório" });
+    try {
+      res.json(await getConversationAttachments(phone));
+    } catch (error) {
+      console.error("❌ [whatsapp-attachments]", error);
+      res.status(500).json({ message: "Erro ao carregar anexos da conversa" });
+    }
+  }
+);
+
 app.post(
   "/webhook/whatsapp/takeover",
   authenticate,
@@ -12993,6 +13134,14 @@ const startServer = async () => {
     console.log("📊 Initializing database...");
     await initializeDatabase();
     console.log("✅ Database initialized successfully");
+
+    // Preços do convênio para o cache em processo (checkout + prompt da IA leem
+    // daqui de forma síncrona). Precisa vir depois do initializeDatabase, que
+    // semeia/corrige as linhas em system_settings.
+    const prices = await loadPricing();
+    console.log(
+      `💰 Convênio: titular R$${prices.holder.toFixed(2)} / dependente R$${prices.dependent.toFixed(2)}`
+    );
 
     console.log("⏰ Setting up subscription expiry check job...");
     scheduleExpiryCheck();

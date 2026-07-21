@@ -11,6 +11,12 @@ import {
   ArrowLeft,
   PanelRight,
   ChevronDown,
+  Image as ImageIcon,
+  Link2,
+  FileText,
+  Mic,
+  Video,
+  Download,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 import { useAuth } from "../../contexts/AuthContext";
@@ -40,7 +46,33 @@ type Message = {
   created_at: string;
 };
 
+type Attachment = {
+  id: number;
+  media_type: string | null;
+  media_url: string;
+  media_mime: string | null;
+  caption: string | null;
+  actor: string;
+  created_at: string;
+};
+
+type LinkItem = {
+  id: number;
+  url: string;
+  label: string;
+  actor: string;
+  created_at: string;
+};
+
+type Attachments = {
+  midias: Attachment[];
+  documentos: Attachment[];
+  links: LinkItem[];
+};
+
 type StatusFilter = "all" | "pending" | "human" | "bot";
+type PanelTab = "paciente" | "anexos";
+type AnexoTab = "midias" | "links" | "docs";
 
 const POLL_INTERVAL_MS = 15000;
 
@@ -83,6 +115,161 @@ function msgTime(iso: string) {
   return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
+const shortDate = (iso: string) =>
+  new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+
+// Ícone por tipo de mídia, para o que não tem miniatura visual (áudio, vídeo, doc).
+const mediaIcon = (type: string | null) => {
+  if (type === "audio") return <Mic size={18} />;
+  if (type === "video") return <Video size={18} />;
+  return <FileText size={18} />;
+};
+
+/**
+ * Painel de mídias, links e documentos da conversa — mesmo espírito do
+ * "Dados do contato" do WhatsApp: a secretária acha um exame ou um comprovante
+ * que o paciente mandou dias atrás sem rolar a conversa inteira.
+ */
+const AnexosPanel: React.FC<{
+  attachments: Attachments | null;
+  loading: boolean;
+  tab: AnexoTab;
+  onTabChange: (t: AnexoTab) => void;
+}> = ({ attachments, loading, tab, onTabChange }) => {
+  const midias = attachments?.midias ?? [];
+  const links = attachments?.links ?? [];
+  const docs = attachments?.documentos ?? [];
+
+  const abas: { id: AnexoTab; label: string; icon: React.ReactNode; n: number }[] = [
+    { id: "midias", label: "Mídias", icon: <ImageIcon size={14} />, n: midias.length },
+    { id: "links", label: "Links", icon: <Link2 size={14} />, n: links.length },
+    { id: "docs", label: "Docs", icon: <FileText size={14} />, n: docs.length },
+  ];
+
+  if (loading) {
+    return (
+      <div className="p-5 text-center">
+        <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-b-2 border-red-600" />
+        <p className="text-[12.5px] text-gray-500">Carregando anexos...</p>
+      </div>
+    );
+  }
+
+  const vazio = (texto: string) => (
+    <div className="px-5 py-10 text-center text-[12.5px] text-gray-400">{texto}</div>
+  );
+
+  return (
+    <div className="flex flex-col">
+      <div className="flex gap-1 border-b border-gray-100 px-3 py-2">
+        {abas.map((a) => (
+          <button
+            key={a.id}
+            onClick={() => onTabChange(a.id)}
+            className="flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11.5px] font-semibold transition-colors"
+            style={{
+              background: tab === a.id ? "#fff5f5" : "transparent",
+              color: tab === a.id ? "#c11c22" : "#6b7280",
+            }}
+          >
+            {a.icon}
+            {a.label}
+            <span className="text-[10.5px] font-bold opacity-70">{a.n}</span>
+          </button>
+        ))}
+      </div>
+
+      {tab === "midias" &&
+        (midias.length === 0
+          ? vazio("Nenhuma foto, áudio ou vídeo nesta conversa.")
+          : (
+            <div className="grid grid-cols-3 gap-1.5 p-3">
+              {midias.map((m) => (
+                <a
+                  key={`${m.id}-${m.media_url}`}
+                  href={m.media_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={`${m.caption || m.media_type || "mídia"} · ${shortDate(m.created_at)}`}
+                  className="relative flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50 text-gray-500 transition-colors hover:border-gray-300"
+                >
+                  {m.media_type === "image" || m.media_type === "sticker" ? (
+                    <img
+                      src={m.media_url}
+                      alt={m.caption || "mídia enviada pelo paciente"}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center gap-1">
+                      {mediaIcon(m.media_type)}
+                      <span className="text-[9.5px] font-semibold uppercase">
+                        {m.media_type === "audio" ? "áudio" : m.media_type === "video" ? "vídeo" : "arquivo"}
+                      </span>
+                    </div>
+                  )}
+                </a>
+              ))}
+            </div>
+          ))}
+
+      {tab === "links" &&
+        (links.length === 0
+          ? vazio("Nenhum link trocado nesta conversa.")
+          : (
+            <div className="flex flex-col divide-y divide-gray-100">
+              {links.map((l, i) => (
+                <a
+                  key={`${l.id}-${i}`}
+                  href={l.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-start gap-2.5 px-4 py-3 transition-colors hover:bg-gray-50"
+                >
+                  <Link2 size={15} className="mt-0.5 shrink-0 text-gray-400" />
+                  <div className="min-w-0">
+                    <div className="truncate text-[12.5px] font-medium text-[#c11c22]">{l.label}</div>
+                    <div className="mt-0.5 text-[11px] text-gray-400">
+                      {l.actor === "patient" ? "Paciente" : l.actor === "human" ? "Equipe" : "Secretária"} ·{" "}
+                      {shortDate(l.created_at)}
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          ))}
+
+      {tab === "docs" &&
+        (docs.length === 0
+          ? vazio("Nenhum documento nesta conversa.")
+          : (
+            <div className="flex flex-col divide-y divide-gray-100">
+              {docs.map((d) => (
+                <a
+                  key={d.id}
+                  href={d.media_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2.5 px-4 py-3 transition-colors hover:bg-gray-50"
+                >
+                  <FileText size={16} className="shrink-0 text-gray-400" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[12.5px] font-medium text-gray-900">
+                      {d.caption || "Documento"}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-gray-400">
+                      {d.media_mime || "arquivo"} · {shortDate(d.created_at)}
+                    </div>
+                  </div>
+                  <Download size={14} className="shrink-0 text-gray-400" />
+                </a>
+              ))}
+            </div>
+          ))}
+    </div>
+  );
+};
+
 const AtendimentoPage: React.FC = () => {
   const { user } = useAuth();
   const isProfessional = user?.currentRole === "professional";
@@ -101,6 +288,10 @@ const AtendimentoPage: React.FC = () => {
 
   const [mobileShowChat, setMobileShowChat] = useState(false);
   const [showPatientPanel, setShowPatientPanel] = useState(false);
+  const [panelTab, setPanelTab] = useState<PanelTab>("paciente");
+  const [anexoTab, setAnexoTab] = useState<AnexoTab>("midias");
+  const [attachments, setAttachments] = useState<Attachments | null>(null);
+  const [attachmentsLoading, setAttachmentsLoading] = useState(false);
 
   const [draft, setDraft] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
@@ -147,6 +338,38 @@ const AtendimentoPage: React.FC = () => {
     },
     [apiUrl]
   );
+
+  // Anexos varrem a conversa inteira (a lista de mensagens é limitada), então só
+  // buscamos quando a aba é realmente aberta.
+  const fetchAttachments = useCallback(
+    async (phone: string) => {
+      try {
+        setAttachmentsLoading(true);
+        const res = await fetchWithAuth(
+          `${apiUrl}/webhook/whatsapp/conversation/attachments?phone=${encodeURIComponent(phone)}`,
+          { method: "GET" }
+        );
+        if (!res.ok) throw new Error("Erro ao carregar os anexos");
+        setAttachments(await res.json());
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : "Erro ao carregar os anexos");
+        setAttachments({ midias: [], documentos: [], links: [] });
+      } finally {
+        setAttachmentsLoading(false);
+      }
+    },
+    [apiUrl]
+  );
+
+  useEffect(() => {
+    if (!showPatientPanel || panelTab !== "anexos" || !selectedPhone) return;
+    fetchAttachments(selectedPhone);
+  }, [showPatientPanel, panelTab, selectedPhone, fetchAttachments]);
+
+  // Trocar de conversa invalida os anexos da anterior.
+  useEffect(() => {
+    setAttachments(null);
+  }, [selectedPhone]);
 
   useEffect(() => {
     fetchConversations();
@@ -775,7 +998,36 @@ const AtendimentoPage: React.FC = () => {
 
           {/* Patient panel */}
           {showPatientPanel && (
-            <div className="flex w-[300px] shrink-0 flex-col overflow-y-auto border-l border-gray-200 bg-white p-5">
+            <div className="flex w-[300px] shrink-0 flex-col overflow-y-auto border-l border-gray-200 bg-white">
+              {/* Abas do painel */}
+              <div className="sticky top-0 z-10 flex shrink-0 border-b border-gray-200 bg-white">
+                {([
+                  { id: "paciente" as PanelTab, label: "Paciente" },
+                  { id: "anexos" as PanelTab, label: "Mídias e links" },
+                ]).map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setPanelTab(t.id)}
+                    className="flex-1 border-b-2 px-2 py-3 text-[12.5px] font-semibold transition-colors"
+                    style={{
+                      borderColor: panelTab === t.id ? "#c11c22" : "transparent",
+                      color: panelTab === t.id ? "#c11c22" : "#6b7280",
+                    }}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {panelTab === "anexos" ? (
+                <AnexosPanel
+                  attachments={attachments}
+                  loading={attachmentsLoading}
+                  tab={anexoTab}
+                  onTabChange={setAnexoTab}
+                />
+              ) : (
+                <div className="flex flex-col p-5">
               <div className="mb-2.5 text-[11px] font-bold uppercase tracking-[.04em] text-gray-400">
                 Paciente
               </div>
@@ -849,6 +1101,8 @@ const AtendimentoPage: React.FC = () => {
                   </span>
                 </div>
               </div>
+                </div>
+              )}
             </div>
           )}
         </div>

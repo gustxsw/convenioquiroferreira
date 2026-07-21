@@ -276,6 +276,12 @@ const AdminHomePage: React.FC = () => {
       icon: <MessageCircle className="h-6 w-6 text-red-600" />,
       link: "/admin/whatsapp-numbers",
     },
+    {
+      title: "Valores do Convênio",
+      description: "Alterar o valor da assinatura do titular e dos dependentes",
+      icon: <DollarSign className="h-6 w-6 text-red-600" />,
+      link: "/admin/pricing",
+    },
   ];
 
   return (
