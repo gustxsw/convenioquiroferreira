@@ -1698,6 +1698,10 @@ const initializeDatabase = async () => {
         model TEXT,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+      -- Tokens de cache: sem eles não dá para provar que o prompt caching está
+      -- funcionando (cache_read zerado = algum invalidador silencioso no prefixo).
+      ALTER TABLE whatsapp_ai_usage ADD COLUMN IF NOT EXISTS cache_creation_input_tokens INTEGER DEFAULT 0;
+      ALTER TABLE whatsapp_ai_usage ADD COLUMN IF NOT EXISTS cache_read_input_tokens INTEGER DEFAULT 0;
       CREATE INDEX IF NOT EXISTS idx_whatsapp_ai_usage_created_at ON whatsapp_ai_usage(created_at);
       CREATE INDEX IF NOT EXISTS idx_whatsapp_ai_usage_professional ON whatsapp_ai_usage(professional_id);
       CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_professional ON whatsapp_messages(professional_id);

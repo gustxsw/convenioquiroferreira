@@ -562,9 +562,19 @@ async function recordAiUsage({ phone, professionalId = null, usage, model }) {
   try {
     if (!usage) return;
     await pool.query(
-      `INSERT INTO whatsapp_ai_usage (phone, professional_id, input_tokens, output_tokens, model)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [phone, professionalId, usage.input_tokens || 0, usage.output_tokens || 0, model || null]
+      `INSERT INTO whatsapp_ai_usage
+         (phone, professional_id, input_tokens, output_tokens, model,
+          cache_creation_input_tokens, cache_read_input_tokens)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        phone,
+        professionalId,
+        usage.input_tokens || 0,
+        usage.output_tokens || 0,
+        model || null,
+        usage.cache_creation_input_tokens || 0,
+        usage.cache_read_input_tokens || 0,
+      ]
     );
   } catch (e) {
     botLog("ai_usage_error", { error: String(e) });
@@ -3077,7 +3087,21 @@ async function callAnthropicAgent({ system, messages, model = AI_MODEL }) {
           "anthropic-version": "2023-06-01",
           "content-type": "application/json",
         },
-        body: JSON.stringify({ model, max_tokens: 1024, system, tools: AI_TOOLS, messages }),
+        // Prompt caching: 98% do custo era ENTRADA — a cada turno reenviávamos
+        // persona + ferramentas + histórico inteiro a preço cheio. O corte
+        // automático marca o último bloco cacheável, então cada chamada relê o
+        // prefixo acumulado a 10% do preço e só paga integral pelo trecho novo.
+        // TTL padrão (5 min) escolhido com dado: 91% dos intervalos entre
+        // chamadas consecutivas ficam abaixo disso (mediana 5s, p90 45s), e o
+        // TTL de 1h resgataria só 5,6% deles dobrando o custo de gravação.
+        body: JSON.stringify({
+          model,
+          max_tokens: 1024,
+          system,
+          tools: AI_TOOLS,
+          messages,
+          cache_control: { type: "ephemeral" },
+        }),
       });
       if (res.ok) return await res.json().catch(() => ({}));
       const transient = res.status === 429 || res.status >= 500;
@@ -3208,6 +3232,8 @@ async function routeMessageAI(session, phone, text) {
 
   let usageInput = 0;
   let usageOutput = 0;
+  let usageCacheWrite = 0;
+  let usageCacheRead = 0;
   let finalText = "";
   let offTopicThisTurn = false;
   let lastStateChange = null; // ação de agenda concluída (ok:true) neste turno
@@ -3225,6 +3251,8 @@ async function routeMessageAI(session, phone, text) {
     if (data.usage) {
       usageInput += data.usage.input_tokens || 0;
       usageOutput += data.usage.output_tokens || 0;
+      usageCacheWrite += data.usage.cache_creation_input_tokens || 0;
+      usageCacheRead += data.usage.cache_read_input_tokens || 0;
     }
     const content = data.content || [];
     messages.push({ role: "assistant", content });
@@ -3275,12 +3303,25 @@ async function routeMessageAI(session, phone, text) {
   // Desvios só escalam enquanto persistem: um turno on-topic zera o contador.
   if (!offTopicThisTurn) session.offTopicStrikes = 0;
 
-  if (usageInput || usageOutput) {
+  if (usageInput || usageOutput || usageCacheWrite || usageCacheRead) {
     await recordAiUsage({
       phone,
       professionalId: session.profissionalId,
-      usage: { input_tokens: usageInput, output_tokens: usageOutput },
+      usage: {
+        input_tokens: usageInput,
+        output_tokens: usageOutput,
+        cache_creation_input_tokens: usageCacheWrite,
+        cache_read_input_tokens: usageCacheRead,
+      },
       model: turnModel,
+    });
+    botLog("ai_usage", {
+      phone,
+      model: turnModel,
+      in: usageInput,
+      out: usageOutput,
+      cacheWrite: usageCacheWrite,
+      cacheRead: usageCacheRead,
     });
   }
 
@@ -3658,9 +3699,22 @@ export async function getFunnelMetrics() {
 
 // ===== RELATÓRIO DE ATENDIMENTO (Seções 7 e 8) =====
 
-// Tarifas do Claude Haiku 4.5 (USD por milhão de tokens), conforme o escopo.
-const HAIKU_INPUT_USD_PER_MTOK = 1;
-const HAIKU_OUTPUT_USD_PER_MTOK = 5;
+// Tarifas por modelo (USD por milhão de tokens). O relatório antes assumia que
+// TODO o consumo era Haiku — desde que os turnos de ação passaram ao Sonnet isso
+// subestimava a conta em ~3x, justamente no modelo que mais pesa.
+// Gravação de cache custa 1,25x a entrada; leitura, 0,1x.
+// Sonnet está com preço promocional ($2/$10) até 31/08/2026; usamos o preço cheio
+// para o relatório nunca prometer um custo menor do que a fatura vai trazer.
+const MODEL_PRICING_USD_PER_MTOK = {
+  "claude-haiku-4-5-20251001": { input: 1, output: 5 },
+  "claude-haiku-4-5": { input: 1, output: 5 },
+  "claude-sonnet-5": { input: 3, output: 15 },
+};
+const DEFAULT_PRICING = { input: 1, output: 5 };
+
+function priceFor(model) {
+  return MODEL_PRICING_USD_PER_MTOK[model] || DEFAULT_PRICING;
+}
 
 /**
  * Relatório de atendimento do WhatsApp, agregado por período.
@@ -3727,11 +3781,15 @@ export async function getWhatsappReport({ startDate, endDate, granularity = "day
       params
     ),
     pool.query(
-      `SELECT COALESCE(SUM(input_tokens), 0)::bigint AS input,
+      `SELECT model,
+              COALESCE(SUM(input_tokens), 0)::bigint AS input,
               COALESCE(SUM(output_tokens), 0)::bigint AS output,
+              COALESCE(SUM(cache_creation_input_tokens), 0)::bigint AS cache_write,
+              COALESCE(SUM(cache_read_input_tokens), 0)::bigint AS cache_read,
               COUNT(*)::int AS conversas
          FROM whatsapp_ai_usage
-        WHERE ${dateSql}${scopeSql}`,
+        WHERE ${dateSql}${scopeSql}
+        GROUP BY model`,
       params
     ),
   ]);
@@ -3746,11 +3804,30 @@ export async function getWhatsappReport({ startDate, endDate, granularity = "day
   const novosMap = Object.fromEntries(novos.rows.map((r) => [r.action, r.n]));
   const transfer_total = transfer.rows.reduce((acc, r) => acc + r.n, 0);
 
-  const inputTokens = Number(ia.rows[0].input);
-  const outputTokens = Number(ia.rows[0].output);
-  const custo_usd =
-    (inputTokens / 1e6) * HAIKU_INPUT_USD_PER_MTOK +
-    (outputTokens / 1e6) * HAIKU_OUTPUT_USD_PER_MTOK;
+  // Soma por modelo, cada um com sua tarifa, e separa o que veio do cache.
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheWriteTokens = 0;
+  let cacheReadTokens = 0;
+  let custo_usd = 0;
+  let conversasIa = 0;
+  for (const row of ia.rows) {
+    const p = priceFor(row.model);
+    const inTok = Number(row.input);
+    const outTok = Number(row.output);
+    const cw = Number(row.cache_write);
+    const cr = Number(row.cache_read);
+    inputTokens += inTok;
+    outputTokens += outTok;
+    cacheWriteTokens += cw;
+    cacheReadTokens += cr;
+    conversasIa += row.conversas;
+    custo_usd +=
+      (inTok / 1e6) * p.input +
+      (outTok / 1e6) * p.output +
+      (cw / 1e6) * p.input * 1.25 +
+      (cr / 1e6) * p.input * 0.1;
+  }
 
   return {
     periodo: { start: startDate, end: endDate, granularity: gran },
@@ -3768,9 +3845,16 @@ export async function getWhatsappReport({ startDate, endDate, granularity = "day
       por_motivo: transfer.rows.map((r) => ({ motivo: r.reason, n: r.n })),
     },
     custo_ia: {
-      conversas: ia.rows[0].conversas,
+      conversas: conversasIa,
       input_tokens: inputTokens,
       output_tokens: outputTokens,
+      cache_write_tokens: cacheWriteTokens,
+      cache_read_tokens: cacheReadTokens,
+      // Quanto da entrada veio do cache (a 10% do preço). Perto de 0 com volume
+      // real = algo está invalidando o prefixo e o caching não está pegando.
+      cache_hit_pct: inputTokens + cacheReadTokens
+        ? +((cacheReadTokens / (inputTokens + cacheReadTokens)) * 100).toFixed(1)
+        : 0,
       custo_usd: +custo_usd.toFixed(4),
       custo_brl: +(custo_usd * rate).toFixed(2),
       usd_brl_rate: rate,
