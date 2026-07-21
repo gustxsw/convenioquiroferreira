@@ -233,7 +233,9 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({
     verifiedStatus
   );
 
-  const baseAmount = 600;
+  // Mantenha em sincronia com SUBSCRIPTION_HOLDER_PRICE em server/utils/pricing.js
+  // (o backend é quem cobra; este valor é só o exibido ao cliente).
+  const baseAmount = 350;
   const discount = appliedCoupon ? appliedCoupon.discount_value : 0;
   const totalAmount = baseAmount - discount;
 

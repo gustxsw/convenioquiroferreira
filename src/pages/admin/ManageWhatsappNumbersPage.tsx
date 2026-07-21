@@ -8,6 +8,11 @@ import {
   X,
   Bot,
   Pencil,
+  QrCode,
+  RefreshCw,
+  LogOut,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 
@@ -23,6 +28,19 @@ type WhatsappNumber = {
   daily_limit: number | null;
   is_active: boolean;
   ai_replies_today: number;
+};
+
+// Conexão do número (só existe com WHATSAPP_PROVIDER=baileys).
+type ConnectionState = {
+  enabled: boolean;
+  status: "disabled" | "disconnected" | "connecting" | "qr" | "connected";
+  connected?: boolean;
+  botNumber?: string | null;
+  connectedAt?: string | null;
+  hasStoredSession?: boolean;
+  qr?: string | null;
+  lastError?: string | null;
+  message?: string;
 };
 
 type ProfessionalLite = {
@@ -57,10 +75,66 @@ const ManageWhatsappNumbersPage: React.FC = () => {
   const [form, setForm] = useState({ ...emptyForm });
   const [isSaving, setIsSaving] = useState(false);
 
+  const [conn, setConn] = useState<ConnectionState | null>(null);
+  const [connBusy, setConnBusy] = useState(false);
+
   useEffect(() => {
     fetchNumbers();
     fetchProfessionals();
   }, []);
+
+  // Enquanto não estiver conectado o QR precisa aparecer rápido (ele expira em
+  // ~60s); conectado, basta um ping ocasional para detectar queda.
+  useEffect(() => {
+    fetchConnection();
+    const period = conn?.status === "connected" ? 20000 : 5000;
+    const t = setInterval(fetchConnection, period);
+    return () => clearInterval(t);
+  }, [conn?.status]);
+
+  const fetchConnection = async () => {
+    try {
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/admin/whatsapp/connection`
+      );
+      if (!response.ok) return;
+      setConn(await response.json());
+    } catch {
+      /* silencioso: o card apenas não atualiza */
+    }
+  };
+
+  const connAction = async (action: "restart" | "logout") => {
+    if (
+      action === "logout" &&
+      !window.confirm(
+        "Desconectar o número da Secretária Virtual? Ela para de responder até " +
+          "alguém escanear o novo QR code."
+      )
+    ) {
+      return;
+    }
+    try {
+      setConnBusy(true);
+      setError("");
+      const apiUrl = getApiUrl();
+      const response = await fetchWithAuth(
+        `${apiUrl}/api/admin/whatsapp/connection/${action}`,
+        { method: "POST" }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "Falha na operação");
+      setSuccess(data.message || "Feito.");
+      setTimeout(() => setSuccess(""), 3000);
+      await fetchConnection();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro na conexão");
+      setTimeout(() => setError(""), 4000);
+    } finally {
+      setConnBusy(false);
+    }
+  };
 
   const fetchNumbers = async () => {
     try {
@@ -239,6 +313,91 @@ const ManageWhatsappNumbersPage: React.FC = () => {
           Adicionar número
         </button>
       </div>
+
+      {conn?.enabled && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              {conn.status === "connected" ? (
+                <Wifi className="h-6 w-6 text-green-600 mt-0.5" />
+              ) : (
+                <WifiOff className="h-6 w-6 text-gray-400 mt-0.5" />
+              )}
+              <div>
+                <h2 className="font-semibold text-gray-900">
+                  Conexão do WhatsApp
+                </h2>
+                {conn.status === "connected" ? (
+                  <p className="text-sm text-green-700">
+                    Conectada
+                    {conn.botNumber ? ` como ${conn.botNumber}` : ""} — a
+                    secretária está respondendo.
+                  </p>
+                ) : conn.status === "qr" ? (
+                  <p className="text-sm text-amber-700">
+                    Aguardando pareamento: escaneie o QR code abaixo.
+                  </p>
+                ) : conn.status === "connecting" ? (
+                  <p className="text-sm text-gray-600">Conectando…</p>
+                ) : (
+                  <p className="text-sm text-gray-600">
+                    Desconectada.{" "}
+                    {conn.hasStoredSession
+                      ? "Há uma sessão salva — tente reconectar."
+                      : "Nenhuma sessão salva; gere um QR code para parear."}
+                  </p>
+                )}
+                {conn.lastError && (
+                  <p className="text-xs text-gray-400 mt-1">{conn.lastError}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => connAction("restart")}
+                disabled={connBusy}
+                className="btn btn-secondary flex items-center text-sm disabled:opacity-50"
+              >
+                <RefreshCw
+                  className={`h-4 w-4 mr-2 ${connBusy ? "animate-spin" : ""}`}
+                />
+                Reconectar
+              </button>
+              <button
+                onClick={() => connAction("logout")}
+                disabled={connBusy}
+                className="btn btn-secondary flex items-center text-sm text-red-600 disabled:opacity-50"
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                Desconectar
+              </button>
+            </div>
+          </div>
+
+          {conn.qr && (
+            <div className="mt-5 flex flex-col items-center border-t border-gray-100 pt-5">
+              <img
+                src={conn.qr}
+                alt="QR code para conectar o WhatsApp"
+                className="w-56 h-56 rounded-lg border border-gray-200"
+              />
+              <p className="text-sm text-gray-600 mt-3 text-center max-w-md">
+                No celular da secretária: <strong>WhatsApp → Aparelhos
+                conectados → Conectar um aparelho</strong> e aponte para este
+                código. Ele expira em cerca de 1 minuto e é renovado sozinho.
+              </p>
+            </div>
+          )}
+
+          {!conn.qr && conn.status !== "connected" && (
+            <div className="mt-5 flex items-center justify-center gap-2 border-t border-gray-100 pt-5 text-sm text-gray-500">
+              <QrCode className="h-4 w-4" />
+              Gerando QR code…
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 text-sm text-blue-800">
         O <strong>Phone Number ID</strong> é o identificador do número na Meta

@@ -56,6 +56,10 @@ import {
   scheduleExpiryCheck,
   checkExpiredSubscriptionsNow,
 } from "./jobs/checkExpiredSubscriptions.js";
+import {
+  SUBSCRIPTION_HOLDER_PRICE,
+  SUBSCRIPTION_DEPENDENT_PRICE,
+} from "./utils/pricing.js";
 import { scheduleMonthlyAgendaRevenueReport } from "./jobs/monthlyAgendaRevenueReport.js";
 import { scheduleGoogleWatchRenewal } from "./jobs/renewGoogleWatchChannels.js";
 import {
@@ -10006,7 +10010,7 @@ app.post(
           .json({ message: "Usuário já possui assinatura ativa" });
       }
 
-      let finalPrice = 600.0;
+      let finalPrice = SUBSCRIPTION_HOLDER_PRICE;
       let couponId = null;
       let discountApplied = 0;
 
@@ -10162,7 +10166,7 @@ app.post(
           .json({ message: "Dependente já possui assinatura ativa" });
       }
 
-      let finalPrice = 100.0;
+      let finalPrice = SUBSCRIPTION_DEPENDENT_PRICE;
       let couponId = null;
       let discountApplied = 0;
 
@@ -12793,6 +12797,80 @@ app.delete(
     } catch (error) {
       console.error("❌ [whatsapp-numbers-delete]", error);
       res.status(500).json({ message: "Erro ao remover número" });
+    }
+  }
+);
+
+// ===== ADMIN — Conexão do WhatsApp (Baileys) =====
+// O Render tem filesystem efêmero e nenhum acesso a terminal, então o pareamento
+// do número precisa acontecer pelo painel: estas rotas expõem o status e o QR.
+// Só fazem sentido com WHATSAPP_PROVIDER=baileys (a Cloud API não tem QR).
+
+function baileysEnabled() {
+  return (process.env.WHATSAPP_PROVIDER || "").toLowerCase() === "baileys";
+}
+
+// Status da conexão + QR (data URL) enquanto aguarda pareamento.
+app.get(
+  "/api/admin/whatsapp/connection",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      if (!baileysEnabled()) {
+        return res.json({
+          provider: (process.env.WHATSAPP_PROVIDER || "cloud").toLowerCase(),
+          enabled: false,
+          status: "disabled",
+          message:
+            "Conexão por QR indisponível: o provedor atual não é o Baileys (defina WHATSAPP_PROVIDER=baileys).",
+        });
+      }
+      const { getConnectionState } = await import("./utils/whatsappBaileys.js");
+      res.json({ enabled: true, ...(await getConnectionState()) });
+    } catch (error) {
+      console.error("❌ [whatsapp-connection-status]", error);
+      res.status(500).json({ message: "Erro ao consultar a conexão do WhatsApp" });
+    }
+  }
+);
+
+// Reconecta reaproveitando a sessão salva (não pede QR novo).
+app.post(
+  "/api/admin/whatsapp/connection/restart",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      if (!baileysEnabled()) {
+        return res.status(400).json({ message: "Provedor atual não é o Baileys." });
+      }
+      const { restartBaileys } = await import("./utils/whatsappBaileys.js");
+      await restartBaileys();
+      res.json({ message: "Reconectando…" });
+    } catch (error) {
+      console.error("❌ [whatsapp-connection-restart]", error);
+      res.status(500).json({ message: "Erro ao reconectar" });
+    }
+  }
+);
+
+// Desconecta o número e apaga a sessão — gera um QR novo para parear outro número.
+app.post(
+  "/api/admin/whatsapp/connection/logout",
+  authenticate,
+  authorize(["admin"]),
+  async (req, res) => {
+    try {
+      if (!baileysEnabled()) {
+        return res.status(400).json({ message: "Provedor atual não é o Baileys." });
+      }
+      const { logoutBaileys } = await import("./utils/whatsappBaileys.js");
+      await logoutBaileys();
+      res.json({ message: "Número desconectado. Um novo QR será gerado em instantes." });
+    } catch (error) {
+      console.error("❌ [whatsapp-connection-logout]", error);
+      res.status(500).json({ message: "Erro ao desconectar" });
     }
   }
 );

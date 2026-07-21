@@ -2,16 +2,28 @@
 // (cada mensagem em processo isolado via wa_sim.mjs, pra não acionar o guard de
 // burst) e ASSERE o resultado no banco — fonte da verdade. Ao final, resumo PASS/FAIL.
 //
-// Pré-requisito: existir o conveniado de teste (cpf 99900011122, user 434).
+// Pré-requisito: existir o conveniado de teste (cpf 99900011122).
 // Uso: node scripts/wa_regression.mjs
 import 'dotenv/config';
 import { execFileSync } from 'child_process';
 import pg from 'pg';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-const CONV_CPF = '99900011122';   // conveniado ativo (user 434)
+const CONV_CPF = '99900011122';   // conveniado ativo (resolvido pelo CPF)
 const PART_CPF = '99900022233';   // particular (cadastrado pelo bot na 1ª vez)
-const CLAIM_RE = /✅|agendad|marcad|remarcad|cancelad|confirmad/i;
+const CLAIM_WORDS_RE = /✅|agendad|marcad|remarcad|cancelad|confirmad/i;
+// "Posso confirmar assim?" e "✅ Confirmo o horário?" são PERGUNTAS, não afirmações
+// de que a ação foi feita — casá-las como "claim" produzia falso alarme de
+// confirmação falsa (o teste acusava mentira onde o bot só estava perguntando).
+const CLAIM_RE = {
+  test: (txt) => {
+    const s = String(txt || '').trim();
+    if (!CLAIM_WORDS_RE.test(s)) return false;
+    if (/\?\s*$/.test(s)) return false;                  // termina perguntando
+    if (/\b(posso|quer|deseja|confirmo\?)\b/i.test(s) && /\?/.test(s)) return false;
+    return true;
+  },
+};
 
 const results = [];
 function check(name, cond, detail = '') {
@@ -31,12 +43,42 @@ function send(phone, text) {
 const q = (sql, p = []) => pool.query(sql, p).then((r) => r.rows);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function convConsult(userId) {
+// Resolve o conveniado de teste pelo CPF em vez de id fixo: o fixture já foi
+// apagado do banco uma vez e todos os cenários de convênio falharam por isso,
+// mascarados como "regressão".
+const CONV_USER_ID = (
+  await q(`SELECT id FROM users WHERE cpf = $1`, [CONV_CPF])
+)[0]?.id;
+if (!CONV_USER_ID) {
+  console.error(
+    `\n⚠️  Fixture ausente: nenhum usuário com CPF ${CONV_CPF}. ` +
+      `Os cenários de convênio (S1, S2, S5, S6) vão falhar por falta de dado, não por regressão.\n`
+  );
+}
+
+async function convConsult(userId = CONV_USER_ID) {
   return (await q(`SELECT id,service_id,value::float,convenio,date,status FROM consultations WHERE professional_id=2 AND user_id=$1 ORDER BY created_at DESC`, [userId]));
 }
 async function partConsult(cpf) {
   return (await q(`SELECT c.id,c.service_id,c.value::float,c.convenio,c.date,c.status FROM consultations c JOIN private_patients p ON p.id=c.private_patient_id WHERE c.professional_id=2 AND p.cpf=$1 ORDER BY c.created_at DESC`, [cpf]));
 }
+
+// Estado de execuções anteriores fazia a bateria mentir nos dois sentidos: cenários
+// "passavam" achando consultas de runs antigos e "falhavam" por sessão/contato
+// poluídos. Zeramos tudo que pertence aos números e CPFs de teste antes de começar.
+async function resetTestState() {
+  const phones = ['5531000000001', '5531000000002', '5531000000003', '5531000000004'];
+  await q(`DELETE FROM consultations WHERE user_id = $1`, [CONV_USER_ID || -1]);
+  await q(
+    `DELETE FROM consultations WHERE private_patient_id IN (SELECT id FROM private_patients WHERE cpf = $1)`,
+    [PART_CPF]
+  );
+  await q(`DELETE FROM private_patients WHERE cpf = $1`, [PART_CPF]);
+  await q(`DELETE FROM whatsapp_contacts WHERE phone = ANY($1)`, [phones]);
+  await q(`DELETE FROM whatsapp_sessions WHERE phone = ANY($1)`, [phones]);
+  console.log('🧹 Estado de teste zerado (consultas, paciente particular, contatos e sessões).');
+}
+await resetTestState();
 
 console.log('\n================ BATERIA DE REGRESSÃO ================\n');
 
@@ -47,7 +89,7 @@ send('5531000000001', `meu cpf é ${CONV_CPF}`);
 send('5531000000001', 'quero a Consulta presencial normal, no dia 23 de julho às 8h');
 let r1 = send('5531000000001', 'sim, confirmo o agendamento');
 if (!CLAIM_RE.test(r1)) r1 = send('5531000000001', 'pode finalizar o agendamento agora, por favor');
-let c1 = (await convConsult(434)).find((c) => c.status === 'scheduled');
+let c1 = (await convConsult()).find((c) => c.status === 'scheduled');
 check('S1 consulta criada no banco', !!c1, c1 ? `id=${c1.id}` : 'nenhuma');
 if (c1) {
   check('S1 serviço = 146 (presencial)', c1.service_id === 146, `svc=${c1.service_id}`);
@@ -63,7 +105,7 @@ send('5531000000002', `cpf ${CONV_CPF}`);
 send('5531000000002', 'no dia 23 de julho às 9h');
 let r2 = send('5531000000002', 'sim, confirmo');
 if (!CLAIM_RE.test(r2)) r2 = send('5531000000002', 'pode finalizar agora por favor');
-let c2 = (await convConsult(434)).find((c) => c.service_id === 167 && c.status === 'scheduled');
+let c2 = (await convConsult()).find((c) => c.service_id === 167 && c.status === 'scheduled');
 check('S2 teleconsulta criada', !!c2, c2 ? `id=${c2.id}` : 'nenhuma');
 if (c2) {
   check('S2 serviço = 167 (online)', c2.service_id === 167, `svc=${c2.service_id}`);

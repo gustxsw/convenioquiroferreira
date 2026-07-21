@@ -35,6 +35,12 @@ import {
   formatToBrazilDate,
   formatToBrazilTimeOnly,
 } from "./utils/dateHelpers.js";
+import {
+  SUBSCRIPTION_HOLDER_PRICE,
+  SUBSCRIPTION_DEPENDENT_PRICE,
+  formatPriceBRL,
+  monthlyEquivalentCeil,
+} from "./utils/pricing.js";
 import { sendWhatsappTextMessage } from "./utils/whatsappCloud.js";
 import { sendBaileysText } from "./utils/whatsappBaileys.js";
 import {
@@ -82,8 +88,8 @@ só diga que ${prof} atende caso esse plano esteja na lista de convênios aceito
 e NUNCA aplique os preços do Quiro Ferreira a eles.
 
 Como funciona o Convênio Quiro Ferreira:
-- Assinatura anual do titular: R$ 600,00 por ano.
-- Dependente: R$ 100,00 por ano cada (dá pra incluir a família).
+- Assinatura anual do titular: ${formatPriceBRL(SUBSCRIPTION_HOLDER_PRICE)} por ano.
+- Dependente: ${formatPriceBRL(SUBSCRIPTION_DEPENDENT_PRICE)} por ano cada (dá pra incluir a família).
 - Principal vantagem: a consulta fica mais barata para quem é conveniado do que para quem paga como particular,
   além de prioridade no agendamento e acesso ao painel do associado.
 - Painel do associado: cartaoquiroferreira.com.br (login com CPF e senha).
@@ -91,13 +97,58 @@ Como funciona o Convênio Quiro Ferreira:
 - Contratação: é feita pelo painel, pelo link de cadastro que ${prof} envia pessoalmente. Não passe link de
   pagamento pelo WhatsApp — avise que vai pedir para ${prof} entrar em contato e mandar o link.
 
-## Como apresentar o convênio (venda consultiva, sem forçar)
-Você pode e deve oferecer o convênio quando ele ajudar o paciente — de forma consultiva, nunca insistente:
-- Mostre a economia na prática: compare o valor da consulta particular com o de conveniado e, se a pessoa
-  se consulta com frequência ou tem família, faça as contas de quanto ela pouparia ao longo do ano.
-- Conecte o benefício à situação dela (tratamento contínuo, dependentes, orçamento mais apertado).
-- Acolha as objeções com calma em vez de rebater; se não for o momento, tudo bem — deixe a porta aberta.
-- Nunca invente valores, coberturas ou prazos. Sem certeza de algo, diga que confirma com ${prof} e retorna.`;
+## Como vender o convênio (você é excelente nisso)
+Vender bem aqui é ajudar a pessoa a enxergar algo que realmente melhora a vida dela. Uma vendedora
+excelente não empurra: ela escuta, entende e mostra. O paciente deve sair da conversa sentindo que
+foi cuidado — nunca que foi abordado.
+
+**1. Primeiro resolva, depois ofereça.** Nunca ofereça o convênio antes de atender o que a pessoa
+veio pedir. Agende, tire a dúvida, resolva. O convênio entra DEPOIS, no respiro da conversa.
+
+**2. Descubra antes de apresentar.** Não despeje benefícios. Faça uma pergunta leve que revele a
+situação: se é a primeira vez, se já se trata há tempo, se é para ela ou para alguém da família,
+se costuma vir com frequência. A resposta dela é o que você vai usar.
+
+**3. Fale do mundo dela, não do produto.** Traduza cada benefício para a vida da pessoa:
+- Tratamento contínuo / várias sessões → o preço menor se repete em toda consulta, o ano inteiro.
+- Família, filhos, cônjuge → ${formatPriceBRL(SUBSCRIPTION_DEPENDENT_PRICE)}/ano por dependente é o
+  argumento mais forte que existe; a família inteira coberta por pouco.
+- Orçamento apertado → menos de ${formatPriceBRL(monthlyEquivalentCeil())} por mês, valor de um lanche.
+- Já usa outros profissionais → a rede inteira credenciada, não só ${prof}.
+
+**4. A conta tem que ser verdadeira.** Você recebe mais adiante uma tabela pronta com a economia por
+consulta e em quantas consultas a anuidade se paga. Use exatamente aqueles números — não faça
+divisões de cabeça e NUNCA diga "se paga na segunda consulta" ou "já compensa de cara" se a tabela
+disser outra coisa. Exagerar aqui é mentir, e o paciente descobre na primeira conta que fizer.
+Se, para o caso daquela pessoa, a conta não for convincente (vem uma vez só, sem dependentes), seja
+honesta: apresente o convênio como opção pelos outros benefícios e deixe ela decidir, ou simplesmente
+não ofereça. Uma conta inflada custa a venda E o paciente. Jamais invente números.
+
+**5. Ancore o valor antes do preço.** Diga o que ela ganha, depois o quanto custa — nessa ordem.
+Preço dito solto parece caro; preço dito depois do benefício parece justo.
+
+**6. Objeção é interesse, não recusa.** Nunca rebata nem discuta. Acolha, valide o que ela sentiu e
+devolva uma pergunta ou uma informação nova:
+- "Tá caro" → reconheça, quebre no valor mensal, mostre em quantas consultas já se paga.
+- "Vou pensar" → tudo bem de verdade; pergunte com leveza o que ficou em dúvida (quase sempre é uma
+  dúvida específica que você consegue resolver ali).
+- "Não sei se vou usar" → mostre o uso pela família e pela rede, não só por ela.
+- "Depois eu vejo" → aceite na hora, sem insistir, e deixe claro que é só avisar.
+
+**7. Feche com convite, não com pressão.** Termine com uma pergunta simples e fácil de responder
+("quer que eu peça pra ${prof} te mandar o link?"). Se ela disser sim, encaminhe na hora.
+
+## Limites inegociáveis da venda (mais importantes que vender)
+- **Uma oferta por conversa.** Se a pessoa recusar, desviar ou não responder à oferta, o assunto está
+  encerrado — não volte a ele nessa conversa, de forma nenhuma, nem "de leve".
+- **Nunca ofereça a quem está com dor forte, aflita, em urgência ou fragilizada.** Nesse momento você
+  só acolhe e resolve. Vender ali é invasivo.
+- **Nunca use medo, culpa, urgência inventada, falsa escassez ou "última chance".** Não existe promoção
+  por tempo limitado a menos que ${prof} tenha te informado.
+- **Nunca prometa** cobertura, procedimento, prazo, reembolso ou desconto que você não tenha recebido
+  por escrito nas informações. Sem certeza: diga que confirma com ${prof} e retorna.
+- Não repita a oferta em conversas seguidas com a mesma pessoa se ela já disse não antes.
+- Se ela só quer marcar e ir embora, deixe. Um paciente bem atendido volta — e aí sim compra.`;
 
   const naoConvenio = `## Sobre convênios (importante)
 Este profissional NÃO trabalha com o Convênio Quiro Ferreira. NUNCA ofereça, mencione ou explique o Convênio
@@ -2237,7 +2288,7 @@ async function handleConvenioChat(session, phone, text) {
       `Boa decisão! 💪 Ao entrar para o Convênio Quiro Ferreira você tem acesso a consultas com desconto com ${profFirst} e outros profissionais da rede, além de incluir esposa, filhos e familiares por R$ 100/ano cada.\n\nCadastre-se aqui:\n🔗 ${refLink}`,
     ]);
   } else if (/quanto custa|preco|valor|mensalidade|assinatura|anuidade|custo/.test(n)) {
-    msg = `O Convênio Quiro Ferreira é *R$ 600,00/ano* para o titular — menos de R$ 50 por mês para consultas com desconto com ${profFirst} e toda a rede de profissionais.\n\n👨‍👩‍👧 Dependentes (esposa, filhos…): *R$ 100,00/ano cada*\n\nUm plano de saúde para a família inteira por um valor acessível. Quer contratar?\n🔗 ${refLink}`;
+    msg = `O Convênio Quiro Ferreira é *${formatPriceBRL(SUBSCRIPTION_HOLDER_PRICE)}/ano* para o titular — menos de R$ ${monthlyEquivalentCeil()} por mês para consultas com desconto com ${profFirst} e toda a rede de profissionais.\n\n👨‍👩‍👧 Dependentes (esposa, filhos…): *${formatPriceBRL(SUBSCRIPTION_DEPENDENT_PRICE)}/ano cada*\n\nUm plano de saúde para a família inteira por um valor acessível. Quer contratar?\n🔗 ${refLink}`;
   } else if (/dependente|filho|filha|conjuge|esposa|marido|familiar|adicionar.*plano|incluir.*plano/.test(n)) {
     msg = `Sim, e essa é uma das maiores vantagens! 👨‍👩‍👧 Você pode incluir *esposa, filhos e outros familiares* por apenas *R$ 100,00/ano cada*.\n\nToda a família com acesso a consultas com desconto na rede Quiro Ferreira. O cadastro dos dependentes é feito pelo painel após a contratação do titular.\n\n🔗 ${refLink}`;
   } else if (/beneficio|vantagem|o que inclui|o que tem|o que ganha|desconto|prioridade/.test(n)) {
@@ -2246,7 +2297,7 @@ async function handleConvenioChat(session, phone, text) {
     msg = `O acesso ao painel é pelo site *cartaoquiroferreira.com.br* — login com CPF e senha cadastrada. Por lá você agenda consultas, gerencia seus dependentes e acompanha tudo.\n\nAinda não tem cadastro?\n🔗 ${refLink}`;
   } else {
     // Resposta geral sobre o convênio
-    msg = `O *Convênio Quiro Ferreira* é um plano anual de saúde para você e sua família. Com ele, você tem acesso a consultas com desconto não só com ${profFirst}, mas com toda a rede de profissionais credenciados.\n\n💰 *Titular:* R$ 600,00/ano (menos de R$ 50/mês)\n👨‍👩‍👧 *Dependentes:* R$ 100,00/ano cada\n✅ Prioridade no agendamento\n\nPara contratar ou saber mais:\n🔗 ${refLink}\n\nTem alguma dúvida? É só perguntar!`;
+    msg = `O *Convênio Quiro Ferreira* é um plano anual de saúde para você e sua família. Com ele, você tem acesso a consultas com desconto não só com ${profFirst}, mas com toda a rede de profissionais credenciados.\n\n💰 *Titular:* ${formatPriceBRL(SUBSCRIPTION_HOLDER_PRICE)}/ano (menos de R$ ${monthlyEquivalentCeil()}/mês)\n👨‍👩‍👧 *Dependentes:* ${formatPriceBRL(SUBSCRIPTION_DEPENDENT_PRICE)}/ano cada\n✅ Prioridade no agendamento\n\nPara contratar ou saber mais:\n🔗 ${refLink}\n\nTem alguma dúvida? É só perguntar!`;
   }
 
   await replyS(session, phone, msg);
@@ -2323,9 +2374,11 @@ async function handleConvenioCadastroNome(session, phone, text) {
 async function routeMessage(session, phone, text) {
   // Reply-loop: o bot enviou muitas respostas seguidas sem avanço → escala para equipe.
   if (isInReplyLoop(session)) {
+    // Captura antes do resetFlow, que zera o contador — o log dizia sempre "streak: 0".
+    const streakAtEscalation = session._replyStreak || 0;
     resetFlow(session);
     session.mode = "pending";
-    botLog("reply_loop_escalate", { phone, streak: session._replyStreak });
+    botLog("reply_loop_escalate", { phone, streak: streakAtEscalation });
     await replyS(session, phone, pick([
       "Percebi que estamos rodando em círculos aqui 😅 Vou chamar alguém da nossa equipe para te atender melhor.",
       "Estou com dificuldade de entender o que você precisa. Vou avisar nossa equipe — eles entrarão em contato logo.",
@@ -2839,6 +2892,37 @@ async function executeAiTool(session, phone, name, input = {}) {
 }
 
 // Monta o system prompt do agente: persona + data de hoje + regras operacionais.
+/**
+ * Tabela de economia do convênio, calculada AQUI e injetada pronta no prompt.
+ *
+ * Por que não deixar a IA calcular: pedindo a conta no prompt, o modelo produzia
+ * sistematicamente o número lisonjeiro ("se paga na 2ª consulta") quando o real
+ * era 12 — um exagero que soa como mentira para o paciente. Mesma lição da
+ * confirmação de agendamento: número que importa não se pede ao modelo, se calcula.
+ */
+function buildSavingsFacts(services) {
+  const rows = [];
+  for (const s of services || []) {
+    const priv = Number(s.pricePrivate);
+    const memb = Number(s.priceMember);
+    if (!Number.isFinite(priv) || !Number.isFinite(memb)) continue;
+    const economia = priv - memb;
+    const nome = s.name || "Consulta";
+    if (economia <= 0) {
+      rows.push(`- ${nome}: conveniado e particular custam o mesmo (${formatPriceBRL(priv)}) — NÃO use economia por consulta como argumento aqui.`);
+      continue;
+    }
+    const titular = Math.ceil(SUBSCRIPTION_HOLDER_PRICE / economia);
+    const dependente = Math.ceil(SUBSCRIPTION_DEPENDENT_PRICE / economia);
+    rows.push(
+      `- ${nome}: particular ${formatPriceBRL(priv)} → conveniado ${formatPriceBRL(memb)} = ` +
+        `economia de ${formatPriceBRL(economia)} por consulta. ` +
+        `A anuidade do titular se paga em ${titular} consulta(s); a de um dependente, em ${dependente} consulta(s).`
+    );
+  }
+  return rows;
+}
+
 function buildAgentSystemPrompt(session, ctx) {
   const today = todayInBrazilYmd();
   const dow = WEEKDAY_NAMES_PT[weekdayOfYmd(today)];
@@ -2848,6 +2932,7 @@ function buildAgentSystemPrompt(session, ctx) {
   const precoRule = sellsConvenio
     ? `- Para valores, use ${precoTool}. 'preco_conveniado' é o preço para quem TEM o Convênio Quiro Ferreira e 'preco_particular' para quem NÃO tem. Nunca troque esses rótulos, e nunca associe esses valores a planos de terceiros (Unimed, Bradesco etc.).`
     : `- Para valores, use ${precoTool} e informe o valor ao paciente. Nunca associe esses valores a planos de terceiros (Unimed, Bradesco etc.).`;
+  const savings = sellsConvenio ? buildSavingsFacts(ctx.services) : [];
   const focoAssunto = sellsConvenio ? "a consulta e o convênio deste profissional" : "a consulta deste profissional";
   const focoRedirect = sellsConvenio ? "só com a consulta e o convênio" : "só com a consulta e os agendamentos";
   const lines = [
@@ -2876,6 +2961,29 @@ function buildAgentSystemPrompt(session, ctx) {
   ];
   if (ctx.convenioType !== "agenda_only") {
     lines.push(`- Se o paciente quiser contratar o Convênio Quiro Ferreira, compartilhe o link de cadastro: ${ctx.convenioLink}`);
+    lines.push(
+      "",
+      "## Momento certo de oferecer o convênio",
+      "Ofereça só nestes momentos, e só uma vez por conversa:",
+      "  (a) logo DEPOIS de concluir o que o paciente pediu (agendamento confirmado, dúvida resolvida);",
+      "  (b) quando ele perguntar preço e ainda não for conveniado;",
+      "  (c) quando ele mencionar família, dependentes ou tratamento com várias sessões.",
+      "Antes de citar economia, busque os preços reais com a ferramenta de valores — nunca estime de cabeça.",
+      ...(savings.length
+        ? [
+            "",
+            "### Contas já prontas (use EXATAMENTE estes números)",
+            ...savings,
+            `Anuidade: titular ${formatPriceBRL(SUBSCRIPTION_HOLDER_PRICE)}/ano, dependente ${formatPriceBRL(SUBSCRIPTION_DEPENDENT_PRICE)}/ano.`,
+            "Estes são os ÚNICOS números de economia e de 'em quantas consultas se paga' que você pode dizer.",
+            "NUNCA diga um número de consultas menor do que o desta tabela, nem faça arredondamento para baixo, nem improvise outra conta.",
+            "Também é proibido o vago otimista: nada de 'em poucas consultas já se paga', 'rapidinho compensa', 'logo se paga'. Ou você diz o número exato da tabela, ou não usa o argumento de payback de jeito nenhum.",
+            "Se o número de consultas do titular for alto para o caso da pessoa, simplesmente não use esse argumento: fale dos dependentes, da rede de profissionais e da prioridade no agendamento.",
+          ]
+        : []),
+      "Se ele recusar, desconversar ou ignorar a oferta, encerre o assunto e siga atendendo com o mesmo carinho.",
+      "Se ele estiver com dor forte, aflito ou for uma urgência, NÃO ofereça — só acolha e resolva."
+    );
   }
   if (ctx.insurances?.length) {
     lines.push(`- Planos/convênios que o profissional aceita: ${ctx.insurances.join(", ")} (além de pacientes particulares).`);
@@ -3080,6 +3188,11 @@ async function routeMessageAI(session, phone, text) {
     for (const tu of toolUses) {
       if (tu.name === "fora_de_escopo") offTopicThisTurn = true;
       const out = await executeAiTool(session, phone, tu.name, tu.input || {});
+      // Ferramenta que respondeu sem erro = a conversa ANDOU. Sem isto, o guard de
+      // reply-loop contava toda resposta da IA e escalava para humano no 7º turno de
+      // uma conversa perfeitamente saudável (o guard nasceu para o bot por palavra-chave,
+      // onde só o CPF contava como progresso).
+      if (out && !out.erro && tu.name !== "fora_de_escopo") resetReplyStreak(session);
       if (STATE_CHANGE_TOOLS.has(tu.name) && out && out.ok) lastStateChange = { tool: tu.name, result: out };
       results.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(out) });
     }

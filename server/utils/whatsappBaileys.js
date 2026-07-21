@@ -14,31 +14,43 @@
  * resolver o profissional dono da linha.
  */
 
-import path from "path";
-import { fileURLToPath } from "url";
 import makeWASocket, {
-  useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
   downloadMediaMessage,
 } from "@whiskeysockets/baileys";
 import qrcode from "qrcode-terminal";
-import qrimage from "qrcode"; // [TESTE] gera QR como PNG p/ escanear; remover depois
+import qrimage from "qrcode";
 import { processInbound } from "../whatsapp.js";
 import { uploadWhatsappMedia } from "./whatsappMedia.js";
-
-// [TESTE] caminho fixo onde o QR é salvo como imagem enquanto valida o pareamento.
-const QR_PNG_PATH =
-  process.env.BAILEYS_QR_PNG ||
-  "C:/Users/Suporte/AppData/Local/Temp/claude/C--Users-Suporte-Desktop-Desenvolvimento-convenioquiroferreira/21b9e635-564e-4661-961f-e967375153f2/scratchpad/baileys_qr.png";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Sessão persistida: escaneie o QR só uma vez. Apague esta pasta para deslogar.
-const AUTH_DIR = path.join(__dirname, "..", ".baileys_auth");
+import {
+  usePostgresAuthState,
+  clearAuthState,
+  hasStoredSession,
+  DEFAULT_SESSION_ID,
+} from "./baileysAuthState.js";
 
 let sock = null;
 let botNumber = null; // dígitos do número conectado (ex.: "5564999876597")
 let starting = false;
+
+// Estado observável pelo painel admin (GET /api/admin/whatsapp/connection).
+// O QR fica só em memória como data URL: é efêmero (expira em ~60s) e não deve
+// ser persistido — quem tiver o QR pareia o número.
+let currentQrDataUrl = null;
+let currentQrAt = null;
+let lastStatus = "disconnected"; // disconnected | connecting | qr | connected
+let lastError = null;
+let connectedAt = null;
+
+function setStatus(status, { error = null } = {}) {
+  lastStatus = status;
+  lastError = error;
+  if (status !== "qr") {
+    currentQrDataUrl = null;
+    currentQrAt = null;
+  }
+}
 
 // Mapa telefone(identidade) -> JID real de resposta. O WhatsApp entrega muitas
 // conversas via LID (@lid, endereçamento de privacidade); responder ao número
@@ -112,11 +124,12 @@ export async function startBaileys() {
     return;
   }
   starting = true;
+  setStatus("connecting");
 
   try {
-    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+    const { state, saveCreds } = await usePostgresAuthState();
     const { version } = await fetchLatestBaileysVersion();
-    log("connecting", { version });
+    log("connecting", { version, sessionId: DEFAULT_SESSION_ID });
 
     sock = makeWASocket({
       version,
@@ -134,20 +147,28 @@ export async function startBaileys() {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
+        // Terminal: útil em dev. Painel admin: data URL, único caminho viável
+        // num servidor headless como o Render.
         process.stdout.write(
           "\n📲 Escaneie o QR abaixo no WhatsApp do número da Secretária Virtual\n" +
             "   (Aparelhos conectados → Conectar um aparelho):\n\n"
         );
         qrcode.generate(qr, { small: true });
-        // [TESTE] também salva como PNG para escanear com facilidade.
         qrimage
-          .toFile(QR_PNG_PATH, qr, { width: 480, margin: 2 })
-          .then(() => log("qr_png_saved", { path: QR_PNG_PATH }))
-          .catch((e) => log("qr_png_error", { error: String(e) }));
+          .toDataURL(qr, { width: 480, margin: 2 })
+          .then((dataUrl) => {
+            currentQrDataUrl = dataUrl;
+            currentQrAt = Date.now();
+            lastStatus = "qr";
+            log("qr_ready", {});
+          })
+          .catch((e) => log("qr_encode_error", { error: String(e) }));
       }
 
       if (connection === "open") {
         botNumber = jidToDigits(sock?.user?.id);
+        connectedAt = Date.now();
+        setStatus("connected");
         log("connected", { botNumber });
         process.stdout.write(`\n✅ Baileys conectado como ${botNumber}\n`);
       }
@@ -158,11 +179,24 @@ export async function startBaileys() {
         log("disconnected", { statusCode, loggedOut });
         sock = null;
         starting = false;
+        botNumber = null;
+        connectedAt = null;
+        setStatus("disconnected", { error: statusCode ? `statusCode ${statusCode}` : null });
+
         if (loggedOut) {
+          // Credenciais invalidadas pelo WhatsApp: limpa a sessão do banco e sobe
+          // de novo já pedindo QR — o admin repareia pelo painel, sem SSH.
           process.stdout.write(
-            "\n⚠️  Sessão do WhatsApp encerrada (logout). Apague server/.baileys_auth " +
-              "e reinicie para escanear um novo QR.\n"
+            "\n⚠️  Sessão do WhatsApp encerrada (logout). Gerando novo QR — " +
+              "escaneie pelo painel admin (Números da Secretária).\n"
           );
+          clearAuthState()
+            .catch((e) => log("clear_auth_error", { error: String(e) }))
+            .finally(() => {
+              setTimeout(() => {
+                startBaileys().catch((e) => log("relogin_error", { error: String(e) }));
+              }, 2000);
+            });
           return;
         }
         // Qualquer outra queda: tenta reconectar.
@@ -284,4 +318,68 @@ export async function sendBaileysText({ toDigits, text }) {
 
 export function isBaileysConnected() {
   return !!sock;
+}
+
+/**
+ * Estado da conexão para o painel admin. O QR só é devolvido enquanto está
+ * válido (o WhatsApp o rotaciona a cada ~60s; devolvemos até 90s por margem).
+ */
+export async function getConnectionState() {
+  const qrFresh = currentQrDataUrl && Date.now() - (currentQrAt || 0) < 90_000;
+  let hasSession = false;
+  try {
+    hasSession = await hasStoredSession();
+  } catch {
+    /* banco indisponível não pode derrubar a rota de status */
+  }
+  return {
+    provider: (process.env.WHATSAPP_PROVIDER || "").toLowerCase() || "cloud",
+    sessionId: DEFAULT_SESSION_ID,
+    status: lastStatus,
+    connected: !!sock && lastStatus === "connected",
+    botNumber,
+    connectedAt: connectedAt ? new Date(connectedAt).toISOString() : null,
+    hasStoredSession: hasSession,
+    qr: qrFresh ? currentQrDataUrl : null,
+    qrAt: qrFresh ? new Date(currentQrAt).toISOString() : null,
+    lastError,
+  };
+}
+
+/** Derruba o socket atual e reconecta reaproveitando a sessão salva. */
+export async function restartBaileys() {
+  try {
+    sock?.end?.(new Error("restart solicitado pelo painel"));
+  } catch {
+    /* já caiu */
+  }
+  sock = null;
+  starting = false;
+  setStatus("connecting");
+  await startBaileys();
+}
+
+/**
+ * Desconecta o número e apaga a sessão do banco, forçando um novo QR — usado
+ * para trocar o número da secretária pelo painel.
+ */
+export async function logoutBaileys() {
+  try {
+    await sock?.logout?.();
+  } catch (e) {
+    log("logout_error", { error: String(e) });
+  }
+  try {
+    sock?.end?.(new Error("logout solicitado pelo painel"));
+  } catch {
+    /* já caiu */
+  }
+  sock = null;
+  starting = false;
+  botNumber = null;
+  connectedAt = null;
+  await clearAuthState();
+  setStatus("disconnected");
+  // Sobe de novo para já apresentar o QR do próximo número.
+  await startBaileys();
 }
