@@ -51,6 +51,7 @@ import {
   listConversations,
   getWhatsappReport,
   invalidateNumbersCache,
+  getAiOutageInfo,
 } from "./whatsapp.js";
 import {
   scheduleExpiryCheck,
@@ -12817,17 +12818,21 @@ app.get(
   authorize(["admin"]),
   async (req, res) => {
     try {
+      // aiOutage vai nos dois caminhos: a IA pode estar sem crédito
+      // independentemente do provedor de WhatsApp em uso.
+      const aiOutage = getAiOutageInfo();
       if (!baileysEnabled()) {
         return res.json({
           provider: (process.env.WHATSAPP_PROVIDER || "cloud").toLowerCase(),
           enabled: false,
           status: "disabled",
+          aiOutage,
           message:
             "Conexão por QR indisponível: o provedor atual não é o Baileys (defina WHATSAPP_PROVIDER=baileys).",
         });
       }
       const { getConnectionState } = await import("./utils/whatsappBaileys.js");
-      res.json({ enabled: true, ...(await getConnectionState()) });
+      res.json({ enabled: true, aiOutage, ...(await getConnectionState()) });
     } catch (error) {
       console.error("❌ [whatsapp-connection-status]", error);
       res.status(500).json({ message: "Erro ao consultar a conexão do WhatsApp" });

@@ -41,6 +41,8 @@ type ConnectionState = {
   qr?: string | null;
   lastError?: string | null;
   message?: string;
+  // IA sem crédito/chave inválida: o atendimento cai no fluxo por palavra-chave.
+  aiOutage?: { active: boolean; reason: string | null; until: string | null };
 };
 
 type ProfessionalLite = {
@@ -313,6 +315,32 @@ const ManageWhatsappNumbersPage: React.FC = () => {
           Adicionar número
         </button>
       </div>
+
+      {conn?.aiOutage?.active && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-6">
+          <div className="flex items-start gap-3">
+            <Bot className="h-5 w-5 text-amber-700 mt-0.5 shrink-0" />
+            <div className="text-sm text-amber-900">
+              <p className="font-semibold">
+                IA indisponível — atendendo pelo fluxo simplificado
+              </p>
+              <p className="mt-1">
+                A API da Anthropic recusou as chamadas
+                {conn.aiOutage.reason ? ` (${conn.aiOutage.reason})` : ""}. A
+                secretária continua agendando, remarcando e cancelando pelo
+                fluxo por palavra-chave, mas sem conversa livre. Assim que os
+                créditos forem recarregados ela volta sozinha
+                {conn.aiOutage.until
+                  ? ` (nova tentativa após ${new Date(
+                      conn.aiOutage.until
+                    ).toLocaleTimeString("pt-BR")})`
+                  : ""}
+                .
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {conn?.enabled && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">

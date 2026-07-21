@@ -2414,17 +2414,26 @@ async function routeMessage(session, phone, text) {
 
   // Modo IA (flag WHATSAPP_AI_MODE): a IA conduz TODA a conversa via ferramentas.
   // SAIR/ATENDENTE acima continuam como escape determinístico, garantido.
-  if (aiModeEnabled(session)) {
+  // isAiOutage(): sem crédito na Anthropic, atende pelo fluxo por palavra-chave em
+  // vez de responder frases vazias. A IA reassume sozinha quando o crédito voltar.
+  if (aiModeEnabled(session) && !isAiOutage()) {
     session.intent = null;
     await routeMessageAI(session, phone, text);
     await saveSession(phone, session);
     return;
   }
 
+  await routeMessageKeyword(session, phone, text, globalIntent);
+}
+
+// Fluxo determinístico (detectIntent + máquina de estados). É o modo padrão quando
+// WHATSAPP_AI_MODE está off e a rede de segurança quando a IA fica indisponível.
+async function routeMessageKeyword(session, phone, text, globalIntent = null) {
+  const intent = globalIntent ?? detectIntent(text);
   if (!session.step) {
-    session.intent = globalIntent;
-    await audit({ phone, actor: "patient", action: "intent_detected", detail: { intent: globalIntent, text }, professionalId: session.profissionalId });
-    await startFlow(session, phone, text, globalIntent);
+    session.intent = intent;
+    await audit({ phone, actor: "patient", action: "intent_detected", detail: { intent, text }, professionalId: session.profissionalId });
+    await startFlow(session, phone, text, intent);
   } else {
     await continueFlow(session, phone, text);
   }
@@ -3005,6 +3014,53 @@ function buildAgentSystemPrompt(session, ctx) {
   return lines.join("\n");
 }
 
+// ===== INDISPONIBILIDADE DA IA (crédito acabado / chave inválida) =====
+//
+// Sem crédito na conta Anthropic a API responde 400 e a secretária degradava do
+// jeito mais perigoso possível: sem erro visível, respondendo "vou confirmar e já
+// retorno" e simplesmente deixando de agendar. O profissional só descobriria pelos
+// pacientes reclamando.
+//
+// Agora esse tipo de falha (crédito, chave inválida, permissão) marca a IA como
+// indisponível por um tempo e o atendimento cai no fluxo por palavra-chave, que é
+// determinístico e não custa nada — a paciente continua conseguindo agendar,
+// remarcar e cancelar. Quando o crédito volta, a IA reassume sozinha no fim da
+// janela, sem redeploy.
+const AI_OUTAGE_COOLDOWN_MS = 10 * 60 * 1000;
+let aiOutageUntil = 0;
+let aiOutageReason = null;
+
+function markAiOutage(reason) {
+  const first = !isAiOutage();
+  aiOutageUntil = Date.now() + AI_OUTAGE_COOLDOWN_MS;
+  aiOutageReason = reason;
+  if (first) {
+    botLog("ai_outage_started", { reason, until: new Date(aiOutageUntil).toISOString() });
+  }
+}
+
+export function isAiOutage() {
+  return Date.now() < aiOutageUntil;
+}
+
+export function getAiOutageInfo() {
+  return isAiOutage()
+    ? { active: true, reason: aiOutageReason, until: new Date(aiOutageUntil).toISOString() }
+    : { active: false, reason: null, until: null };
+}
+
+// Falhas que NÃO adianta repetir: crédito esgotado, chave inválida/revogada, sem
+// permissão. Distinguir isso de um 400 por payload malformado evita desligar a IA
+// por um bug nosso de request.
+function isUnrecoverableAiError(status, data) {
+  if (status === 401 || status === 403) return true;
+  const msg = String(data?.error?.message || "").toLowerCase();
+  return (
+    status === 400 &&
+    (msg.includes("credit balance") || msg.includes("billing") || msg.includes("quota"))
+  );
+}
+
 // Uma chamada à API Anthropic com ferramentas. Retorna o JSON bruto ou null.
 // Faz retry em erros transitórios (429 / 5xx / timeout de rede), com backoff curto —
 // sem isso, um soluço da API vira "vou confirmar e já retorno" pro paciente.
@@ -3027,6 +3083,10 @@ async function callAnthropicAgent({ system, messages, model = AI_MODEL }) {
       const transient = res.status === 429 || res.status >= 500;
       const data = await res.json().catch(() => ({}));
       botLog("anthropic_agent_error", { status: res.status, attempt, transient, data });
+      if (isUnrecoverableAiError(res.status, data)) {
+        markAiOutage(data?.error?.message || `HTTP ${res.status}`);
+        return null;
+      }
       if (!transient || attempt === MAX_ATTEMPTS) return null;
     } catch (e) {
       botLog("anthropic_agent_exception", { attempt, error: String(e) });
@@ -3228,6 +3288,16 @@ async function routeMessageAI(session, phone, text) {
   // Em vez de escalar pra humano de cara (o que confundia idosos com mensagens curtas),
   // primeiro pedimos gentilmente pra repetir; só escalamos se acontecer de novo em
   // seguida. Uma resposta boa zera o contador.
+  // A IA caiu por falta de crédito/chave no meio deste turno: em vez de enrolar o
+  // paciente, atende agora mesmo pelo fluxo determinístico. Ele não custa nada e
+  // agenda de verdade.
+  if (!finalText && isAiOutage()) {
+    botLog("ai_outage_fallback", { phone, reason: aiOutageReason });
+    session.aiHistory = [];
+    await routeMessageKeyword(session, phone, text);
+    return;
+  }
+
   if (!finalText) {
     session._emptyStreak = (session._emptyStreak || 0) + 1;
     if (session._emptyStreak >= 2) {
