@@ -335,7 +335,7 @@ const initializeDatabase = async () => {
         photo_url TEXT,
         signature_url TEXT,
         category_name VARCHAR(100),
-        percentage DECIMAL(5,2) DEFAULT 50.00,
+        percentage DECIMAL(5,2) DEFAULT 100.00,
         crm VARCHAR(20),
         professional_type VARCHAR(20) DEFAULT 'convenio',
         professional_registration_number VARCHAR(20),
@@ -345,6 +345,16 @@ const initializeDatabase = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Profissional novo fica com 100% do que gerar.
+    //
+    // O default era 50%, herdado do modelo em que cada consulta de paciente do
+    // convenio gerava repasse do profissional para o convenio. Esse modelo nao
+    // esta mais em uso, e o default antigo obrigava a corrigir na mao cada
+    // cadastro novo. Vale so para quem se cadastrar daqui em diante: quem ja tem
+    // percentual definido (inclusive os negociados, como 90% e 98%) fica como
+    // esta. O CREATE TABLE acima cobre banco novo; este ALTER, o que ja existe.
+    await pool.query(`ALTER TABLE users ALTER COLUMN percentage SET DEFAULT 100.00;`);
 
     // Redes sociais e bio do profissional (exibidos no painel do cliente).
     await pool.query(`
@@ -3527,7 +3537,11 @@ app.post("/api/users", authenticate, authorize(["admin"]), async (req, res) => {
         subscription_status || "pending",
         subscription_expiry || null,
         category_name?.trim() || null,
-        percentage || null,
+        // NULL explicito ignora o default da coluna, e ai o profissional cairia
+        // nos fallbacks de 50% do relatorio. Sem percentual informado, 100%.
+        percentage === undefined || percentage === null || percentage === ""
+          ? 100
+          : percentage,
         crm?.trim() || null,
         professional_type || "convenio",
         finalLinkedProfessionalId,
