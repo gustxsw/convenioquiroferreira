@@ -17,6 +17,7 @@ import {
   Mic,
   Video,
   Download,
+  Pencil,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 import { useAuth } from "../../contexts/AuthContext";
@@ -68,6 +69,39 @@ type Attachments = {
   midias: Attachment[];
   documentos: Attachment[];
   links: LinkItem[];
+};
+
+// Preferências do paciente: o que já está decidido na prática não vira pergunta
+// na conversa. Podem ser marcadas aqui ou aprendidas do histórico de consultas.
+type PrefDimension = "service" | "location" | "modality" | "period";
+
+type PrefMetaEntry = {
+  source: "manual" | "auto";
+  updated_at: string;
+  by?: number;
+  evidence?: string;
+};
+
+type Preferences = {
+  service_id: number | null;
+  service_name: string | null;
+  location_id: number | null;
+  location_name: string | null;
+  modality: "presencial" | "online" | null;
+  // Com serviço preferido, a modalidade vem dele — não dá para marcar as duas
+  // em contradição.
+  modality_locked: boolean;
+  period: "manha" | "tarde" | null;
+  meta: Partial<Record<PrefDimension, PrefMetaEntry>>;
+};
+
+type PreferencesResponse = {
+  professional_id: number | null;
+  preferences: Preferences | null;
+  options: {
+    services: { id: number; name: string | null; online: boolean }[];
+    locations: { id: number; name: string | null; city: string | null }[];
+  };
 };
 
 type StatusFilter = "all" | "pending" | "human" | "bot";
@@ -270,6 +304,150 @@ const AnexosPanel: React.FC<{
   );
 };
 
+// Etiqueta de origem: "manual" foi alguém que marcou; "automático" veio do
+// histórico e mostra em quantas das últimas consultas o padrão apareceu.
+const PrefBadge: React.FC<{ entry?: PrefMetaEntry; onReset: () => void }> = ({ entry, onReset }) => {
+  if (!entry) return null;
+  const isManual = entry.source === "manual";
+  return (
+    <span className="ml-1.5 inline-flex items-center gap-1 align-middle">
+      <span
+        className="rounded-full px-1.5 py-px text-[10px] font-semibold"
+        style={{
+          background: isManual ? "#fef2f2" : "#f1f5f9",
+          color: isManual ? "#c11c22" : "#64748b",
+        }}
+        title={
+          isManual
+            ? "Marcado à mão — o aprendizado automático não sobrescreve"
+            : `Aprendido do histórico${entry.evidence ? ` (${entry.evidence})` : ""}`
+        }
+      >
+        {isManual ? "manual" : "automático"}
+      </span>
+      {isManual && (
+        <button
+          type="button"
+          onClick={onReset}
+          className="text-[10px] font-medium text-gray-400 underline hover:text-gray-600"
+        >
+          voltar ao automático
+        </button>
+      )}
+    </span>
+  );
+};
+
+const PREF_SELECT_CLASS =
+  "mt-1 w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[12.5px] text-gray-900 disabled:bg-gray-50 disabled:text-gray-400";
+
+const PreferencesPanel: React.FC<{
+  data: PreferencesResponse | null;
+  loading: boolean;
+  saving: boolean;
+  onSave: (body: Record<string, unknown>) => void;
+}> = ({ data, loading, saving, onSave }) => {
+  if (loading) return <div className="text-[12.5px] text-gray-400">Carregando preferências…</div>;
+  const prefs = data?.preferences;
+  if (!prefs) {
+    return (
+      <div className="text-[12.5px] text-gray-400">
+        Disponível depois que o paciente for identificado nesta conversa.
+      </div>
+    );
+  }
+  const meta = prefs.meta || {};
+  const field = (dim: PrefDimension, label: string, control: React.ReactNode) => (
+    <div>
+      <span className="text-[11px] font-medium text-gray-400">{label}</span>
+      <PrefBadge entry={meta[dim]} onReset={() => onSave({ reset: [dim] })} />
+      {control}
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-3">
+      {field(
+        "service",
+        "Serviço",
+        <select
+          className={PREF_SELECT_CLASS}
+          disabled={saving}
+          value={prefs.service_id ?? ""}
+          onChange={(e) => onSave({ service: e.target.value === "" ? null : Number(e.target.value) })}
+        >
+          <option value="">Sem preferência</option>
+          {data?.options.services.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name || `Serviço ${s.id}`}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {field(
+        "modality",
+        "Modalidade",
+        <>
+          <select
+            className={PREF_SELECT_CLASS}
+            disabled={saving || prefs.modality_locked}
+            value={prefs.modality ?? ""}
+            onChange={(e) => onSave({ modality: e.target.value === "" ? null : e.target.value })}
+          >
+            <option value="">Sem preferência</option>
+            <option value="presencial">Presencial</option>
+            <option value="online">Online</option>
+          </select>
+          {prefs.modality_locked && (
+            <p className="mt-1 text-[10.5px] leading-snug text-gray-400">
+              Vem do serviço preferido — mude o serviço para mudar a modalidade.
+            </p>
+          )}
+        </>
+      )}
+
+      {field(
+        "location",
+        "Local",
+        <select
+          className={PREF_SELECT_CLASS}
+          disabled={saving || !data?.options.locations.length}
+          value={prefs.location_id ?? ""}
+          onChange={(e) => onSave({ location: e.target.value === "" ? null : Number(e.target.value) })}
+        >
+          <option value="">Sem preferência</option>
+          {data?.options.locations.map((l) => (
+            <option key={l.id} value={l.id}>
+              {[l.name, l.city].filter(Boolean).join(" — ") || `Local ${l.id}`}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {field(
+        "period",
+        "Turno",
+        <select
+          className={PREF_SELECT_CLASS}
+          disabled={saving}
+          value={prefs.period ?? ""}
+          onChange={(e) => onSave({ period: e.target.value === "" ? null : e.target.value })}
+        >
+          <option value="">Sem preferência</option>
+          <option value="manha">Manhã</option>
+          <option value="tarde">Tarde</option>
+        </select>
+      )}
+
+      <p className="text-[10.5px] leading-snug text-gray-400">
+        A secretária deixa de perguntar o que já está marcado aqui, mas continua
+        confirmando dia e horário — e um pedido diferente do paciente sempre vence.
+      </p>
+    </div>
+  );
+};
+
 const AtendimentoPage: React.FC = () => {
   const { user } = useAuth();
   const isProfessional = user?.currentRole === "professional";
@@ -292,6 +470,12 @@ const AtendimentoPage: React.FC = () => {
   const [anexoTab, setAnexoTab] = useState<AnexoTab>("midias");
   const [attachments, setAttachments] = useState<Attachments | null>(null);
   const [attachmentsLoading, setAttachmentsLoading] = useState(false);
+  const [preferences, setPreferences] = useState<PreferencesResponse | null>(null);
+  const [preferencesLoading, setPreferencesLoading] = useState(false);
+  const [preferencesSaving, setPreferencesSaving] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [savingName, setSavingName] = useState(false);
 
   const [draft, setDraft] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
@@ -361,14 +545,96 @@ const AtendimentoPage: React.FC = () => {
     [apiUrl]
   );
 
+  const fetchPreferences = useCallback(
+    async (phone: string) => {
+      try {
+        setPreferencesLoading(true);
+        const res = await fetchWithAuth(
+          `${apiUrl}/webhook/whatsapp/conversation/preferences?phone=${encodeURIComponent(phone)}`,
+          { method: "GET" }
+        );
+        if (!res.ok) throw new Error("Erro ao carregar as preferências");
+        setPreferences(await res.json());
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : "Erro ao carregar as preferências");
+        setPreferences(null);
+      } finally {
+        setPreferencesLoading(false);
+      }
+    },
+    [apiUrl]
+  );
+
+  // Salvar devolve o estado já saneado pelo backend, então a tela reflete o que
+  // de fato ficou gravado (ex.: marcar serviço zera a modalidade solta).
+  const savePreferences = useCallback(
+    async (body: Record<string, unknown>) => {
+      if (!selectedPhone) return;
+      try {
+        setPreferencesSaving(true);
+        setActionError("");
+        const res = await fetchWithAuth(`${apiUrl}/webhook/whatsapp/conversation/preferences`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: selectedPhone, ...body }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || "Erro ao salvar as preferências");
+        setPreferences(data);
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : "Erro ao salvar as preferências");
+      } finally {
+        setPreferencesSaving(false);
+      }
+    },
+    [apiUrl, selectedPhone]
+  );
+
+  // Renomear atualiza a lista inteira: o nome é o que identifica a conversa nela.
+  const saveName = useCallback(async () => {
+    if (!selectedPhone) return;
+    try {
+      setSavingName(true);
+      setActionError("");
+      const res = await fetchWithAuth(`${apiUrl}/webhook/whatsapp/conversation/name`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: selectedPhone, name: nameDraft }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Erro ao renomear a conversa");
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.phone === selectedPhone ? { ...c, patient_name: data.resolved_name } : c
+        )
+      );
+      setEditingName(false);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Erro ao renomear a conversa");
+    } finally {
+      setSavingName(false);
+    }
+  }, [apiUrl, selectedPhone, nameDraft]);
+
+  // Trocar de conversa fecha a edição de nome pendente.
+  useEffect(() => {
+    setEditingName(false);
+  }, [selectedPhone]);
+
   useEffect(() => {
     if (!showPatientPanel || panelTab !== "anexos" || !selectedPhone) return;
     fetchAttachments(selectedPhone);
   }, [showPatientPanel, panelTab, selectedPhone, fetchAttachments]);
 
-  // Trocar de conversa invalida os anexos da anterior.
+  useEffect(() => {
+    if (!showPatientPanel || panelTab !== "paciente" || !selectedPhone) return;
+    fetchPreferences(selectedPhone);
+  }, [showPatientPanel, panelTab, selectedPhone, fetchPreferences]);
+
+  // Trocar de conversa invalida os anexos e as preferências da anterior.
   useEffect(() => {
     setAttachments(null);
+    setPreferences(null);
   }, [selectedPhone]);
 
   useEffect(() => {
@@ -1031,7 +1297,53 @@ const AtendimentoPage: React.FC = () => {
               <div className="mb-2.5 text-[11px] font-bold uppercase tracking-[.04em] text-gray-400">
                 Paciente
               </div>
-              <div className="text-[15px] font-bold text-gray-900">{displayName(selected)}</div>
+              {editingName ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    autoFocus
+                    value={nameDraft}
+                    onChange={(e) => setNameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveName();
+                      if (e.key === "Escape") setEditingName(false);
+                    }}
+                    placeholder="Nome do paciente"
+                    maxLength={120}
+                    className="min-w-0 flex-1 rounded-md border border-gray-200 px-2 py-1 text-[14px] font-semibold text-gray-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={saveName}
+                    disabled={savingName}
+                    className="rounded-md px-2 py-1 text-[12px] font-semibold text-white disabled:opacity-60"
+                    style={{ background: "#c11c22" }}
+                  >
+                    Salvar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingName(false)}
+                    className="rounded-md px-1.5 py-1 text-[12px] text-gray-400 hover:text-gray-600"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <div className="group flex items-center gap-1.5">
+                  <span className="text-[15px] font-bold text-gray-900">{displayName(selected)}</span>
+                  <button
+                    type="button"
+                    title="Renomear esta conversa"
+                    onClick={() => {
+                      setNameDraft(selected.patient_name || "");
+                      setEditingName(true);
+                    }}
+                    className="text-gray-300 transition-colors hover:text-gray-600"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                </div>
+              )}
 
               <div className="mt-2.5 flex flex-col gap-2">
                 <div>
@@ -1072,6 +1384,17 @@ const AtendimentoPage: React.FC = () => {
                 />
                 {STATUS_META[selected.status]?.label}
               </div>
+
+              <div className="my-4 h-px bg-gray-100" />
+              <div className="mb-2 text-[11px] font-bold uppercase tracking-[.04em] text-gray-400">
+                Preferências
+              </div>
+              <PreferencesPanel
+                data={preferences}
+                loading={preferencesLoading}
+                saving={preferencesSaving}
+                onSave={savePreferences}
+              />
 
               <div className="my-4 h-px bg-gray-100" />
               <div className="mb-2 text-[11px] font-bold uppercase tracking-[.04em] text-gray-400">

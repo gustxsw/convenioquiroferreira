@@ -49,6 +49,9 @@ import {
   sendOperatorMessage,
   getConversation,
   getConversationAttachments,
+  getContactPreferences,
+  setContactPreferences,
+  setContactDisplayName,
   listConversations,
   getWhatsappReport,
   invalidateNumbersCache,
@@ -1786,6 +1789,47 @@ const initializeDatabase = async () => {
         PRIMARY KEY (phone, professional_id)
       );
       CREATE INDEX IF NOT EXISTS idx_whatsapp_contacts_prof ON whatsapp_contacts(professional_id);
+    `);
+
+    // Nome exibido no painel de Atendimento, editável pela equipe.
+    //
+    // Sem isso a conversa aparece só como número quando o bot ainda não
+    // identificou o paciente — e ninguém sabe quem é quem. `display_name` é um
+    // RÓTULO, não identidade: pode existir numa linha sem CPF, para um número
+    // ainda não identificado. Por isso as colunas de identidade deixam de ser
+    // obrigatórias, e loadContact passa a exigir CPF para não tratar um simples
+    // rótulo como paciente identificado.
+    await pool.query(`
+      ALTER TABLE whatsapp_contacts
+        ADD COLUMN IF NOT EXISTS display_name TEXT,
+        ADD COLUMN IF NOT EXISTS display_name_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS display_name_at TIMESTAMPTZ,
+        ALTER COLUMN patient_kind DROP NOT NULL,
+        ALTER COLUMN patient_name DROP NOT NULL,
+        ALTER COLUMN cpf          DROP NOT NULL;
+    `);
+
+    // Preferências do paciente (por número + profissional): o que já está decidido
+    // na prática não precisa virar pergunta. Quem só faz presencial não recebe a
+    // opção de teleconsulta; quem sempre é atendido na mesma unidade não responde
+    // "em qual cidade?" toda vez.
+    //
+    // pref_modality só é preenchida quando NÃO há pref_service_id: a modalidade é o
+    // `is_online` do serviço, então guardar as duas soltas permitiria o estado
+    // contraditório "serviço = Consulta Online + modalidade = presencial". Leia
+    // sempre por getEffectiveModality() (server/whatsapp.js).
+    //
+    // pref_meta guarda metadados POR dimensão em vez de um carimbo global — salvar o
+    // turno não pode apagar quando/por que o local foi definido:
+    //   {"service": {"source":"manual","updated_at":"...","by":12},
+    //    "period":  {"source":"auto","updated_at":"...","evidence":"4/5"}}
+    await pool.query(`
+      ALTER TABLE whatsapp_contacts
+        ADD COLUMN IF NOT EXISTS pref_service_id  INTEGER REFERENCES services(id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS pref_location_id INTEGER REFERENCES attendance_locations(id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS pref_modality    TEXT,
+        ADD COLUMN IF NOT EXISTS pref_period      TEXT,
+        ADD COLUMN IF NOT EXISTS pref_meta        JSONB NOT NULL DEFAULT '{}'::jsonb;
     `);
 
     // Planos/convênios aceitos por cada profissional (para o bot responder e o agendamento perguntar).
@@ -13063,6 +13107,80 @@ app.get(
     } catch (error) {
       console.error("❌ [whatsapp-conversation]", error);
       res.status(500).json({ message: "Erro ao carregar conversa" });
+    }
+  }
+);
+
+// Preferências do paciente (modalidade, serviço, local, turno) — o que já está
+// decidido na prática não vira pergunta na conversa. Escopo: secretária e
+// profissional só mexem nas conversas do próprio profissional.
+function assertPreferenceScope(req, professionalId) {
+  if (req.user.currentRole === "admin") return true;
+  return professionalId != null && professionalId === req.user.professionalScopeId;
+}
+
+app.get(
+  "/webhook/whatsapp/conversation/preferences",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    const phone = String(req.query.phone || "").replace(/\D/g, "");
+    if (!phone) return res.status(400).json({ message: "phone é obrigatório" });
+    try {
+      const data = await getContactPreferences(phone);
+      if (!assertPreferenceScope(req, data.professional_id)) {
+        return res.status(403).json({ message: "Conversa de outro profissional" });
+      }
+      res.json(data);
+    } catch (error) {
+      console.error("❌ [whatsapp-preferences-get]", error);
+      res.status(500).json({ message: "Erro ao carregar preferências" });
+    }
+  }
+);
+
+app.put(
+  "/webhook/whatsapp/conversation/preferences",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    const phone = String(req.body?.phone || "").replace(/\D/g, "");
+    if (!phone) return res.status(400).json({ message: "phone é obrigatório" });
+    try {
+      const atual = await getContactPreferences(phone);
+      if (!assertPreferenceScope(req, atual.professional_id)) {
+        return res.status(403).json({ message: "Conversa de outro profissional" });
+      }
+      const result = await setContactPreferences(phone, req.body || {}, req.user.id);
+      if (!result.ok) return res.status(400).json({ message: result.message });
+      res.json(result);
+    } catch (error) {
+      console.error("❌ [whatsapp-preferences-put]", error);
+      res.status(500).json({ message: "Erro ao salvar preferências" });
+    }
+  }
+);
+
+// Renomear a conversa: com o número cru é impossível saber quem é quem antes de
+// o bot identificar o paciente.
+app.put(
+  "/webhook/whatsapp/conversation/name",
+  authenticate,
+  authorize(["admin", "professional", "secretaria"]),
+  async (req, res) => {
+    const phone = String(req.body?.phone || "").replace(/\D/g, "");
+    if (!phone) return res.status(400).json({ message: "phone é obrigatório" });
+    try {
+      const atual = await getContactPreferences(phone);
+      if (!assertPreferenceScope(req, atual.professional_id)) {
+        return res.status(403).json({ message: "Conversa de outro profissional" });
+      }
+      const result = await setContactDisplayName(phone, req.body?.name, req.user.id);
+      if (!result.ok) return res.status(400).json({ message: result.message });
+      res.json(result);
+    } catch (error) {
+      console.error("❌ [whatsapp-contact-name]", error);
+      res.status(500).json({ message: "Erro ao renomear a conversa" });
     }
   }
 );

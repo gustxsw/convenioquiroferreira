@@ -637,6 +637,14 @@ async function saveContact(phone, professionalId, patient, cpf) {
       ]
     );
     botLog("contact_saved", { phone, professionalId, name: patient.name });
+    // Todo caminho de identificação passa por aqui, então é o gancho único do
+    // aprendizado: quem já tem histórico chega com as preferências prontas.
+    await learnContactPreferences({
+      phone,
+      professionalId,
+      userId: patient.userId || null,
+      privatePatientId: patient.privatePatientId || null,
+    });
   } catch (e) {
     botLog("contact_save_error", { error: String(e) });
   }
@@ -646,8 +654,12 @@ async function loadContact(phone, professionalId) {
   if (!professionalId) return null;
   try {
     const r = await pool.query(
+      // `cpf IS NOT NULL` separa contato IDENTIFICADO de linha que só carrega o
+      // rótulo do painel (display_name). Sem esse filtro, um nome digitado pela
+      // secretária faria a IA achar que já conhece o paciente e pular o CPF.
       `SELECT patient_id, private_patient_id, patient_kind, patient_name, cpf
-         FROM whatsapp_contacts WHERE phone = $1 AND professional_id = $2`,
+         FROM whatsapp_contacts
+        WHERE phone = $1 AND professional_id = $2 AND cpf IS NOT NULL`,
       [phone, professionalId]
     );
     return r.rows[0] || null;
@@ -710,6 +722,371 @@ async function applyContactToSession(session, contact) {
       botLog("contact_profile_error", { error: String(e) });
     }
   }
+}
+
+// ===== PREFERÊNCIAS DO PACIENTE =====
+//
+// O que já está decidido na prática não precisa virar pergunta: quem só faz
+// consulta presencial não deve receber a opção de teleconsulta, quem sempre é
+// atendido na mesma unidade não deve responder "em qual cidade?" toda vez.
+//
+// As preferências vivem em whatsapp_contacts (já é por paciente E por profissional,
+// que é o escopo certo — um local preferido só existe dentro de um profissional).
+// Podem ser marcadas à mão no painel de Atendimento ou aprendidas do histórico.
+
+// Janela do aprendizado: olhamos as últimas 5 consultas e exigimos maioria FORTE,
+// não unanimidade — uma exceção isolada não deve apagar um padrão claro.
+const PREF_HISTORY_WINDOW = 5;
+const PREF_MIN_SAMPLE = 3;
+const PREF_MAJORITY = 0.8; // 3/3, 4/4, 4/5, 5/5 aprendem; 3/5 e 2/2 não.
+
+const PREF_COLUMNS = {
+  service: "pref_service_id",
+  location: "pref_location_id",
+  modality: "pref_modality",
+  period: "pref_period",
+};
+
+function prefSource(prefs, dim) {
+  return prefs?.meta?.[dim]?.source || null;
+}
+
+function prefIsManual(prefs, dim) {
+  return prefSource(prefs, dim) === "manual";
+}
+
+function emptyPreferences() {
+  return { serviceId: null, locationId: null, modality: null, period: null, meta: {} };
+}
+
+// Linha de whatsapp_contacts -> objeto de preferências usado no resto do arquivo.
+function rowToPreferences(row) {
+  if (!row) return emptyPreferences();
+  return {
+    serviceId: row.pref_service_id ?? null,
+    locationId: row.pref_location_id ?? null,
+    modality: row.pref_modality ?? null,
+    period: row.pref_period ?? null,
+    meta: row.pref_meta && typeof row.pref_meta === "object" ? row.pref_meta : {},
+    // Preenchido pelo saneamento; é o que permite derivar a modalidade do serviço.
+    serviceIsOnline: null,
+    serviceName: null,
+    locationName: null,
+  };
+}
+
+/**
+ * Modalidade EFETIVA do paciente.
+ *
+ * A modalidade é o `is_online` do serviço — não é um dado independente. Guardar as
+ * duas coisas soltas permitiria o estado contraditório "serviço preferido = Consulta
+ * Online + modalidade preferida = presencial", então `pref_modality` só é gravada
+ * quando não há serviço preferido, e toda leitura passa por aqui.
+ */
+function getEffectiveModality(prefs) {
+  if (!prefs) return null;
+  if (prefs.serviceId != null && prefs.serviceIsOnline != null) {
+    return prefs.serviceIsOnline ? "online" : "presencial";
+  }
+  if (prefs.serviceId != null) return null; // serviço preferido ainda não resolvido
+  return prefs.modality || null;
+}
+
+/**
+ * Janela de horário preferida, em HH:MM.
+ *
+ * Hoje traduz o turno (manhã/tarde); quando existir preferência mais específica
+ * ("depois das 17h"), só esta função muda — nem o prompt, nem listar_horarios_do_dia,
+ * nem suggestTimes olham `pref_period` diretamente.
+ */
+function getPreferredWindow(prefs) {
+  const period = prefs?.period;
+  if (period === "manha") return { from: "00:00", to: "11:59", label: "manhã" };
+  if (period === "tarde") return { from: "12:00", to: "23:59", label: "tarde" };
+  return null;
+}
+
+// Ordena horários "HH:MM" colocando os da janela preferida na frente, sem descartar
+// os demais — preferência sugere, não tranca.
+function sortTimesByPreference(times, prefs) {
+  const win = getPreferredWindow(prefs);
+  if (!win) return times;
+  const inWindow = (t) => t >= win.from && t <= win.to;
+  return [...times].sort((a, b) => {
+    const d = (inWindow(b) ? 1 : 0) - (inWindow(a) ? 1 : 0);
+    return d !== 0 ? d : a.localeCompare(b);
+  });
+}
+
+// Mesma ordenação para os objetos de slot ({ time, isoUTC }).
+function sortSlotsByPreference(slots, prefs) {
+  const win = getPreferredWindow(prefs);
+  if (!win) return slots;
+  const inWindow = (s) => s.time >= win.from && s.time <= win.to;
+  return [...slots].sort((a, b) => {
+    const d = (inWindow(b) ? 1 : 0) - (inWindow(a) ? 1 : 0);
+    return d !== 0 ? d : a.time.localeCompare(b.time);
+  });
+}
+
+/**
+ * Grava preferências. `changes` traz só as dimensões que mudam; `null` limpa.
+ *
+ * Invariante: origem `auto` NUNCA sobrescreve o que foi marcado à mão no painel.
+ * Só o próprio painel (origem `manual`) e o saneamento de referência morta mexem
+ * numa preferência manual.
+ */
+async function savePreferences(phone, professionalId, changes, { source, by = null, evidence = null, force = false } = {}) {
+  if (!phone || !professionalId) return null;
+  const current = await loadPreferences(phone, professionalId);
+  const meta = { ...(current.meta || {}) };
+  const sets = [];
+  const values = [phone, professionalId];
+  const applied = {};
+
+  for (const [dim, column] of Object.entries(PREF_COLUMNS)) {
+    if (!(dim in changes)) continue;
+    if (source === "auto" && !force && prefIsManual(current, dim)) continue;
+    const value = changes[dim] ?? null;
+    values.push(value);
+    sets.push(`${column} = $${values.length}`);
+    applied[dim] = value;
+    if (value == null) {
+      delete meta[dim];
+    } else {
+      meta[dim] = {
+        source,
+        updated_at: new Date().toISOString(),
+        ...(by != null ? { by } : {}),
+        ...(evidence ? { evidence } : {}),
+      };
+    }
+  }
+  if (!sets.length) return current;
+
+  values.push(JSON.stringify(meta));
+  sets.push(`pref_meta = $${values.length}::jsonb`);
+
+  try {
+    await pool.query(
+      `UPDATE whatsapp_contacts SET ${sets.join(", ")}, updated_at = NOW()
+        WHERE phone = $1 AND professional_id = $2`,
+      values
+    );
+  } catch (e) {
+    botLog("preferences_save_error", { error: String(e) });
+    return current;
+  }
+  return { ...current, ...renamePrefKeys(applied), meta };
+}
+
+// { service, location, modality, period } -> chaves do objeto de preferências.
+function renamePrefKeys(applied) {
+  const out = {};
+  if ("service" in applied) out.serviceId = applied.service;
+  if ("location" in applied) out.locationId = applied.location;
+  if ("modality" in applied) out.modality = applied.modality;
+  if ("period" in applied) out.period = applied.period;
+  return out;
+}
+
+async function loadPreferences(phone, professionalId) {
+  try {
+    const r = await pool.query(
+      `SELECT pref_service_id, pref_location_id, pref_modality, pref_period, pref_meta
+         FROM whatsapp_contacts WHERE phone = $1 AND professional_id = $2`,
+      [phone, professionalId]
+    );
+    return rowToPreferences(r.rows[0]);
+  } catch (e) {
+    botLog("preferences_load_error", { error: String(e) });
+    return emptyPreferences();
+  }
+}
+
+/**
+ * Descarta preferências que apontam para algo que não existe mais.
+ *
+ * `ON DELETE SET NULL` cobre exclusão, mas não cobre serviço que o profissional
+ * parou de oferecer nem local que mudou de dono — nesses casos o agendamento
+ * falharia com a preferência aplicada. Aqui a referência morta é limpa no banco
+ * (mesmo se era manual) e o fluxo volta a perguntar normalmente.
+ *
+ * Também resolve `serviceIsOnline`/`serviceName`/`locationName`, que é o que
+ * permite derivar a modalidade em vez de guardá-la duplicada.
+ */
+async function sanitizeContactPreferences(phone, professionalId, prefs, { services, locations } = {}) {
+  if (!prefs) return emptyPreferences();
+  // Quem não tem preferência nenhuma (a maioria das conversas) não paga consulta:
+  // as listas só são buscadas quando há algo para validar.
+  if (prefs.serviceId == null && prefs.locationId == null) return prefs;
+  const svcList = services || (prefs.serviceId != null ? await listServices(professionalId) : []);
+  const locList = locations || (prefs.locationId != null ? await getAttendanceLocations(professionalId) : []);
+  const dead = {};
+
+  if (prefs.serviceId != null) {
+    const svc = svcList.find((s) => s.service_id === prefs.serviceId);
+    if (svc) {
+      prefs.serviceIsOnline = !!svc.isOnline;
+      prefs.serviceName = svc.name;
+    } else {
+      dead.service = null;
+      prefs.serviceId = null;
+    }
+  }
+  if (prefs.locationId != null) {
+    const loc = locList.find((l) => l.id === prefs.locationId);
+    if (loc) {
+      prefs.locationName = loc.nome || loc.cidade || null;
+    } else {
+      dead.location = null;
+      prefs.locationId = null;
+    }
+  }
+  // Modalidade solta só faz sentido sem serviço preferido (ver getEffectiveModality).
+  if (prefs.serviceId != null && prefs.modality) {
+    dead.modality = null;
+    prefs.modality = null;
+  }
+
+  if (Object.keys(dead).length) {
+    botLog("preference_invalidated", { phone, professionalId, dimensoes: Object.keys(dead) });
+    const meta = { ...(prefs.meta || {}) };
+    for (const dim of Object.keys(dead)) delete meta[dim];
+    prefs.meta = meta;
+    await savePreferences(phone, professionalId, dead, { source: "auto", force: true });
+  }
+  return prefs;
+}
+
+// Vencedor por maioria forte. Devolve null quando não há amostra ou consenso.
+function strongMajority(values) {
+  const usable = values.filter((v) => v != null && v !== "");
+  if (values.length < PREF_MIN_SAMPLE) return null;
+  const counts = new Map();
+  for (const v of usable) counts.set(v, (counts.get(v) || 0) + 1);
+  let top = null;
+  let topCount = 0;
+  for (const [v, n] of counts) {
+    if (n > topCount) { top = v; topCount = n; }
+  }
+  if (top == null) return null;
+  // Denominador é o total de consultas (não só as que têm o campo): assim uma
+  // dimensão preenchida em poucas consultas não vira preferência por acidente.
+  if (topCount / values.length < PREF_MAJORITY) return null;
+  return { value: top, evidence: `${topCount}/${values.length}` };
+}
+
+function periodOfDate(date) {
+  const hm = formatToBrazilTimeOnly(date);
+  const hour = Number(String(hm || "").slice(0, 2));
+  if (!Number.isFinite(hour)) return null;
+  return hour < 12 ? "manha" : "tarde";
+}
+
+/**
+ * Aprende as preferências do histórico real de consultas (inclusive as marcadas
+ * pelo painel, porque lemos a tabela `consultations` diretamente).
+ */
+async function learnContactPreferences({ phone, professionalId, userId = null, privatePatientId = null }) {
+  if (!phone || !professionalId || (!userId && !privatePatientId)) return;
+  try {
+    const column = privatePatientId != null ? "private_patient_id" : "user_id";
+    const id = privatePatientId != null ? privatePatientId : userId;
+    const r = await pool.query(
+      `SELECT c.service_id, c.location_id, c.date, COALESCE(s.is_online, false) AS is_online
+         FROM consultations c
+         LEFT JOIN services s ON s.id = c.service_id
+        WHERE c.professional_id = $1 AND c.${column} = $2 AND c.status <> 'cancelled'
+        ORDER BY c.date DESC
+        LIMIT ${PREF_HISTORY_WINDOW}`,
+      [professionalId, id]
+    );
+    const rows = r.rows;
+    if (rows.length < PREF_MIN_SAMPLE) return;
+
+    // Só aprende serviço que o bot consegue agendar. O histórico tem serviços
+    // legados sem dono (professional_id NULL, ex.: "Consulta particular"), que o
+    // painel aceita mas resolveServiceForBooking recusa — aprendê-los criaria um
+    // ciclo de marcar e invalidar a cada conversa. Sem serviço utilizável, a
+    // modalidade volta a poder ser aprendida sozinha, que é o que interessa aqui.
+    const agendaveis = await listServices(professionalId);
+    const serviceRaw = strongMajority(rows.map((c) => c.service_id));
+    const service = serviceRaw && agendaveis.some((s) => s.service_id === serviceRaw.value)
+      ? serviceRaw
+      : null;
+    const location = strongMajority(rows.map((c) => c.location_id));
+    const period = strongMajority(rows.map((c) => periodOfDate(c.date)));
+    // Modalidade só é aprendida quando NÃO houve consenso de serviço: com serviço
+    // definido ela é derivada dele (getEffectiveModality).
+    const modality = service
+      ? null
+      : strongMajority(rows.map((c) => (c.is_online ? "online" : "presencial")));
+
+    const learned = {};
+    const evidences = {};
+    if (service) { learned.service = service.value; evidences.service = service.evidence; }
+    if (location) { learned.location = location.value; evidences.location = location.evidence; }
+    if (period) { learned.period = period.value; evidences.period = period.evidence; }
+    if (modality) { learned.modality = modality.value; evidences.modality = modality.evidence; }
+    if (service) learned.modality = null; // limpa modalidade solta que tenha sobrado
+    if (!Object.keys(learned).length) return;
+
+    // Uma dimensão por vez: cada uma carrega a própria evidência em pref_meta.
+    for (const [dim, value] of Object.entries(learned)) {
+      await savePreferences(phone, professionalId, { [dim]: value }, {
+        source: "auto",
+        evidence: evidences[dim] || null,
+      });
+    }
+    await audit({
+      phone,
+      actor: "system",
+      action: "preferences_learned",
+      detail: { aprendidas: learned, evidencias: evidences },
+      professionalId,
+    });
+  } catch (e) {
+    botLog("preferences_learn_error", { error: String(e) });
+  }
+}
+
+/**
+ * Escolha explícita durante o atendimento corrige a preferência NA HORA.
+ *
+ * Sem isso, quem mudou de ideia continuaria recebendo a sugestão antiga até
+ * acumular três consultas novas. Preferência marcada à mão no painel é preservada:
+ * ali alguém decidiu de propósito, e a escolha vale só para aquele agendamento.
+ */
+async function notePreferenceChoice(session, phone, dim, value) {
+  if (!session?.profissionalId || value == null) return;
+  const prefs = session.prefs || emptyPreferences();
+  if (prefIsManual(prefs, dim)) return;
+  const currentKey = { service: "serviceId", location: "locationId", modality: "modality", period: "period" }[dim];
+  if (!currentKey) return;
+  // Só CORRIGE uma preferência que já existe e ficou diferente. Criar preferência do
+  // zero é papel do aprendizado por histórico — um único agendamento não é padrão.
+  if (prefs[currentKey] == null || prefs[currentKey] === value) return;
+  const updated = await savePreferences(phone, session.profissionalId, { [dim]: value }, {
+    source: "auto",
+    evidence: "escolha explícita",
+  });
+  if (updated) {
+    session.prefs = await sanitizeContactPreferences(phone, session.profissionalId, updated);
+    botLog("preference_corrected", { phone, professionalId: session.profissionalId, dim, value });
+  }
+}
+
+// Carrega + saneia as preferências na sessão. Chamado sempre que o paciente é
+// identificado (por contato salvo ou por CPF).
+async function refreshSessionPreferences(session, phone) {
+  if (!session?.profissionalId) {
+    session.prefs = emptyPreferences();
+    return session.prefs;
+  }
+  const prefs = await loadPreferences(phone, session.profissionalId);
+  session.prefs = await sanitizeContactPreferences(phone, session.profissionalId, prefs);
+  return session.prefs;
 }
 
 // ===== ENVIO + LOG =====
@@ -1381,8 +1758,8 @@ async function handleConsultarHorario(session, phone, text) {
       ]));
     } else if (slots.length > 0) {
       await replyS(session, phone, pick([
-        `O horário das *${time}* em *${dayLabel(ymd)}* não está disponível. ${suggestTimes(slots)}`,
-        `Infelizmente *${time}* já está ocupado em *${dayLabel(ymd)}*. ${suggestTimes(slots)}`,
+        `O horário das *${time}* em *${dayLabel(ymd)}* não está disponível. ${suggestTimes(slots, session.prefs)}`,
+        `Infelizmente *${time}* já está ocupado em *${dayLabel(ymd)}*. ${suggestTimes(slots, session.prefs)}`,
       ]));
     } else {
       const next = await getAvailableDays(session.profissionalId, { limit: 1 });
@@ -1836,7 +2213,13 @@ async function handleAgendarEscolhaProfissional(session, phone, text) {
 // Resolve o serviço-base e o valor conforme o perfil (conveniado/particular).
 // Retorna true se ok; envia mensagem e reseta o fluxo em caso de indisponibilidade.
 async function ensureBaseService(session, phone) {
-  const base = await getBaseService(session.profissionalId, session.priceProfile || "convenio");
+  // Serviço preferido no lugar do serviço-base; se ele não resolver (catálogo
+  // mudou), cai no base de sempre em vez de travar o agendamento.
+  const profile = session.priceProfile || "convenio";
+  const preferido = session.prefs?.serviceId != null
+    ? await resolveServiceForBooking(session.profissionalId, profile, session.prefs.serviceId)
+    : null;
+  const base = preferido || (await getBaseService(session.profissionalId, profile));
   if (!base) {
     await replyS(session, phone, "Esse profissional ainda não tem os serviços configurados. Por favor, tente novamente em instantes.");
     resetFlow(session);
@@ -1883,8 +2266,9 @@ async function proceedToDays(session, phone) {
 }
 
 // Monta uma sugestão de horários livres de um dia, em frase (sem lista numerada).
-function suggestTimes(slots) {
-  const times = slots.slice(0, 6).map((s) => s.time);
+function suggestTimes(slots, prefs = null) {
+  // Turno preferido primeiro; os demais continuam disponíveis, só saem da vitrine.
+  const times = sortSlotsByPreference(slots, prefs).slice(0, 6).map((s) => s.time);
   const extra = slots.length > times.length ? " e outros" : "";
   const ex = times[0];
   return pick([
@@ -1938,14 +2322,14 @@ async function openDay(session, phone, ymd, time) {
       return;
     }
     await replyS(session, phone, pick([
-      `${personal(session)}o horário das *${time}* em ${dayLabel(ymd)} não está disponível. ${suggestTimes(slots)}`,
-      `${personal(session)}às *${time}* já está ocupado em ${dayLabel(ymd)}. ${suggestTimes(slots)}`,
+      `${personal(session)}o horário das *${time}* em ${dayLabel(ymd)} não está disponível. ${suggestTimes(slots, session.prefs)}`,
+      `${personal(session)}às *${time}* já está ocupado em ${dayLabel(ymd)}. ${suggestTimes(slots, session.prefs)}`,
     ]));
     return;
   }
   await replyS(session, phone, pick([
-    `Para *${dayLabel(ymd)}*, ${suggestTimes(slots)}`,
-    `Em *${dayLabel(ymd)}*, ${suggestTimes(slots)}`,
+    `Para *${dayLabel(ymd)}*, ${suggestTimes(slots, session.prefs)}`,
+    `Em *${dayLabel(ymd)}*, ${suggestTimes(slots, session.prefs)}`,
   ]));
 }
 
@@ -2004,8 +2388,8 @@ async function handleEscolhaHora(session, phone, text) {
       return;
     }
     await replyS(session, phone, pick([
-      `${personal(session)}esse horário não está disponível nesse dia. ${suggestTimes(slots)}`,
-      `${personal(session)}esse horário já está ocupado. ${suggestTimes(slots)}`,
+      `${personal(session)}esse horário não está disponível nesse dia. ${suggestTimes(slots, session.prefs)}`,
+      `${personal(session)}esse horário já está ocupado. ${suggestTimes(slots, session.prefs)}`,
     ]));
     return;
   }
@@ -2095,6 +2479,13 @@ async function finalizeAgendamento(session, phone, slot) {
     action: "consultation_created",
     detail: { consultationId: result.id, professionalId: session.profissionalId, date: slot.isoUTC },
     professionalId: session.profissionalId,
+  });
+  await notePreferenceChoice(session, phone, "period", slot.time < "12:00" ? "manha" : "tarde");
+  await learnContactPreferences({
+    phone,
+    professionalId: session.profissionalId,
+    userId: session.pacienteId,
+    privatePatientId: session.privatePatientId,
   });
   // Sincroniza com o Google Agenda; se for consulta online, obtém o link do Meet.
   let meetLink = null;
@@ -2523,6 +2914,8 @@ async function routeMessage(session, phone, text) {
 // WHATSAPP_AI_MODE está off e a rede de segurança quando a IA fica indisponível.
 async function routeMessageKeyword(session, phone, text, globalIntent = null) {
   const intent = globalIntent ?? detectIntent(text);
+  // Recarregadas a cada mensagem: o painel pode ter mudado entre um turno e outro.
+  await refreshSessionPreferences(session, phone);
   if (!session.step) {
     session.intent = intent;
     await audit({ phone, actor: "patient", action: "intent_detected", detail: { intent, text }, professionalId: session.profissionalId });
@@ -2819,7 +3212,15 @@ async function executeAiTool(session, phone, name, input = {}) {
       }
 
       case "listar_servicos": {
-        const servicos = await listServices(profId);
+        const todos = await listServices(profId);
+        // Modalidade preferida esconde o que a contraria — é o que evita perguntar
+        // "presencial ou online?" para quem só faz um dos dois. Se o filtro zerar a
+        // lista (o profissional mudou o catálogo), mostramos tudo.
+        const modalidade = getEffectiveModality(session.prefs);
+        const filtrados = modalidade
+          ? todos.filter((s) => (modalidade === "online" ? s.isOnline : !s.isOnline))
+          : todos;
+        const servicos = filtrados.length ? filtrados : todos;
         return {
           servicos: servicos.map((s) => ({
             id: s.service_id,
@@ -2828,7 +3229,11 @@ async function executeAiTool(session, phone, name, input = {}) {
             preco_conveniado: formatBRL(s.priceMember),
             preco_particular: formatBRL(s.pricePrivate),
             online: s.isOnline,
+            preferido: session.prefs?.serviceId === s.service_id || undefined,
           })),
+          ...(modalidade && filtrados.length && filtrados.length < todos.length
+            ? { filtrado_por_preferencia: modalidade }
+            : {}),
         };
       }
 
@@ -2836,7 +3241,12 @@ async function executeAiTool(session, phone, name, input = {}) {
         const ymd = normalizeYmd(input.data);
         if (!ymd) return { erro: "Data inválida. Use AAAA-MM-DD." };
         const slots = await getFreeSlotsForDay(profId, ymd);
-        return { data: ymd, horarios: slots.map((s) => s.time) };
+        const win = getPreferredWindow(session.prefs);
+        return {
+          data: ymd,
+          horarios: sortSlotsByPreference(slots, session.prefs).map((s) => s.time),
+          ...(win ? { turno_preferido: win.label } : {}),
+        };
       }
 
       case "criar_consulta": {
@@ -2846,7 +3256,18 @@ async function executeAiTool(session, phone, name, input = {}) {
         const ymd = normalizeYmd(input.data);
         if (!ymd) return { erro: "Data inválida." };
         if (ymd < todayInBrazilYmd()) return { erro: "Essa data já passou." };
-        const base = await resolveServiceForBooking(profId, session.priceProfile || "convenio", input.servico_id);
+        // Sem servico_id explícito, a preferência entra no lugar do serviço-base;
+        // com servico_id, o pedido do paciente vence (e corrige a preferência).
+        const servicoPedido = input.servico_id != null && input.servico_id !== ""
+          ? Number(input.servico_id)
+          : null;
+        const servicoAlvo = servicoPedido ?? session.prefs?.serviceId ?? null;
+        let base = await resolveServiceForBooking(profId, session.priceProfile || "convenio", servicoAlvo);
+        // Preferência que não resolve (catálogo mudou entre o saneamento e agora)
+        // não pode impedir o agendamento: cai no serviço-base de sempre.
+        if (!base && servicoPedido == null && servicoAlvo != null) {
+          base = await getBaseService(profId, session.priceProfile || "convenio");
+        }
         if (!base) {
           if (input.servico_id != null) {
             const validos = await listServices(profId);
@@ -2868,9 +3289,9 @@ async function executeAiTool(session, phone, name, input = {}) {
         if (locais.length === 1) {
           locationId = locais[0].id;
         } else if (locais.length > 1) {
-          const chosen = input.local_id != null
-            ? locais.find((l) => l.id === Number(input.local_id))
-            : null;
+          // Sem local_id, a unidade preferida evita a pergunta "em qual cidade?".
+          const localAlvo = input.local_id != null ? Number(input.local_id) : session.prefs?.locationId ?? null;
+          const chosen = localAlvo != null ? locais.find((l) => l.id === localAlvo) : null;
           if (!chosen) {
             return {
               erro: "O profissional atende em mais de um local. Pergunte ao paciente em qual cidade/unidade ele quer ser atendido e chame de novo com local_id.",
@@ -2893,6 +3314,19 @@ async function executeAiTool(session, phone, name, input = {}) {
         });
         if (!result.ok) return { erro: result.message || "Não foi possível agendar esse horário." };
         await audit({ phone, actor: "ai", action: "consultation_created", detail: { consultationId: result.id, professionalId: profId, date: slot.isoUTC, locationId }, professionalId: profId });
+
+        // Escolha explícita diferente da preferência corrige a preferência NA HORA —
+        // sem isso, quem mudou de ideia receberia a sugestão antiga até acumular três
+        // consultas novas. O que foi marcado à mão no painel é preservado.
+        if (servicoPedido != null) await notePreferenceChoice(session, phone, "service", base.service_id);
+        if (input.local_id != null && locationId != null) await notePreferenceChoice(session, phone, "location", locationId);
+        await notePreferenceChoice(session, phone, "period", slot.time < "12:00" ? "manha" : "tarde");
+        await learnContactPreferences({
+          phone,
+          professionalId: profId,
+          userId: session.pacienteId,
+          privatePatientId: session.privatePatientId,
+        });
         let meetLink = null;
         try { meetLink = await syncCreateEvent(result.id); } catch (e) { botLog("sync_create_error", { error: String(e) }); }
         return {
@@ -3046,6 +3480,46 @@ function buildSavingsFacts(services) {
   return rows;
 }
 
+/**
+ * Bloco de preferências do prompt.
+ *
+ * Preferência PRÉ-PREENCHE, não tranca: dia e horário continuam sendo confirmados,
+ * a confirmação final sempre nomeia o que foi usado (para o paciente poder corrigir)
+ * e um pedido explícito dele vence a preferência. É o que separa "prático" de
+ * "agendou errado sem avisar".
+ */
+function buildPreferenceLines(prefs) {
+  if (!prefs) return [];
+  const lines = [];
+  const modalidade = getEffectiveModality(prefs);
+
+  if (prefs.serviceId != null) {
+    lines.push(
+      `- Ele sempre faz *${prefs.serviceName || "o mesmo serviço"}*. Agende esse serviço (servico_id=${prefs.serviceId}) sem perguntar qual procedimento ele quer, e cite o nome do serviço na confirmação.`
+    );
+  }
+  if (modalidade === "presencial") {
+    lines.push("- Ele é atendido *presencialmente*. NÃO ofereça teleconsulta nem pergunte a modalidade.");
+  } else if (modalidade === "online") {
+    lines.push("- Ele é atendido *online*. NÃO ofereça atendimento presencial nem pergunte a modalidade.");
+  }
+  if (prefs.locationId != null) {
+    lines.push(
+      `- Ele é sempre atendido em *${prefs.locationName || "uma unidade fixa"}*. Passe local_id=${prefs.locationId} em criar_consulta sem perguntar a cidade/unidade, e cite o local na confirmação.`
+    );
+  }
+  const win = getPreferredWindow(prefs);
+  if (win) {
+    lines.push(`- Ele costuma vir de *${win.label}*. Ofereça primeiro os horários desse turno (mas aceite outro, se ele pedir).`);
+  }
+  if (!lines.length) return [];
+  lines.push(
+    "Estas preferências poupam perguntas, mas não decidem por ele: se o paciente pedir algo diferente, o pedido dele vence e você segue por ali sem discutir.",
+    "Continue confirmando dia e horário normalmente."
+  );
+  return lines;
+}
+
 function buildAgentSystemPrompt(session, ctx) {
   const today = todayInBrazilYmd();
   const dow = WEEKDAY_NAMES_PT[weekdayOfYmd(today)];
@@ -3140,8 +3614,12 @@ function buildAgentSystemPrompt(session, ctx) {
   if (multiService) {
     const nomes = ctx.services.map((s) => s.name).filter(Boolean).slice(0, 12).join(", ");
     lines.push(
-      `- Este profissional oferece VÁRIOS serviços/procedimentos${nomes ? ` (${nomes})` : ""}. Ao agendar, descubra QUAL o paciente quer; se ele não disser ou ficar em dúvida, use listar_servicos e apresente as opções com os preços. Passe o id do serviço escolhido em criar_consulta (servico_id). Nunca escolha o serviço por conta própria quando houver ambiguidade.`
+      `- Este profissional oferece VÁRIOS serviços/procedimentos${nomes ? ` (${nomes})` : ""}. Ao agendar, descubra QUAL o paciente quer; se ele não disser ou ficar em dúvida, use listar_servicos e apresente as opções com os preços. Passe o id do serviço escolhido em criar_consulta (servico_id). Nunca escolha o serviço por conta própria quando houver ambiguidade — a ÚNICA exceção é a preferência registrada abaixo.`
     );
+  }
+  const prefLines = buildPreferenceLines(ctx.prefs);
+  if (prefLines.length) {
+    lines.push("", "## Preferências deste paciente", ...prefLines);
   }
   return lines.join("\n");
 }
@@ -3331,6 +3809,16 @@ async function routeMessageAI(session, phone, text) {
   const insurances = await getProfessionalInsurances(session.profissionalId);
   const locations = await getAttendanceLocations(session.profissionalId);
   const services = await listServices(session.profissionalId);
+
+  // Preferências recarregadas a cada turno (o painel pode ter mudado entre mensagens)
+  // e saneadas com as listas que já buscamos acima, sem consulta extra.
+  session.prefs = await sanitizeContactPreferences(
+    phone,
+    session.profissionalId,
+    await loadPreferences(phone, session.profissionalId),
+    { services, locations }
+  );
+
   const convenioLink = convenioInfo.affiliateCode
     ? `https://cartaoquiroferreira.com.br/register?ref=${convenioInfo.affiliateCode}`
     : "https://cartaoquiroferreira.com.br/register";
@@ -3350,6 +3838,7 @@ async function routeMessageAI(session, phone, text) {
           convenioSituacao: session.convenioSituacao || null,
         }
       : null,
+    prefs: session.prefs,
   });
 
   // Persistimos só a conversa "limpa" (texto do paciente + resposta final). Os
@@ -3688,6 +4177,177 @@ export async function getConversation(phone, limit = 50) {
   return r.rows.reverse();
 }
 
+// ===== PREFERÊNCIAS NO PAINEL DE ATENDIMENTO =====
+
+// O profissional dono da conversa sai da própria sessão (mesma fonte que a lista
+// de conversas usa) — nunca do que o cliente mandar.
+async function professionalIdOfPhone(phone) {
+  const r = await pool.query(
+    `SELECT (session->>'profissionalId')::int AS professional_id
+       FROM whatsapp_sessions WHERE phone = $1`,
+    [phone]
+  );
+  return r.rows[0]?.professional_id || null;
+}
+
+/**
+ * Renomeia a conversa no painel.
+ *
+ * Grava um RÓTULO, não identidade: a linha pode existir sem CPF, para número que
+ * o bot ainda não identificou (que é justamente o caso confuso). Enviar nome
+ * vazio remove o rótulo e o painel volta a resolver o nome sozinho.
+ */
+export async function setContactDisplayName(phone, name, operatorId = null) {
+  const professionalId = await professionalIdOfPhone(phone);
+  if (!professionalId) return { ok: false, message: "Conversa sem profissional definido." };
+
+  const limpo = String(name ?? "").trim().replace(/\s+/g, " ").slice(0, 120);
+  const valor = limpo || null;
+
+  await pool.query(
+    `INSERT INTO whatsapp_contacts (phone, professional_id, display_name, display_name_by, display_name_at)
+     VALUES ($1, $2, $3, $4, NOW())
+     ON CONFLICT (phone, professional_id) DO UPDATE
+       SET display_name    = EXCLUDED.display_name,
+           display_name_by = EXCLUDED.display_name_by,
+           display_name_at = NOW(),
+           updated_at      = NOW()`,
+    [phone, professionalId, valor, operatorId]
+  );
+  await audit({
+    phone,
+    actor: "human",
+    actorId: operatorId,
+    action: valor ? "contact_renamed" : "contact_name_cleared",
+    detail: { display_name: valor },
+    professionalId,
+  });
+
+  const [resolvido] = [
+    ...(await resolvePatientNames([{ phone, professionalId }])).values(),
+  ];
+  return { ok: true, professional_id: professionalId, display_name: valor, resolved_name: resolvido || null };
+}
+
+/**
+ * Preferências da conversa + as opções para os seletores do painel.
+ * Devolve `professional_id` para o endpoint conferir o escopo de quem pediu.
+ */
+export async function getContactPreferences(phone) {
+  const professionalId = await professionalIdOfPhone(phone);
+  if (!professionalId) {
+    return { professional_id: null, preferences: null, options: { services: [], locations: [] } };
+  }
+  const services = await listServices(professionalId);
+  const locations = await getAttendanceLocations(professionalId);
+  const prefs = await sanitizeContactPreferences(
+    phone,
+    professionalId,
+    await loadPreferences(phone, professionalId),
+    { services, locations }
+  );
+  return {
+    professional_id: professionalId,
+    preferences: {
+      service_id: prefs.serviceId,
+      service_name: prefs.serviceName,
+      location_id: prefs.locationId,
+      location_name: prefs.locationName,
+      // Sempre a modalidade EFETIVA: com serviço marcado, ela vem dele.
+      modality: getEffectiveModality(prefs),
+      modality_locked: prefs.serviceId != null,
+      period: prefs.period,
+      meta: prefs.meta || {},
+    },
+    options: {
+      services: services.map((s) => ({ id: s.service_id, name: s.name, online: s.isOnline })),
+      locations: locations.map((l) => ({ id: l.id, name: l.nome, city: l.cidade })),
+    },
+  };
+}
+
+/**
+ * Salva o que foi marcado à mão no painel (origem `manual`, que o aprendizado
+ * automático nunca sobrescreve) e devolve o estado já saneado.
+ *
+ * `reset` devolve uma dimensão ao automático: limpa valor e marcação e roda o
+ * aprendizado de novo, então o valor do histórico volta na hora, se houver.
+ */
+export async function setContactPreferences(phone, body = {}, operatorId = null) {
+  const professionalId = await professionalIdOfPhone(phone);
+  if (!professionalId) return { ok: false, message: "Conversa sem profissional definido." };
+
+  const services = await listServices(professionalId);
+  const locations = await getAttendanceLocations(professionalId);
+  const changes = {};
+
+  if ("service" in body) {
+    const id = body.service == null ? null : Number(body.service);
+    if (id != null && !services.some((s) => s.service_id === id)) {
+      return { ok: false, message: "Serviço não pertence a este profissional." };
+    }
+    changes.service = id;
+    // Serviço define a modalidade: guardar as duas soltas criaria contradição.
+    if (id != null) changes.modality = null;
+  }
+  if ("location" in body) {
+    const id = body.location == null ? null : Number(body.location);
+    if (id != null && !locations.some((l) => l.id === id)) {
+      return { ok: false, message: "Local não pertence a este profissional." };
+    }
+    changes.location = id;
+  }
+  if ("modality" in body) {
+    const m = body.modality == null ? null : String(body.modality);
+    if (m != null && m !== "presencial" && m !== "online") {
+      return { ok: false, message: "Modalidade inválida." };
+    }
+    // Ignorada quando há serviço preferido (dali ela é derivada).
+    const temServico = "service" in changes ? changes.service != null : (await loadPreferences(phone, professionalId)).serviceId != null;
+    changes.modality = temServico ? null : m;
+  }
+  if ("period" in body) {
+    const p = body.period == null ? null : String(body.period);
+    if (p != null && p !== "manha" && p !== "tarde") {
+      return { ok: false, message: "Turno inválido." };
+    }
+    changes.period = p;
+  }
+
+  if (Object.keys(changes).length) {
+    await savePreferences(phone, professionalId, changes, { source: "manual", by: operatorId });
+  }
+
+  const reset = Array.isArray(body.reset) ? body.reset.filter((d) => d in PREF_COLUMNS) : [];
+  if (reset.length) {
+    await savePreferences(
+      phone,
+      professionalId,
+      Object.fromEntries(reset.map((d) => [d, null])),
+      { source: "manual", by: operatorId, force: true }
+    );
+    const contact = await loadContact(phone, professionalId);
+    if (contact) {
+      await learnContactPreferences({
+        phone,
+        professionalId,
+        userId: contact.patient_id,
+        privatePatientId: contact.private_patient_id,
+      });
+    }
+  }
+
+  await audit({
+    phone,
+    actor: "human",
+    actorId: operatorId,
+    action: "preferences_updated",
+    detail: { changes, reset },
+    professionalId,
+  });
+  return { ok: true, ...(await getContactPreferences(phone)) };
+}
+
 // Regex de URL usada para extrair links do histórico. Deliberadamente simples:
 // pega http(s) e domínios "nus" comuns em conversa (www.x.com, site.com.br).
 const URL_IN_TEXT_RE =
@@ -3749,10 +4409,23 @@ export async function getConversationAttachments(phone) {
 
 // Casa o telefone do WhatsApp (dígitos, com DDI) com users.phone (formato livre),
 // comparando os últimos 11 dígitos (DDD + 9 + número). Retorna Map<phone, nome>.
-async function resolvePatientNames(phones) {
+/**
+ * Nome a exibir para cada conversa, na ordem de confiança:
+ *
+ *   1. display_name  — digitado pela equipe no painel; sempre vence
+ *   2. patient_name  — o bot identificou o paciente pelo CPF
+ *   3. users.phone   — cliente do convênio com esse telefone no cadastro
+ *   4. private_patients.phone — paciente particular do profissional
+ *
+ * Antes só existia o passo 3, então quase toda conversa aparecia como número
+ * cru e ninguém sabia quem era quem. Recebe `[{ phone, professionalId }]`
+ * porque contato e rótulo são POR profissional.
+ */
+async function resolvePatientNames(conversations) {
   const map = new Map();
-  if (!phones.length) return map;
+  if (!conversations.length) return map;
 
+  const phones = conversations.map((c) => c.phone);
   const localByPhone = new Map();
   for (const p of phones) {
     let d = onlyDigits(p);
@@ -3761,18 +4434,51 @@ async function resolvePatientNames(phones) {
   }
   const locals = [...new Set([...localByPhone.values()])];
 
-  const r = await pool.query(
-    `SELECT name, right(regexp_replace(phone, '\\D', '', 'g'), 11) AS last11
+  // 3 e 4 — casam pelos últimos 11 dígitos (DDD + 9 + número), porque o cadastro
+  // guarda o telefone em formato livre.
+  const porTelefone = await pool.query(
+    `SELECT name, right(regexp_replace(phone, '\\D', '', 'g'), 11) AS last11, 1 AS prio
        FROM users
       WHERE phone IS NOT NULL
+        AND right(regexp_replace(phone, '\\D', '', 'g'), 11) = ANY($1::text[])
+      UNION ALL
+     SELECT name, right(regexp_replace(phone, '\\D', '', 'g'), 11) AS last11, 2 AS prio
+       FROM private_patients
+      WHERE phone IS NOT NULL AND is_active = true
         AND right(regexp_replace(phone, '\\D', '', 'g'), 11) = ANY($1::text[])`,
     [locals]
   );
   const nameByLast11 = new Map();
-  for (const row of r.rows) nameByLast11.set(row.last11, row.name);
-
+  for (const row of porTelefone.rows.sort((a, b) => a.prio - b.prio)) {
+    if (!nameByLast11.has(row.last11)) nameByLast11.set(row.last11, row.name);
+  }
   for (const [phone, last11] of localByPhone) {
     if (nameByLast11.has(last11)) map.set(phone, nameByLast11.get(last11));
+  }
+
+  // 1 e 2 — por (telefone, profissional), então sobrescrevem o que veio acima.
+  const comProf = conversations.filter((c) => c.professionalId);
+  if (comProf.length) {
+    // Busca pelo produto dos dois conjuntos e casa o par exato em memória: evita
+    // montar tupla composta em SQL, que é frágil de escapar.
+    const contatos = await pool.query(
+      `SELECT phone, professional_id, patient_name, display_name
+         FROM whatsapp_contacts
+        WHERE phone = ANY($1::text[]) AND professional_id = ANY($2::int[])`,
+      [
+        [...new Set(comProf.map((c) => c.phone))],
+        [...new Set(comProf.map((c) => c.professionalId))],
+      ]
+    );
+    const porChave = new Map();
+    for (const row of contatos.rows) {
+      porChave.set(`${row.phone}|${row.professional_id}`, row);
+    }
+    for (const c of comProf) {
+      const row = porChave.get(`${c.phone}|${c.professionalId}`);
+      const nome = row?.display_name || row?.patient_name;
+      if (nome) map.set(c.phone, nome);
+    }
   }
   return map;
 }
@@ -3815,7 +4521,9 @@ export async function listConversations({ scopeProfessionalId = null } = {}) {
     for (const row of u.rows) nameById.set(row.id, row.name);
   }
 
-  const patientNames = await resolvePatientNames(rows.map((row) => row.phone));
+  const patientNames = await resolvePatientNames(
+    rows.map((row) => ({ phone: row.phone, professionalId: row.professional_id }))
+  );
 
   return rows.map((row) => ({
     phone: row.phone,
