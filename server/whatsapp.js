@@ -43,6 +43,7 @@ import {
 } from "./utils/pricing.js";
 import { sendWhatsappTextMessage } from "./utils/whatsappCloud.js";
 import { sendBaileysText } from "./utils/whatsappBaileys.js";
+import { transcribeAudio, transcriptionEnabled } from "./utils/transcribeAudio.js";
 import {
   syncCreateEvent,
   syncUpdateEvent,
@@ -4093,14 +4094,41 @@ export async function processInbound({ phone, messageId, type, textBody = "", ph
     return;
   }
 
-  // Áudio (e demais tipos não-texto): não processa, pede texto.
+  // Áudio: se a transcrição estiver ligada, vira texto e segue o fluxo normal
+  // (a IA/bot passam a "entender" o áudio). Se falhar/estiver desligada, pede
+  // texto ou oferece atendente humana.
   if (type === "audio") {
-    await replyS(session, phone, pick([
-      "No momento, não consigo processar áudios por aqui. Pode me escrever o que precisa? Respondo na hora.",
-      "Por aqui só consigo ler mensagens de texto — é só me escrever que respondo rapidinho.",
-    ]));
-    await saveSession(phone, session);
-    return;
+    const transcript = mediaUrl ? await transcribeAudio(mediaUrl, mediaMime) : null;
+    if (transcript) {
+      type = "text";
+      textBody = transcript;
+      botLog("audio_transcribed", { phone, chars: transcript.length });
+      // Grava o transcript no painel para a equipe ler o que o paciente falou.
+      try {
+        await pool.query(
+          `UPDATE whatsapp_messages SET text = $1
+             WHERE message_id = $2 AND (text IS NULL OR text = '')`,
+          [`🎙️ ${transcript}`, messageId]
+        );
+      } catch (e) {
+        botLog("transcript_save_error", { phone, error: String(e) });
+      }
+    } else {
+      const semTranscricao = !transcriptionEnabled();
+      await replyS(
+        session,
+        phone,
+        semTranscricao
+          ? pick([
+              "No momento, não consigo processar áudios por aqui. Pode me escrever o que precisa? Respondo na hora.",
+              "Por aqui só consigo ler mensagens de texto — é só me escrever que respondo rapidinho.",
+            ])
+          : "Não consegui ouvir seu áudio direito 🙏 Pode me *escrever* o que precisa? " +
+              "Se preferir, é só dizer *ATENDENTE* que passo pra uma pessoa da equipe."
+      );
+      await saveSession(phone, session);
+      return;
+    }
   }
   if (type !== "text") {
     await replyS(session, phone, pick([
