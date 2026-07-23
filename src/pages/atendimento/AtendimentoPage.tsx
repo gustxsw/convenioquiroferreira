@@ -18,6 +18,8 @@ import {
   Video,
   Download,
   Pencil,
+  Play,
+  Pause,
 } from "lucide-react";
 import { fetchWithAuth, getApiUrl } from "../../utils/apiHelpers";
 import { useAuth } from "../../contexts/AuthContext";
@@ -159,6 +161,237 @@ const mediaIcon = (type: string | null) => {
   return <FileText size={18} />;
 };
 
+// A mídia recebida no WhatsApp vai pro Cloudinary sem nome nem extensão (o
+// public_id é aleatório), então baixar direto da URL dá um arquivo tipo "abc123"
+// que médico/secretária não conseguem abrir. Aqui reconstruímos um nome legível
+// com a extensão certa a partir do mimetype.
+const MIME_EXT: Record<string, string> = {
+  "application/pdf": "pdf",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.ms-excel": "xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.ms-powerpoint": "ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+  "text/plain": "txt",
+  "text/csv": "csv",
+  "application/zip": "zip",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "audio/ogg": "ogg",
+  "audio/mpeg": "mp3",
+  "audio/mp4": "m4a",
+  "audio/amr": "amr",
+  "video/mp4": "mp4",
+  "video/3gpp": "3gp",
+};
+
+const isUrlLike = (s: string) => /^https?:\/\//i.test(s) || /^www\./i.test(s);
+
+// Aceita tanto Attachment (painel lateral, legenda em `caption`) quanto Message
+// (bolha do chat, legenda em `text`).
+type MediaLike = {
+  media_type?: string | null;
+  media_url: string;
+  media_mime?: string | null;
+  caption?: string | null;
+  text?: string | null;
+  created_at: string;
+};
+
+function attachmentFilename(item: MediaLike): string {
+  const mime = (item.media_mime || "").split(";")[0].trim().toLowerCase();
+  let ext = MIME_EXT[mime] || "";
+  // Fallback: extensão que porventura já esteja na própria URL.
+  if (!ext) {
+    const m = item.media_url.split("?")[0].match(/\.([a-z0-9]{2,5})$/i);
+    if (m) ext = m[1].toLowerCase();
+  }
+
+  const typeLabel =
+    item.media_type === "audio" ? "audio"
+    : item.media_type === "video" ? "video"
+    : item.media_type === "image" || item.media_type === "sticker" ? "imagem"
+    : "documento";
+
+  // A legenda vira nome só se for texto de verdade (não um link que veio junto).
+  const rawCaption = (item.caption ?? item.text ?? "").trim();
+  let base = rawCaption && !isUrlLike(rawCaption) ? rawCaption : "";
+  base = base.replace(/[/\\?%*:|"<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 60);
+  if (!base) {
+    const d = new Date(item.created_at);
+    const stamp =
+      `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+    base = `${typeLabel}-${stamp}`;
+  }
+
+  if (ext && base.toLowerCase().endsWith(`.${ext}`)) return base;
+  return ext ? `${base}.${ext}` : base;
+}
+
+// Rótulo curto e legível do tipo do arquivo, no lugar do mimetype cru (que pra
+// Office vira um monstro tipo "application/vnd.openxmlformats-...").
+function mediaKindLabel(item: MediaLike): string {
+  const name = attachmentFilename(item);
+  const ext = name.split(".").pop();
+  if (ext && ext !== name) return ext.toUpperCase();
+  return item.media_type === "audio" ? "Áudio"
+    : item.media_type === "video" ? "Vídeo"
+    : item.media_type === "image" || item.media_type === "sticker" ? "Imagem"
+    : "Arquivo";
+}
+
+// Baixa o anexo com nome legível. O Cloudinary serve com CORS liberado, então
+// buscamos o binário e forçamos o nome no download (o atributo `download` do <a>
+// é ignorado em link cross-origin, por isso o fetch+blob). Se algo falhar, ao
+// menos abrimos o arquivo numa aba nova.
+async function downloadAttachment(item: MediaLike): Promise<void> {
+  const filename = attachmentFilename(item);
+  try {
+    const res = await fetch(item.media_url);
+    if (!res.ok) throw new Error(String(res.status));
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch {
+    window.open(item.media_url, "_blank", "noopener,noreferrer");
+  }
+}
+
+// Player de áudio com a cara do sistema (o <audio> nativo é feio e cada browser
+// desenha de um jeito). Botão play/pause redondo na cor da marca, barra de
+// progresso arrastável, tempos e ajuste de velocidade.
+const AUDIO_ACCENT = "#c11c22";
+
+const AudioMessage: React.FC<{ src: string }> = ({ src }) => {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [speed, setSpeed] = useState(1);
+  const [dragging, setDragging] = useState(false);
+
+  const fmt = (s: number) => {
+    const v = !isFinite(s) || s < 0 ? 0 : s;
+    return `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, "0")}`;
+  };
+
+  const toggle = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (a.paused) void a.play();
+    else a.pause();
+  };
+
+  const cycleSpeed = () => {
+    const next = speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1;
+    setSpeed(next);
+    if (audioRef.current) audioRef.current.playbackRate = next;
+  };
+
+  const seekToClientX = (clientX: number) => {
+    const el = trackRef.current;
+    const a = audioRef.current;
+    if (!el || !a || !duration) return;
+    const rect = el.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const t = ratio * duration;
+    a.currentTime = t;
+    setCurrent(t);
+  };
+
+  useEffect(() => {
+    if (!dragging) return;
+    const move = (e: PointerEvent) => seekToClientX(e.clientX);
+    const up = () => setDragging(false);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragging, duration]);
+
+  const pct = duration ? (current / duration) * 100 : 0;
+
+  return (
+    <div
+      className="flex items-center gap-2.5 rounded-full py-1.5 pl-1.5 pr-3"
+      style={{ minWidth: 216, maxWidth: 300, background: "rgba(255,255,255,0.75)", border: "1px solid rgba(0,0,0,0.06)" }}
+    >
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
+        onDurationChange={(e) => setDuration(e.currentTarget.duration || 0)}
+        onTimeUpdate={(e) => {
+          if (!dragging) setCurrent(e.currentTarget.currentTime);
+        }}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => {
+          setPlaying(false);
+          setCurrent(0);
+        }}
+      />
+      <button
+        type="button"
+        onClick={toggle}
+        title={playing ? "Pausar" : "Reproduzir"}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition-transform active:scale-95"
+        style={{ background: AUDIO_ACCENT }}
+      >
+        {playing ? (
+          <Pause size={16} fill="white" />
+        ) : (
+          <Play size={16} fill="white" style={{ marginLeft: 1 }} />
+        )}
+      </button>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div
+          ref={trackRef}
+          onPointerDown={(e) => {
+            setDragging(true);
+            seekToClientX(e.clientX);
+          }}
+          className="relative h-[5px] cursor-pointer rounded-full"
+          style={{ background: "#e5e7eb", touchAction: "none" }}
+        >
+          <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${pct}%`, background: AUDIO_ACCENT }} />
+          <div
+            className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white shadow"
+            style={{ left: `calc(${pct}% - 6px)`, border: `2px solid ${AUDIO_ACCENT}` }}
+          />
+        </div>
+        <div className="flex items-center justify-between text-[10px] tabular-nums text-gray-500">
+          <span>{fmt(current)}</span>
+          <span>{fmt(duration)}</span>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={cycleSpeed}
+        title="Velocidade de reprodução"
+        className="shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-bold text-gray-600 transition-colors hover:bg-gray-100"
+        style={{ border: "1px solid #e5e7eb" }}
+      >
+        {speed}x
+      </button>
+    </div>
+  );
+};
+
 /**
  * Painel de mídias, links e documentos da conversa — mesmo espírito do
  * "Dados do contato" do WhatsApp: a secretária acha um exame ou um comprovante
@@ -279,24 +512,38 @@ const AnexosPanel: React.FC<{
           : (
             <div className="flex flex-col divide-y divide-gray-100">
               {docs.map((d) => (
-                <a
+                <div
                   key={d.id}
-                  href={d.media_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-2.5 px-4 py-3 transition-colors hover:bg-gray-50"
+                  className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50"
                 >
-                  <FileText size={16} className="shrink-0 text-gray-400" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[12.5px] font-medium text-gray-900">
-                      {d.caption || "Documento"}
+                  <a
+                    href={d.media_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Abrir para visualizar"
+                    className="flex min-w-0 flex-1 items-center gap-3"
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-[9px] font-bold uppercase tracking-tight text-[#c11c22]">
+                      {mediaKindLabel(d).slice(0, 4)}
                     </div>
-                    <div className="mt-0.5 text-[11px] text-gray-400">
-                      {d.media_mime || "arquivo"} · {shortDate(d.created_at)}
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[12.5px] font-medium text-gray-900">
+                        {attachmentFilename(d)}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-gray-400">
+                        {mediaKindLabel(d)} · {shortDate(d.created_at)}
+                      </div>
                     </div>
-                  </div>
-                  <Download size={14} className="shrink-0 text-gray-400" />
-                </a>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => downloadAttachment(d)}
+                    title="Baixar com nome legível"
+                    className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                  >
+                    <Download size={15} />
+                  </button>
+                </div>
               ))}
             </div>
           ))}
@@ -1163,7 +1410,7 @@ const AtendimentoPage: React.FC = () => {
                                     />
                                   </a>
                                 ) : m.media_type === "audio" ? (
-                                  <audio controls src={m.media_url} style={{ maxWidth: "100%" }} />
+                                  <AudioMessage src={m.media_url} />
                                 ) : m.media_type === "video" ? (
                                   <video
                                     controls
@@ -1171,14 +1418,26 @@ const AtendimentoPage: React.FC = () => {
                                     style={{ maxWidth: "100%", maxHeight: 260, borderRadius: 8 }}
                                   />
                                 ) : (
-                                  <a
-                                    href={m.media_url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-[13px] font-medium text-blue-600 underline"
-                                  >
-                                    📎 Abrir arquivo enviado
-                                  </a>
+                                  <div className="flex items-center gap-2">
+                                    <a
+                                      href={m.media_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      title={attachmentFilename(m)}
+                                      className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-blue-600 underline"
+                                    >
+                                      <FileText size={14} className="shrink-0" />
+                                      <span className="truncate">{attachmentFilename(m)}</span>
+                                    </a>
+                                    <button
+                                      type="button"
+                                      onClick={() => downloadAttachment(m)}
+                                      title="Baixar com nome legível"
+                                      className="shrink-0 rounded p-1 text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600"
+                                    >
+                                      <Download size={14} />
+                                    </button>
+                                  </div>
                                 )}
                               </div>
                             )}
