@@ -3728,7 +3728,11 @@ const STATE_CHANGE_TOOLS = new Set(["criar_consulta", "remarcar_consulta", "canc
 // Verbos de CONCLUSÃO de ação (particípio/pretérito). Evita falso positivo com
 // infinitivo/futuro ("vou agendar", "quer marcar?", "posso confirmar?"). Usado para
 // barrar a IA de afirmar que agendou/remarcou/cancelou sem ter executado a ferramenta.
-const ACTION_CLAIM_RE = /\b(agendad|agendei|marcad|marquei|remarcad|remarquei|desmarcad|desmarquei|cancelad|cancelei|confirmad)\w*/i;
+// Inclui as formas de 3ª pessoa (agendou/cancelou/...) e o sinônimo "reagendar"
+// (reagendei/reagendado): sem estas, "✅ reagendei sua consulta" escapava do guard —
+// o \b não casa dentro de "reagendei", então a confirmação falsa vazava para o paciente.
+const ACTION_CLAIM_RE =
+  /\b(agendad|agendei|agendou|reagendad|reagendei|reagendou|marcad|marquei|marcou|remarcad|remarquei|remarcou|desmarcad|desmarquei|desmarcou|cancelad|cancelei|cancelou|confirmad|confirmei|confirmou)\w*/i;
 
 const CONFIRMATION_GUARD_NUDGE =
   "SISTEMA: Você deu a entender que a consulta foi agendada/remarcada/cancelada, mas NENHUMA ferramenta de ação (criar_consulta, remarcar_consulta ou cancelar_consulta) foi executada com sucesso neste turno. NÃO diga ao paciente que está feito. Se ele já confirmou os dados, chame AGORA a ferramenta correta com os dados corretos. Se faltar algum dado, pergunte de forma objetiva.";
